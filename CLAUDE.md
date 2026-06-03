@@ -15,7 +15,7 @@ A native desktop GUI for the **Pi coding agent** (`@earendil-works/pi-coding-age
 
 ## Critical technical landmines
 - **JSONL framing:** Pi's RPC is strict JSONL delimited by `\n` ONLY. Do NOT use a line reader that splits on Unicode separators (U+2028 / U+2029) — they are valid inside JSON strings and will corrupt messages. Split on `\n` in Rust, strip a trailing `\r`. There must be a unit test for this against a payload containing U+2028 inside a string value.
-- **API keys never touch plaintext or the renderer.** Store via Tauri Stronghold plugin or OS keychain; inject as an env var when spawning the sidecar. Pi resolves keys from env vars, so this works cleanly.
+- **API keys are written to Pi's own `auth.json` (mode 0600), never to the renderer.** Decision (M2): Pi's RPC has no auth command and Pi's `getApiKey` resolves `auth.json` above env vars, so we drive Pi's existing credential store directly instead of inventing a parallel keychain/Stronghold layer or env-injection plumbing. All key handling is isolated in `pi_config.rs`: read-modify-write must preserve existing `oauth` entries (a user's `pi` login) and write atomically. After a write, respawn the sidecar so it reloads. Key values never flow back to the renderer; only configured/not-configured status (`ProviderAuth`) does. Path resolution mirrors Pi's `getAgentDir()` (`PI_CODING_AGENT_DIR`, else `~/.pi/agent`). The earlier keychain-plus-env-injection plan was dropped on purpose.
 - **Pin Pi's version exactly.** Its SDK/RPC surface is still evolving. Confirm exact RPC command names and fields against the installed version before relying on them — the names in the spec are from docs and must be verified.
 
 ## Working process
@@ -25,7 +25,7 @@ A native desktop GUI for the **Pi coding agent** (`@earendil-works/pi-coding-age
 - **Keep frontend and backend contracts in sync.** The `AgentEvent` union and command signatures (spec §6) are the source of truth shared between Rust `events.rs` and TS `types.ts`. Change both together.
 
 ## Code conventions
-- Rust: keep sidecar/process logic in `sidecar.rs` + `reader.rs`; `#[tauri::command]` fns in `commands.rs`; secrets isolated in `secrets.rs`. Prefer `Result` returns and surface errors to the frontend as structured events, not panics.
+- Rust: keep sidecar/process logic in `sidecar.rs` + `reader.rs`; `#[tauri::command]` fns in `commands.rs`; Pi config and credential file handling isolated in `pi_config.rs`. Prefer `Result` returns and surface errors to the frontend as structured events, not panics.
 - TS: typed wrappers around `invoke()` live in `lib/ipc.ts`; never call `invoke` with stringly-typed args scattered through components. Shared types in `lib/types.ts` mirror the Rust event/command shapes.
 - UI: match the reference layout (sidebar of sessions / top bar with model + settings / streaming transcript / composer). Render the session list even when there's one session.
 
@@ -40,4 +40,4 @@ A native desktop GUI for the **Pi coding agent** (`@earendil-works/pi-coding-age
 Themes, keyboard shortcuts, session rename/delete polish, Windows code signing, the multi-session orchestration dashboard. The architecture must not *block* these, but they are not MVP work.
 
 ## Definition of done (MVP)
-Launch → enter API key (stored securely) → real models populate and one is selectable → type a message and watch it stream token-by-token → see tool calls render → past session appears in the sidebar after restart.
+Launch → enter API key (written to Pi's `auth.json`, mode 0600, never shown to the renderer) → real models populate and one is selectable → type a message and watch it stream token-by-token → see tool calls render → past session appears in the sidebar after restart.

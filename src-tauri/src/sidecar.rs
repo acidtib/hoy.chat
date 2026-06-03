@@ -112,7 +112,7 @@ impl PiProcess {
             Ok(Err(_)) => Err("sidecar closed before responding".into()),
             Err(_) => {
                 self.pending.lock().unwrap().remove(&id);
-                Err(format!("get_state timed out after {REQUEST_TIMEOUT:?}"))
+                Err(format!("sidecar request timed out after {REQUEST_TIMEOUT:?}"))
             }
         }
     }
@@ -198,6 +198,30 @@ impl SidecarManager {
             .get(id)
             .cloned()
             .ok_or_else(|| format!("unknown session: {id}"))
+    }
+
+    // Replace a session's child with a fresh one under the same SessionId. Used
+    // after writing auth.json so the running sidecar reloads credentials (Pi
+    // caches auth in memory at startup). The model selection survives because Pi
+    // persists defaultModel to settings.json and re-reads it on spawn. The old
+    // Arc is dropped outside the lock so its Drop (kill + wait) does not hold it.
+    pub fn respawn(&self, id: &str) -> Result<(), String> {
+        if !self.bin.exists() {
+            return Err(format!(
+                "sidecar binary not found at {}. Run sidecar/build.sh.",
+                self.bin.display()
+            ));
+        }
+        let proc = PiProcess::spawn(&self.bin, &self.payload, &self.cwd)?;
+        let old = {
+            let mut sessions = self.sessions.lock().unwrap();
+            if !sessions.contains_key(id) {
+                return Err(format!("unknown session: {id}"));
+            }
+            sessions.insert(id.to_string(), proc)
+        };
+        drop(old);
+        Ok(())
     }
 
     pub fn active_session_id(&self) -> Option<SessionId> {

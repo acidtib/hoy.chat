@@ -1,0 +1,289 @@
+// Drives Pi's own credential store (~/.pi/agent/auth.json) instead of inventing a
+// parallel secret store. Rationale: Pi's RPC has no auth command, and Pi's
+// getApiKey resolves auth.json (api_key entries) above environment variables, so
+// writing the file is the authoritative way to configure a provider from the GUI.
+// We only ever write or remove {type:"api_key"} entries; OAuth entries (written by
+// `pi` login) are read-modify-write preserved untouched. Key values never leave
+// Rust: the renderer receives only configured/not-configured status.
+//
+// Schema (verified against pi-coding-agent 0.78.0 core/auth-storage.d.ts):
+//   auth.json = Record<provider, {type:"api_key", key} | {type:"oauth", ...tokens}>
+// Path resolution mirrors config.js getAgentDir(): PI_CODING_AGENT_DIR if set,
+// else <home>/.pi/agent.
+
+use std::path::{Path, PathBuf};
+
+use serde::Serialize;
+use serde_json::{Map, Value};
+
+const ENV_AGENT_DIR: &str = "PI_CODING_AGENT_DIR";
+
+// Auth status surfaced to the renderer. Never carries a key value.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderAuth {
+    pub provider: String,
+    pub configured: bool,
+    // "api_key" | "oauth" | "unknown" | null
+    pub kind: Option<String>,
+    // "authFile" | "environment" | null
+    pub source: Option<String>,
+    // Only api_key entries in auth.json may be removed from the GUI; OAuth logins
+    // are left to Pi so we never strip a user's `pi` session.
+    pub removable: bool,
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .filter(|h| !h.is_empty())
+                .map(PathBuf::from)
+        })
+}
+
+pub fn agent_dir() -> Result<PathBuf, String> {
+    if let Some(dir) = std::env::var_os(ENV_AGENT_DIR).filter(|d| !d.is_empty()) {
+        return Ok(PathBuf::from(dir));
+    }
+    home_dir()
+        .map(|h| h.join(".pi").join("agent"))
+        .ok_or_else(|| "cannot resolve home directory".to_string())
+}
+
+fn auth_path() -> Result<PathBuf, String> {
+    Ok(agent_dir()?.join("auth.json"))
+}
+
+// Map a provider id to the env var Pi reads for it (uppercase + _API_KEY). Used
+// only for the secondary "configured via environment" status signal; auth.json is
+// authoritative for actually selecting a key.
+fn env_var_for(provider: &str) -> String {
+    let up: String = provider
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("{up}_API_KEY")
+}
+
+// Providers whose ids are verified against this Pi version's catalog and which
+// ship bundled model lists. Seeds the settings picker so a first-run user (empty
+// auth.json, so get_available_models returns nothing) can still choose a provider
+// to configure. Pi accepts any provider id in auth.json; extend as more ids are
+// verified against set_model / get_available_models.
+pub fn known_providers() -> Vec<String> {
+    vec!["anthropic".to_string(), "openrouter".to_string()]
+}
+
+fn read_auth_map_at(path: &Path) -> Result<Map<String, Value>, String> {
+    match std::fs::read(path) {
+        Ok(bytes) if bytes.is_empty() => Ok(Map::new()),
+        Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
+            Ok(Value::Object(map)) => Ok(map),
+            Ok(_) => Err("auth.json is not a JSON object".to_string()),
+            Err(e) => Err(format!("parse auth.json: {e}")),
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Map::new()),
+        Err(e) => Err(format!("read auth.json: {e}")),
+    }
+}
+
+fn write_auth_map_atomic_at(path: &Path, map: &Map<String, Value>) -> Result<(), String> {
+    let dir = path.parent().ok_or("auth.json path has no parent")?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+    }
+
+    let mut body = serde_json::to_vec_pretty(&Value::Object(map.clone()))
+        .map_err(|e| format!("serialize auth.json: {e}"))?;
+    body.push(b'\n');
+
+    let tmp = dir.join(format!("auth.json.tmp-{}", std::process::id()));
+    {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&tmp)
+            .map_err(|e| format!("open {}: {e}", tmp.display()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+        }
+        f.write_all(&body)
+            .and_then(|_| f.flush())
+            .and_then(|_| f.sync_all())
+            .map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("replace {}: {e}", path.display())
+    })
+}
+
+fn set_api_key_at(path: &Path, provider: &str, key: &str) -> Result<(), String> {
+    let mut map = read_auth_map_at(path)?;
+    let mut entry = Map::new();
+    entry.insert("type".to_string(), Value::String("api_key".to_string()));
+    entry.insert("key".to_string(), Value::String(key.to_string()));
+    map.insert(provider.to_string(), Value::Object(entry));
+    write_auth_map_atomic_at(path, &map)
+}
+
+fn remove_provider_at(path: &Path, provider: &str) -> Result<(), String> {
+    let mut map = read_auth_map_at(path)?;
+    if map.remove(provider).is_none() {
+        return Ok(());
+    }
+    write_auth_map_atomic_at(path, &map)
+}
+
+pub fn set_api_key(provider: &str, key: &str) -> Result<(), String> {
+    if provider.trim().is_empty() {
+        return Err("provider is required".to_string());
+    }
+    if key.trim().is_empty() {
+        return Err("API key is required".to_string());
+    }
+    set_api_key_at(&auth_path()?, provider, key.trim())
+}
+
+pub fn remove_provider(provider: &str) -> Result<(), String> {
+    if provider.trim().is_empty() {
+        return Err("provider is required".to_string());
+    }
+    remove_provider_at(&auth_path()?, provider)
+}
+
+pub fn statuses(providers: &[String]) -> Result<Vec<ProviderAuth>, String> {
+    let map = read_auth_map_at(&auth_path()?)?;
+    Ok(providers
+        .iter()
+        .map(|provider| {
+            if let Some(entry) = map.get(provider) {
+                let kind = entry
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+                    .to_string();
+                let removable = kind == "api_key";
+                return ProviderAuth {
+                    provider: provider.clone(),
+                    configured: true,
+                    kind: Some(kind),
+                    source: Some("authFile".to_string()),
+                    removable,
+                };
+            }
+            if std::env::var_os(env_var_for(provider)).is_some() {
+                return ProviderAuth {
+                    provider: provider.clone(),
+                    configured: true,
+                    kind: Some("api_key".to_string()),
+                    source: Some("environment".to_string()),
+                    removable: false,
+                };
+            }
+            ProviderAuth {
+                provider: provider.clone(),
+                configured: false,
+                kind: None,
+                source: None,
+                removable: false,
+            }
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_auth_path(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "pi-desktop-test-{}-{}-{}",
+            std::process::id(),
+            tag,
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        dir.join("auth.json")
+    }
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    #[test]
+    fn writes_api_key_entry_with_exact_schema() {
+        let path = temp_auth_path("schema");
+        set_api_key_at(&path, "openrouter", "sk-test-123").unwrap();
+        let map = read_auth_map_at(&path).unwrap();
+        let entry = map.get("openrouter").unwrap();
+        assert_eq!(entry["type"], "api_key");
+        assert_eq!(entry["key"], "sk-test-123");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn preserves_existing_oauth_entry_when_adding_api_key() {
+        let path = temp_auth_path("preserve");
+        // Seed an OAuth entry like `pi` login would write.
+        let mut seed = Map::new();
+        let mut oauth = Map::new();
+        oauth.insert("type".into(), Value::String("oauth".into()));
+        oauth.insert("access".into(), Value::String("tok-abc".into()));
+        oauth.insert("refresh".into(), Value::String("ref-xyz".into()));
+        oauth.insert("expires".into(), Value::from(123456u64));
+        seed.insert("anthropic".into(), Value::Object(oauth));
+        write_auth_map_atomic_at(&path, &seed).unwrap();
+
+        set_api_key_at(&path, "openrouter", "sk-new").unwrap();
+
+        let map = read_auth_map_at(&path).unwrap();
+        assert_eq!(map["anthropic"]["type"], "oauth");
+        assert_eq!(map["anthropic"]["access"], "tok-abc");
+        assert_eq!(map["anthropic"]["refresh"], "ref-xyz");
+        assert_eq!(map["openrouter"]["type"], "api_key");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn remove_drops_only_the_named_provider() {
+        let path = temp_auth_path("remove");
+        set_api_key_at(&path, "openrouter", "sk-a").unwrap();
+        set_api_key_at(&path, "openai", "sk-b").unwrap();
+        remove_provider_at(&path, "openrouter").unwrap();
+        let map = read_auth_map_at(&path).unwrap();
+        assert!(!map.contains_key("openrouter"));
+        assert_eq!(map["openai"]["key"], "sk-b");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn missing_file_reads_as_empty() {
+        let path = temp_auth_path("missing");
+        assert!(read_auth_map_at(&path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn env_var_name_follows_uppercase_convention() {
+        assert_eq!(env_var_for("anthropic"), "ANTHROPIC_API_KEY");
+        assert_eq!(env_var_for("openrouter"), "OPENROUTER_API_KEY");
+        assert_eq!(env_var_for("ai-gateway"), "AI_GATEWAY_API_KEY");
+    }
+}

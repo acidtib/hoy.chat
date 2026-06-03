@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+mod pi_config;
 mod reader;
 mod sidecar;
 
@@ -36,7 +37,13 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_state,
-            commands::active_session_id
+            commands::active_session_id,
+            commands::list_models,
+            commands::set_model,
+            commands::save_provider_key,
+            commands::remove_provider_key,
+            commands::provider_statuses,
+            commands::known_providers
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -43,3 +43,12 @@ export interface SessionMeta {
   id: string;
   title: string;
 }
+
+// Mirror of pi_config::ProviderAuth. Carries configured status only, never a key.
+export interface ProviderAuth {
+  provider: string;
+  configured: boolean;
+  kind?: "api_key" | "oauth" | "unknown" | null;
+  source?: "authFile" | "environment" | null;
+  removable: boolean;
+}

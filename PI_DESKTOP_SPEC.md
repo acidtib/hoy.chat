@@ -111,8 +111,12 @@ Defer: themes, keyboard shortcuts, session rename/delete polish, persistence UI.
   - errors → `{kind:"error", message}`
 
 ### Provider / key handling
-- MVP-fast path: let Pi manage `auth.json` (pass `--provider`/`--model` or use `set_model`).
-- **Correct path (do this, it's not much more):** store the API key with the **Tauri Stronghold plugin** (or OS keychain via `keyring` crate), and inject it as an env var (e.g. `ANTHROPIC_API_KEY`) when spawning the sidecar. Never write the key into renderer-accessible state or plaintext config. Pi's auth resolution checks env vars, so this works cleanly.
+Decision (M2, revised): drive Pi's own credential store rather than build a parallel one. Verified against pi-coding-agent 0.78.0:
+- Pi's RPC has **no** auth/login/set-key command. The full command set is `get_state, prompt, get_available_models, set_model, new_session, switch_session, fork, clone, steer, abort, get_session_stats, set_thinking_level, cycle_model, export_html, ...`. Credentials must exist before the sidecar can use them.
+- Pi resolves a provider key by priority: runtime `--api-key` > `auth.json` `api_key` entry > `auth.json` OAuth (auto-refreshed) > `<PROVIDER>_API_KEY` env var > `models.json` fallback. So writing `auth.json` is authoritative.
+- `auth.json` schema (`core/auth-storage.d.ts`): `Record<provider, {type:"api_key", key} | {type:"oauth", ...tokens}>`. Path resolves via `getAgentDir()`: `PI_CODING_AGENT_DIR` if set, else `~/.pi/agent/auth.json`.
+
+Implementation: `pi_config.rs` does read-modify-write of `auth.json`, writing only `{type:"api_key"}` entries and preserving any `oauth` entries; writes atomically at mode 0600. `save_provider_key` / `remove_provider_key` then respawn the active sidecar so it reloads (Pi caches auth in memory at startup). The renderer sends a key down once and never reads it back; `provider_statuses` returns configured/not-configured (`ProviderAuth`) only. The earlier keychain/Stronghold + env-injection plan was dropped: Pi already owns this store and there is no RPC to hand it a key. Tradeoff: the key sits in plaintext-0600 on disk, the same as Pi's own CLI, Codex, and Claude Code on Linux.
 
 ---
 
@@ -143,7 +147,7 @@ pi-desktop/
 │   │   ├── sidecar.rs           # SidecarManager, PiProcess, spawn + stdin
 │   │   ├── reader.rs            # JSONL reader (\n-only framing) + event mapping
 │   │   ├── commands.rs          # #[tauri::command] fns
-│   │   ├── secrets.rs           # Stronghold/keychain wrapper
+│   │   ├── pi_config.rs         # read/write Pi's auth.json (api_key entries)
 │   │   └── events.rs            # serde types for frontend-facing events
 │   ├── tauri.conf.json          # externalBin (pi sidecar), permissions
 │   └── Cargo.toml
@@ -174,7 +178,7 @@ pi-desktop/
 
 ### M2 — Provider configuration
 - Settings modal: choose provider, paste API key.
-- Store key via Stronghold/keychain (§3). Inject as env var on sidecar (re)spawn.
+- Write key into Pi's `auth.json` via `pi_config.rs` (§3), preserving `oauth` entries, atomic at 0600. Respawn the sidecar so it reloads. Never expose the key value to the renderer.
 - `list_models` command → calls Pi `get_available_models` → populate the top-bar model selector. `set_model` on selection.
 - **Acceptance:** user enters a valid key, the model dropdown populates with real models, selecting one calls `set_model` successfully. Key is not present in any plaintext file or renderer state.
 
@@ -249,4 +253,4 @@ Map each command to the corresponding Pi RPC command (`get_state`, `get_availabl
 ---
 
 ## 8. Definition of done (MVP)
-A user can: launch the app → open settings and enter an API key (stored securely) → see real models populate and pick one → type a message and watch the response stream in token-by-token → see tool calls the agent makes → and find their past session in the sidebar after a restart.
+A user can: launch the app → open settings and enter an API key (written to Pi's `auth.json`, mode 0600, never shown to the renderer) → see real models populate and pick one → type a message and watch the response stream in token-by-token → see tool calls the agent makes → and find their past session in the sidebar after a restart.
