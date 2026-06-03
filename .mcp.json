@@ -7,6 +7,10 @@
     "playwright": {
       "command": "bunx",
       "args": ["@playwright/mcp@latest", "--browser", "firefox"]
+    },
+    "tauri": {
+      "command": "bunx",
+      "args": ["@hypothesi/tauri-mcp-server"]
     }
   }
 }

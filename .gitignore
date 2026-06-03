@@ -10,8 +10,9 @@ node_modules/
 # Rust build output
 target/
 
-# Per-user Claude settings
+# Per-user Claude settings and transient state
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Frontend / Vite build output
 logs
