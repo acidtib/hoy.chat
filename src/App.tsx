@@ -5,6 +5,7 @@ import { Transcript } from "@/components/Transcript";
 import { Composer } from "@/components/Composer";
 import { ContextBar } from "@/components/ContextBar";
 import { SettingsPage } from "@/components/SettingsPage";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   activeSessionId,
   getState,
@@ -29,6 +30,7 @@ function App() {
   const setProviderAuth = useSessionStore((s) => s.setProviderAuth);
 
   const [state, setState] = useState<PiState | null>(null);
+  const [debug, setDebug] = useState<PiState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selecting, setSelecting] = useState(false);
@@ -104,15 +106,22 @@ function App() {
     }
   }, [setModels, refreshAuth]);
 
+  // Developer round-trip: toggle the raw get_state payload in the transcript.
   async function handleDebug() {
     if (!activeId) {
       setError("No active session. The sidecar may have failed to spawn.");
       return;
     }
+    if (debug) {
+      setDebug(null);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      setState(await getState(activeId));
+      const s = await getState(activeId);
+      setState(s);
+      setDebug(s);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -122,30 +131,34 @@ function App() {
 
   if (view === "settings") {
     return (
-      <SettingsPage onBack={() => setView("chat")} onConfigured={handleConfigured} />
+      <TooltipProvider delayDuration={200}>
+        <SettingsPage onBack={() => setView("chat")} onConfigured={handleConfigured} />
+      </TooltipProvider>
     );
   }
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar sessions={sessions} activeId={activeId} />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <TopBar
-            models={models}
-            currentModel={state?.model}
-            selecting={selecting}
-            onSelectModel={handleSelectModel}
-            onOpenSettings={() => setView("settings")}
-            onDebug={handleDebug}
-            busy={busy}
-          />
-          <Transcript state={state} error={error} />
-          <Composer />
+    <TooltipProvider delayDuration={200}>
+      <div className="flex h-screen flex-col bg-background text-foreground">
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar sessions={sessions} activeId={activeId} />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <TopBar
+              models={models}
+              currentModel={state?.model}
+              selecting={selecting}
+              onSelectModel={handleSelectModel}
+              onOpenSettings={() => setView("settings")}
+              onDebug={handleDebug}
+              busy={busy}
+            />
+            <Transcript debug={debug} error={error} />
+            <Composer />
+          </div>
         </div>
+        <ContextBar state={state} />
       </div>
-      <ContextBar state={state} />
-    </div>
+    </TooltipProvider>
   );
 }
 
