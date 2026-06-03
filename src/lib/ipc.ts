@@ -2,7 +2,7 @@
 // directly. Command names and arg shapes mirror src-tauri/src/commands.rs.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { ModelInfo, PiState, ProviderAuth } from "./types";
+import type { ModelInfo, PiState, ProviderAuth, ProviderInfo } from "./types";
 
 export function activeSessionId(): Promise<string | null> {
   return invoke<string | null>("active_session_id");
@@ -38,6 +38,6 @@ export function providerStatuses(providers: string[]): Promise<ProviderAuth[]> {
   return invoke<ProviderAuth[]>("provider_statuses", { providers });
 }
 
-export function knownProviders(): Promise<string[]> {
-  return invoke<string[]>("known_providers");
+export function supportedProviders(): Promise<ProviderInfo[]> {
+  return invoke<ProviderInfo[]>("supported_providers");
 }

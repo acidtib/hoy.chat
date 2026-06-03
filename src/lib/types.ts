@@ -44,6 +44,12 @@ export interface SessionMeta {
   title: string;
 }
 
+// Mirror of pi_config::ProviderInfo. The provider picker list.
+export interface ProviderInfo {
+  id: string;
+  label: string;
+}
+
 // Mirror of pi_config::ProviderAuth. Carries configured status only, never a key.
 export interface ProviderAuth {
   provider: string;

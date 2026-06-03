@@ -57,10 +57,75 @@ fn auth_path() -> Result<PathBuf, String> {
     Ok(agent_dir()?.join("auth.json"))
 }
 
-// Map a provider id to the env var Pi reads for it (uppercase + _API_KEY). Used
-// only for the secondary "configured via environment" status signal; auth.json is
-// authoritative for actually selecting a key.
+struct ProviderDef {
+    id: &'static str,
+    label: &'static str,
+    env: &'static str,
+}
+
+// API-key providers Pi supports, from pi-coding-agent 0.78.0
+// core/provider-display-names.js (BUILT_IN_PROVIDER_DISPLAY_NAMES). Excludes
+// amazon-bedrock and google-vertex, which use cloud auth (AWS creds / gcloud ADC)
+// rather than a plain api_key entry. `env` is Pi's actual env var for that
+// provider; several differ from the id (google -> GEMINI_API_KEY). Pinned to the
+// Pi version: re-verify against provider-display-names.js when bumping Pi.
+const PROVIDERS: &[ProviderDef] = &[
+    ProviderDef { id: "anthropic", label: "Anthropic", env: "ANTHROPIC_API_KEY" },
+    ProviderDef { id: "openai", label: "OpenAI", env: "OPENAI_API_KEY" },
+    ProviderDef { id: "openrouter", label: "OpenRouter", env: "OPENROUTER_API_KEY" },
+    ProviderDef { id: "google", label: "Google Gemini", env: "GEMINI_API_KEY" },
+    ProviderDef { id: "groq", label: "Groq", env: "GROQ_API_KEY" },
+    ProviderDef { id: "xai", label: "xAI", env: "XAI_API_KEY" },
+    ProviderDef { id: "deepseek", label: "DeepSeek", env: "DEEPSEEK_API_KEY" },
+    ProviderDef { id: "mistral", label: "Mistral", env: "MISTRAL_API_KEY" },
+    ProviderDef { id: "cerebras", label: "Cerebras", env: "CEREBRAS_API_KEY" },
+    ProviderDef { id: "fireworks", label: "Fireworks", env: "FIREWORKS_API_KEY" },
+    ProviderDef { id: "together", label: "Together AI", env: "TOGETHER_API_KEY" },
+    ProviderDef { id: "huggingface", label: "Hugging Face", env: "HF_TOKEN" },
+    ProviderDef { id: "azure-openai-responses", label: "Azure OpenAI Responses", env: "AZURE_OPENAI_API_KEY" },
+    ProviderDef { id: "cloudflare-ai-gateway", label: "Cloudflare AI Gateway", env: "CLOUDFLARE_API_KEY" },
+    ProviderDef { id: "cloudflare-workers-ai", label: "Cloudflare Workers AI", env: "CLOUDFLARE_API_KEY" },
+    ProviderDef { id: "vercel-ai-gateway", label: "Vercel AI Gateway", env: "AI_GATEWAY_API_KEY" },
+    ProviderDef { id: "moonshotai", label: "Moonshot AI", env: "MOONSHOT_API_KEY" },
+    ProviderDef { id: "moonshotai-cn", label: "Moonshot AI (China)", env: "MOONSHOT_CN_API_KEY" },
+    ProviderDef { id: "kimi-coding", label: "Kimi For Coding", env: "KIMI_API_KEY" },
+    ProviderDef { id: "minimax", label: "MiniMax", env: "MINIMAX_API_KEY" },
+    ProviderDef { id: "minimax-cn", label: "MiniMax (China)", env: "MINIMAX_CN_API_KEY" },
+    ProviderDef { id: "zai", label: "ZAI", env: "ZAI_API_KEY" },
+    ProviderDef { id: "opencode", label: "OpenCode Zen", env: "OPENCODE_API_KEY" },
+    ProviderDef { id: "opencode-go", label: "OpenCode Go", env: "OPENCODE_API_KEY" },
+    ProviderDef { id: "xiaomi", label: "Xiaomi MiMo", env: "XIAOMI_API_KEY" },
+    ProviderDef { id: "xiaomi-token-plan-cn", label: "Xiaomi MiMo Token Plan (China)", env: "XIAOMI_TOKEN_PLAN_CN_API_KEY" },
+    ProviderDef { id: "xiaomi-token-plan-ams", label: "Xiaomi MiMo Token Plan (Amsterdam)", env: "XIAOMI_TOKEN_PLAN_AMS_API_KEY" },
+    ProviderDef { id: "xiaomi-token-plan-sgp", label: "Xiaomi MiMo Token Plan (Singapore)", env: "XIAOMI_TOKEN_PLAN_SGP_API_KEY" },
+];
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderInfo {
+    pub id: String,
+    pub label: String,
+}
+
+// Full provider list for the settings picker. get_available_models is gated to
+// configured providers, so this is what lets a user configure their first key.
+pub fn supported_providers() -> Vec<ProviderInfo> {
+    PROVIDERS
+        .iter()
+        .map(|p| ProviderInfo {
+            id: p.id.to_string(),
+            label: p.label.to_string(),
+        })
+        .collect()
+}
+
+// Env var Pi reads for a provider key. Known providers use Pi's actual name (some
+// differ from the id); unknown ids fall back to the uppercase convention. Used
+// only for the "configured via environment" status signal.
 fn env_var_for(provider: &str) -> String {
+    if let Some(def) = PROVIDERS.iter().find(|p| p.id == provider) {
+        return def.env.to_string();
+    }
     let up: String = provider
         .chars()
         .map(|c| {
@@ -72,15 +137,6 @@ fn env_var_for(provider: &str) -> String {
         })
         .collect();
     format!("{up}_API_KEY")
-}
-
-// Providers whose ids are verified against this Pi version's catalog and which
-// ship bundled model lists. Seeds the settings picker so a first-run user (empty
-// auth.json, so get_available_models returns nothing) can still choose a provider
-// to configure. Pi accepts any provider id in auth.json; extend as more ids are
-// verified against set_model / get_available_models.
-pub fn known_providers() -> Vec<String> {
-    vec!["anthropic".to_string(), "openrouter".to_string()]
 }
 
 fn read_auth_map_at(path: &Path) -> Result<Map<String, Value>, String> {
@@ -281,9 +337,23 @@ mod tests {
     }
 
     #[test]
-    fn env_var_name_follows_uppercase_convention() {
+    fn env_var_uses_pi_names_then_falls_back() {
         assert_eq!(env_var_for("anthropic"), "ANTHROPIC_API_KEY");
-        assert_eq!(env_var_for("openrouter"), "OPENROUTER_API_KEY");
-        assert_eq!(env_var_for("ai-gateway"), "AI_GATEWAY_API_KEY");
+        // Differs from the id: google -> GEMINI, vercel-ai-gateway -> AI_GATEWAY.
+        assert_eq!(env_var_for("google"), "GEMINI_API_KEY");
+        assert_eq!(env_var_for("vercel-ai-gateway"), "AI_GATEWAY_API_KEY");
+        // Unknown id falls back to the uppercase convention.
+        assert_eq!(env_var_for("totally-unknown"), "TOTALLY_UNKNOWN_API_KEY");
+    }
+
+    #[test]
+    fn supported_providers_are_unique_and_nonempty() {
+        let list = supported_providers();
+        assert!(list.len() >= 20);
+        let mut ids: Vec<&str> = list.iter().map(|p| p.id.as_str()).collect();
+        ids.sort();
+        let count = ids.len();
+        ids.dedup();
+        assert_eq!(ids.len(), count, "provider ids must be unique");
     }
 }

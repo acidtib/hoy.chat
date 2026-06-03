@@ -4,17 +4,19 @@ import { TopBar } from "@/components/TopBar";
 import { Transcript } from "@/components/Transcript";
 import { Composer } from "@/components/Composer";
 import { ContextBar } from "@/components/ContextBar";
-import { SettingsModal } from "@/components/SettingsModal";
+import { SettingsPage } from "@/components/SettingsPage";
 import {
   activeSessionId,
   getState,
-  knownProviders,
   listModels,
   providerStatuses,
   setModel,
+  supportedProviders,
 } from "@/lib/ipc";
-import { providerOptions, useSessionStore } from "@/state/store";
+import { useSessionStore } from "@/state/store";
 import type { PiState } from "@/lib/types";
+
+type View = "chat" | "settings";
 
 function App() {
   const sessions = useSessionStore((s) => s.sessions);
@@ -23,21 +25,20 @@ function App() {
   const setSessions = useSessionStore((s) => s.setSessions);
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
   const setModels = useSessionStore((s) => s.setModels);
-  const setKnownProviders = useSessionStore((s) => s.setKnownProviders);
+  const setSupportedProviders = useSessionStore((s) => s.setSupportedProviders);
   const setProviderAuth = useSessionStore((s) => s.setProviderAuth);
 
   const [state, setState] = useState<PiState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selecting, setSelecting] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [view, setView] = useState<View>("chat");
 
   const refreshAuth = useCallback(async () => {
-    const { knownProviders: known, models } = useSessionStore.getState();
-    const providers = providerOptions(known, models);
+    const providers = useSessionStore.getState().supportedProviders;
     if (providers.length === 0) return;
     try {
-      setProviderAuth(await providerStatuses(providers));
+      setProviderAuth(await providerStatuses(providers.map((p) => p.id)));
     } catch (e) {
       setError(String(e));
     }
@@ -53,15 +54,15 @@ function App() {
         setSessions(id ? [{ id, title: "Session 1" }] : []);
         if (!id) return;
 
-        const [piState, modelList, known] = await Promise.all([
+        const [piState, modelList, providers] = await Promise.all([
           getState(id),
           listModels(),
-          knownProviders(),
+          supportedProviders(),
         ]);
         if (cancelled) return;
         setState(piState);
         setModels(modelList);
-        setKnownProviders(known);
+        setSupportedProviders(providers);
         await refreshAuth();
       } catch (e) {
         if (!cancelled) setError(String(e));
@@ -70,7 +71,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [setActiveSessionId, setSessions, setModels, setKnownProviders, refreshAuth]);
+  }, [setActiveSessionId, setSessions, setModels, setSupportedProviders, refreshAuth]);
 
   async function handleSelectModel(provider: string, modelId: string) {
     if (!activeId) return;
@@ -87,17 +88,21 @@ function App() {
   }
 
   // After a key is saved or removed the sidecar was respawned in Rust; re-read
-  // state and configured status. Models are unchanged so we keep the cached list.
+  // state and configured status. Models may change (a newly configured provider
+  // surfaces its catalog), so refresh them too.
   const handleConfigured = useCallback(async () => {
-    await refreshAuth();
-    if (activeId) {
-      try {
-        setState(await getState(activeId));
-      } catch (e) {
-        setError(String(e));
+    const id = useSessionStore.getState().activeSessionId;
+    try {
+      if (id) {
+        const [piState, modelList] = await Promise.all([getState(id), listModels()]);
+        setState(piState);
+        setModels(modelList);
       }
+      await refreshAuth();
+    } catch (e) {
+      setError(String(e));
     }
-  }, [activeId, refreshAuth]);
+  }, [setModels, refreshAuth]);
 
   async function handleDebug() {
     if (!activeId) {
@@ -115,6 +120,12 @@ function App() {
     }
   }
 
+  if (view === "settings") {
+    return (
+      <SettingsPage onBack={() => setView("chat")} onConfigured={handleConfigured} />
+    );
+  }
+
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       <div className="flex flex-1 overflow-hidden">
@@ -125,7 +136,7 @@ function App() {
             currentModel={state?.model}
             selecting={selecting}
             onSelectModel={handleSelectModel}
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={() => setView("settings")}
             onDebug={handleDebug}
             busy={busy}
           />
@@ -134,11 +145,6 @@ function App() {
         </div>
       </div>
       <ContextBar state={state} />
-      <SettingsModal
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        onConfigured={handleConfigured}
-      />
     </div>
   );
 }

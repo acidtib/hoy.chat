@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use tauri::State;
 
 use crate::events::{ModelInfo, PiState};
-use crate::pi_config::{self, ProviderAuth};
+use crate::pi_config::{self, ProviderAuth, ProviderInfo};
 use crate::sidecar::SidecarManager;
 
 // Pull `data` out of an RPC response envelope, surfacing Pi's error string on
@@ -101,8 +101,8 @@ pub fn provider_statuses(providers: Vec<String>) -> Result<Vec<ProviderAuth>, St
 }
 
 #[tauri::command]
-pub fn known_providers() -> Vec<String> {
-    pi_config::known_providers()
+pub fn supported_providers() -> Vec<ProviderInfo> {
+    pi_config::supported_providers()
 }
 
 #[tauri::command]
