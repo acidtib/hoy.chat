@@ -140,9 +140,9 @@ function App() {
   return (
     <TooltipProvider delayDuration={200}>
       <div className="flex h-screen flex-col bg-background text-foreground">
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar sessions={sessions} activeId={activeId} />
-          <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <TopBar
               models={models}
               currentModel={state?.model}

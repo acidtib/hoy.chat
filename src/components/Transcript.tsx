@@ -1,5 +1,4 @@
 import { AlertCircle, ArrowUpRight } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { PiState } from "@/lib/types";
 
 // Visual-only prompt suggestions. Wiring lands with the composer in M3.
@@ -47,8 +46,8 @@ export function Transcript({
   error: string | null;
 }) {
   return (
-    <ScrollArea className="scrollbar-thin flex-1">
-      <div className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-3xl flex-col gap-4 px-6 py-6">
+    <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-4 px-6 py-6">
         {error && (
           <div className="flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <AlertCircle className="mt-0.5 size-4 shrink-0" />
@@ -75,6 +74,6 @@ export function Transcript({
           <EmptyState />
         )}
       </div>
-    </ScrollArea>
+    </div>
   );
 }
