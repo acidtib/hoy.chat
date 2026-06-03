@@ -1,0 +1,16 @@
+[package]
+name = "m0-harness"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Throwaway M0 spike: prove a Rust process can spawn the bundled Pi sidecar
+# and round-trip get_state over JSONL. Not part of the Tauri app; deleted once
+# M1 lands the real SidecarManager.
+
+[dependencies]
+serde_json = "1"
+
+[[bin]]
+name = "m0-harness"
+path = "src/main.rs"

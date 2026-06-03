@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "shadcn": {
+      "command": "bunx",
+      "args": ["shadcn@latest", "mcp"]
+    },
+    "playwright": {
+      "command": "bunx",
+      "args": ["@playwright/mcp@latest", "--browser", "firefox"]
+    }
+  }
+}

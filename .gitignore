@@ -1,0 +1,14 @@
+# Pi sidecar build artifacts (regenerate with sidecar/build.sh)
+/sidecar/pi-*-unknown-*
+/sidecar/pi-*-apple-*
+/sidecar/pi-*-pc-windows-*
+/sidecar/pi-payload/
+
+# Dependencies
+node_modules/
+
+# Rust build output
+target/
+
+# Per-user Claude settings
+.claude/settings.local.json

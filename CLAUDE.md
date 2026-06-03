@@ -1,0 +1,43 @@
+# CLAUDE.md — Pi Desktop
+
+Project conventions and guardrails. Read `PI_DESKTOP_SPEC.md` for the full build plan, milestones, and acceptance criteria. This file is the short, always-loaded version: the decisions that must not drift.
+
+## What we're building
+A native desktop GUI for the **Pi coding agent** (`@earendil-works/pi-coding-agent`). Tauri v2 shell + React/TS webview + Pi running as a **spawned sidecar** over its RPC (JSONL-over-stdio) protocol. Same three-layer architecture as OpenAI's Codex desktop app (renderer → Rust main → spawned agent CLI), deliberately.
+
+## Non-negotiable decisions (do NOT re-litigate)
+- **Stack is fixed:** Tauri v2 (Rust core), React + TypeScript + Vite, Bun as the frontend package manager/bundler. Do not propose Electron, swap frameworks, or "simplify" by changing this. The tradeoffs were already worked through.
+- **UI is shadcn/ui + AI Elements** (`elements.ai-sdk.dev`), a shadcn-based registry of AI-app blocks (Conversation, Message, Prompt Input, Tool, Model Selector, Context, etc.). Use them as the component foundation.
+- **Do NOT install or wire up the Vercel AI SDK.** AI Elements is *designed* to pair with the AI SDK (`useChat`, its streaming hooks), but we are not using it — tokens stream from Pi over the Tauri Channel as our own `AgentEvent` type. Use AI Elements blocks as **presentational shadcn components driven by our state**. Never `npm install ai` / `@ai-sdk/*` or bind components to `useChat`; that reintroduces an in-process agent data layer we explicitly rejected. Quarantine any AI-SDK prop-shape adaptation in a thin mapper in `lib/`.
+- **Do NOT embed Pi in-process.** Pi runs as a separate spawned process we talk to over stdin/stdout. This is intentional — it matches shipping products and keeps multi-agent orchestration clean. Never reimplement Pi's agent logic in Rust or TS.
+- **Streaming uses a Tauri `Channel`, never `emit`/`listen`.** Tauri's event system is not for high-throughput streaming; channels are. Token deltas go over a channel.
+- **Sidecar state is keyed by `sessionId` from day one**, even though the MVP has one session. This is what keeps the orchestration endgame open. Do not hardcode a single-session assumption anywhere.
+
+## Critical technical landmines
+- **JSONL framing:** Pi's RPC is strict JSONL delimited by `\n` ONLY. Do NOT use a line reader that splits on Unicode separators (U+2028 / U+2029) — they are valid inside JSON strings and will corrupt messages. Split on `\n` in Rust, strip a trailing `\r`. There must be a unit test for this against a payload containing U+2028 inside a string value.
+- **API keys never touch plaintext or the renderer.** Store via Tauri Stronghold plugin or OS keychain; inject as an env var when spawning the sidecar. Pi resolves keys from env vars, so this works cleanly.
+- **Pin Pi's version exactly.** Its SDK/RPC surface is still evolving. Confirm exact RPC command names and fields against the installed version before relying on them — the names in the spec are from docs and must be verified.
+
+## Working process
+- **Build milestones in order (M0 → M4).** Do not start a milestone until the previous one's acceptance criteria (in the spec) pass.
+- **M0 first, always.** The sidecar-packaging spike (turning Pi's Node CLI into a self-contained binary) is the highest risk. Prove it works with a no-UI round-trip before building anything else. If it can't be made to work, stop and surface the fallback options — do not plow ahead.
+- **Commit at every milestone boundary** with a message naming the milestone and what now works.
+- **Keep frontend and backend contracts in sync.** The `AgentEvent` union and command signatures (spec §6) are the source of truth shared between Rust `events.rs` and TS `types.ts`. Change both together.
+
+## Code conventions
+- Rust: keep sidecar/process logic in `sidecar.rs` + `reader.rs`; `#[tauri::command]` fns in `commands.rs`; secrets isolated in `secrets.rs`. Prefer `Result` returns and surface errors to the frontend as structured events, not panics.
+- TS: typed wrappers around `invoke()` live in `lib/ipc.ts`; never call `invoke` with stringly-typed args scattered through components. Shared types in `lib/types.ts` mirror the Rust event/command shapes.
+- UI: match the reference layout (sidebar of sessions / top bar with model + settings / streaming transcript / composer). Render the session list even when there's one session.
+
+## Writing style and output rules
+- No emojis anywhere: not in code, comments, docs, commit messages, or any output.
+- No em-dashes (--). Use a comma, semicolon, or rewrite the sentence.
+- No over-summarizing. Do not recap what you just did at the end of a response. Do not add closing paragraphs restating the changes. The diff speaks for itself.
+- Code comments: facts, decisions, and the why only. No narration of what the code does. No multi-line comment blocks explaining obvious logic.
+- Git commits: no Co-Authored-By trailers. Plain commit messages only.
+
+## Out of scope for MVP (note as TODOs, don't build)
+Themes, keyboard shortcuts, session rename/delete polish, Windows code signing, the multi-session orchestration dashboard. The architecture must not *block* these, but they are not MVP work.
+
+## Definition of done (MVP)
+Launch → enter API key (stored securely) → real models populate and one is selectable → type a message and watch it stream token-by-token → see tool calls render → past session appears in the sidebar after restart.
