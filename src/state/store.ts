@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { SEEDED_THREAD_ID } from "@/lib/mock-conversation";
 import type {
   ModelInfo,
   Project,
@@ -25,7 +26,7 @@ function seedProjects(): Project[] {
       name: "hoy",
       threads: [
         {
-          id: "t_hoy_1",
+          id: SEEDED_THREAD_ID,
           title: "lets work on ticket HOY-28",
           updatedAt: now - 3 * WEEK,
           sessionId: null,

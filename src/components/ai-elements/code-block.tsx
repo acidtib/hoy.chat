@@ -17,6 +17,7 @@ import { createHighlighterCore, type HighlighterCore } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import jsonLang from "@shikijs/langs/json";
 import tsLang from "@shikijs/langs/typescript";
+import diffLang from "@shikijs/langs/diff";
 import oneLight from "@shikijs/themes/one-light";
 import oneDarkPro from "@shikijs/themes/one-dark-pro";
 
@@ -29,7 +30,7 @@ function getHighlighter() {
   if (!highlighterPromise) {
     highlighterPromise = createHighlighterCore({
       themes: [oneLight, oneDarkPro],
-      langs: [jsonLang, tsLang],
+      langs: [jsonLang, tsLang, diffLang],
       engine: createJavaScriptRegexEngine(),
     });
   }
