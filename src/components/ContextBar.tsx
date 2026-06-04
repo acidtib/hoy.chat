@@ -30,7 +30,7 @@ export function ContextBar({ state }: { state: PiState | null }) {
   }
 
   return (
-    <footer className="flex h-9 shrink-0 items-stretch border-t border-border bg-sidebar text-[11px] text-muted-foreground">
+    <footer className="flex h-8 shrink-0 items-stretch border-t border-border bg-sidebar text-[11px] text-muted-foreground">
       {collapsed ? (
         <div className="flex items-center pl-1.5">
           <FooterIconButton
