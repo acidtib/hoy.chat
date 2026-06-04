@@ -14,6 +14,9 @@ target/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
+# Playwright MCP verification artifacts
+.playwright-mcp/
+
 # Frontend / Vite build output
 logs
 *.log

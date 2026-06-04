@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { HomePage } from "@/components/HomePage";
-import { TopBar } from "@/components/TopBar";
-import { Transcript } from "@/components/Transcript";
-import { Composer } from "@/components/Composer";
+import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
 import { SettingsPage } from "@/components/SettingsPage";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -153,19 +151,17 @@ function App() {
               onSelectModel={handleSelectModel}
             />
           ) : (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <TopBar
-                models={models}
-                currentModel={state?.model}
-                selecting={selecting}
-                onSelectModel={handleSelectModel}
-                onOpenSettings={() => setSettingsOpen(true)}
-                onDebug={handleDebug}
-                busy={busy}
-              />
-              <Transcript debug={debug} error={error} />
-              <Composer />
-            </div>
+            <ThreadView
+              models={models}
+              currentModel={state?.model}
+              selecting={selecting}
+              onSelectModel={handleSelectModel}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onDebug={handleDebug}
+              busy={busy}
+              debug={debug}
+              error={error}
+            />
           )}
         </div>
         <ContextBar state={state} />

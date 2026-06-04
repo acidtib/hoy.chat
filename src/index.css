@@ -3,6 +3,11 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
+/* Streamdown renders markdown with Tailwind utility classes baked into its
+   compiled JS; Tailwind v4 only scans our own source by default, so register it
+   as a source or its code blocks, tables, and lists render unstyled. */
+@source "../node_modules/streamdown/dist";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
