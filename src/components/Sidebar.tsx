@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   MoreHorizontal,
@@ -20,6 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn, formatRelativeTime } from "@/lib/utils";
+import { useGlobalDrag } from "@/lib/useGlobalDrag";
 import { pickDirectory } from "@/lib/ipc";
 import { useSessionStore } from "@/state/store";
 import type { Project, Thread } from "@/lib/types";
@@ -27,11 +28,14 @@ import type { Project, Thread } from "@/lib/types";
 export function Sidebar() {
   const projects = useSessionStore((s) => s.projects);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
-  const setActiveThreadId = useSessionStore((s) => s.setActiveThreadId);
+  const panels = useSessionStore((s) => s.panels);
+  const openThread = useSessionStore((s) => s.openThread);
   const addProject = useSessionStore((s) => s.addProject);
   const addThread = useSessionStore((s) => s.addThread);
   const removeProject = useSessionStore((s) => s.removeProject);
   const sidebarWidth = useSessionStore((s) => s.sidebarWidth);
+
+  const openIds = useMemo(() => new Set(panels.map((p) => p.id)), [panels]);
 
   async function handleOpenProject() {
     const dir = await pickDirectory();
@@ -90,8 +94,9 @@ export function Sidebar() {
                     key={project.id}
                     project={project}
                     activeThreadId={activeThreadId}
+                    openIds={openIds}
                     searching={normalized.length > 0}
-                    onSelectThread={setActiveThreadId}
+                    onSelectThread={openThread}
                     onNewThread={() => addThread(project.id)}
                     onRemove={() => removeProject(project.id)}
                   />
@@ -126,38 +131,21 @@ function SidebarEmptyState({ onOpenProject }: { onOpenProject: () => void }) {
   );
 }
 
-// Drag the sidebar's right edge to resize; the store clamps to min/max. Listeners
-// and the global drag cursor live in an effect keyed on `dragging`, so they tear
-// down on pointerup/cancel AND on unmount (e.g. the sidebar collapses mid-drag) -
-// never leaking past the drag or leaving the cursor stuck.
+// Drag the sidebar's right edge to resize; the store clamps to min/max. The drag
+// lifecycle (window listeners + body cursor, torn down on pointerup/cancel and on
+// unmount) lives in the shared useGlobalDrag hook.
 function ResizeHandle() {
   const setSidebarWidth = useSessionStore((s) => s.setSidebarWidth);
-  const [dragging, setDragging] = useState(false);
   const dragStart = useRef({ x: 0, width: 0 });
-
-  useEffect(() => {
-    if (!dragging) return;
-    function onMove(ev: PointerEvent) {
-      setSidebarWidth(dragStart.current.width + (ev.clientX - dragStart.current.x));
-    }
-    function stop() {
-      setDragging(false);
-    }
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", stop);
-    window.addEventListener("pointercancel", stop);
-    const prevCursor = document.body.style.cursor;
-    const prevSelect = document.body.style.userSelect;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", stop);
-      window.removeEventListener("pointercancel", stop);
-      document.body.style.cursor = prevCursor;
-      document.body.style.userSelect = prevSelect;
-    };
-  }, [dragging, setSidebarWidth]);
+  const onMove = useCallback(
+    (ev: PointerEvent) => {
+      setSidebarWidth(
+        dragStart.current.width + (ev.clientX - dragStart.current.x),
+      );
+    },
+    [setSidebarWidth],
+  );
+  const { dragging, startDrag } = useGlobalDrag(onMove);
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     e.preventDefault();
@@ -165,7 +153,7 @@ function ResizeHandle() {
       x: e.clientX,
       width: useSessionStore.getState().sidebarWidth,
     };
-    setDragging(true);
+    startDrag();
   }
 
   return (
@@ -188,6 +176,7 @@ function ResizeHandle() {
 function ProjectGroup({
   project,
   activeThreadId,
+  openIds,
   searching,
   onSelectThread,
   onNewThread,
@@ -195,6 +184,7 @@ function ProjectGroup({
 }: {
   project: Project;
   activeThreadId: string | null;
+  openIds: Set<string>;
   searching: boolean;
   onSelectThread: (id: string) => void;
   onNewThread: () => void;
@@ -268,6 +258,7 @@ function ProjectGroup({
                 key={thread.id}
                 thread={thread}
                 active={thread.id === activeThreadId}
+                open={openIds.has(thread.id)}
                 onSelect={() => onSelectThread(thread.id)}
               />
             ))
@@ -281,10 +272,12 @@ function ProjectGroup({
 function ThreadRow({
   thread,
   active,
+  open,
   onSelect,
 }: {
   thread: Thread;
   active: boolean;
+  open: boolean;
   onSelect: () => void;
 }) {
   return (
@@ -294,13 +287,15 @@ function ThreadRow({
         "group flex w-full cursor-pointer items-start gap-2 rounded-md py-1.5 pl-3 pr-2 text-left transition-colors",
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "text-sidebar-foreground hover:bg-sidebar-accent/50",
+          : open
+            ? "bg-sidebar-accent/40 text-sidebar-foreground hover:bg-sidebar-accent/60"
+            : "text-sidebar-foreground hover:bg-sidebar-accent/50",
       )}
     >
       <Sparkle
         className={cn(
           "mt-0.5 size-3.5 shrink-0",
-          active ? "text-brand" : "text-muted-foreground",
+          active || open ? "text-brand" : "text-muted-foreground",
         )}
       />
       <span className="min-w-0 flex-1">

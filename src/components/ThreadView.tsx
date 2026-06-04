@@ -11,6 +11,7 @@ import {
   Settings,
   Sparkle,
   Terminal,
+  X,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,9 @@ import type { ModelInfo, PiState } from "@/lib/types";
 import { getMockTurns, type MockTool } from "@/lib/mock-conversation";
 
 export function ThreadView({
+  threadId,
+  active,
+  onClose,
   models,
   currentModel,
   selecting,
@@ -59,6 +63,9 @@ export function ThreadView({
   debug,
   error,
 }: {
+  threadId: string;
+  active: boolean;
+  onClose: () => void;
   models: ModelInfo[];
   currentModel?: ModelInfo | null;
   selecting: boolean;
@@ -70,19 +77,18 @@ export function ThreadView({
   error: string | null;
 }) {
   const projects = useSessionStore((s) => s.projects);
-  const activeThreadId = useSessionStore((s) => s.activeThreadId);
   const addThread = useSessionStore((s) => s.addThread);
   const [draft, setDraft] = useState("");
 
   const { title, projectId } = useMemo(() => {
     for (const p of projects) {
-      const t = p.threads.find((thread) => thread.id === activeThreadId);
+      const t = p.threads.find((thread) => thread.id === threadId);
       if (t) return { title: t.title, projectId: p.id };
     }
     return { title: "New thread", projectId: null as string | null };
-  }, [projects, activeThreadId]);
+  }, [projects, threadId]);
 
-  const turns = getMockTurns(activeThreadId);
+  const turns = getMockTurns(threadId);
   const hasMessages = turns.length > 0;
 
   const composer = (
@@ -105,7 +111,12 @@ export function ThreadView({
           type="button"
           className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
         >
-          <Sparkle className="size-4 shrink-0 text-brand" />
+          <Sparkle
+            className={cn(
+              "size-4 shrink-0",
+              active ? "text-brand" : "text-muted-foreground",
+            )}
+          />
           <span className="truncate text-sm font-medium text-foreground">
             {title}
           </span>
@@ -158,6 +169,20 @@ export function ThreadView({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
+                onClick={onClose}
+                aria-label="Close panel"
+              >
+                <X className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Close panel</TooltipContent>
+          </Tooltip>
         </div>
       </header>
 
