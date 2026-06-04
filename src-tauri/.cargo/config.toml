@@ -1,0 +1,7 @@
+# WebKitGTK on Wayland hits "Error 71 (Protocol error)" via the DMA-BUF
+# renderer on many Linux setups; disabling it lets the window come up.
+# These vars are read only by WebKitGTK (Linux); macOS/Windows ignore them.
+# Not forced, so a contributor can override them in their own environment.
+[env]
+WEBKIT_DISABLE_DMABUF_RENDERER = "1"
+WEBKIT_DISABLE_COMPOSITING_MODE = "1"
