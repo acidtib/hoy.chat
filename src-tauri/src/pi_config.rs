@@ -275,7 +275,7 @@ mod tests {
 
     fn temp_auth_path(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "pi-desktop-test-{}-{}-{}",
+            "hoy-desktop-test-{}-{}-{}",
             std::process::id(),
             tag,
             COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)

@@ -31,8 +31,8 @@ pub fn run() {
             // is keyed by SessionId so adding more is a data change, not a rewrite.
             let manager = tauri::Manager::state::<SidecarManager>(app);
             match manager.spawn_session() {
-                Ok(id) => eprintln!("[pi-desktop] sidecar session ready: {id}"),
-                Err(e) => eprintln!("[pi-desktop] sidecar spawn failed: {e}"),
+                Ok(id) => eprintln!("[hoy-desktop] sidecar session ready: {id}"),
+                Err(e) => eprintln!("[hoy-desktop] sidecar spawn failed: {e}"),
             }
             Ok(())
         })

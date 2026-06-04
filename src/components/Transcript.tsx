@@ -12,7 +12,7 @@ function EmptyState() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
       <div className="flex size-14 items-center justify-center rounded-2xl bg-brand/10 ring-1 ring-inset ring-brand/20">
-        <span className="text-3xl leading-none text-brand">&#960;</span>
+        <span className="text-2xl font-semibold leading-none text-brand">H</span>
       </div>
       <h1 className="mt-5 text-xl font-semibold tracking-tight text-foreground">
         Start a conversation

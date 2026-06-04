@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Pi Desktop",
+  "productName": "Hoy Desktop",
   "version": "0.1.0",
-  "identifier": "dev.pi-desktop.app",
+  "identifier": "dev.hoy-desktop.app",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Pi Desktop",
+        "title": "Hoy Desktop",
         "width": 1100,
         "height": 720,
         "minWidth": 880,
