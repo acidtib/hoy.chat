@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   CornerDownLeft,
   Folder,
@@ -29,6 +29,16 @@ export function HomePage({
 }) {
   const projects = useSessionStore((s) => s.projects);
   const [draft, setDraft] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Grow the textarea to fit its content (up to a cap), then scroll. CSS
+  // field-sizing isn't supported in the Tauri WebKit webview, so size in JS.
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [draft]);
 
   // Most recently active project labels the composer's project chip.
   const projectName = useMemo(() => {
@@ -60,7 +70,7 @@ export function HomePage({
 
         <div className="flex-1" />
 
-        <div className="pb-3">
+        <div className="pb-2">
           <div className="flex items-center gap-1.5 pb-2">
             <Chip icon={Monitor} label="Local" />
             <Chip icon={Folder} label={projectName ?? "No project"} />
@@ -69,17 +79,19 @@ export function HomePage({
             <Chip icon={SquareDashed} label="worktree" />
           </div>
 
-          <div className="relative rounded-2xl border border-border bg-card/60 shadow-sm transition-colors focus-within:border-ring/60">
+          <div className="relative rounded-xl border border-border bg-card/50 shadow-sm transition-colors focus-within:border-ring/60">
             <textarea
+              ref={textareaRef}
+              rows={1}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              rows={1}
               placeholder="Describe a task or ask a question"
-              className="block max-h-48 w-full resize-none bg-transparent px-4 py-3.5 pr-12 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
+              className="scrollbar-thin block w-full resize-none overflow-y-auto bg-transparent py-3 pl-4 pr-12 text-sm leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
             <Button
+              variant="secondary"
               size="icon-sm"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg"
+              className="absolute bottom-2 right-2 rounded-lg"
               disabled={!draft.trim()}
               aria-label="Send"
             >
