@@ -55,7 +55,7 @@ export function HomePage({ onOpenSettings }: { onOpenSettings: () => void }) {
                     <button
                       onClick={() => setActiveThreadId(thread.id)}
                       className={cn(
-                        "group flex w-full items-center gap-3 rounded-xl border border-border bg-card/50 px-4 py-3 text-left transition-colors hover:border-ring/50 hover:bg-card",
+                        "group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-card/50 px-4 py-3 text-left transition-colors hover:border-ring/50 hover:bg-card",
                       )}
                     >
                       <Sparkle className="size-4 shrink-0 text-muted-foreground" />

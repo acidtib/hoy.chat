@@ -18,6 +18,7 @@ export function ContextBar({ state }: { state: PiState | null }) {
   const collapsed = useSessionStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useSessionStore((s) => s.toggleSidebar);
   const addProject = useSessionStore((s) => s.addProject);
+  const sidebarWidth = useSessionStore((s) => s.sidebarWidth);
 
   const model = state?.model?.id ?? "no model";
   const streaming = state?.isStreaming ?? false;
@@ -41,7 +42,10 @@ export function ContextBar({ state }: { state: PiState | null }) {
           </FooterIconButton>
         </div>
       ) : (
-        <div className="flex w-64 shrink-0 items-center gap-0.5 border-r border-border px-1.5">
+        <div
+          style={{ width: sidebarWidth }}
+          className="flex shrink-0 items-center gap-0.5 border-r border-border px-1.5"
+        >
           <FooterIconButton label="Toggle Sidebar" onClick={toggleSidebar}>
             <PanelLeftClose className="size-4" />
           </FooterIconButton>

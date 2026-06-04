@@ -9,6 +9,10 @@ import type {
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 
+export const SIDEBAR_MIN_WIDTH = 220;
+export const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_DEFAULT_WIDTH = 256;
+
 // Seed projects so the sidebar is tangible while project/thread persistence is
 // still a frontend-only concept. Replaced by real data when the backend grows a
 // projects/threads store (next milestone).
@@ -47,6 +51,7 @@ interface SessionStore {
   projects: Project[];
   activeThreadId: string | null;
   sidebarCollapsed: boolean;
+  sidebarWidth: number;
   activeSessionId: string | null;
   models: ModelInfo[];
   supportedProviders: ProviderInfo[];
@@ -54,6 +59,7 @@ interface SessionStore {
 
   setActiveThreadId: (id: string | null) => void;
   toggleSidebar: () => void;
+  setSidebarWidth: (width: number) => void;
   addProject: (path: string) => void;
   addThread: (projectId: string) => string;
   removeProject: (projectId: string) => void;
@@ -68,6 +74,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   projects: seedProjects(),
   activeThreadId: null,
   sidebarCollapsed: false,
+  sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   activeSessionId: null,
   models: [],
   supportedProviders: [],
@@ -75,6 +82,13 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setActiveThreadId: (id) => set({ activeThreadId: id }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setSidebarWidth: (width) =>
+    set({
+      sidebarWidth: Math.min(
+        SIDEBAR_MAX_WIDTH,
+        Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)),
+      ),
+    }),
   addProject: (path) => {
     const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
     set((s) => {

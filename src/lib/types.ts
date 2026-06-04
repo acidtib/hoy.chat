@@ -39,11 +39,6 @@ export interface PiState {
   autoCompactionEnabled: boolean;
 }
 
-export interface SessionMeta {
-  id: string;
-  title: string;
-}
-
 // UI-only grouping. Not backed by Pi's RPC yet: a thread maps to a Pi session and
 // a project to a working directory once persistence lands (next milestone). Kept
 // here so the sidebar renders from typed state, not ad hoc shapes.
