@@ -1,9 +1,4 @@
-import {
-  Clock,
-  FolderPlus,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from "lucide-react";
+import { Clock, FolderPlus, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -38,7 +33,7 @@ export function ContextBar({ state }: { state: PiState | null }) {
       {collapsed ? (
         <div className="flex items-center pl-1.5">
           <FooterIconButton
-            label="Expand sidebar"
+            label="Open Threads Sidebar"
             tooltipSide="right"
             onClick={toggleSidebar}
           >
@@ -47,14 +42,14 @@ export function ContextBar({ state }: { state: PiState | null }) {
         </div>
       ) : (
         <div className="flex w-64 shrink-0 items-center gap-0.5 border-r border-border px-1.5">
-          <FooterIconButton label="Collapse sidebar" onClick={toggleSidebar}>
+          <FooterIconButton label="Toggle Sidebar" onClick={toggleSidebar}>
             <PanelLeftClose className="size-4" />
           </FooterIconButton>
-          <FooterIconButton label="Thread history">
+          <FooterIconButton label="Show Thread History">
             <Clock className="size-4" />
           </FooterIconButton>
           <FooterIconButton
-            label="Add project"
+            label="Add Project"
             className="ml-auto"
             onClick={handleAddProject}
           >
