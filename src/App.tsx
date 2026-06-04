@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
+import { HomePage } from "@/components/HomePage";
 import { TopBar } from "@/components/TopBar";
 import { Transcript } from "@/components/Transcript";
 import { Composer } from "@/components/Composer";
@@ -17,13 +18,11 @@ import {
 import { useSessionStore } from "@/state/store";
 import type { PiState } from "@/lib/types";
 
-type View = "chat" | "settings";
-
 function App() {
-  const sessions = useSessionStore((s) => s.sessions);
+  const activeThreadId = useSessionStore((s) => s.activeThreadId);
+  const sidebarCollapsed = useSessionStore((s) => s.sidebarCollapsed);
   const activeId = useSessionStore((s) => s.activeSessionId);
   const models = useSessionStore((s) => s.models);
-  const setSessions = useSessionStore((s) => s.setSessions);
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
   const setModels = useSessionStore((s) => s.setModels);
   const setSupportedProviders = useSessionStore((s) => s.setSupportedProviders);
@@ -34,7 +33,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selecting, setSelecting] = useState(false);
-  const [view, setView] = useState<View>("chat");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const refreshAuth = useCallback(async () => {
     const providers = useSessionStore.getState().supportedProviders;
@@ -53,7 +52,6 @@ function App() {
         const id = await activeSessionId();
         if (cancelled) return;
         setActiveSessionId(id);
-        setSessions(id ? [{ id, title: "Session 1" }] : []);
         if (!id) return;
 
         const [piState, modelList, providers] = await Promise.all([
@@ -73,7 +71,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [setActiveSessionId, setSessions, setModels, setSupportedProviders, refreshAuth]);
+  }, [setActiveSessionId, setModels, setSupportedProviders, refreshAuth]);
 
   async function handleSelectModel(provider: string, modelId: string) {
     if (!activeId) return;
@@ -129,10 +127,13 @@ function App() {
     }
   }
 
-  if (view === "settings") {
+  if (settingsOpen) {
     return (
       <TooltipProvider delayDuration={200}>
-        <SettingsPage onBack={() => setView("chat")} onConfigured={handleConfigured} />
+        <SettingsPage
+          onBack={() => setSettingsOpen(false)}
+          onConfigured={handleConfigured}
+        />
       </TooltipProvider>
     );
   }
@@ -140,21 +141,26 @@ function App() {
   return (
     <TooltipProvider delayDuration={200}>
       <div className="flex h-screen flex-col bg-background text-foreground">
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          <Sidebar sessions={sessions} activeId={activeId} />
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <TopBar
-              models={models}
-              currentModel={state?.model}
-              selecting={selecting}
-              onSelectModel={handleSelectModel}
-              onOpenSettings={() => setView("settings")}
-              onDebug={handleDebug}
-              busy={busy}
-            />
-            <Transcript debug={debug} error={error} />
-            <Composer />
-          </div>
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          {!sidebarCollapsed && <Sidebar />}
+
+          {activeThreadId === null ? (
+            <HomePage onOpenSettings={() => setSettingsOpen(true)} />
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <TopBar
+                models={models}
+                currentModel={state?.model}
+                selecting={selecting}
+                onSelectModel={handleSelectModel}
+                onOpenSettings={() => setSettingsOpen(true)}
+                onDebug={handleDebug}
+                busy={busy}
+              />
+              <Transcript debug={debug} error={error} />
+              <Composer />
+            </div>
+          )}
         </div>
         <ContextBar state={state} />
       </div>

@@ -2,7 +2,15 @@
 // directly. Command names and arg shapes mirror src-tauri/src/commands.rs.
 
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { ModelInfo, PiState, ProviderAuth, ProviderInfo } from "./types";
+
+// Native directory picker for adding a project. Returns the chosen absolute path,
+// or null if the user cancels.
+export async function pickDirectory(): Promise<string | null> {
+  const selected = await open({ directory: true, multiple: false });
+  return typeof selected === "string" ? selected : null;
+}
 
 export function activeSessionId(): Promise<string | null> {
   return invoke<string | null>("active_session_id");

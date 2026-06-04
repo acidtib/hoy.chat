@@ -10,6 +10,7 @@ use sidecar::SidecarManager;
 pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(SidecarManager::new());
 
     // Dev-only automation bridge for the Tauri MCP server (screenshots, clicks,
