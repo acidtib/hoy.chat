@@ -72,6 +72,20 @@ export function Section({
   );
 }
 
+export function StatusDot({ on = true }: { on?: boolean }) {
+  return (
+    <span
+      className={
+        "size-2 shrink-0 rounded-full " +
+        (on
+          ? "bg-emerald-500 shadow-[0_0_0_3px] shadow-emerald-500/15"
+          : "bg-muted-foreground/40")
+      }
+      aria-hidden
+    />
+  );
+}
+
 function Field({
   label,
   hint,
@@ -588,15 +602,7 @@ function McpPanel() {
               className="flex items-center justify-between gap-3 rounded-md border border-border bg-card/50 px-4 py-3"
             >
               <div className="flex min-w-0 items-center gap-3">
-                <span
-                  className={
-                    "size-2 shrink-0 rounded-full " +
-                    (s.status === "connected"
-                      ? "bg-emerald-500 shadow-[0_0_0_3px] shadow-emerald-500/15"
-                      : "bg-muted-foreground/40")
-                  }
-                  aria-hidden
-                />
+                <StatusDot on={s.status === "connected"} />
                 <span className="truncate text-sm font-medium">{s.name}</span>
               </div>
               <div className="flex shrink-0 items-center gap-2">

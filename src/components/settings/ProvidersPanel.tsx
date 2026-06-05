@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import { refreshProviderData } from "@/lib/refresh";
 import { useSessionStore } from "@/state/store";
 import { cn } from "@/lib/utils";
 import type { ProviderAuth, ProviderInfo } from "@/lib/types";
-import { PanelHeader, Section } from "./panels";
+import { PanelHeader, Section, StatusDot } from "./panels";
 import {
   OAUTH_PROVIDERS,
   metaFor,
@@ -63,12 +63,19 @@ function ProviderRow({
   auth,
   expanded,
   onToggle,
+  onClose,
   onChanged,
 }: {
   info: ProviderInfo;
   auth: ProviderAuth | undefined;
   expanded: boolean;
   onToggle: () => void;
+  // Collapses this row only if it is still the expanded one; a plain toggle
+  // here would re-expand the row (or steal expansion from another row) when
+  // the user changed expansion while the save was in flight.
+  onClose: () => void;
+  // Never rejects; refresh failures surface panel-level so a row error always
+  // means the save/remove itself failed.
   onChanged: () => Promise<void>;
 }) {
   const meta = metaFor(info.id, info.label);
@@ -76,15 +83,13 @@ function ProviderRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSave() {
-    if (busy || !key.trim()) return;
+  async function run(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
     try {
-      await saveProviderKey(info.id, key.trim());
-      setKey("");
+      await action();
       await onChanged();
-      onToggle();
+      onClose();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -92,17 +97,17 @@ function ProviderRow({
     }
   }
 
+  async function handleSave() {
+    if (busy || !key.trim()) return;
+    await run(async () => {
+      await saveProviderKey(info.id, key.trim());
+      setKey("");
+    });
+  }
+
   async function handleRemove() {
-    setBusy(true);
-    setError(null);
-    try {
-      await removeProviderKey(info.id);
-      await onChanged();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
+    if (busy) return;
+    await run(() => removeProviderKey(info.id));
   }
 
   return (
@@ -123,10 +128,7 @@ function ProviderRow({
         </div>
         {auth?.configured && (
           <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-            <span
-              className="size-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px] shadow-emerald-500/15"
-              aria-hidden
-            />
+            <StatusDot />
             {statusLabel(auth)}
           </span>
         )}
@@ -206,11 +208,24 @@ export function ProvidersPanel() {
   const providerAuth = useSessionStore((s) => s.providerAuth);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Cheap; picks up env var changes and the no-session boot path.
-  useEffect(() => {
-    void refreshProviderData();
+  // Catches into panel-level state instead of rejecting: rows await this as
+  // onChanged after a successful save/remove, and a refresh failure must not
+  // masquerade as a failed save.
+  const refresh = useCallback(async () => {
+    try {
+      await refreshProviderData();
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(String(e));
+    }
   }, []);
+
+  // Cheap; picks up the no-session boot path.
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   const authOf = useMemo(() => {
     const map = new Map(providerAuth.map((a) => [a.provider, a]));
@@ -231,7 +246,8 @@ export function ProvidersPanel() {
       onToggle={() =>
         setExpandedId((cur) => (cur === info.id ? null : info.id))
       }
-      onChanged={refreshProviderData}
+      onClose={() => setExpandedId((cur) => (cur === info.id ? null : cur))}
+      onChanged={refresh}
     />
   );
 
@@ -241,6 +257,7 @@ export function ProvidersPanel() {
         title="Providers"
         description="Connect a model provider to start chatting. Keys are stored locally and never shown again."
       />
+      {loadError && <p className="text-xs text-destructive">{loadError}</p>}
 
       <ConnectAccountSection />
 

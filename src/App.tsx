@@ -13,13 +13,7 @@ import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import {
-  activeSessionId,
-  getState,
-  listModels,
-  setModel,
-  supportedProviders,
-} from "@/lib/ipc";
+import { activeSessionId, getState, setModel } from "@/lib/ipc";
 import { refreshProviderData } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
@@ -38,8 +32,6 @@ function App() {
   const closePanel = useSessionStore((s) => s.closePanel);
   const focusPanel = useSessionStore((s) => s.openThread);
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
-  const setModels = useSessionStore((s) => s.setModels);
-  const setSupportedProviders = useSessionStore((s) => s.setSupportedProviders);
   const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
 
   // Restore the persisted projects -> threads tree on boot (then autosave kicks in).
@@ -75,14 +67,6 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [selecting, setSelecting] = useState(false);
 
-  const refreshAuth = useCallback(async () => {
-    try {
-      await refreshProviderData();
-    } catch (e) {
-      setError(String(e));
-    }
-  }, []);
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -90,18 +74,16 @@ function App() {
         const id = await activeSessionId();
         if (cancelled) return;
         setActiveSessionId(id);
-        if (!id) return;
 
-        const [piState, modelList, providers] = await Promise.all([
-          getState(id),
-          listModels(),
-          supportedProviders(),
+        // Provider/auth/model hydration is owned by refreshProviderData; the
+        // providers and statuses are sessionless, so it runs with no session
+        // too (first-key setup). Only getState needs the session.
+        const [piState] = await Promise.all([
+          id ? getState(id) : Promise.resolve(null),
+          refreshProviderData(),
         ]);
         if (cancelled) return;
-        setState(piState);
-        setModels(modelList);
-        setSupportedProviders(providers);
-        await refreshAuth();
+        if (piState) setState(piState);
       } catch (e) {
         if (!cancelled) setError(String(e));
       }
@@ -109,7 +91,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [setActiveSessionId, setModels, setSupportedProviders, refreshAuth]);
+  }, [setActiveSessionId]);
 
   async function handleSelectModel(provider: string, modelId: string) {
     if (!activeId) return;

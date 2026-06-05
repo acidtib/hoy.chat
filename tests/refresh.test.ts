@@ -87,6 +87,16 @@ describe("refreshProviderData", () => {
     expect(providerStatuses).toHaveBeenCalledWith(["anthropic", "google"]);
   });
 
+  test("propagates a real listModels failure (timeout, crash) instead of swallowing it", async () => {
+    useSessionStore.setState({ supportedProviders: PROVIDERS });
+    providerStatuses.mockResolvedValue(AUTH);
+    listModels.mockRejectedValue(new Error("sidecar request timed out after 15s"));
+
+    await expect(refreshProviderData()).rejects.toThrow("timed out");
+    // The independent statuses fetch still landed.
+    expect(useSessionStore.getState().providerAuth).toEqual(AUTH);
+  });
+
   test("swallows a listModels failure; auth still refreshes, models untouched", async () => {
     useSessionStore.setState({ supportedProviders: PROVIDERS });
     providerStatuses.mockResolvedValue(AUTH);

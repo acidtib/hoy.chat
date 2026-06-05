@@ -15,9 +15,17 @@
 //   auth.json = Record<provider, {type:"api_key", key} | {type:"oauth", ...tokens}>
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
+
+// Serializes auth.json mutations. save/remove are async Tauri commands that can
+// interleave; without this, one read-modify-write working from a stale snapshot
+// drops the other's entry, and concurrent writers collide on the shared
+// process-id tmp file. Reads stay lock-free: the atomic rename guarantees they
+// see a complete old or new file.
+static AUTH_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
 const ENV_AGENT_DIR: &str = "HOY_AGENT_DIR";
 
@@ -213,6 +221,7 @@ fn write_auth_map_atomic_at(path: &Path, map: &Map<String, Value>) -> Result<(),
 }
 
 fn set_api_key_at(path: &Path, provider: &str, key: &str) -> Result<(), String> {
+    let _guard = AUTH_MUTATION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut map = read_auth_map_at(path)?;
     let mut entry = Map::new();
     entry.insert("type".to_string(), Value::String("api_key".to_string()));
@@ -222,6 +231,7 @@ fn set_api_key_at(path: &Path, provider: &str, key: &str) -> Result<(), String> 
 }
 
 fn remove_provider_at(path: &Path, provider: &str) -> Result<(), String> {
+    let _guard = AUTH_MUTATION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut map = read_auth_map_at(path)?;
     if map.remove(provider).is_none() {
         return Ok(());
@@ -344,6 +354,33 @@ mod tests {
         let map = read_auth_map_at(&path).unwrap();
         assert!(!map.contains_key("openrouter"));
         assert_eq!(map["openai"]["key"], "sk-b");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn concurrent_mutations_do_not_lose_updates() {
+        // save_provider_key / remove_provider_key are async Tauri commands and
+        // can interleave; the read-modify-write must be serialized or a writer
+        // working from a stale snapshot drops the other's entry.
+        let path = temp_auth_path("race");
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    set_api_key_at(&path, &format!("provider-{i}"), &format!("sk-{i}")).unwrap();
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let map = read_auth_map_at(&path).unwrap();
+        for i in 0..8 {
+            assert!(
+                map.contains_key(&format!("provider-{i}")),
+                "lost update: provider-{i} missing after concurrent writes"
+            );
+        }
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

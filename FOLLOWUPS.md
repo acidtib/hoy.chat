@@ -94,11 +94,10 @@ thinking models.
 ## OAuth identity edge (Claude Pro/Max system prompt validation)
 
 Status: open
-Depends on: the SDK-sidecar pivot (`systemPromptOverride`)
-Introduced: SDK-sidecar pivot
 
 ### Context
-The pivot rebrands identity via `DefaultResourceLoader.systemPromptOverride` ("you are Hoy").
+The SDK-sidecar pivot (landed, a68dae5) rebrands identity via
+`DefaultResourceLoader.systemPromptOverride` ("you are Hoy").
 But for Claude Pro/Max OAuth, Anthropic's subscription endpoint validates that `system[0]` is the
 canonical `"You are Claude Code, Anthropic's official CLI for Claude."` string. `systemPromptOverride`
 affects the *discovered* system prompt (system[1]+), not `system[0]` — but we must not break that
