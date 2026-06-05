@@ -12,7 +12,7 @@ SIDECAR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRIPLE="${1:-$(rustc -vV | sed -n 's/^host: //p')}"
 PKG_DIR="$SIDECAR_DIR/pi-src/node_modules/@earendil-works/pi-coding-agent"
 DIST="$PKG_DIR/dist"
-ENTRY="$DIST/bun/cli.js"          # Pi's bun-binary entry (sandbox env restore + bedrock)
+ENTRY="$SIDECAR_DIR/pi-src/hoy-sidecar.ts"   # our SDK entry (runRpcMode + branding), not Pi's CLI
 BIN="$SIDECAR_DIR/pi-$TRIPLE"
 PAYLOAD="$SIDECAR_DIR/pi-payload"
 
@@ -20,7 +20,11 @@ echo "[1/3] installing pinned Pi into sidecar/pi-src"
 ( cd "$SIDECAR_DIR/pi-src" && npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund )
 
 if [ ! -f "$ENTRY" ]; then
-  echo "ERROR: bun entry not found at $ENTRY (Pi layout changed?)" >&2
+  echo "ERROR: sidecar entry not found at $ENTRY" >&2
+  exit 1
+fi
+if [ ! -d "$DIST" ]; then
+  echo "ERROR: pi SDK not found at $DIST (run npm ci in sidecar/pi-src; Pi layout changed?)" >&2
   exit 1
 fi
 

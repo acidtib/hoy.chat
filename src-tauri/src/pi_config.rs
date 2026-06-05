@@ -1,22 +1,25 @@
-// Drives Pi's own credential store (~/.pi/agent/auth.json) instead of inventing a
-// parallel secret store. Rationale: Pi's RPC has no auth command, and Pi's
-// getApiKey resolves auth.json (api_key entries) above environment variables, so
-// writing the file is the authoritative way to configure a provider from the GUI.
-// We only ever write or remove {type:"api_key"} entries; OAuth entries (written by
-// `pi` login) are read-modify-write preserved untouched. Key values never leave
-// Rust: the renderer receives only configured/not-configured status.
+// Drives Pi's credential store (auth.json) instead of inventing a parallel secret
+// store. Rationale: Pi's RPC has no auth command, and Pi's getApiKey resolves
+// auth.json (api_key entries) above environment variables, so writing the file is
+// the authoritative way to configure a provider from the GUI. We only ever write
+// or remove {type:"api_key"} entries; OAuth entries (written by a `pi`/Hoy login)
+// are read-modify-write preserved untouched. Key values never leave Rust: the
+// renderer receives only configured/not-configured status.
+//
+// Branded, isolated dir: Hoy uses ~/.hoy/agent, NOT ~/.pi, so it never touches a
+// user's stock pi install. Rust writes auth.json here; the sidecar reads the same
+// dir because sidecar.rs passes it as PI_CODING_AGENT_DIR (the env our SDK entry
+// honors). Override with HOY_AGENT_DIR (tests / power users).
 //
 // Schema (verified against pi-coding-agent 0.78.0 core/auth-storage.d.ts):
 //   auth.json = Record<provider, {type:"api_key", key} | {type:"oauth", ...tokens}>
-// Path resolution mirrors config.js getAgentDir(): PI_CODING_AGENT_DIR if set,
-// else <home>/.pi/agent.
 
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-const ENV_AGENT_DIR: &str = "PI_CODING_AGENT_DIR";
+const ENV_AGENT_DIR: &str = "HOY_AGENT_DIR";
 
 // Auth status surfaced to the renderer. Never carries a key value.
 #[derive(Debug, Clone, Serialize)]
@@ -45,11 +48,21 @@ fn home_dir() -> Option<PathBuf> {
 }
 
 pub fn agent_dir() -> Result<PathBuf, String> {
-    if let Some(dir) = std::env::var_os(ENV_AGENT_DIR).filter(|d| !d.is_empty()) {
-        return Ok(PathBuf::from(dir));
+    agent_dir_from(
+        std::env::var_os(ENV_AGENT_DIR)
+            .filter(|d| !d.is_empty())
+            .map(PathBuf::from),
+        home_dir(),
+    )
+}
+
+// Pure resolution split out so the branded-path logic is testable without
+// mutating process env. HOY_AGENT_DIR override wins; otherwise <home>/.hoy/agent.
+fn agent_dir_from(override_dir: Option<PathBuf>, home: Option<PathBuf>) -> Result<PathBuf, String> {
+    if let Some(dir) = override_dir.filter(|d| !d.as_os_str().is_empty()) {
+        return Ok(dir);
     }
-    home_dir()
-        .map(|h| h.join(".pi").join("agent"))
+    home.map(|h| h.join(".hoy").join("agent"))
         .ok_or_else(|| "cannot resolve home directory".to_string())
 }
 
@@ -344,6 +357,29 @@ mod tests {
         assert_eq!(env_var_for("vercel-ai-gateway"), "AI_GATEWAY_API_KEY");
         // Unknown id falls back to the uppercase convention.
         assert_eq!(env_var_for("totally-unknown"), "TOTALLY_UNKNOWN_API_KEY");
+    }
+
+    #[test]
+    fn agent_dir_defaults_to_branded_hoy_dir() {
+        let resolved = agent_dir_from(None, Some(PathBuf::from("/home/u"))).unwrap();
+        assert_eq!(resolved, PathBuf::from("/home/u/.hoy/agent"));
+    }
+
+    #[test]
+    fn agent_dir_override_wins_and_empty_is_ignored() {
+        let overridden =
+            agent_dir_from(Some(PathBuf::from("/custom/dir")), Some(PathBuf::from("/home/u")))
+                .unwrap();
+        assert_eq!(overridden, PathBuf::from("/custom/dir"));
+
+        let empty_ignored =
+            agent_dir_from(Some(PathBuf::new()), Some(PathBuf::from("/home/u"))).unwrap();
+        assert_eq!(empty_ignored, PathBuf::from("/home/u/.hoy/agent"));
+    }
+
+    #[test]
+    fn agent_dir_errors_without_home() {
+        assert!(agent_dir_from(None, None).is_err());
     }
 
     #[test]

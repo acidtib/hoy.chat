@@ -22,9 +22,9 @@ pub type SessionId = String;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
-// A single spawned `pi --mode rpc` child plus the machinery to issue
-// request/response RPC commands against it. Unsolicited events (no `id`) are
-// dropped in M1; M3 routes them to a per-session Tauri Channel.
+// A single spawned sidecar child (our SDK entry running Pi's runRpcMode) plus
+// the machinery to issue request/response RPC commands against it. Unsolicited
+// events (no `id`) are dropped in M1; M3 routes them to a per-session Channel.
 pub struct PiProcess {
     child: Mutex<Child>,
     stdin: Mutex<ChildStdin>,
@@ -33,11 +33,22 @@ pub struct PiProcess {
 }
 
 impl PiProcess {
-    fn spawn(bin: &Path, payload: &Path, cwd: &Path) -> Result<Arc<PiProcess>, String> {
+    fn spawn(
+        bin: &Path,
+        payload: &Path,
+        agent_dir: &Path,
+        cwd: &Path,
+    ) -> Result<Arc<PiProcess>, String> {
+        if agent_dir.as_os_str().is_empty() {
+            return Err("agent dir not resolved (set HOME or HOY_AGENT_DIR)".into());
+        }
         let mut child = Command::new(bin)
-            // --no-session is M1-only; M4 drops it so Pi persists sessions.
-            .args(["--mode", "rpc", "--no-session", "--offline", "--no-context-files"])
+            // No CLI flags: this is our SDK entry (hoy-sidecar.ts), not Pi's CLI.
+            // Its behaviors (in-memory sessions, no context files) are baked into
+            // the entry. PI_CODING_AGENT_DIR points the entry at our branded dir
+            // for auth.json / models.json / settings.json.
             .env("PI_PACKAGE_DIR", payload)
+            .env("PI_CODING_AGENT_DIR", agent_dir)
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -156,18 +167,27 @@ pub struct SidecarManager {
     handle_counter: AtomicUsize,
     bin: PathBuf,
     payload: PathBuf,
+    // Branded agent dir (~/.hoy/agent by default), passed to each sidecar as
+    // PI_CODING_AGENT_DIR. Resolved once here; the same dir Rust writes auth.json
+    // to in pi_config, so Rust and the sidecar agree on credentials.
+    agent_dir: PathBuf,
     cwd: PathBuf,
 }
 
 impl SidecarManager {
     pub fn new() -> Self {
         let (bin, payload) = resolve_sidecar_paths();
+        let agent_dir = crate::pi_config::agent_dir().unwrap_or_else(|e| {
+            eprintln!("[hoy-desktop] could not resolve agent dir: {e}");
+            PathBuf::new()
+        });
         Self {
             sessions: Mutex::new(HashMap::new()),
             active: Mutex::new(None),
             handle_counter: AtomicUsize::new(1),
             bin,
             payload,
+            agent_dir,
             cwd: std::env::temp_dir(),
         }
     }
@@ -181,7 +201,7 @@ impl SidecarManager {
                 self.bin.display()
             ));
         }
-        let proc = PiProcess::spawn(&self.bin, &self.payload, &self.cwd)?;
+        let proc = PiProcess::spawn(&self.bin, &self.payload, &self.agent_dir, &self.cwd)?;
         let id = format!("s{}", self.handle_counter.fetch_add(1, Ordering::Relaxed));
         self.sessions.lock().unwrap().insert(id.clone(), proc);
         let mut active = self.active.lock().unwrap();
@@ -212,7 +232,7 @@ impl SidecarManager {
                 self.bin.display()
             ));
         }
-        let proc = PiProcess::spawn(&self.bin, &self.payload, &self.cwd)?;
+        let proc = PiProcess::spawn(&self.bin, &self.payload, &self.agent_dir, &self.cwd)?;
         let old = {
             let mut sessions = self.sessions.lock().unwrap();
             if !sessions.contains_key(id) {
