@@ -87,9 +87,11 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
         if (part.type === "text" && typeof part.text === "string") {
           a.text += part.text;
         } else if (part.type === "thinking" && typeof part.thinking === "string") {
+          // Pi transcripts carry no thinking duration; leave seconds unset so
+          // the trigger renders its static finished label instead of the
+          // duration-0 shimmer.
           a.reasoning = {
             text: (a.reasoning?.text ?? "") + part.thinking,
-            seconds: 0,
           };
         } else if (part.type === "toolCall" && typeof part.id === "string") {
           a.tools.push({

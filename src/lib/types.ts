@@ -58,7 +58,7 @@ export type Turn =
   | { role: "user"; text: string }
   | {
       role: "assistant";
-      reasoning?: { text: string; seconds: number };
+      reasoning?: { text: string; seconds?: number };
       tools: ToolUI[];
       text: string;
       streaming: boolean;
