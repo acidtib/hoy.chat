@@ -83,6 +83,7 @@ export function ThreadView({
   const selectModel = useSessionStore((s) => s.selectModel);
   const [draft, setDraft] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const { title, projectId, threadModel } = useMemo(() => {
     const found = findThread(projects, threadId);
@@ -113,9 +114,11 @@ export function ThreadView({
       onSelectModel={(provider, modelId) =>
         void selectModel(threadId, provider, modelId)
       }
-      fill={!hasMessages}
+      fill={!hasMessages || expanded}
       autoFocus={!hasMessages}
       disabled={streaming}
+      expanded={expanded}
+      onToggleExpand={hasMessages ? () => setExpanded((v) => !v) : undefined}
     />
   );
 
@@ -286,7 +289,14 @@ export function ThreadView({
             <ConversationScrollButton />
           </Conversation>
 
-          <div className="shrink-0 border-t border-border">{composer}</div>
+          <div
+            className={cn(
+              "shrink-0 border-t border-border",
+              expanded && "flex h-[90%] flex-col",
+            )}
+          >
+            {composer}
+          </div>
         </>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col px-3 pb-2 pt-1">

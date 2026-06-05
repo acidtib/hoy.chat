@@ -3,6 +3,7 @@ import {
   AtSign,
   ChevronDown,
   Maximize2,
+  Minimize2,
   Plus,
   SendHorizontal,
 } from "lucide-react";
@@ -14,6 +15,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ModelInfo, ModelRef } from "@/lib/types";
 
@@ -36,6 +42,8 @@ export function Composer({
   placeholder = "Message  ·  @ to include context, / for commands",
   autoFocus = false,
   disabled = false,
+  expanded = false,
+  onToggleExpand,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -48,15 +56,22 @@ export function Composer({
   placeholder?: string;
   autoFocus?: boolean;
   disabled?: boolean;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mode, setMode] = useState(MODES[0]);
   const [thinking, setThinking] = useState("High");
 
   useLayoutEffect(() => {
-    if (fill) return;
     const el = textareaRef.current;
     if (!el) return;
+    // In fill mode the textarea is sized by flex; a stale inline height from
+    // docked mode would fight it.
+    if (fill) {
+      el.style.height = "";
+      return;
+    }
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [value, fill]);
@@ -72,15 +87,29 @@ export function Composer({
 
   return (
     <div className={cn("relative flex min-h-0 flex-col", fill && "h-full")}>
-      {!fill && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="absolute right-1.5 top-1.5 size-7 text-muted-foreground"
-          aria-label="Expand"
-        >
-          <Maximize2 className="size-3.5" />
-        </Button>
+      {onToggleExpand && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="absolute right-1.5 top-1.5 size-7 text-muted-foreground"
+              onClick={onToggleExpand}
+              aria-label={
+                expanded ? "Minimize Message Editor" : "Expand Message Editor"
+              }
+            >
+              {expanded ? (
+                <Minimize2 className="size-3.5" />
+              ) : (
+                <Maximize2 className="size-3.5" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {expanded ? "Minimize Message Editor" : "Expand Message Editor"}
+          </TooltipContent>
+        </Tooltip>
       )}
 
       <textarea
@@ -95,7 +124,10 @@ export function Composer({
         className={cn(
           "scrollbar-thin w-full resize-none bg-transparent pl-4 pt-3.5 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:outline-none",
           fill
-            ? "min-h-0 flex-1 overflow-y-auto pr-4"
+            ? cn(
+                "min-h-0 flex-1 overflow-y-auto",
+                onToggleExpand ? "pr-10" : "pr-4",
+              )
             : "max-h-[240px] min-h-[80px] overflow-y-auto pr-10",
         )}
       />
