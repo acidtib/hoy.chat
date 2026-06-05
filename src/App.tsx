@@ -17,10 +17,10 @@ import {
   activeSessionId,
   getState,
   listModels,
-  providerStatuses,
   setModel,
   supportedProviders,
 } from "@/lib/ipc";
+import { refreshProviderData } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
 import { useSessionStore } from "@/state/store";
@@ -40,7 +40,6 @@ function App() {
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
   const setModels = useSessionStore((s) => s.setModels);
   const setSupportedProviders = useSessionStore((s) => s.setSupportedProviders);
-  const setProviderAuth = useSessionStore((s) => s.setProviderAuth);
   const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
 
   // Restore the persisted projects -> threads tree on boot (then autosave kicks in).
@@ -77,14 +76,12 @@ function App() {
   const [selecting, setSelecting] = useState(false);
 
   const refreshAuth = useCallback(async () => {
-    const providers = useSessionStore.getState().supportedProviders;
-    if (providers.length === 0) return;
     try {
-      setProviderAuth(await providerStatuses(providers.map((p) => p.id)));
+      await refreshProviderData();
     } catch (e) {
       setError(String(e));
     }
-  }, [setProviderAuth]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
