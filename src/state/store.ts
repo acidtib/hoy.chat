@@ -159,8 +159,15 @@ interface SessionStore {
   // Widths in panels stay untouched so exiting restores the exact layout.
   // Not persisted.
   expandedThreadId: string | null;
+  // One-shot composer focus request, set by openThread (a user asking to see
+  // the thread) and consumed by ThreadView/Composer in an effect. The nonce
+  // makes repeat clicks on the same thread re-fire. focusPanel (a pointer
+  // landing inside a panel) never sets it, so in-panel clicks cannot yank
+  // focus into the composer. Not persisted.
+  focusRequest: { threadId: string; nonce: number } | null;
 
   openThread: (id: string) => void;
+  focusPanel: (id: string) => void;
   closePanel: (id: string) => void;
   setDraft: (threadId: string, value: string) => void;
   toggleFullScreen: (threadId: string) => void;
@@ -223,6 +230,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   threadErrors: {},
   drafts: {},
   expandedThreadId: null,
+  focusRequest: null,
 
   // Open the thread in a panel, or just focus it if it's already open. A
   // persisted thread (has a sessionFile, no live sidecar, nothing loaded) is
@@ -233,17 +241,26 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // to see something else.
       const expandedThreadId =
         s.expandedThreadId === id ? s.expandedThreadId : null;
+      const focusRequest = {
+        threadId: id,
+        nonce: (s.focusRequest?.nonce ?? 0) + 1,
+      };
       if (s.panels.some((p) => p.id === id))
-        return { activeThreadId: id, expandedThreadId };
+        return { activeThreadId: id, expandedThreadId, focusRequest };
       const { panels, width } = placeNewPanel(s.panels, s.bodyWidth);
       return {
         panels: [...panels, { id, width }],
         activeThreadId: id,
         expandedThreadId,
+        focusRequest,
       };
     });
     void get().hydrateThread(id);
   },
+
+  // Pointer-down focus inside an open panel: active accent only, no composer
+  // focus and no full screen change.
+  focusPanel: (id) => set({ activeThreadId: id }),
 
   closePanel: (id) => {
     // Kill-on-close: tear down the live sidecar and drop the cached transcript so
@@ -298,6 +315,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         modelSelecting,
         drafts: discard ? remainingDrafts : s.drafts,
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
+        focusRequest: s.focusRequest?.threadId === id ? null : s.focusRequest,
         projects: discard
           ? s.projects.map((p) => ({
               ...p,
@@ -314,6 +332,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   toggleFullScreen: (threadId) =>
     set((s) => ({
       expandedThreadId: s.expandedThreadId === threadId ? null : threadId,
+      // Entering or exiting full screen remounts panels; drop any pending
+      // request so the remount cannot replay it.
+      focusRequest: null,
     })),
 
   setBodyWidth: (width) =>
