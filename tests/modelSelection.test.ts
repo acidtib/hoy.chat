@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { Thread } from "@/lib/types";
 
-// Mock the ipc module before anything imports it. The mock carries every export
-// the store needs at import time; the named ones drive these tests.
+import { mockIpcModule } from "./ipcMock";
+
+// Named mocks these tests assert against; the shared helper fills in the rest
+// of the ipc surface the store needs at import time.
 const setModel =
   mock<(sessionId: string, provider: string, modelId: string) => Promise<unknown>>();
 const createSession = mock<() => Promise<string>>();
@@ -10,27 +12,7 @@ const getState = mock<(sessionId: string) => Promise<unknown>>();
 const sendPrompt = mock<() => Promise<void>>();
 const getMessages = mock<() => Promise<unknown[]>>();
 
-mock.module("@/lib/ipc", () => ({
-  Channel: class {},
-  setModel,
-  createSession,
-  getState,
-  sendPrompt,
-  getMessages,
-  abort: mock(),
-  activeSessionId: mock(),
-  closeSession: mock(),
-  deleteSessionFile: mock(),
-  getSessionStats: mock(),
-  listModels: mock(),
-  loadWorkspace: mock(),
-  pickDirectory: mock(),
-  providerStatuses: mock(),
-  removeProviderKey: mock(),
-  saveProviderKey: mock(),
-  saveWorkspace: mock(),
-  supportedProviders: mock(),
-}));
+mockIpcModule({ setModel, createSession, getState, sendPrompt, getMessages });
 
 const { useSessionStore } = await import("@/state/store");
 
@@ -215,6 +197,34 @@ describe("applyThreadModel at spawn", () => {
       provider: "anthropic",
       id: "claude-opus-4-8",
     });
+  });
+});
+
+describe("applyThreadModel failure recovery", () => {
+  test("a failed apply is retried on the next prompt instead of poisoning the guard", async () => {
+    seed({ sessionId: null, model: { provider: "groq", id: "llama-3.3-70b" } });
+    createSession.mockResolvedValue("sess_apply_retry");
+    getState.mockRejectedValueOnce(new Error("rpc timeout"));
+
+    await useSessionStore.getState().submitPrompt("t1", "hello");
+    expect(sendPrompt).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().threadErrors["t1"]).toContain("rpc timeout");
+
+    // The transient failure clears; the retry must re-apply the pick.
+    getState.mockResolvedValue({
+      model: { provider: "anthropic", id: "claude-opus-4-8" },
+    });
+    setModel.mockResolvedValue({});
+    sendPrompt.mockResolvedValue(undefined);
+
+    await useSessionStore.getState().submitPrompt("t1", "hello again");
+
+    expect(setModel).toHaveBeenCalledWith(
+      "sess_apply_retry",
+      "groq",
+      "llama-3.3-70b",
+    );
+    expect(sendPrompt).toHaveBeenCalledTimes(1);
   });
 });
 

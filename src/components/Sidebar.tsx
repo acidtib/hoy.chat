@@ -21,6 +21,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { InlineRename } from "@/components/InlineRename";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
 import { pickDirectory } from "@/lib/ipc";
@@ -300,19 +301,22 @@ function ThreadRow({
   const renameThread = useSessionStore((s) => s.renameThread);
   const archiveThread = useSessionStore((s) => s.archiveThread);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-
-  function commit() {
-    renameThread(thread.id, draft);
-    setEditing(false);
-  }
 
   // A div, not a button: the hover actions nest inside the clickable row.
+  // tabIndex + keydown keep it keyboard-reachable like the button it replaced.
   return (
     <div
       role="button"
+      tabIndex={0}
       onClick={() => {
         if (!editing) onSelect();
+      }}
+      onKeyDown={(e) => {
+        if (editing || e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
       }}
       className={cn(
         "group flex w-full cursor-pointer items-start gap-2 rounded-md py-1.5 pl-3 pr-2 text-left transition-colors",
@@ -331,18 +335,11 @@ function ThreadRow({
       />
       <span className="min-w-0 flex-1">
         {editing ? (
-          <input
-            value={draft}
-            autoFocus
-            onFocus={(e) => e.currentTarget.select()}
-            onChange={(e) => setDraft(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commit();
-              if (e.key === "Escape") setEditing(false);
-            }}
-            className="block w-full rounded border border-border bg-background/60 px-1 text-sm leading-tight text-foreground focus:outline-none"
+          <InlineRename
+            initial={thread.title}
+            onCommit={(value) => renameThread(thread.id, value)}
+            onClose={() => setEditing(false)}
+            className="block w-full text-sm leading-tight"
           />
         ) : (
           <span className="block truncate text-sm leading-tight">
@@ -364,7 +361,6 @@ function ThreadRow({
                 className="size-6 text-muted-foreground hover:text-foreground"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setDraft(thread.title);
                   setEditing(true);
                 }}
                 aria-label="Rename thread"

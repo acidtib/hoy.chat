@@ -229,7 +229,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // reopening re-spawns and reloads from disk. The durable sessionFile stays on
     // the thread, so the conversation is not lost.
     const live = findThread(get().projects, id)?.thread.sessionId;
-    if (live) void closeSession(live);
+    if (live) releaseSession(live);
     // Abandon the streaming channel so the killed sidecar's trailing error/done
     // events are ignored rather than re-populating this thread's state.
     activeChannels.delete(id);
@@ -339,7 +339,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // Tear down any live sidecars the project's threads are running.
     const removed = get().projects.find((p) => p.id === projectId);
     for (const t of removed?.threads ?? []) {
-      if (t.sessionId) void closeSession(t.sessionId);
+      if (t.sessionId) releaseSession(t.sessionId);
     }
     set((s) => {
       const ids = new Set(removed?.threads.map((t) => t.id) ?? []);
@@ -375,27 +375,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       threadErrors: { ...s.threadErrors, [threadId]: null },
     }));
     try {
-      if (thread.sessionId) {
-        await setModel(thread.sessionId, provider, modelId);
-        // Pi persists the pick as the global defaultModel on every set_model,
-        // so mirror that here for threads still showing the default.
-        set((s) => ({
-          defaultModel: pick,
-          projects: patchThread(s.projects, threadId, (th) => ({
-            ...th,
-            model: pick,
-          })),
-        }));
-      } else {
-        // Defer, don't spawn: the pick is applied by the session-spawn path.
-        // defaultModel stays; Pi hasn't persisted anything yet.
-        set((s) => ({
-          projects: patchThread(s.projects, threadId, (th) => ({
-            ...th,
-            model: pick,
-          })),
-        }));
-      }
+      // Live session: apply to the sidecar first so a rejection leaves model
+      // state untouched. No session: defer, don't spawn; the pick is applied
+      // by the session-spawn path. defaultModel mirrors Pi, which persists the
+      // pick globally on set_model but knows nothing of a deferred pick.
+      if (thread.sessionId) await setModel(thread.sessionId, provider, modelId);
+      set((s) => ({
+        ...(thread.sessionId ? { defaultModel: pick } : null),
+        projects: patchThread(s.projects, threadId, (th) => ({
+          ...th,
+          model: pick,
+        })),
+      }));
     } catch (e) {
       set((s) => ({
         threadErrors: { ...s.threadErrors, [threadId]: String(e) },
@@ -622,7 +613,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   deleteThread: (threadId) => {
     const thread = findThread(get().projects, threadId)?.thread;
-    if (thread?.sessionId) void closeSession(thread.sessionId);
+    if (thread?.sessionId) releaseSession(thread.sessionId);
     if (thread?.sessionFile) void deleteSessionFile(thread.sessionFile);
     get().closePanel(threadId);
     set((s) => ({
@@ -660,9 +651,17 @@ function acquireSession(
 
 // Idempotence: submitPrompt and hydrateThread both call this after the deduped
 // acquireSession resolves; the Set is marked synchronously so a concurrent
-// second call returns while the first is still in flight. Session ids are never
-// reused, so no cleanup is needed.
+// second call returns while the first is still in flight, and unmarked on
+// failure so the next prompt retries the reconcile (a poisoned guard would
+// silently send prompts on whatever model the session has). Pruned on session
+// close via releaseSession.
 const modelApplied = new Set<string>();
+
+// Tear down a live sidecar and the per-session guard entry that goes with it.
+function releaseSession(sessionId: string): void {
+  modelApplied.delete(sessionId);
+  void closeSession(sessionId);
+}
 
 // Reconcile the thread's pending model pick with a freshly available session.
 // get_state gives the session truth; set_model fires only when the pick differs
@@ -676,31 +675,38 @@ async function applyThreadModel(
   modelApplied.add(sessionId);
 
   const store = useSessionStore;
-  const pick = findThread(store.getState().projects, threadId)?.thread.model ?? null;
-  const piState = await getState(sessionId);
-  const truth: ModelRef | null = piState.model
-    ? { provider: piState.model.provider, id: piState.model.id }
-    : null;
-
   const setThreadModel = (model: ModelRef | null) =>
     store.setState((s) => ({
       projects: patchThread(s.projects, threadId, (th) => ({ ...th, model })),
     }));
 
-  if (!pick) {
-    if (truth) setThreadModel(truth);
-    return;
-  }
-  if (truth && truth.provider === pick.provider && truth.id === pick.id) return;
-
   try {
-    await setModel(sessionId, pick.provider, pick.id);
-    // Pi persisted the pick as the global defaultModel; mirror it.
-    store.setState({ defaultModel: pick });
+    const pick =
+      findThread(store.getState().projects, threadId)?.thread.model ?? null;
+    const piState = await getState(sessionId);
+    const truth: ModelRef | null = piState.model
+      ? { provider: piState.model.provider, id: piState.model.id }
+      : null;
+
+    if (!pick) {
+      if (truth) setThreadModel(truth);
+      return;
+    }
+    if (truth && truth.provider === pick.provider && truth.id === pick.id)
+      return;
+
+    try {
+      await setModel(sessionId, pick.provider, pick.id);
+      // Pi persisted the pick as the global defaultModel; mirror it.
+      store.setState({ defaultModel: pick });
+    } catch (e) {
+      // Revert to the session truth so the selector snaps back; a re-pick on
+      // the now-live session goes through selectModel directly.
+      setThreadModel(truth);
+      throw e;
+    }
   } catch (e) {
-    // Revert to the session truth so the selector snaps back and a
-    // retry-after-fix starts clean.
-    setThreadModel(truth);
+    modelApplied.delete(sessionId);
     throw e;
   }
 }
@@ -749,8 +755,8 @@ useSessionStore.subscribe((state, prev) => {
 });
 
 // Locate a thread and its owning project by id. Threads live nested under
-// projects; this is the one traversal submitPrompt/refreshStats share.
-function findThread(
+// projects; the one traversal shared by store actions and components.
+export function findThread(
   projects: Project[],
   threadId: string,
 ): { thread: Thread; project: Project } | null {

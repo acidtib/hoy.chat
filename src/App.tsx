@@ -64,6 +64,15 @@ function App() {
     panelCount.current = panels.length;
   }, [panels.length]);
 
+  // Re-sync the slices when panels change without a scroll event: closing
+  // panels makes both containers clamp scrollLeft independently (to different
+  // values), and a footer remount starts at 0 while the strip keeps its offset.
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    const el = footerSlicesRef.current;
+    if (strip && el) el.scrollLeft = strip.scrollLeft;
+  }, [panels]);
+
   const [debug, setDebug] = useState<PiState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

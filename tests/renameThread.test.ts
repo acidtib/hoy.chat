@@ -1,28 +1,9 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { mockIpcModule } from "./ipcMock";
 
-// Mock the ipc module before anything imports it; the store needs the full
-// export surface at import time but none of it is exercised here.
-mock.module("@/lib/ipc", () => ({
-  Channel: class {},
-  abort: mock(),
-  activeSessionId: mock(),
-  closeSession: mock(),
-  createSession: mock(),
-  deleteSessionFile: mock(),
-  getMessages: mock(),
-  getSessionStats: mock(),
-  getState: mock(),
-  listModels: mock(),
-  loadWorkspace: mock(),
-  pickDirectory: mock(),
-  providerStatuses: mock(),
-  removeProviderKey: mock(),
-  saveProviderKey: mock(),
-  saveWorkspace: mock(),
-  sendPrompt: mock(),
-  setModel: mock(),
-  supportedProviders: mock(),
-}));
+// None of the ipc surface is exercised here; the store just needs it mocked
+// at import time.
+mockIpcModule();
 
 const { useSessionStore } = await import("@/state/store");
 

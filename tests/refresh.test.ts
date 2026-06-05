@@ -1,33 +1,14 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ModelInfo, ProviderAuth, ProviderInfo } from "@/lib/types";
+import { mockIpcModule } from "./ipcMock";
 
-// Mock the ipc module before anything imports it. The mock carries every export
-// the store needs at import time, but only the three provider calls matter here.
+// Named mocks for the three provider calls under test; the shared helper fills
+// in the rest of the ipc surface the store needs at import time.
 const listModels = mock<() => Promise<ModelInfo[]>>();
 const providerStatuses = mock<(ids: string[]) => Promise<ProviderAuth[]>>();
 const supportedProviders = mock<() => Promise<ProviderInfo[]>>();
 
-mock.module("@/lib/ipc", () => ({
-  Channel: class {},
-  listModels,
-  providerStatuses,
-  supportedProviders,
-  closeSession: mock(),
-  createSession: mock(),
-  deleteSessionFile: mock(),
-  getMessages: mock(),
-  getSessionStats: mock(),
-  loadWorkspace: mock(),
-  saveWorkspace: mock(),
-  sendPrompt: mock(),
-  abort: mock(),
-  activeSessionId: mock(),
-  getState: mock(),
-  pickDirectory: mock(),
-  removeProviderKey: mock(),
-  saveProviderKey: mock(),
-  setModel: mock(),
-}));
+mockIpcModule({ listModels, providerStatuses, supportedProviders });
 
 const { useSessionStore } = await import("@/state/store");
 const { refreshProviderData } = await import("@/lib/refresh");

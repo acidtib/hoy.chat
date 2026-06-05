@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { GitBranch, Minus, Settings, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useSessionStore } from "@/state/store";
+import { findThread, useSessionStore } from "@/state/store";
 
 // Mirror of @tauri-apps/api window.d.ts ResizeDirection, which is not exported.
 type ResizeDirection =
@@ -27,13 +28,9 @@ export function TitleBar() {
 
   // The focused thread's project; with no thread focused (home page) the left
   // side stays empty.
-  const projectName = useMemo(() => {
-    if (!activeThreadId) return null;
-    for (const p of projects) {
-      if (p.threads.some((t) => t.id === activeThreadId)) return p.name;
-    }
-    return null;
-  }, [projects, activeThreadId]);
+  const projectName = activeThreadId
+    ? (findThread(projects, activeThreadId)?.project.name ?? null)
+    : null;
 
   return (
     <header
@@ -191,17 +188,15 @@ function TitleBarButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="icon-sm"
       onClick={onClick}
       aria-label={label}
       title={label}
-      className={cn(
-        "flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-        className,
-      )}
+      className={cn("size-7 text-muted-foreground hover:text-foreground", className)}
     >
       {children}
-    </button>
+    </Button>
   );
 }

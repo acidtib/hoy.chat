@@ -43,8 +43,9 @@ import {
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Composer } from "@/components/Composer";
+import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
-import { useSessionStore } from "@/state/store";
+import { findThread, useSessionStore } from "@/state/store";
 import type { PiState, ToolUI, Turn } from "@/lib/types";
 
 // Stable empty reference so the turns selector doesn't return a fresh [] each
@@ -82,23 +83,13 @@ export function ThreadView({
   const selectModel = useSessionStore((s) => s.selectModel);
   const [draft, setDraft] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
-
-  function commitTitle() {
-    renameThread(threadId, titleDraft);
-    setEditingTitle(false);
-  }
 
   const { title, projectId, threadModel } = useMemo(() => {
-    for (const p of projects) {
-      const t = p.threads.find((thread) => thread.id === threadId);
-      if (t)
-        return { title: t.title, projectId: p.id, threadModel: t.model ?? null };
-    }
+    const found = findThread(projects, threadId);
     return {
-      title: "New thread",
-      projectId: null as string | null,
-      threadModel: null,
+      title: found?.thread.title ?? "New thread",
+      projectId: found?.project.id ?? null,
+      threadModel: found?.thread.model ?? null,
     };
   }, [projects, threadId]);
 
@@ -139,25 +130,16 @@ export function ThreadView({
             )}
           />
           {editingTitle ? (
-            <input
-              value={titleDraft}
-              autoFocus
-              onFocus={(e) => e.currentTarget.select()}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitTitle();
-                if (e.key === "Escape") setEditingTitle(false);
-              }}
-              className="w-full min-w-0 rounded border border-border bg-background/60 px-1 text-sm font-medium text-foreground focus:outline-none"
+            <InlineRename
+              initial={title}
+              onCommit={(value) => renameThread(threadId, value)}
+              onClose={() => setEditingTitle(false)}
+              className="w-full min-w-0 text-sm font-medium"
             />
           ) : (
             <button
               type="button"
-              onClick={() => {
-                setTitleDraft(title);
-                setEditingTitle(true);
-              }}
+              onClick={() => setEditingTitle(true)}
               title="Rename thread"
               className="cursor-text truncate text-sm font-medium text-foreground"
             >
