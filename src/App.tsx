@@ -11,6 +11,7 @@ import { ThreadHistory } from "@/components/ThreadHistory";
 import { HomePage } from "@/components/HomePage";
 import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
+import { TitleBar } from "@/components/TitleBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { activeSessionId, getState } from "@/lib/ipc";
@@ -130,48 +131,56 @@ function App() {
           {!sidebarCollapsed &&
             (sidebarView === "history" ? <ThreadHistory /> : <Sidebar />)}
 
-          <div ref={bodyRef} className="relative flex min-h-0 flex-1 overflow-hidden">
-            {panels.length === 0 ? (
-              <HomePage onOpenSettings={() => setSettingsOpen(true)} />
-            ) : (
-              <div
-                ref={stripRef}
-                onScroll={(e) => {
-                  const el = footerSlicesRef.current;
-                  if (el) el.scrollLeft = e.currentTarget.scrollLeft;
-                }}
-                className="flex min-h-0 flex-1 overflow-x-auto"
-              >
-                {panels.map((panel, i) => (
-                  <Fragment key={panel.id}>
-                    <div
-                      style={{ width: panel.width }}
-                      onPointerDownCapture={() => focusPanel(panel.id)}
-                      className={cn(
-                        "flex min-h-0 shrink-0 flex-col border-r border-t-2 border-r-border",
-                        panel.id === activeThreadId
-                          ? "border-t-brand/70"
-                          : "border-t-transparent",
-                      )}
-                    >
-                      <ThreadView
-                        threadId={panel.id}
-                        active={panel.id === activeThreadId}
-                        onClose={() => closePanel(panel.id)}
-                        onOpenSettings={() => setSettingsOpen(true)}
-                        onDebug={handleDebug}
-                        busy={busy}
-                        debug={debug}
-                        error={error}
-                      />
-                    </div>
-                    {i < panels.length - 1 && <PanelResizeHandle index={i} />}
-                  </Fragment>
-                ))}
-                {/* Unused workspace beside the panels: new panels dock here. */}
-                <div className="min-h-0 flex-1 bg-background" />
-              </div>
-            )}
+          {/* Main column: the title bar spans the main body only (the sidebar
+              keeps the top-left corner, Zed-style); panels render below it. */}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <TitleBar />
+            <div
+              ref={bodyRef}
+              className="relative flex min-h-0 flex-1 overflow-hidden"
+            >
+              {panels.length === 0 ? (
+                <HomePage onOpenSettings={() => setSettingsOpen(true)} />
+              ) : (
+                <div
+                  ref={stripRef}
+                  onScroll={(e) => {
+                    const el = footerSlicesRef.current;
+                    if (el) el.scrollLeft = e.currentTarget.scrollLeft;
+                  }}
+                  className="flex min-h-0 flex-1 overflow-x-auto"
+                >
+                  {panels.map((panel, i) => (
+                    <Fragment key={panel.id}>
+                      <div
+                        style={{ width: panel.width }}
+                        onPointerDownCapture={() => focusPanel(panel.id)}
+                        className={cn(
+                          "flex min-h-0 shrink-0 flex-col border-r border-t-2 border-r-border",
+                          panel.id === activeThreadId
+                            ? "border-t-brand/70"
+                            : "border-t-transparent",
+                        )}
+                      >
+                        <ThreadView
+                          threadId={panel.id}
+                          active={panel.id === activeThreadId}
+                          onClose={() => closePanel(panel.id)}
+                          onOpenSettings={() => setSettingsOpen(true)}
+                          onDebug={handleDebug}
+                          busy={busy}
+                          debug={debug}
+                          error={error}
+                        />
+                      </div>
+                      {i < panels.length - 1 && <PanelResizeHandle index={i} />}
+                    </Fragment>
+                  ))}
+                  {/* Unused workspace beside the panels: new panels dock here. */}
+                  <div className="min-h-0 flex-1 bg-background" />
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <ContextBar slicesRef={footerSlicesRef} />

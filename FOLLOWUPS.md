@@ -71,6 +71,23 @@ until the panel is closed and reopened (kill-on-close respawns with fresh auth).
   or an auth-reload RPC in Pi when one becomes available. Until then the close/reopen workaround
   stands.
 
+## Real git status in the title bar
+
+Status: open
+Introduced: title bar work (custom decorations)
+
+### Context
+The Zed-style title bar shows the active project plus a branch chip, but the chip is a static
+mock ("main", `TitleBar.tsx`). The window also runs with `decorations: false` now; on macOS that
+removes the traffic lights too, which is fine for Linux/Windows but needs a per-platform
+`titleBarStyle` decision if macOS ships.
+
+### What's needed
+- A Rust command (`git -C <project.path>`) returning branch, dirty flag, and stash count;
+  refresh on active-project change and window focus. Replace the mocked chip.
+- Decide the macOS treatment (overlay title bar style with native traffic lights vs custom
+  controls everywhere).
+
 ## Session import (history view download icon)
 
 Status: open
