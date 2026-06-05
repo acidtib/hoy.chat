@@ -235,11 +235,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set((s) => {
       const index = s.panels.findIndex((p) => p.id === id);
       if (index < 0) return s;
-      // Grow the survivors to reclaim the closed panel's width, so closing
-      // re-flows the strip instead of leaving a gap.
-      const panels = growPanels(
+      // Re-fit the survivors to the body, so closing re-flows the strip
+      // instead of leaving a gap. Fit, not grow: when the strip was
+      // overflowing, handing the closed panel's width to the survivors would
+      // stack it (close all but one and that panel keeps the combined width).
+      const panels = fitPanels(
         s.panels.filter((p) => p.id !== id),
-        s.panels[index].width,
+        s.bodyWidth,
       );
 
       let activeThreadId = s.activeThreadId;
@@ -340,13 +342,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
     set((s) => {
       const ids = new Set(removed?.threads.map((t) => t.id) ?? []);
-      const reclaimed = s.panels
-        .filter((p) => ids.has(p.id))
-        .reduce((a, p) => a + p.width, 0);
-      // Re-flow the survivors into the removed panels' space, like closePanel.
-      const panels = growPanels(
+      // Re-fit the survivors to the body, like closePanel.
+      const panels = fitPanels(
         s.panels.filter((p) => !ids.has(p.id)),
-        reclaimed,
+        s.bodyWidth,
       );
       let activeThreadId = s.activeThreadId;
       if (activeThreadId && ids.has(activeThreadId)) {
