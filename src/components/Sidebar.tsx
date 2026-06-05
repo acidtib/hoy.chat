@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
+  Archive,
   ChevronDown,
   MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   Sparkle,
@@ -295,9 +297,23 @@ function ThreadRow({
   open: boolean;
   onSelect: () => void;
 }) {
+  const renameThread = useSessionStore((s) => s.renameThread);
+  const archiveThread = useSessionStore((s) => s.archiveThread);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  function commit() {
+    renameThread(thread.id, draft);
+    setEditing(false);
+  }
+
+  // A div, not a button: the hover actions nest inside the clickable row.
   return (
-    <button
-      onClick={onSelect}
+    <div
+      role="button"
+      onClick={() => {
+        if (!editing) onSelect();
+      }}
       className={cn(
         "group flex w-full cursor-pointer items-start gap-2 rounded-md py-1.5 pl-3 pr-2 text-left transition-colors",
         active
@@ -314,14 +330,70 @@ function ThreadRow({
         )}
       />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm leading-tight">
-          {thread.title}
-        </span>
+        {editing ? (
+          <input
+            value={draft}
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => setDraft(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") setEditing(false);
+            }}
+            className="block w-full rounded border border-border bg-background/60 px-1 text-sm leading-tight text-foreground focus:outline-none"
+          />
+        ) : (
+          <span className="block truncate text-sm leading-tight">
+            {thread.title}
+          </span>
+        )}
         <span className="mt-0.5 block text-[11px] tabular-nums text-muted-foreground">
           {formatRelativeTime(thread.updatedAt)}
         </span>
       </span>
-    </button>
+
+      {!editing && (
+        <span className="flex shrink-0 items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-6 text-muted-foreground hover:text-foreground"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDraft(thread.title);
+                  setEditing(true);
+                }}
+                aria-label="Rename thread"
+              >
+                <Pencil className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Rename Thread</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-6 text-muted-foreground hover:text-foreground"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  archiveThread(thread.id);
+                }}
+                aria-label="Archive thread"
+              >
+                <Archive className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Archive Thread</TooltipContent>
+          </Tooltip>
+        </span>
+      )}
+    </div>
   );
 }
 

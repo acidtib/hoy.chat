@@ -181,6 +181,7 @@ interface SessionStore {
   // M4 persistence + lifecycle.
   initWorkspace: () => Promise<void>;
   hydrateThread: (threadId: string) => Promise<void>;
+  renameThread: (threadId: string, title: string) => void;
   archiveThread: (threadId: string) => void;
   unarchiveThread: (threadId: string) => void;
   deleteThread: (threadId: string) => void;
@@ -587,6 +588,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         threadErrors: { ...s.threadErrors, [threadId]: String(e) },
       }));
     }
+  },
+
+  // Persisted through the autosave (title is in the workspace allowlist).
+  renameThread: (threadId, title) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({
+        ...th,
+        title: trimmed,
+      })),
+    }));
   },
 
   archiveThread: (threadId) => {
