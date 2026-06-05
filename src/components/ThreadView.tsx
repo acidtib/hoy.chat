@@ -46,8 +46,11 @@ import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Composer } from "@/components/Composer";
 import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/state/store";
-import type { ModelInfo, PiState } from "@/lib/types";
-import { getMockTurns, type MockTool } from "@/lib/mock-conversation";
+import type { ModelInfo, PiState, ToolUI, Turn } from "@/lib/types";
+
+// Stable empty reference so the turns selector doesn't return a fresh [] each
+// render (which would loop zustand's snapshot equality check).
+const EMPTY_TURNS: Turn[] = [];
 
 export function ThreadView({
   threadId,
@@ -78,6 +81,10 @@ export function ThreadView({
 }) {
   const projects = useSessionStore((s) => s.projects);
   const addThread = useSessionStore((s) => s.addThread);
+  const turns = useSessionStore((s) => s.turns[threadId] ?? EMPTY_TURNS);
+  const streaming = useSessionStore((s) => s.streaming[threadId] ?? false);
+  const threadError = useSessionStore((s) => s.threadErrors[threadId] ?? null);
+  const submitPrompt = useSessionStore((s) => s.submitPrompt);
   const [draft, setDraft] = useState("");
 
   const { title, projectId } = useMemo(() => {
@@ -88,19 +95,27 @@ export function ThreadView({
     return { title: "New thread", projectId: null as string | null };
   }, [projects, threadId]);
 
-  const turns = getMockTurns(threadId);
   const hasMessages = turns.length > 0;
+  const shownError = threadError ?? error;
+
+  function handleSubmit() {
+    const message = draft;
+    setDraft("");
+    void submitPrompt(threadId, message);
+  }
 
   const composer = (
     <Composer
       value={draft}
       onChange={setDraft}
+      onSubmit={handleSubmit}
       models={models}
       currentModel={currentModel}
       selecting={selecting}
       onSelectModel={onSelectModel}
       fill={!hasMessages}
       autoFocus={!hasMessages}
+      disabled={streaming}
     />
   );
 
@@ -186,10 +201,10 @@ export function ThreadView({
         </div>
       </header>
 
-      {error && (
+      {shownError && (
         <div className="mx-3 mt-3 flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
-          <span className="leading-relaxed">{error}</span>
+          <span className="leading-relaxed">{shownError}</span>
         </div>
       )}
 
@@ -239,12 +254,20 @@ export function ThreadView({
                           </ReasoningContent>
                         </Reasoning>
                       )}
-                      {turn.tools?.map((tool, j) => (
-                        <ToolCall tool={tool} key={j} />
+                      {turn.tools.map((tool) => (
+                        <ToolCall tool={tool} key={tool.id} />
                       ))}
                       {turn.text && (
                         <MessageResponse>{turn.text}</MessageResponse>
                       )}
+                      {turn.streaming &&
+                        !turn.text &&
+                        turn.tools.length === 0 && (
+                          <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <span className="size-1.5 animate-pulse rounded-full bg-brand" />
+                            Working...
+                          </span>
+                        )}
                     </MessageContent>
                   </Message>
                 ),
@@ -283,7 +306,7 @@ function toolIcon(kind: ToolKind): ReactNode {
 // Zed splits tool calls by kind: edit and execute render as bordered cards
 // (diff / command + output), everything else is a bare muted row whose output
 // shows on expand.
-function ToolCall({ tool }: { tool: MockTool }) {
+function ToolCall({ tool }: { tool: ToolUI }) {
   const kind = toolKind(tool.name);
   const card = kind === "edit" || kind === "terminal";
 
@@ -300,7 +323,13 @@ function ToolCall({ tool }: { tool: MockTool }) {
       <ToolHeader
         title={tool.title}
         type={`tool-${tool.name}`}
-        state="output-available"
+        state={
+          tool.running
+            ? "input-available"
+            : tool.isError
+              ? "output-error"
+              : "output-available"
+        }
         icon={toolIcon(kind)}
         className={cn(card && "bg-muted/25 px-2 py-1.5 text-foreground")}
       />

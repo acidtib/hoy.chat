@@ -43,6 +43,43 @@ capabilities later. Not part of the pivot itself.
   `extensionFactories`) and a first concrete tool to justify the surface.
 - Decide whether such tools are bundled (always on) or gated behind settings.
 
+## Per-thread model selection (selector targets the control session)
+
+Status: open
+Introduced: pre-M3 (M2 wiring), surfaced by the M3 code review
+
+### Context
+Spec §2 says the model selector lives in each thread's composer with per-thread scope.
+In practice `App.handleSelectModel` calls `set_model(activeSessionId, ...)` against the boot
+control session `s1`, not the focused thread's session. It works today only because Pi persists
+`defaultModel` to the shared `settings.json` and each newly spawned thread sidecar reads it, so
+*new* threads inherit the choice. But: a thread whose sidecar already spawned does not update when
+the model changes, and the per-thread selector implies a control it does not have. Not introduced
+by the M3 diff (App.tsx unchanged), so left as-is here.
+
+### What's needed
+- Route `set_model` to the thread's own `sessionId` (lazily spawning the session if it has none
+  yet, or deferring the choice until first prompt), and track the selected model per thread rather
+  than from the single control-session `state.model`.
+
+## Reasoning / thinking deltas in the transcript
+
+Status: open
+Introduced: M3
+
+### Context
+M3's `AgentEvent` union (spec §6) has no reasoning kind, so `map_pi_event` drops Pi's
+`thinking_start`/`thinking_delta`/`thinking_end` (the `assistantMessageEvent` thinking variants).
+Reasoning-capable models stream their thinking, but the UI shows nothing for it during a turn
+even though `ThreadView` already vendors the AI Elements `Reasoning` block (`Turn.reasoning` is
+defined but never populated live). Functionally fine for M3 acceptance; a visible gap for
+thinking models.
+
+### What's needed
+- Add a `reasoning` event kind to `AgentEvent` (events.rs + types.ts together), map the thinking
+  deltas to it in `map_pi_event`, accumulate it into `Turn.reasoning` in `lib/turns.ts`, and
+  render it through the existing `Reasoning` block. Gate the open/closed default sensibly.
+
 ## OAuth identity edge (Claude Pro/Max system prompt validation)
 
 Status: open

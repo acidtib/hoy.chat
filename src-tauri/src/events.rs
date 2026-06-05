@@ -3,10 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-// Streaming event delivered to the renderer over a Tauri Channel (wired in M3).
-// Defined now so the Rust/TS contract is established from the start; not yet
-// constructed, hence the allow.
-#[allow(dead_code)]
+// Streaming event delivered to the renderer over a Tauri Channel. Constructed in
+// sidecar.rs::route_message from Pi's raw RPC events; mirrored in lib/types.ts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentEvent {
@@ -35,7 +33,6 @@ pub enum AgentEvent {
     Done,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolPhase {
@@ -59,6 +56,40 @@ pub struct PiState {
     pub message_count: u64,
     pub pending_message_count: u64,
     pub auto_compaction_enabled: bool,
+}
+
+// Subset of Pi's SessionStats (core/agent-session.d.ts) returned by
+// get_session_stats; powers the bottom context bar. Pi sends more fields
+// (message counts, sessionId, ...); serde ignores the extras.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionStats {
+    // None right after compaction until the next assistant response: the UI
+    // renders a dash rather than zeroes.
+    #[serde(default)]
+    pub context_usage: Option<ContextUsage>,
+    pub tokens: TokenUsage,
+    pub cost: f64,
+}
+
+// Pi's ContextUsage. tokens/percent are null until the next LLM response after a
+// compaction; contextWindow is always known.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextUsage {
+    pub tokens: Option<u64>,
+    pub context_window: u64,
+    pub percent: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsage {
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_write: u64,
+    pub total: u64,
 }
 
 // Pi's Model object. Extra fields are ignored; these are the ones the UI needs.

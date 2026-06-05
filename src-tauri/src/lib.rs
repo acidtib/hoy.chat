@@ -44,7 +44,11 @@ pub fn run() {
             commands::save_provider_key,
             commands::remove_provider_key,
             commands::provider_statuses,
-            commands::supported_providers
+            commands::supported_providers,
+            commands::create_session,
+            commands::send_prompt,
+            commands::get_session_stats,
+            commands::abort
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

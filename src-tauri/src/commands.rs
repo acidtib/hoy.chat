@@ -1,7 +1,10 @@
+use std::path::PathBuf;
+
 use serde_json::{json, Value};
+use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::events::{ModelInfo, PiState};
+use crate::events::{AgentEvent, ModelInfo, PiState, SessionStats};
 use crate::pi_config::{self, ProviderAuth, ProviderInfo};
 use crate::sidecar::SidecarManager;
 
@@ -19,6 +22,20 @@ fn unwrap_response(response: Value, what: &str) -> Result<Value, String> {
         .get("data")
         .cloned()
         .ok_or_else(|| format!("{what} response missing data"))
+}
+
+// For RPC commands whose success response carries no `data` (prompt, abort): just
+// confirm success and surface Pi's error string otherwise. unwrap_response would
+// wrongly reject these for the absent data field.
+fn check_success(response: &Value, what: &str) -> Result<(), String> {
+    if response.get("success").and_then(Value::as_bool) == Some(true) {
+        return Ok(());
+    }
+    Err(response
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or(what)
+        .to_string())
 }
 
 #[tauri::command]
@@ -108,4 +125,68 @@ pub fn supported_providers() -> Vec<ProviderInfo> {
 #[tauri::command]
 pub fn active_session_id(manager: State<'_, SidecarManager>) -> Option<String> {
     manager.active_session_id()
+}
+
+// Spawn a thread's own sidecar in its project directory. An empty cwd falls back
+// to the manager's default (temp) dir so threads without a project path still
+// run. Returns the new sessionId the thread stores and drives.
+#[tauri::command]
+pub async fn create_session(
+    cwd: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<String, String> {
+    let path = if cwd.trim().is_empty() {
+        std::env::temp_dir()
+    } else {
+        PathBuf::from(cwd)
+    };
+    manager.spawn_session_in(&path)
+}
+
+// Attach the prompt's Channel to the session, send Pi a `prompt`, and return once
+// preflight is accepted. Tokens, tool calls, and the terminal `done` then stream
+// over the Channel from the reader thread; the renderer drives the UI from those.
+#[tauri::command]
+pub async fn send_prompt(
+    session_id: String,
+    message: String,
+    on_event: Channel<AgentEvent>,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    let process = manager.get(&session_id)?;
+    process.set_sink(on_event);
+    let response = match process.request(json!({ "type": "prompt", "message": message })).await {
+        Ok(response) => response,
+        Err(e) => {
+            process.clear_sink();
+            return Err(e);
+        }
+    };
+    // The prompt response is a bare {success:true} acknowledgement with no data
+    // (it fires at preflight; the turn streams over the Channel).
+    if let Err(e) = check_success(&response, "prompt") {
+        process.clear_sink();
+        return Err(e);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_session_stats(
+    session_id: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<SessionStats, String> {
+    let process = manager.get(&session_id)?;
+    let response = process
+        .request(json!({ "type": "get_session_stats" }))
+        .await?;
+    let data = unwrap_response(response, "get_session_stats")?;
+    serde_json::from_value(data).map_err(|e| format!("decode SessionStats: {e}"))
+}
+
+#[tauri::command]
+pub async fn abort(session_id: String, manager: State<'_, SidecarManager>) -> Result<(), String> {
+    let process = manager.get(&session_id)?;
+    let response = process.request(json!({ "type": "abort" })).await?;
+    check_success(&response, "abort")
 }

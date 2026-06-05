@@ -14,22 +14,28 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::{json, Value};
+use tauri::ipc::Channel;
 use tokio::sync::oneshot;
 
+use crate::events::{AgentEvent, ToolPhase};
 use crate::reader::JsonlFramer;
 
 pub type SessionId = String;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
+type EventSink = Arc<Mutex<Option<Channel<AgentEvent>>>>;
+
 // A single spawned sidecar child (our SDK entry running Pi's runRpcMode) plus
 // the machinery to issue request/response RPC commands against it. Unsolicited
-// events (no `id`) are dropped in M1; M3 routes them to a per-session Channel.
+// events (no `id`) are mapped to AgentEvent and forwarded to `sink`, the Channel
+// of the prompt currently streaming on this session (None between turns).
 pub struct PiProcess {
     child: Mutex<Child>,
     stdin: Mutex<ChildStdin>,
     pending: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>,
     next_id: AtomicU64,
+    sink: EventSink,
 }
 
 impl PiProcess {
@@ -62,9 +68,11 @@ impl PiProcess {
 
         let pending: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        let sink: EventSink = Arc::new(Mutex::new(None));
 
         {
             let pending = pending.clone();
+            let sink = sink.clone();
             thread::spawn(move || {
                 let mut framer = JsonlFramer::new();
                 let mut reader = BufReader::new(stdout);
@@ -75,14 +83,26 @@ impl PiProcess {
                         Ok(n) => {
                             for record in framer.push(&buf[..n]) {
                                 if let Ok(value) = serde_json::from_str::<Value>(&record) {
-                                    route_message(&pending, value);
+                                    route_message(&pending, &sink, value);
                                 }
                             }
                         }
                     }
                 }
-                // Stream closed: fail any in-flight requests so callers unblock.
+                // Stream closed: fail any in-flight requests so callers unblock,
+                // and surface the loss to a streaming prompt instead of hanging.
                 pending.lock().unwrap().clear();
+                let mut sink = sink.lock().unwrap();
+                if let Some(channel) = sink.take() {
+                    let _ = channel.send(AgentEvent::Error {
+                        message: "sidecar exited mid-stream".into(),
+                    });
+                    // No agent_end/Done will arrive from a dead child, so emit the
+                    // terminal Done ourselves; otherwise the panel's composer stays
+                    // disabled forever (the error path deliberately does not stop
+                    // streaming, to keep auto-retry turns intact).
+                    let _ = channel.send(AgentEvent::Done);
+                }
             });
         }
 
@@ -97,7 +117,19 @@ impl PiProcess {
             stdin: Mutex::new(stdin),
             pending,
             next_id: AtomicU64::new(1),
+            sink,
         }))
+    }
+
+    // Attach the prompt's Channel so the reader thread forwards this session's
+    // stream to it. Replaces any previous sink (one prompt streams per session at
+    // a time). The reader detaches it on the terminal agent_end.
+    pub fn set_sink(&self, channel: Channel<AgentEvent>) {
+        *self.sink.lock().unwrap() = Some(channel);
+    }
+
+    pub fn clear_sink(&self) {
+        *self.sink.lock().unwrap() = None;
     }
 
     // Send an RPC command and await its correlated response. The `id` is
@@ -148,17 +180,148 @@ impl Drop for PiProcess {
 
 fn route_message(
     pending: &Mutex<HashMap<String, oneshot::Sender<Value>>>,
+    sink: &EventSink,
     value: Value,
 ) {
-    let is_response = value.get("type").and_then(Value::as_str) == Some("response");
-    if let (true, Some(id)) = (is_response, value.get("id").and_then(Value::as_str)) {
-        if let Some(tx) = pending.lock().unwrap().remove(id) {
-            let _ = tx.send(value);
-            return;
+    let ty = value.get("type").and_then(Value::as_str);
+
+    // Correlated command responses resolve the awaiting request() future.
+    if ty == Some("response") {
+        if let Some(id) = value.get("id").and_then(Value::as_str) {
+            if let Some(tx) = pending.lock().unwrap().remove(id) {
+                let _ = tx.send(value);
+            }
+        }
+        return;
+    }
+
+    // agent_end terminates a turn unless Pi is about to auto-retry, in which case
+    // more events follow and we keep the channel attached.
+    if ty == Some("agent_end") {
+        let will_retry = value
+            .get("willRetry")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let mut guard = sink.lock().unwrap();
+        if will_retry {
+            if let Some(channel) = guard.as_ref() {
+                let _ = channel.send(AgentEvent::Status {
+                    label: "retrying".into(),
+                });
+            }
+        } else if let Some(channel) = guard.take() {
+            let _ = channel.send(AgentEvent::Done);
+        }
+        return;
+    }
+
+    if let Some(event) = map_pi_event(ty, &value) {
+        if let Some(channel) = sink.lock().unwrap().as_ref() {
+            let _ = channel.send(event);
         }
     }
-    // Unsolicited event (text_delta, tool_execution_*, agent_end, ...).
-    // Routed to the session Channel in M3.
+}
+
+// Map an unsolicited Pi RPC event to a frontend AgentEvent, or None to ignore it
+// (start/end-of-text markers, thinking deltas, queue updates, ...). agent_end and
+// command responses are handled by the caller. Mapping is pinned to Pi 0.78.0's
+// AgentSessionEvent + AssistantMessageEvent shapes.
+fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
+    match ty? {
+        "message_update" => {
+            let inner = value.get("assistantMessageEvent")?;
+            // Token deltas live in assistantMessageEvent.delta, NOT .text.
+            // Thinking deltas are skipped: AgentEvent has no reasoning kind yet.
+            if inner.get("type").and_then(Value::as_str) == Some("text_delta") {
+                Some(AgentEvent::Text {
+                    delta: inner.get("delta").and_then(Value::as_str)?.to_string(),
+                })
+            } else {
+                None
+            }
+        }
+        "message_end" => {
+            // Surface a failed/aborted turn; agent_end still follows to finalize.
+            let message = value.get("message")?;
+            match message.get("stopReason").and_then(Value::as_str) {
+                Some("error") | Some("aborted") => Some(AgentEvent::Error {
+                    message: message
+                        .get("errorMessage")
+                        .and_then(Value::as_str)
+                        .unwrap_or("the agent stopped unexpectedly")
+                        .to_string(),
+                }),
+                _ => None,
+            }
+        }
+        "tool_execution_start" => Some(AgentEvent::Tool {
+            phase: ToolPhase::Start,
+            tool_call_id: tool_call_id(value)?,
+            tool_name: tool_name(value),
+            args: value.get("args").cloned(),
+            output: None,
+            is_error: None,
+        }),
+        "tool_execution_update" => Some(AgentEvent::Tool {
+            phase: ToolPhase::Update,
+            tool_call_id: tool_call_id(value)?,
+            tool_name: tool_name(value),
+            args: None,
+            output: tool_output(value.get("partialResult")),
+            is_error: None,
+        }),
+        "tool_execution_end" => Some(AgentEvent::Tool {
+            phase: ToolPhase::End,
+            tool_call_id: tool_call_id(value)?,
+            tool_name: tool_name(value),
+            args: None,
+            output: tool_output(value.get("result")),
+            is_error: value.get("isError").and_then(Value::as_bool),
+        }),
+        "auto_retry_start" => Some(AgentEvent::Status {
+            label: "retrying".into(),
+        }),
+        "compaction_start" => Some(AgentEvent::Status {
+            label: "compacting".into(),
+        }),
+        _ => None,
+    }
+}
+
+fn tool_call_id(value: &Value) -> Option<String> {
+    value
+        .get("toolCallId")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn tool_name(value: &Value) -> String {
+    value
+        .get("toolName")
+        .and_then(Value::as_str)
+        .unwrap_or("tool")
+        .to_string()
+}
+
+// Pi tool results are { content: [{type:"text", text}], ... }. Flatten the text
+// blocks; fall back to a raw string or JSON dump for non-text payloads.
+fn tool_output(result: Option<&Value>) -> Option<String> {
+    let result = result?;
+    if let Some(items) = result.get("content").and_then(Value::as_array) {
+        let text: String = items
+            .iter()
+            .filter_map(|item| item.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("");
+        // content present but empty (an early streaming update): emit nothing so
+        // the row stays clean rather than flashing the wrapper JSON. A later
+        // update or the end event carries the real text.
+        return (!text.is_empty()).then_some(text);
+    }
+    if let Some(text) = result.as_str() {
+        return Some(text.to_string());
+    }
+    Some(result.to_string())
 }
 
 pub struct SidecarManager {
@@ -192,22 +355,31 @@ impl SidecarManager {
         }
     }
 
-    // Spawn a new sidecar, register it under a fresh SessionId, and return that
-    // id. The first session spawned becomes the active one.
+    // Spawn the boot control session in the manager's default cwd. The first
+    // session spawned becomes the active one (used for model enumeration).
     pub fn spawn_session(&self) -> Result<SessionId, String> {
+        let cwd = self.cwd.clone();
+        let id = self.spawn_session_in(&cwd)?;
+        let mut active = self.active.lock().unwrap();
+        if active.is_none() {
+            *active = Some(id.clone());
+        }
+        Ok(id)
+    }
+
+    // Spawn a sidecar in `cwd` (a thread's project dir), register it under a fresh
+    // SessionId, and return that id. Does not touch the active session: the boot
+    // control session stays active for list_models. This is session-per-thread.
+    pub fn spawn_session_in(&self, cwd: &Path) -> Result<SessionId, String> {
         if !self.bin.exists() {
             return Err(format!(
                 "sidecar binary not found at {}. Run sidecar/build.sh.",
                 self.bin.display()
             ));
         }
-        let proc = PiProcess::spawn(&self.bin, &self.payload, &self.agent_dir, &self.cwd)?;
+        let proc = PiProcess::spawn(&self.bin, &self.payload, &self.agent_dir, cwd)?;
         let id = format!("s{}", self.handle_counter.fetch_add(1, Ordering::Relaxed));
         self.sessions.lock().unwrap().insert(id.clone(), proc);
-        let mut active = self.active.lock().unwrap();
-        if active.is_none() {
-            *active = Some(id.clone());
-        }
         Ok(id)
     }
 
@@ -314,6 +486,131 @@ mod live_tests {
         assert!(
             response["data"]["sessionId"].as_str().is_some(),
             "expected a sessionId in get_state data, got: {response}"
+        );
+    }
+
+    // Drives the full M3 streaming path: spawn a sidecar, attach a real Channel
+    // (the renderer boundary), send a prompt, and confirm route_message/map_pi_event
+    // forward text deltas and a terminal done. Needs the sidecar binary AND a
+    // configured credential in ~/.hoy/agent (model from settings.json). Run with:
+    //   cargo test live_send_prompt_streams -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn live_send_prompt_streams() {
+        use tauri::ipc::InvokeResponseBody;
+
+        let manager = SidecarManager::new();
+        let id = manager.spawn_session().expect("spawn sidecar session");
+        let process = manager.get(&id).expect("session present");
+
+        let events: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink_events = events.clone();
+        let channel = Channel::new(move |body: InvokeResponseBody| {
+            if let InvokeResponseBody::Json(s) = body {
+                if let Ok(v) = serde_json::from_str::<Value>(&s) {
+                    sink_events.lock().unwrap().push(v);
+                }
+            }
+            Ok(())
+        });
+        process.set_sink(channel);
+
+        let response = process
+            .request(json!({
+                "type": "prompt",
+                "message": "Write a haiku about pipes. Output only the haiku."
+            }))
+            .await
+            .expect("prompt accepted");
+        assert_eq!(response["success"], true, "preflight failed: {response}");
+
+        let mut done = false;
+        for _ in 0..120 {
+            if events.lock().unwrap().iter().any(|e| e["kind"] == "done") {
+                done = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+
+        let collected = events.lock().unwrap().clone();
+        let kinds: Vec<&str> = collected.iter().filter_map(|e| e["kind"].as_str()).collect();
+        let text: String = collected
+            .iter()
+            .filter(|e| e["kind"] == "text")
+            .filter_map(|e| e["delta"].as_str())
+            .collect();
+        eprintln!("event kinds: {kinds:?}");
+        eprintln!("streamed text:\n{text}");
+
+        assert!(done, "no done event; kinds={kinds:?}");
+        assert!(
+            collected.iter().filter(|e| e["kind"] == "text").count() >= 1,
+            "no text deltas; kinds={kinds:?}"
+        );
+        assert!(!text.trim().is_empty(), "assistant produced empty text");
+    }
+
+    // Probes the tool-call mapping: a prompt that forces a bash tool, confirming
+    // tool_execution_start -> end map to Tool events with extracted output. Same
+    // prerequisites as live_send_prompt_streams. Run with:
+    //   cargo test live_send_prompt_tool -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn live_send_prompt_tool() {
+        use tauri::ipc::InvokeResponseBody;
+
+        let manager = SidecarManager::new();
+        let id = manager.spawn_session().expect("spawn sidecar session");
+        let process = manager.get(&id).expect("session present");
+
+        let events: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink_events = events.clone();
+        let channel = Channel::new(move |body: InvokeResponseBody| {
+            if let InvokeResponseBody::Json(s) = body {
+                if let Ok(v) = serde_json::from_str::<Value>(&s) {
+                    sink_events.lock().unwrap().push(v);
+                }
+            }
+            Ok(())
+        });
+        process.set_sink(channel);
+
+        let response = process
+            .request(json!({
+                "type": "prompt",
+                "message": "Run the shell command: echo hoy-tool-probe. Then stop."
+            }))
+            .await
+            .expect("prompt accepted");
+        assert_eq!(response["success"], true, "preflight failed: {response}");
+
+        for _ in 0..120 {
+            if events.lock().unwrap().iter().any(|e| e["kind"] == "done") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+
+        let collected = events.lock().unwrap().clone();
+        let kinds: Vec<&str> = collected.iter().filter_map(|e| e["kind"].as_str()).collect();
+        eprintln!("event kinds: {kinds:?}");
+        let tools: Vec<&Value> = collected.iter().filter(|e| e["kind"] == "tool").collect();
+        for t in &tools {
+            eprintln!(
+                "tool phase={} name={} output={:?}",
+                t["phase"], t["toolName"], t["output"]
+            );
+        }
+
+        assert!(
+            tools.iter().any(|t| t["phase"] == "start"),
+            "no tool start event; kinds={kinds:?}"
+        );
+        assert!(
+            tools.iter().any(|t| t["phase"] == "end"
+                && t["output"].as_str().is_some_and(|o| o.contains("hoy-tool-probe"))),
+            "no tool end carrying the command output; kinds={kinds:?}"
         );
     }
 }

@@ -35,6 +35,7 @@ export function Composer({
   fill = false,
   placeholder = "Message  ·  @ to include context, / for commands",
   autoFocus = false,
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -46,6 +47,7 @@ export function Composer({
   fill?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
+  disabled?: boolean;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mode, setMode] = useState(MODES[0]);
@@ -62,9 +64,11 @@ export function Composer({
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (value.trim()) onSubmit?.();
+      if (!disabled && value.trim()) onSubmit?.();
     }
   }
+
+  const canSend = !disabled && value.trim().length > 0;
 
   return (
     <div className={cn("relative flex min-h-0 flex-col", fill && "h-full")}>
@@ -86,7 +90,8 @@ export function Composer({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         autoFocus={autoFocus}
-        placeholder={placeholder}
+        disabled={disabled}
+        placeholder={disabled ? "Streaming response..." : placeholder}
         className={cn(
           "scrollbar-thin w-full resize-none bg-transparent pl-4 pt-3.5 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:outline-none",
           fill
@@ -137,12 +142,12 @@ export function Composer({
             size="icon-sm"
             className={cn(
               "ml-1 rounded-md",
-              value.trim()
+              canSend
                 ? "border-brand/40 text-brand hover:text-brand"
                 : "text-muted-foreground",
             )}
-            disabled={!value.trim()}
-            onClick={() => value.trim() && onSubmit?.()}
+            disabled={!canSend}
+            onClick={() => canSend && onSubmit?.()}
             aria-label="Send"
           >
             <SendHorizontal className="size-4" />

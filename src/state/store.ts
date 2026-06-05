@@ -1,11 +1,21 @@
 import { create } from "zustand";
 import { SEEDED_THREAD_ID } from "@/lib/mock-conversation";
+import {
+  Channel,
+  createSession,
+  getSessionStats,
+  sendPrompt,
+} from "@/lib/ipc";
+import { applyEvent } from "@/lib/turns";
 import type {
+  AgentEvent,
   ModelInfo,
   Project,
   ProviderAuth,
   ProviderInfo,
+  SessionStats,
   Thread,
+  Turn,
 } from "@/lib/types";
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -141,6 +151,14 @@ interface SessionStore {
   supportedProviders: ProviderInfo[];
   providerAuth: ProviderAuth[];
 
+  // Live streaming state, all keyed by threadId. `turns` is the transcript,
+  // `streaming` gates each panel's composer, `stats` backs the context bar, and
+  // `threadErrors` carries a per-thread failure banner.
+  turns: Record<string, Turn[]>;
+  streaming: Record<string, boolean>;
+  stats: Record<string, SessionStats | null>;
+  threadErrors: Record<string, string | null>;
+
   openThread: (id: string) => void;
   closePanel: (id: string) => void;
   setBodyWidth: (width: number) => void;
@@ -155,6 +173,10 @@ interface SessionStore {
   setModels: (models: ModelInfo[]) => void;
   setSupportedProviders: (providers: ProviderInfo[]) => void;
   setProviderAuth: (providerAuth: ProviderAuth[]) => void;
+
+  submitPrompt: (threadId: string, message: string) => Promise<void>;
+  refreshStats: (threadId: string) => Promise<void>;
+  setThreadSessionIdInternal: (threadId: string, sessionId: string) => void;
 }
 
 export const useSessionStore = create<SessionStore>((set, get) => ({
@@ -168,6 +190,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   models: [],
   supportedProviders: [],
   providerAuth: [],
+  turns: {},
+  streaming: {},
+  stats: {},
+  threadErrors: {},
 
   // Open the thread in a panel, or just focus it if it's already open.
   openThread: (id) =>
@@ -284,4 +310,135 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setModels: (models) => set({ models }),
   setSupportedProviders: (supportedProviders) => set({ supportedProviders }),
   setProviderAuth: (providerAuth) => set({ providerAuth }),
+
+  // Send a prompt from a thread panel and stream the response into its turns.
+  // Lazily spawns the thread's own sidecar (session per thread) in the project's
+  // cwd on first send, then drives one Channel per turn.
+  submitPrompt: async (threadId, message) => {
+    const text = message.trim();
+    if (!text || get().streaming[threadId]) return;
+
+    const found = findThread(get().projects, threadId);
+    if (!found) return;
+    const { thread, project } = found;
+
+    // Append the user turn plus an in-flight assistant turn the events fold into.
+    // Title an untitled thread from its first message.
+    set((s) => ({
+      turns: {
+        ...s.turns,
+        [threadId]: [
+          ...(s.turns[threadId] ?? []),
+          { role: "user", text },
+          { role: "assistant", tools: [], text: "", streaming: true },
+        ],
+      },
+      streaming: { ...s.streaming, [threadId]: true },
+      threadErrors: { ...s.threadErrors, [threadId]: null },
+      projects: patchThread(s.projects, threadId, (th) => ({
+        ...th,
+        updatedAt: Date.now(),
+        title: th.title === "New thread" ? truncateTitle(text) : th.title,
+      })),
+    }));
+
+    const stopStreaming = () =>
+      set((s) => ({ streaming: { ...s.streaming, [threadId]: false } }));
+
+    try {
+      let sessionId = thread.sessionId ?? null;
+      if (!sessionId) {
+        sessionId = await createSession(project.path ?? "");
+        get().setThreadSessionIdInternal(threadId, sessionId);
+      }
+
+      const channel = new Channel<AgentEvent>();
+      channel.onmessage = (event) => {
+        set((s) => ({
+          turns: {
+            ...s.turns,
+            [threadId]: applyEvent(s.turns[threadId] ?? [], event),
+          },
+        }));
+        if (event.kind === "done") {
+          stopStreaming();
+          void get().refreshStats(threadId);
+        } else if (event.kind === "error") {
+          set((s) => ({
+            threadErrors: { ...s.threadErrors, [threadId]: event.message },
+          }));
+        }
+      };
+
+      await sendPrompt(sessionId, text, channel);
+    } catch (e) {
+      stopStreaming();
+      set((s) => {
+        const list = s.turns[threadId] ?? [];
+        const last = list[list.length - 1];
+        const turns =
+          last && last.role === "assistant"
+            ? {
+                ...s.turns,
+                [threadId]: [
+                  ...list.slice(0, -1),
+                  { ...last, streaming: false },
+                ],
+              }
+            : s.turns;
+        return { turns, threadErrors: { ...s.threadErrors, [threadId]: String(e) } };
+      });
+    }
+  },
+
+  refreshStats: async (threadId) => {
+    const sessionId = findThread(get().projects, threadId)?.thread.sessionId;
+    if (!sessionId) return;
+    try {
+      const stats = await getSessionStats(sessionId);
+      set((s) => ({ stats: { ...s.stats, [threadId]: stats } }));
+    } catch {
+      // Stats are best-effort; a failure leaves the bar on its last value.
+    }
+  },
+
+  // Internal: pin a thread to the sidecar session it spawned. Not part of the
+  // public action surface, just shared between submitPrompt and (later) restore.
+  setThreadSessionIdInternal: (threadId: string, sessionId: string) =>
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({
+        ...th,
+        sessionId,
+      })),
+    })),
 }));
+
+// Locate a thread and its owning project by id. Threads live nested under
+// projects; this is the one traversal submitPrompt/refreshStats share.
+function findThread(
+  projects: Project[],
+  threadId: string,
+): { thread: Thread; project: Project } | null {
+  for (const project of projects) {
+    const thread = project.threads.find((t) => t.id === threadId);
+    if (thread) return { thread, project };
+  }
+  return null;
+}
+
+// Return a new projects list with `patch` applied to the matching thread.
+function patchThread(
+  projects: Project[],
+  threadId: string,
+  patch: (thread: Thread) => Thread,
+): Project[] {
+  return projects.map((p) => ({
+    ...p,
+    threads: p.threads.map((t) => (t.id === threadId ? patch(t) : t)),
+  }));
+}
+
+function truncateTitle(text: string): string {
+  const firstLine = text.split("\n")[0].trim();
+  return firstLine.length > 60 ? `${firstLine.slice(0, 57)}...` : firstLine;
+}

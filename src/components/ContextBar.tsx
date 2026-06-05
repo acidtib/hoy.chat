@@ -12,17 +12,36 @@ import type { PiState } from "@/lib/types";
 
 // Single full-width status bar (Zed-style): the sidebar controls live in the
 // left segment, aligned to the sidebar's width and divided by its border, while
-// the right segment shows live model/status. Real context-window usage and cost
-// arrive in M3 via get_session_stats; for now those are placeholders.
+// the right segment shows the focused thread's live model/status/usage. Context
+// window and cost come from get_session_stats, refreshed after each turn.
 export function ContextBar({ state }: { state: PiState | null }) {
   const collapsed = useSessionStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useSessionStore((s) => s.toggleSidebar);
   const addProject = useSessionStore((s) => s.addProject);
   const sidebarWidth = useSessionStore((s) => s.sidebarWidth);
+  const activeThreadId = useSessionStore((s) => s.activeThreadId);
+  const stats = useSessionStore((s) =>
+    activeThreadId ? (s.stats[activeThreadId] ?? null) : null,
+  );
+  const threadStreaming = useSessionStore((s) =>
+    activeThreadId ? (s.streaming[activeThreadId] ?? false) : false,
+  );
 
   const model = state?.model?.id ?? "no model";
-  const streaming = state?.isStreaming ?? false;
+  // Per-thread streaming: the control session backing `state` never runs a turn,
+  // so its isStreaming is always false. The focused thread's flag is the truth.
+  const streaming = threadStreaming;
   const status = streaming ? "streaming" : "idle";
+
+  const usage = stats?.contextUsage;
+  const ctxLabel =
+    usage && usage.tokens != null
+      ? `ctx ${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)}`
+      : "ctx --/--";
+  const pctLabel =
+    usage && usage.percent != null ? `${Math.round(usage.percent)}%` : "--%";
+  const costLabel =
+    stats != null ? `$${stats.cost.toFixed(stats.cost < 1 ? 4 : 2)}` : "$--";
 
   async function handleAddProject() {
     const dir = await pickDirectory();
@@ -76,11 +95,13 @@ export function ContextBar({ state }: { state: PiState | null }) {
 
         <Divider />
 
-        <span className="font-mono tabular-nums">ctx --/-- &middot; --%</span>
+        <span className="font-mono tabular-nums">
+          {ctxLabel} &middot; {pctLabel}
+        </span>
 
         <Divider />
 
-        <span className="font-mono tabular-nums">$--</span>
+        <span className="font-mono tabular-nums">{costLabel}</span>
 
         <span className="ml-auto truncate font-mono text-muted-foreground/80">
           {model}
@@ -126,4 +147,11 @@ function FooterIconButton({
 
 function Divider() {
   return <span className="h-3 w-px bg-border" aria-hidden />;
+}
+
+// Compact token counts for the one-line bar: 1234 -> 1.2k, 200000 -> 200k.
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  const k = n / 1000;
+  return k < 10 ? `${k.toFixed(1)}k` : `${Math.round(k)}k`;
 }

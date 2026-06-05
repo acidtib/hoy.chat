@@ -5,7 +5,7 @@
 > App identifier `dev.hoy-desktop.app`. ("Pi" in this doc always means the agent, never the app.)
 > This is the same three-layer architecture OpenAI's Codex desktop app uses (Chromium renderer → Node/Rust main → spawned agent process). We are deliberately copying it. The spawned process is our own thin SDK entry running Pi's `runRpcMode`, not the stock CLI (see §0).
 >
-> **Status:** M0–M2 shipped. The UI was redesigned into a Zed-style multi-panel workspace (§2). Two decisions now baked in: **session per thread** (each thread drives its own Pi sidecar; pulled into M3) and **panels are the canonical MVP layout**.
+> **Status:** M0–M3 shipped. The UI was redesigned into a Zed-style multi-panel workspace (§2). Two decisions now baked in: **session per thread** (each thread drives its own Pi sidecar) and **panels are the canonical MVP layout**. M3 streams real Pi responses into each panel over a Tauri Channel, concurrently across panels, with the context bar fed by `get_session_stats`.
 
 ---
 
@@ -264,9 +264,22 @@ dropped, §3). Settings is a **full page**, not a modal. 8 commands wired (`get_
 - `list_models` command → calls Pi `get_available_models` → populate the top-bar model selector. `set_model` on selection.
 - **Acceptance:** user enters a valid key, the model dropdown populates with real models, selecting one calls `set_model` successfully. Key is not present in any plaintext file or renderer state.
 
-### M3 — Streaming chat, session per thread (the core MVP win)
+### M3 — Streaming chat, session per thread (the core MVP win) (DONE)
 Outcome: prompting from a thread panel streams a real Pi response into that panel, and
 multiple panels stream concurrently against their own sidecars.
+
+As built: `PiProcess` carries an active-prompt sink (`Arc<Mutex<Option<Channel<AgentEvent>>>>`);
+`route_message`/`map_pi_event` map Pi's raw RPC events to `AgentEvent` (text_delta -> text,
+tool_execution_* -> tool with result text flattened, message_end error/aborted -> error,
+agent_end -> done unless `willRetry`, auto_retry/compaction -> status) and forward over the
+sink, detaching on the terminal done. `create_session(cwd)` spawns a thread's own sidecar in
+its project dir (the boot `s1` stays the control session for `list_models`); `send_prompt`
+attaches the Channel and returns on preflight; `get_session_stats` and `abort` added. The
+prompt/abort responses carry no `data`, so they use `check_success`, not `unwrap_response`.
+Frontend: per-thread `turns`/`streaming`/`stats` live in the zustand store, fed by the
+`AgentEvent -> turn` mapper in `lib/turns.ts`; the composer is disabled per panel while its
+turn streams; the context bar renders the focused thread's `contextUsage`/cost. Thinking
+deltas are dropped for now (AgentEvent has no reasoning kind yet); see FOLLOWUPS.
 
 **Backend**
 - **Event forwarding.** Give `PiProcess` an active-prompt sink

@@ -17,6 +17,50 @@ export type AgentEvent =
   | { kind: "error"; message: string }
   | { kind: "done" };
 
+// Mirror of events.rs SessionStats. Powers the bottom context bar. contextUsage
+// (and its tokens/percent) is null/absent right after compaction until the next
+// assistant response: render a dash, not zeroes.
+export interface SessionStats {
+  contextUsage?: {
+    tokens: number | null;
+    contextWindow: number;
+    percent: number | null;
+  } | null;
+  tokens: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+  cost: number;
+}
+
+// A single tool call rendered in a turn. Built from `tool` AgentEvents (start
+// opens it, update/end fill output). `running` flips false on the end event.
+export interface ToolUI {
+  id: string;
+  name: string;
+  title: string;
+  command?: string;
+  diff?: string;
+  output: string;
+  isError?: boolean;
+  running: boolean;
+}
+
+// The per-thread transcript model, keyed by threadId in the store. Replaces the
+// mock-conversation shape; built live from streaming AgentEvents (lib/turns.ts).
+export type Turn =
+  | { role: "user"; text: string }
+  | {
+      role: "assistant";
+      reasoning?: { text: string; seconds: number };
+      tools: ToolUI[];
+      text: string;
+      streaming: boolean;
+    };
+
 export interface ModelInfo {
   id: string;
   name: string;
