@@ -45,6 +45,9 @@ pub struct WsThread {
     // default to false.
     #[serde(default)]
     pub renamed: bool,
+    // Unsent composer text, restored into the editor on reopen.
+    #[serde(default)]
+    pub draft: Option<String>,
 }
 
 fn workspace_path() -> Result<PathBuf, String> {
@@ -117,6 +120,7 @@ mod tests {
                     session_file: Some("/home/u/.hoy/agent/sessions/abc/s1.jsonl".into()),
                     archived: false,
                     renamed: true,
+                    draft: Some("unsent composer text".into()),
                 }],
             }],
         }
@@ -143,6 +147,7 @@ mod tests {
         assert!(t.session_file.is_some());
         assert!(!t.archived);
         assert!(t.renamed);
+        assert_eq!(t.draft.as_deref(), Some("unsent composer text"));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -161,6 +166,20 @@ mod tests {
         let loaded = load_at(&path).unwrap();
         assert_eq!(loaded.projects.len(), 1);
         assert_eq!(loaded.projects[0].name, "jiji");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn pre_draft_files_load_with_none() {
+        let path = temp_path("nodraft");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"projects":[{"id":"p1","name":"hoy","threads":[{"id":"t1","title":"T","updatedAt":1}]}]}"#,
+        )
+        .unwrap();
+        let loaded = load_at(&path).unwrap();
+        assert!(loaded.projects[0].threads[0].draft.is_none());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
