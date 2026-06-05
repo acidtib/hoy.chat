@@ -165,9 +165,23 @@ interface SessionStore {
   // landing inside a panel) never sets it, so in-panel clicks cannot yank
   // focus into the composer. Not persisted.
   focusRequest: { threadId: string; nonce: number } | null;
+  // Teardown of a streaming thread asks first. requestTeardown gates the
+  // three destructive actions in one place: idle threads tear down
+  // immediately, streaming ones park here until the dialog confirms or
+  // cancels. Not persisted.
+  pendingTeardown: {
+    action: "close" | "archive" | "delete";
+    threadId: string;
+  } | null;
 
   openThread: (id: string) => void;
   focusPanel: (id: string) => void;
+  requestTeardown: (
+    action: "close" | "archive" | "delete",
+    threadId: string,
+  ) => void;
+  confirmTeardown: () => void;
+  cancelTeardown: () => void;
   closePanel: (id: string) => void;
   setDraft: (threadId: string, value: string) => void;
   toggleFullScreen: (threadId: string) => void;
@@ -231,6 +245,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   drafts: {},
   expandedThreadId: null,
   focusRequest: null,
+  pendingTeardown: null,
 
   // Open the thread in a panel, or just focus it if it's already open. A
   // persisted thread (has a sessionFile, no live sidecar, nothing loaded) is
@@ -261,6 +276,23 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   // Pointer-down focus inside an open panel: active accent only, no composer
   // focus and no full screen change.
   focusPanel: (id) => set({ activeThreadId: id }),
+
+  requestTeardown: (action, threadId) => {
+    if (!get().streaming[threadId]) {
+      runTeardown(get(), action, threadId);
+      return;
+    }
+    set({ pendingTeardown: { action, threadId } });
+  },
+
+  confirmTeardown: () => {
+    const pending = get().pendingTeardown;
+    if (!pending) return;
+    set({ pendingTeardown: null });
+    runTeardown(get(), pending.action, pending.threadId);
+  },
+
+  cancelTeardown: () => set({ pendingTeardown: null }),
 
   closePanel: (id) => {
     // Kill-on-close: tear down the live sidecar and drop the cached transcript so
@@ -880,6 +912,18 @@ function isUntouched(
     !thread.renamed &&
     !drafts[thread.id]?.trim()
   );
+}
+
+// Dispatch one of the three teardown actions; shared by requestTeardown's
+// immediate path and confirmTeardown.
+function runTeardown(
+  s: SessionStore,
+  action: "close" | "archive" | "delete",
+  threadId: string,
+): void {
+  if (action === "close") s.closePanel(threadId);
+  else if (action === "archive") s.archiveThread(threadId);
+  else s.deleteThread(threadId);
 }
 
 // Locate a thread and its owning project by id. Threads live nested under
