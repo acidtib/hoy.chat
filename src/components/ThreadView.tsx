@@ -3,7 +3,6 @@ import {
   Activity,
   AlertCircle,
   Archive,
-  ChevronDown,
   FilePen,
   Maximize2,
   MoreHorizontal,
@@ -76,11 +75,19 @@ export function ThreadView({
   const streaming = useSessionStore((s) => s.streaming[threadId] ?? false);
   const threadError = useSessionStore((s) => s.threadErrors[threadId] ?? null);
   const submitPrompt = useSessionStore((s) => s.submitPrompt);
+  const renameThread = useSessionStore((s) => s.renameThread);
   const models = useSessionStore((s) => s.models);
   const defaultModel = useSessionStore((s) => s.defaultModel);
   const selecting = useSessionStore((s) => s.modelSelecting[threadId] ?? false);
   const selectModel = useSessionStore((s) => s.selectModel);
   const [draft, setDraft] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+
+  function commitTitle() {
+    renameThread(threadId, titleDraft);
+    setEditingTitle(false);
+  }
 
   const { title, projectId, threadModel } = useMemo(() => {
     for (const p of projects) {
@@ -124,21 +131,40 @@ export function ThreadView({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-        <button
-          type="button"
-          className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
-        >
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-0.5">
           <Sparkle
             className={cn(
               "size-4 shrink-0",
               active ? "text-brand" : "text-muted-foreground",
             )}
           />
-          <span className="truncate text-sm font-medium text-foreground">
-            {title}
-          </span>
-          <ChevronDown className="size-3.5 shrink-0" />
-        </button>
+          {editingTitle ? (
+            <input
+              value={titleDraft}
+              autoFocus
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitTitle();
+                if (e.key === "Escape") setEditingTitle(false);
+              }}
+              className="w-full min-w-0 rounded border border-border bg-background/60 px-1 text-sm font-medium text-foreground focus:outline-none"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setTitleDraft(title);
+                setEditingTitle(true);
+              }}
+              title="Rename thread"
+              className="cursor-text truncate text-sm font-medium text-foreground"
+            >
+              {title}
+            </button>
+          )}
+        </div>
 
         <div className="flex items-center gap-0.5">
           <Tooltip>
