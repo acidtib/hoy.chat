@@ -11,9 +11,10 @@ import { useSessionStore } from "@/state/store";
 
 // Single full-width status bar (Zed-style): the sidebar controls live in the
 // left segment, aligned to the sidebar's width and divided by its border, while
-// the right segment shows the focused thread's status and usage. The model is
-// per thread and lives in each composer's selector, not here. Context window
-// and cost come from get_session_stats, refreshed after each turn.
+// the right segment shows the focused thread's usage. The model is per thread
+// and lives in each composer's selector, not here; streaming state shows in the
+// panel itself. Context window and cost come from get_session_stats, refreshed
+// after each turn.
 export function ContextBar() {
   const collapsed = useSessionStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useSessionStore((s) => s.toggleSidebar);
@@ -25,13 +26,6 @@ export function ContextBar() {
   const stats = useSessionStore((s) =>
     activeThreadId ? (s.stats[activeThreadId] ?? null) : null,
   );
-  const threadStreaming = useSessionStore((s) =>
-    activeThreadId ? (s.streaming[activeThreadId] ?? false) : false,
-  );
-
-  // Per-thread streaming: the focused thread's flag is the truth.
-  const streaming = threadStreaming;
-  const status = streaming ? "streaming" : "idle";
 
   const usage = stats?.contextUsage;
   const ctxLabel =
@@ -88,19 +82,6 @@ export function ContextBar() {
       )}
 
       <div className="flex flex-1 items-center gap-3 px-3">
-        <span className="flex items-center gap-1.5">
-          <span
-            className={cn(
-              "size-1.5 rounded-full",
-              streaming ? "animate-pulse bg-brand" : "bg-muted-foreground/50",
-            )}
-            aria-hidden
-          />
-          <span className="capitalize">{status}</span>
-        </span>
-
-        <Divider />
-
         <span className="font-mono tabular-nums">
           {ctxLabel} &middot; {pctLabel}
         </span>
