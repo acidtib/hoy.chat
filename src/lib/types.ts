@@ -110,6 +110,11 @@ export interface Thread {
   // Archived threads leave the projects tree and live in the history view, where
   // they can be unarchived or permanently deleted.
   archived?: boolean;
+  // Set once the user manually renames the thread. Recorded as a flag rather
+  // than inferred from the title text, so renaming to the literal default still
+  // counts. A renamed-but-never-prompted thread is user work and persists;
+  // untouched threads never reach workspace.json.
+  renamed?: boolean;
   // Selected model. Set on pick (deferred until a session exists), hydrated from
   // get_state after spawn. Ephemeral: the session JSONL owns it after the first
   // prompt, and persistProjects' allowlist never serializes it.

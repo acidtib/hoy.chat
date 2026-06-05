@@ -231,7 +231,9 @@ describe("applyThreadModel failure recovery", () => {
 describe("closePanel model state", () => {
   test("keeps thread.model but drops modelSelecting with the other per-thread records", () => {
     const pick = { provider: "groq", id: "llama-3.3-70b" };
-    seed({ sessionId: null, model: pick });
+    // sessionFile marks the thread as touched; an untouched one is discarded
+    // wholesale on close (HOY-184), pick and all.
+    seed({ sessionId: null, sessionFile: "/tmp/s.jsonl", model: pick });
     useSessionStore.setState({
       panels: [{ id: "t1", width: 600 }],
       modelSelecting: { t1: true },

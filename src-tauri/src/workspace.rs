@@ -41,6 +41,10 @@ pub struct WsThread {
     pub session_file: Option<String>,
     #[serde(default)]
     pub archived: bool,
+    // True once the user manually renamed the thread; pre-flag workspaces
+    // default to false.
+    #[serde(default)]
+    pub renamed: bool,
 }
 
 fn workspace_path() -> Result<PathBuf, String> {
@@ -112,6 +116,7 @@ mod tests {
                     updated_at: 1_717_000_000_000,
                     session_file: Some("/home/u/.hoy/agent/sessions/abc/s1.jsonl".into()),
                     archived: false,
+                    renamed: true,
                 }],
             }],
         }
@@ -137,6 +142,7 @@ mod tests {
         assert_eq!(t.updated_at, 1_717_000_000_000);
         assert!(t.session_file.is_some());
         assert!(!t.archived);
+        assert!(t.renamed);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

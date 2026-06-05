@@ -236,6 +236,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set((s) => {
       const index = s.panels.findIndex((p) => p.id === id);
       if (index < 0) return s;
+      // An untouched thread is discarded with its panel: the sidebar row goes
+      // too, instead of an empty "New thread" lingering. Decided before the
+      // turns record is dropped below.
+      const found = findThread(s.projects, id);
+      const discard = found ? isUntouched(found.thread, s.turns) : false;
       // Re-fit the survivors to the body, so closing re-flows the strip
       // instead of leaving a gap. Fit, not grow: when the strip was
       // overflowing, handing the closed panel's width to the survivors would
@@ -267,7 +272,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         streaming,
         threadErrors,
         modelSelecting,
-        projects: patchThread(s.projects, id, (th) => ({ ...th, sessionId: null })),
+        projects: discard
+          ? s.projects.map((p) => ({
+              ...p,
+              threads: p.threads.filter((t) => t.id !== id),
+            }))
+          : patchThread(s.projects, id, (th) => ({ ...th, sessionId: null })),
       };
     });
   },
@@ -533,7 +543,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   initWorkspace: async () => {
     try {
       const ws = await loadWorkspace();
-      set({ projects: ws.projects ?? [] });
+      // Backfill for workspaces saved before the renamed flag existed: a
+      // custom title on a never-prompted thread can only have come from a
+      // manual rename, and without the flag the untouched filter would drop
+      // it. Threads with a transcript are protected by sessionFile already.
+      const projects = (ws.projects ?? []).map((p) => ({
+        ...p,
+        threads: p.threads.map((t) =>
+          !t.renamed && !t.sessionFile && t.title !== "New thread"
+            ? { ...t, renamed: true }
+            : t,
+        ),
+      }));
+      set({ projects });
     } catch {
       // Corrupt/unreadable workspace: start empty rather than block the app.
     } finally {
@@ -581,7 +603,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
 
-  // Persisted through the autosave (title is in the workspace allowlist).
+  // Persisted through the autosave (title and the renamed flag are in the
+  // workspace allowlist). The flag marks the thread as user work so it is
+  // never discarded as untouched.
   renameThread: (threadId, title) => {
     const trimmed = title.trim();
     if (!trimmed) return;
@@ -589,11 +613,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       projects: patchThread(s.projects, threadId, (th) => ({
         ...th,
         title: trimmed,
+        renamed: true,
       })),
     }));
   },
 
   archiveThread: (threadId) => {
+    // An untouched thread has nothing worth keeping in history; archiving it
+    // deletes it instead.
+    const found = findThread(get().projects, threadId);
+    if (found && isUntouched(found.thread, get().turns)) {
+      get().deleteThread(threadId);
+      return;
+    }
     get().closePanel(threadId); // kills the sidecar and clears cached turns
     set((s) => ({
       projects: patchThread(s.projects, threadId, (th) => ({
@@ -720,19 +752,28 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 // (e.g. pinning the ephemeral sessionId) leaves the persisted shape unchanged.
 let lastSaved = "";
 
-function persistProjects(projects: Project[]): void {
+function persistProjects(
+  projects: Project[],
+  turns: Record<string, Turn[]>,
+): void {
   const payload = {
     projects: projects.map((p) => ({
       id: p.id,
       name: p.name,
       path: p.path ?? null,
-      threads: p.threads.map((t) => ({
-        id: t.id,
-        title: t.title,
-        updatedAt: t.updatedAt,
-        sessionFile: t.sessionFile ?? null,
-        archived: !!t.archived,
-      })),
+      // Untouched threads never reach disk: they vanish on restart even if
+      // their panel was left open, and legacy empty rows in an existing
+      // workspace.json drop off on the next save.
+      threads: p.threads
+        .filter((t) => !isUntouched(t, turns))
+        .map((t) => ({
+          id: t.id,
+          title: t.title,
+          updatedAt: t.updatedAt,
+          sessionFile: t.sessionFile ?? null,
+          archived: !!t.archived,
+          renamed: !!t.renamed,
+        })),
     })),
   };
   const json = JSON.stringify(payload);
@@ -751,8 +792,20 @@ useSessionStore.subscribe((state, prev) => {
   if (state.projects === prev.projects) return;
   if (!hydrated) return;
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => persistProjects(state.projects), 300);
+  saveTimer = setTimeout(() => {
+    // Read at fire time: the debounce window may batch several changes, and
+    // the untouched filter needs the turns that exist when the write happens.
+    const s = useSessionStore.getState();
+    persistProjects(s.projects, s.turns);
+  }, 300);
 });
+
+// A thread the user never invested in: no prompt ever sent (no transcript on
+// disk or in memory) and never renamed. Untouched threads are never persisted
+// and are discarded when their panel closes or they are archived.
+function isUntouched(thread: Thread, turns: Record<string, Turn[]>): boolean {
+  return !thread.sessionFile && !turns[thread.id]?.length && !thread.renamed;
+}
 
 // Locate a thread and its owning project by id. Threads live nested under
 // projects; the one traversal shared by store actions and components.
