@@ -123,6 +123,8 @@ export interface Project {
 export interface ProviderInfo {
   id: string;
   label: string;
+  // Env var Pi reads for this provider's key (e.g. google -> GEMINI_API_KEY).
+  env: string;
 }
 
 // Mirror of pi_config::ProviderAuth. Carries configured status only, never a key.

@@ -118,6 +118,9 @@ const PROVIDERS: &[ProviderDef] = &[
 pub struct ProviderInfo {
     pub id: String,
     pub label: String,
+    // Env var Pi reads for this provider's key, shown in settings as the
+    // alternative to storing a key in auth.json.
+    pub env: String,
 }
 
 // Full provider list for the settings picker. get_available_models is gated to
@@ -128,6 +131,7 @@ pub fn supported_providers() -> Vec<ProviderInfo> {
         .map(|p| ProviderInfo {
             id: p.id.to_string(),
             label: p.label.to_string(),
+            env: p.env.to_string(),
         })
         .collect()
 }
@@ -391,5 +395,10 @@ mod tests {
         let count = ids.len();
         ids.dedup();
         assert_eq!(ids.len(), count, "provider ids must be unique");
+        for p in &list {
+            assert!(!p.env.is_empty(), "provider {} must have an env var", p.id);
+        }
+        let google = list.iter().find(|p| p.id == "google").unwrap();
+        assert_eq!(google.env, "GEMINI_API_KEY");
     }
 }
