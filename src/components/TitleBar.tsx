@@ -25,15 +25,14 @@ export function TitleBar() {
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
   const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
 
-  // The focused thread's project; before any thread is focused, the first
-  // project stands in (matches the sidebar's ordering).
+  // The focused thread's project; with no thread focused (home page) the left
+  // side stays empty.
   const projectName = useMemo(() => {
-    if (activeThreadId) {
-      for (const p of projects) {
-        if (p.threads.some((t) => t.id === activeThreadId)) return p.name;
-      }
+    if (!activeThreadId) return null;
+    for (const p of projects) {
+      if (p.threads.some((t) => t.id === activeThreadId)) return p.name;
     }
-    return projects[0]?.name ?? "Hoy";
+    return null;
   }, [projects, activeThreadId]);
 
   return (
@@ -42,21 +41,25 @@ export function TitleBar() {
       className="flex h-9 shrink-0 select-none items-center justify-between border-b border-border bg-sidebar pl-3 pr-1 text-xs text-muted-foreground"
     >
       <div data-tauri-drag-region className="flex min-w-0 items-center gap-2">
-        <span
-          data-tauri-drag-region
-          className="truncate font-medium text-foreground"
-        >
-          {projectName}
-        </span>
-        {/* Mocked branch chip: real git status (branch/dirty/stash) is a
-            follow-up; see FOLLOWUPS.md. */}
-        <span
-          data-tauri-drag-region
-          className="flex items-center gap-1 rounded px-1 py-0.5"
-        >
-          <GitBranch className="size-3.5" data-tauri-drag-region />
-          main
-        </span>
+        {projectName && (
+          <>
+            <span
+              data-tauri-drag-region
+              className="truncate font-medium text-foreground"
+            >
+              {projectName}
+            </span>
+            {/* Mocked branch chip: real git status (branch/dirty/stash) is a
+                follow-up; see FOLLOWUPS.md. */}
+            <span
+              data-tauri-drag-region
+              className="flex items-center gap-1 rounded px-1 py-0.5"
+            >
+              <GitBranch className="size-3.5" data-tauri-drag-region />
+              main
+            </span>
+          </>
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-0.5">
