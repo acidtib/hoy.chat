@@ -1,6 +1,6 @@
 # Plan: Per-thread model selection
 
-Status: proposed (FOLLOWUPS.md "Per-thread model selection")
+Status: implemented (HOY-176, HOY-177, HOY-178)
 
 ## Context
 

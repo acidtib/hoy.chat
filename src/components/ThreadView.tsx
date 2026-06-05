@@ -47,7 +47,7 @@ import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Composer } from "@/components/Composer";
 import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/state/store";
-import type { ModelInfo, PiState, ToolUI, Turn } from "@/lib/types";
+import type { PiState, ToolUI, Turn } from "@/lib/types";
 
 // Stable empty reference so the turns selector doesn't return a fresh [] each
 // render (which would loop zustand's snapshot equality check).
@@ -57,10 +57,6 @@ export function ThreadView({
   threadId,
   active,
   onClose,
-  models,
-  currentModel,
-  selecting,
-  onSelectModel,
   onOpenSettings,
   onDebug,
   busy,
@@ -70,10 +66,6 @@ export function ThreadView({
   threadId: string;
   active: boolean;
   onClose: () => void;
-  models: ModelInfo[];
-  currentModel?: ModelInfo | null;
-  selecting: boolean;
-  onSelectModel: (provider: string, modelId: string) => void;
   onOpenSettings: () => void;
   onDebug: () => void;
   busy: boolean;
@@ -87,14 +79,23 @@ export function ThreadView({
   const streaming = useSessionStore((s) => s.streaming[threadId] ?? false);
   const threadError = useSessionStore((s) => s.threadErrors[threadId] ?? null);
   const submitPrompt = useSessionStore((s) => s.submitPrompt);
+  const models = useSessionStore((s) => s.models);
+  const defaultModel = useSessionStore((s) => s.defaultModel);
+  const selecting = useSessionStore((s) => s.modelSelecting[threadId] ?? false);
+  const selectModel = useSessionStore((s) => s.selectModel);
   const [draft, setDraft] = useState("");
 
-  const { title, projectId } = useMemo(() => {
+  const { title, projectId, threadModel } = useMemo(() => {
     for (const p of projects) {
       const t = p.threads.find((thread) => thread.id === threadId);
-      if (t) return { title: t.title, projectId: p.id };
+      if (t)
+        return { title: t.title, projectId: p.id, threadModel: t.model ?? null };
     }
-    return { title: "New thread", projectId: null as string | null };
+    return {
+      title: "New thread",
+      projectId: null as string | null,
+      threadModel: null,
+    };
   }, [projects, threadId]);
 
   const hasMessages = turns.length > 0;
@@ -112,9 +113,11 @@ export function ThreadView({
       onChange={setDraft}
       onSubmit={handleSubmit}
       models={models}
-      currentModel={currentModel}
+      currentModel={threadModel ?? defaultModel}
       selecting={selecting}
-      onSelectModel={onSelectModel}
+      onSelectModel={(provider, modelId) =>
+        void selectModel(threadId, provider, modelId)
+      }
       fill={!hasMessages}
       autoFocus={!hasMessages}
       disabled={streaming}

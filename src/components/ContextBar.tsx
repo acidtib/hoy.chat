@@ -8,13 +8,13 @@ import {
 import { cn, formatTokens } from "@/lib/utils";
 import { pickDirectory } from "@/lib/ipc";
 import { useSessionStore } from "@/state/store";
-import type { PiState } from "@/lib/types";
 
 // Single full-width status bar (Zed-style): the sidebar controls live in the
 // left segment, aligned to the sidebar's width and divided by its border, while
-// the right segment shows the focused thread's live model/status/usage. Context
-// window and cost come from get_session_stats, refreshed after each turn.
-export function ContextBar({ state }: { state: PiState | null }) {
+// the right segment shows the focused thread's status and usage. The model is
+// per thread and lives in each composer's selector, not here. Context window
+// and cost come from get_session_stats, refreshed after each turn.
+export function ContextBar() {
   const collapsed = useSessionStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useSessionStore((s) => s.toggleSidebar);
   const addProject = useSessionStore((s) => s.addProject);
@@ -29,9 +29,7 @@ export function ContextBar({ state }: { state: PiState | null }) {
     activeThreadId ? (s.streaming[activeThreadId] ?? false) : false,
   );
 
-  const model = state?.model?.id ?? "no model";
-  // Per-thread streaming: the control session backing `state` never runs a turn,
-  // so its isStreaming is always false. The focused thread's flag is the truth.
+  // Per-thread streaming: the focused thread's flag is the truth.
   const streaming = threadStreaming;
   const status = streaming ? "streaming" : "idle";
 
@@ -110,10 +108,6 @@ export function ContextBar({ state }: { state: PiState | null }) {
         <Divider />
 
         <span className="font-mono tabular-nums">{costLabel}</span>
-
-        <span className="ml-auto truncate font-mono text-muted-foreground/80">
-          {model}
-        </span>
       </div>
     </footer>
   );

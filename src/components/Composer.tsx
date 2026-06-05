@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { ModelInfo } from "@/lib/types";
+import type { ModelInfo, ModelRef } from "@/lib/types";
 
 const MODES = ["Agent", "Plan Mode"];
 const THINKING = ["Minimal", "Low", "Medium", "High"];
@@ -41,7 +41,7 @@ export function Composer({
   onChange: (value: string) => void;
   onSubmit?: () => void;
   models: ModelInfo[];
-  currentModel?: ModelInfo | null;
+  currentModel?: ModelRef | null;
   selecting: boolean;
   onSelectModel: (provider: string, modelId: string) => void;
   fill?: boolean;
@@ -124,11 +124,7 @@ export function Composer({
           <PillSelect value={mode} options={MODES} onSelect={setMode} />
           <ModelSelect
             models={models}
-            current={
-              currentModel
-                ? { provider: currentModel.provider, id: currentModel.id }
-                : null
-            }
+            current={currentModel ?? null}
             disabled={selecting}
             onSelect={onSelectModel}
           />

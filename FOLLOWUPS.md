@@ -41,22 +41,35 @@ capabilities later. Not part of the pivot itself.
 
 ## Per-thread model selection (selector targets the control session)
 
-Status: open
+Status: resolved (HOY-176/177/178; see `docs/plans/per-thread-model-selection.md`)
 Introduced: pre-M3 (M2 wiring), surfaced by the M3 code review
 
 ### Context
 Spec §2 says the model selector lives in each thread's composer with per-thread scope.
-In practice `App.handleSelectModel` calls `set_model(activeSessionId, ...)` against the boot
-control session `s1`, not the focused thread's session. It works today only because Pi persists
-`defaultModel` to the shared `settings.json` and each newly spawned thread sidecar reads it, so
-*new* threads inherit the choice. But: a thread whose sidecar already spawned does not update when
-the model changes, and the per-thread selector implies a control it does not have. Not introduced
-by the M3 diff (App.tsx unchanged), so left as-is here.
+In practice `App.handleSelectModel` called `set_model(activeSessionId, ...)` against the boot
+control session `s1`, not the focused thread's session.
+
+### Resolution
+`selectModel(threadId, ...)` routes `set_model` to the thread's own session (deferred onto
+`thread.model` until one spawns; applied by `applyThreadModel` before the first prompt and
+reconciled on restore). The footer no longer shows a model; each composer's selector is the
+per-thread display.
+
+## Live thread sessions miss newly saved provider keys
+
+Status: open
+Introduced: M2 (key save respawn), surfaced by the per-thread model selection work
+
+### Context
+Pi caches auth.json at process start, and `save_provider_key` respawns only the control session.
+A thread whose sidecar is already running keeps its stale credential view, so after saving a new
+provider key, `set_model` on that live thread fails with Pi's "No API key for <provider>/<id>"
+until the panel is closed and reopened (kill-on-close respawns with fresh auth).
 
 ### What's needed
-- Route `set_model` to the thread's own `sessionId` (lazily spawning the session if it has none
-  yet, or deferring the choice until first prompt), and track the selected model per thread rather
-  than from the single control-session `state.model`.
+- Either respawn all live sessions after a key save (disruptive mid-turn; would need draining),
+  or an auth-reload RPC in Pi when one becomes available. Until then the close/reopen workaround
+  stands.
 
 ## Session import (history view download icon)
 

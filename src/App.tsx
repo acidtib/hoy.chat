@@ -13,7 +13,7 @@ import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { activeSessionId, getState, setModel } from "@/lib/ipc";
+import { activeSessionId, getState } from "@/lib/ipc";
 import { refreshProviderData } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
@@ -27,7 +27,7 @@ function App() {
   const sidebarView = useSessionStore((s) => s.sidebarView);
   const initWorkspace = useSessionStore((s) => s.initWorkspace);
   const activeId = useSessionStore((s) => s.activeSessionId);
-  const models = useSessionStore((s) => s.models);
+  const setDefaultModel = useSessionStore((s) => s.setDefaultModel);
   const setBodyWidth = useSessionStore((s) => s.setBodyWidth);
   const closePanel = useSessionStore((s) => s.closePanel);
   const focusPanel = useSessionStore((s) => s.openThread);
@@ -61,11 +61,9 @@ function App() {
     panelCount.current = panels.length;
   }, [panels.length]);
 
-  const [state, setState] = useState<PiState | null>(null);
   const [debug, setDebug] = useState<PiState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [selecting, setSelecting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,7 +81,14 @@ function App() {
           refreshProviderData(),
         ]);
         if (cancelled) return;
-        if (piState) setState(piState);
+        // The control session's model is Pi's persisted defaultModel: what a
+        // thread shows and spawns with until it has its own pick.
+        if (piState?.model) {
+          setDefaultModel({
+            provider: piState.model.provider,
+            id: piState.model.id,
+          });
+        }
       } catch (e) {
         if (!cancelled) setError(String(e));
       }
@@ -91,21 +96,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [setActiveSessionId]);
-
-  async function handleSelectModel(provider: string, modelId: string) {
-    if (!activeId) return;
-    setSelecting(true);
-    setError(null);
-    try {
-      await setModel(activeId, provider, modelId);
-      setState(await getState(activeId));
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setSelecting(false);
-    }
-  }
+  }, [setActiveSessionId, setDefaultModel]);
 
   // Developer round-trip: toggle the raw get_state payload in the transcript.
   async function handleDebug() {
@@ -120,9 +111,7 @@ function App() {
     setBusy(true);
     setError(null);
     try {
-      const s = await getState(activeId);
-      setState(s);
-      setDebug(s);
+      setDebug(await getState(activeId));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -159,10 +148,6 @@ function App() {
                         threadId={panel.id}
                         active={panel.id === activeThreadId}
                         onClose={() => closePanel(panel.id)}
-                        models={models}
-                        currentModel={state?.model}
-                        selecting={selecting}
-                        onSelectModel={handleSelectModel}
                         onOpenSettings={() => setSettingsOpen(true)}
                         onDebug={handleDebug}
                         busy={busy}
@@ -179,7 +164,7 @@ function App() {
             )}
           </div>
         </div>
-        <ContextBar state={state} />
+        <ContextBar />
       </div>
     </TooltipProvider>
   );
