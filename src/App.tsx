@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { Sidebar } from "@/components/Sidebar";
+import { ThreadHistory } from "@/components/ThreadHistory";
 import { HomePage } from "@/components/HomePage";
 import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
@@ -29,6 +30,8 @@ function App() {
   const panels = useSessionStore((s) => s.panels);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
   const sidebarCollapsed = useSessionStore((s) => s.sidebarCollapsed);
+  const sidebarView = useSessionStore((s) => s.sidebarView);
+  const initWorkspace = useSessionStore((s) => s.initWorkspace);
   const activeId = useSessionStore((s) => s.activeSessionId);
   const models = useSessionStore((s) => s.models);
   const setBodyWidth = useSessionStore((s) => s.setBodyWidth);
@@ -38,6 +41,11 @@ function App() {
   const setModels = useSessionStore((s) => s.setModels);
   const setSupportedProviders = useSessionStore((s) => s.setSupportedProviders);
   const setProviderAuth = useSessionStore((s) => s.setProviderAuth);
+
+  // Restore the persisted projects -> threads tree on boot (then autosave kicks in).
+  useEffect(() => {
+    void initWorkspace();
+  }, [initWorkspace]);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -175,7 +183,8 @@ function App() {
     <TooltipProvider delayDuration={200}>
       <div className="flex h-screen flex-col bg-background text-foreground">
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
-          {!sidebarCollapsed && <Sidebar />}
+          {!sidebarCollapsed &&
+            (sidebarView === "history" ? <ThreadHistory /> : <Sidebar />)}
 
           <div ref={bodyRef} className="relative flex min-h-0 flex-1 overflow-hidden">
             {panels.length === 0 ? (

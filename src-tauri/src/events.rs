@@ -70,6 +70,11 @@ pub struct SessionStats {
     pub context_usage: Option<ContextUsage>,
     pub tokens: TokenUsage,
     pub cost: f64,
+    // Durable path of this session's JSONL on disk (M4). The renderer persists it
+    // onto the thread so a reopened thread can reload its transcript. None for an
+    // in-memory session.
+    #[serde(default)]
+    pub session_file: Option<String>,
 }
 
 // Pi's ContextUsage. tokens/percent are null until the next LLM response after a

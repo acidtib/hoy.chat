@@ -33,7 +33,6 @@ export function Sidebar() {
   const addProject = useSessionStore((s) => s.addProject);
   const addThread = useSessionStore((s) => s.addThread);
   const removeProject = useSessionStore((s) => s.removeProject);
-  const sidebarWidth = useSessionStore((s) => s.sidebarWidth);
 
   const openIds = useMemo(() => new Set(panels.map((p) => p.id)), [panels]);
 
@@ -46,8 +45,13 @@ export function Sidebar() {
   const normalized = query.trim().toLowerCase();
 
   const filtered = useMemo(() => {
-    if (!normalized) return projects;
-    return projects
+    // Archived threads live in the history view, not the projects tree.
+    const active = projects.map((p) => ({
+      ...p,
+      threads: p.threads.filter((t) => !t.archived),
+    }));
+    if (!normalized) return active;
+    return active
       .map((p) => {
         const nameMatch = p.name.toLowerCase().includes(normalized);
         const threads = nameMatch
@@ -62,10 +66,7 @@ export function Sidebar() {
   }, [projects, normalized]);
 
   return (
-    <aside
-      style={{ width: sidebarWidth }}
-      className="relative flex shrink-0 flex-col border-r border-border bg-sidebar"
-    >
+    <SidebarShell>
       {projects.length === 0 ? (
         <SidebarEmptyState onOpenProject={handleOpenProject} />
       ) : (
@@ -106,7 +107,21 @@ export function Sidebar() {
           </nav>
         </>
       )}
+    </SidebarShell>
+  );
+}
 
+// Shared sidebar chrome: fixed-width column with a draggable right edge. Wraps
+// both the projects tree (Sidebar) and the history view (ThreadHistory) so they
+// share width and the resize handle.
+export function SidebarShell({ children }: { children: React.ReactNode }) {
+  const sidebarWidth = useSessionStore((s) => s.sidebarWidth);
+  return (
+    <aside
+      style={{ width: sidebarWidth }}
+      className="relative flex shrink-0 flex-col border-r border-border bg-sidebar"
+    >
+      {children}
       <ResizeHandle />
     </aside>
   );

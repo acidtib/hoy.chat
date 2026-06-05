@@ -34,6 +34,9 @@ export interface SessionStats {
     total: number;
   };
   cost: number;
+  // Durable path of the session's JSONL on disk (M4); persisted onto the thread
+  // so it can be reopened after restart. Null for an in-memory session.
+  sessionFile?: string | null;
 }
 
 // A single tool call rendered in a turn. Built from `tool` AgentEvents (start
@@ -50,7 +53,7 @@ export interface ToolUI {
 }
 
 // The per-thread transcript model, keyed by threadId in the store. Replaces the
-// mock-conversation shape; built live from streaming AgentEvents (lib/turns.ts).
+// built live from streaming AgentEvents and restored transcripts (lib/turns.ts).
 export type Turn =
   | { role: "user"; text: string }
   | {
@@ -91,8 +94,20 @@ export interface Thread {
   title: string;
   // Epoch ms of last activity; drives the relative timestamp in the sidebar.
   updatedAt: number;
-  // The real Pi session this thread drives, once one exists.
+  // The live sidecar process this thread drives right now (ephemeral; null when
+  // no sidecar is running, e.g. after a panel close or a fresh app start).
   sessionId?: string | null;
+  // The durable Pi session JSONL on disk (M4). This is the thread's stable
+  // identity across restarts: reopening spawns a sidecar that opens this file.
+  sessionFile?: string | null;
+  // Archived threads leave the projects tree and live in the history view, where
+  // they can be unarchived or permanently deleted.
+  archived?: boolean;
+}
+
+// Mirror of workspace.rs Workspace: the persisted projects -> threads tree.
+export interface Workspace {
+  projects: Project[];
 }
 
 export interface Project {

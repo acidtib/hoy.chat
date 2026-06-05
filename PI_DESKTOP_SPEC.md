@@ -5,7 +5,7 @@
 > App identifier `dev.hoy-desktop.app`. ("Pi" in this doc always means the agent, never the app.)
 > This is the same three-layer architecture OpenAI's Codex desktop app uses (Chromium renderer → Node/Rust main → spawned agent process). We are deliberately copying it. The spawned process is our own thin SDK entry running Pi's `runRpcMode`, not the stock CLI (see §0).
 >
-> **Status:** M0–M3 shipped. The UI was redesigned into a Zed-style multi-panel workspace (§2). Two decisions now baked in: **session per thread** (each thread drives its own Pi sidecar) and **panels are the canonical MVP layout**. M3 streams real Pi responses into each panel over a Tauri Channel, concurrently across panels, with the context bar fed by `get_session_stats`.
+> **Status:** M0–M4 shipped. The UI was redesigned into a Zed-style multi-panel workspace (§2). Two decisions now baked in: **session per thread** (each thread drives its own Pi sidecar) and **panels are the canonical MVP layout**. M3 streams real Pi responses into each panel over a Tauri Channel, concurrently across panels, with the context bar fed by `get_session_stats`. M4 persists transcripts (Pi `SessionManager` in the branded dir) and the projects/threads tree (`workspace.json`), restores them on relaunch, kills a thread's sidecar on panel close, and adds an archive + Zed-style history view (archive -> history -> unarchive/delete).
 
 ---
 
@@ -319,17 +319,40 @@ deltas are dropped for now (AgentEvent has no reasoning kind yet); see FOLLOWUPS
   disables then re-enables on done; the bottom bar shows the focused thread's context usage +
   cost after its turn.
 
-### M4 — Thread/session persistence
+### M4 — Thread/session persistence (DONE)
 The collapsible tool rows (read/search rows, edit/terminal cards) are already built in
-`ThreadView` and wired to live `tool` events in M3, so M4 is persistence + lifecycle:
-- Switch the entry's `SessionManager.inMemory()` to a persistent `SessionManager.create(cwd)` so
-  Pi persists sessions; on app start, restore projects/threads (today they are frontend-seeded)
-  and re-list prior sessions, loading each thread's transcript.
-- Thread lifecycle: deleting a thread tears down its sidecar; decide whether closing a panel
-  keeps the session warm (see §7). New threads spawn/target a fresh session in the project cwd.
-- **Acceptance:** a prompt that triggers a tool (e.g. "list the files here") shows a tool row
-  with output; restarting the app shows the prior thread in the sidebar (grouped under its
-  project) and its transcript loads.
+`ThreadView` and wired to live `tool` events in M3, so M4 is persistence + lifecycle.
+
+As built (two layers, cleanly split):
+- **Pi owns transcripts.** The sidecar entry now runs `SessionManager.open(HOY_SESSION_FILE)`
+  when Rust passes a thread's file, else `SessionManager.create(cwd)` (fresh), falling back to
+  fresh if the file is missing. `create(cwd)` resolves the session dir under
+  `PI_CODING_AGENT_DIR`, so transcripts live in the branded dir
+  (`~/.hoy/agent/sessions/<encoded-cwd>/`). Verified: `getAgentDir()` (config.js) reads that env;
+  `createAgentSession` (sdk.js) seeds `agent.state.messages` from the opened session, so
+  `get_messages` returns the prior transcript and follow-ups append to the same file.
+- **Hoy owns the workspace tree.** `workspace.rs` does atomic read-modify-write of
+  `~/.hoy/agent/workspace.json` (projects -> threads, each thread carrying its durable
+  `sessionFile`, title, updatedAt, archived). Commands `load_workspace` / `save_workspace`; the
+  store loads on boot and autosaves (debounced) on change. The live sidecar `sessionId` is
+  ephemeral and not persisted; `sessionFile` is the durable identity.
+- **Lifecycle (decided):** closing a panel **kills** its sidecar (`close_session` ->
+  `SidecarManager::remove` -> child Drop) and clears the cached turns; reopening re-spawns and
+  reloads from disk. New backend commands: `create_session(cwd, sessionFile?)`, `close_session`,
+  `get_messages`, `delete_session_file` (guarded to the sessions dir). `SessionStats` gained
+  `sessionFile` so the post-turn stats call captures a new thread's path.
+- **Archive, not delete (Zed-inspired).** The thread menu archives; archived threads leave the
+  projects tree and appear in a flat, searchable **history view** (`ThreadHistory`, toggled from
+  the bottom-bar clock), grouped Today / Yesterday / This Week / Older with `project · reltime`.
+  An archive toggle flips to archived threads, where each can be unarchived or permanently
+  deleted (teardown + drop from workspace + delete the JSONL). The mock seed (`mock-conversation.ts`)
+  is retired; first run starts empty.
+- Restored and streamed transcripts render identically: `messagesToTurns` merges Pi's
+  per-step assistant messages + toolResults between user messages into one assistant turn.
+- **Acceptance (verified end to end via the Tauri MCP bridge):** a prompt that triggers a tool
+  ("list the files here") shows a tool row with output in the project cwd; restarting the app
+  shows the prior thread in the sidebar and reopening it reloads the transcript; archive moves it
+  to the history view; delete removes it and its JSONL; closing a panel exits the child (no leak).
 
 ### M5 (post-MVP, document only) — Orchestration dashboard
 - The process model (a sidecar per thread, concurrent streaming) is already delivered in M3.

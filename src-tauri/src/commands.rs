@@ -7,6 +7,7 @@ use tauri::State;
 use crate::events::{AgentEvent, ModelInfo, PiState, SessionStats};
 use crate::pi_config::{self, ProviderAuth, ProviderInfo};
 use crate::sidecar::SidecarManager;
+use crate::workspace::{self, Workspace};
 
 // Pull `data` out of an RPC response envelope, surfacing Pi's error string on
 // failure. Pi responses are {type:"response", command, id, success, data, error}.
@@ -129,10 +130,12 @@ pub fn active_session_id(manager: State<'_, SidecarManager>) -> Option<String> {
 
 // Spawn a thread's own sidecar in its project directory. An empty cwd falls back
 // to the manager's default (temp) dir so threads without a project path still
-// run. Returns the new sessionId the thread stores and drives.
+// run. `session_file` (M4) reopens a thread's existing transcript; None starts
+// fresh. Returns the new sessionId the thread stores and drives.
 #[tauri::command]
 pub async fn create_session(
     cwd: String,
+    session_file: Option<String>,
     manager: State<'_, SidecarManager>,
 ) -> Result<String, String> {
     let path = if cwd.trim().is_empty() {
@@ -140,7 +143,67 @@ pub async fn create_session(
     } else {
         PathBuf::from(cwd)
     };
-    manager.spawn_session_in(&path)
+    manager.spawn_session_in(&path, session_file.as_deref())
+}
+
+// Tear down a thread's sidecar (panel close / thread delete). The control session
+// is never removed so model enumeration keeps working.
+#[tauri::command]
+pub fn close_session(session_id: String, manager: State<'_, SidecarManager>) {
+    if manager.active_session_id().as_deref() == Some(session_id.as_str()) {
+        return;
+    }
+    manager.remove(&session_id);
+}
+
+// Load a session's full transcript as raw Pi AgentMessage objects; the renderer
+// folds them into turns (lib/turns.ts). Used to restore a reopened thread.
+#[tauri::command]
+pub async fn get_messages(
+    session_id: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<Vec<Value>, String> {
+    let process = manager.get(&session_id)?;
+    let response = process.request(json!({ "type": "get_messages" })).await?;
+    let data = unwrap_response(response, "get_messages")?;
+    let messages = data
+        .get("messages")
+        .cloned()
+        .ok_or("get_messages response missing messages")?;
+    serde_json::from_value(messages).map_err(|e| format!("decode messages: {e}"))
+}
+
+// Permanently delete a thread's transcript JSONL (thread delete). Guarded to the
+// branded sessions dir so a stray path can never remove arbitrary files. A
+// missing file is treated as success (already gone).
+#[tauri::command]
+pub fn delete_session_file(session_file: String) -> Result<(), String> {
+    let sessions_root = pi_config::agent_dir()?.join("sessions");
+    let path = PathBuf::from(&session_file);
+    // starts_with is component-wise, so a `..` component would pass the prefix
+    // check while resolving outside the sessions dir. Reject any traversal.
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+        || !path.starts_with(&sessions_root)
+    {
+        return Err("refusing to delete outside the sessions dir".into());
+    }
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("delete session file: {e}")),
+    }
+}
+
+#[tauri::command]
+pub fn load_workspace() -> Result<Workspace, String> {
+    workspace::load()
+}
+
+#[tauri::command]
+pub fn save_workspace(workspace: Workspace) -> Result<(), String> {
+    workspace::save(&workspace)
 }
 
 // Attach the prompt's Channel to the session, send Pi a `prompt`, and return once

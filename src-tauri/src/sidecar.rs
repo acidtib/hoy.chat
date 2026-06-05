@@ -44,18 +44,25 @@ impl PiProcess {
         payload: &Path,
         agent_dir: &Path,
         cwd: &Path,
+        session_file: Option<&str>,
     ) -> Result<Arc<PiProcess>, String> {
         if agent_dir.as_os_str().is_empty() {
             return Err("agent dir not resolved (set HOME or HOY_AGENT_DIR)".into());
         }
-        let mut child = Command::new(bin)
+        let mut command = Command::new(bin);
+        command
             // No CLI flags: this is our SDK entry (hoy-sidecar.ts), not Pi's CLI.
-            // Its behaviors (in-memory sessions, no context files) are baked into
-            // the entry. PI_CODING_AGENT_DIR points the entry at our branded dir
-            // for auth.json / models.json / settings.json.
+            // PI_CODING_AGENT_DIR points the entry at our branded dir for
+            // auth.json / models.json / settings.json / sessions.
             .env("PI_PACKAGE_DIR", payload)
             .env("PI_CODING_AGENT_DIR", agent_dir)
-            .current_dir(cwd)
+            .current_dir(cwd);
+        // M4: open this thread's existing transcript instead of starting fresh.
+        // The entry falls back to a new session if the file is missing.
+        if let Some(file) = session_file {
+            command.env("HOY_SESSION_FILE", file);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -359,7 +366,7 @@ impl SidecarManager {
     // session spawned becomes the active one (used for model enumeration).
     pub fn spawn_session(&self) -> Result<SessionId, String> {
         let cwd = self.cwd.clone();
-        let id = self.spawn_session_in(&cwd)?;
+        let id = self.spawn_session_in(&cwd, None)?;
         let mut active = self.active.lock().unwrap();
         if active.is_none() {
             *active = Some(id.clone());
@@ -370,17 +377,31 @@ impl SidecarManager {
     // Spawn a sidecar in `cwd` (a thread's project dir), register it under a fresh
     // SessionId, and return that id. Does not touch the active session: the boot
     // control session stays active for list_models. This is session-per-thread.
-    pub fn spawn_session_in(&self, cwd: &Path) -> Result<SessionId, String> {
+    // `session_file` opens an existing transcript (M4 restore); None starts fresh.
+    pub fn spawn_session_in(
+        &self,
+        cwd: &Path,
+        session_file: Option<&str>,
+    ) -> Result<SessionId, String> {
         if !self.bin.exists() {
             return Err(format!(
                 "sidecar binary not found at {}. Run sidecar/build.sh.",
                 self.bin.display()
             ));
         }
-        let proc = PiProcess::spawn(&self.bin, &self.payload, &self.agent_dir, cwd)?;
+        let proc =
+            PiProcess::spawn(&self.bin, &self.payload, &self.agent_dir, cwd, session_file)?;
         let id = format!("s{}", self.handle_counter.fetch_add(1, Ordering::Relaxed));
         self.sessions.lock().unwrap().insert(id.clone(), proc);
         Ok(id)
+    }
+
+    // Tear down a session's sidecar (panel close / thread delete). Dropping the
+    // Arc runs PiProcess::drop, which kills and reaps the child. The Arc is
+    // dropped outside the lock so Drop does not hold it.
+    pub fn remove(&self, id: &str) {
+        let old = self.sessions.lock().unwrap().remove(id);
+        drop(old);
     }
 
     pub fn get(&self, id: &str) -> Result<Arc<PiProcess>, String> {
@@ -404,7 +425,7 @@ impl SidecarManager {
                 self.bin.display()
             ));
         }
-        let proc = PiProcess::spawn(&self.bin, &self.payload, &self.agent_dir, &self.cwd)?;
+        let proc = PiProcess::spawn(&self.bin, &self.payload, &self.agent_dir, &self.cwd, None)?;
         let old = {
             let mut sessions = self.sessions.lock().unwrap();
             if !sessions.contains_key(id) {
@@ -611,6 +632,90 @@ mod live_tests {
             tools.iter().any(|t| t["phase"] == "end"
                 && t["output"].as_str().is_some_and(|o| o.contains("hoy-tool-probe"))),
             "no tool end carrying the command output; kinds={kinds:?}"
+        );
+    }
+
+    // Proves the M4 persist -> restore mechanic end to end: prompt a fresh
+    // session, capture its sessionFile from stats, tear it down, then spawn a new
+    // sidecar opening that file and confirm get_messages returns the prior turn.
+    // Same prerequisites as the streaming tests (a configured credential). Run:
+    //   cargo test live_persist_and_restore -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn live_persist_and_restore() {
+        use tauri::ipc::InvokeResponseBody;
+
+        let manager = SidecarManager::new();
+        let cwd = std::env::temp_dir();
+
+        // 1. Fresh session: prompt and wait for the turn to complete.
+        let id = manager
+            .spawn_session_in(&cwd, None)
+            .expect("spawn fresh session");
+        let process = manager.get(&id).expect("session present");
+        let events: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink_events = events.clone();
+        let channel = Channel::new(move |body: InvokeResponseBody| {
+            if let InvokeResponseBody::Json(s) = body {
+                if let Ok(v) = serde_json::from_str::<Value>(&s) {
+                    sink_events.lock().unwrap().push(v);
+                }
+            }
+            Ok(())
+        });
+        process.set_sink(channel);
+        process
+            .request(json!({
+                "type": "prompt",
+                "message": "Reply with the single word PERSISTED."
+            }))
+            .await
+            .expect("prompt accepted");
+        for _ in 0..120 {
+            if events.lock().unwrap().iter().any(|e| e["kind"] == "done") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+
+        // Capture the durable session file Pi wrote.
+        let stats = process
+            .request(json!({ "type": "get_session_stats" }))
+            .await
+            .expect("get_session_stats");
+        let session_file = stats["data"]["sessionFile"]
+            .as_str()
+            .expect("stats carry a sessionFile")
+            .to_string();
+        assert!(!session_file.is_empty());
+        eprintln!("session file: {session_file}");
+
+        // 2. Tear down the first sidecar, then reopen the same file in a new one.
+        manager.remove(&id);
+        let id2 = manager
+            .spawn_session_in(&cwd, Some(&session_file))
+            .expect("spawn restoring session");
+        let restored = manager.get(&id2).expect("restored session present");
+        let response = restored
+            .request(json!({ "type": "get_messages" }))
+            .await
+            .expect("get_messages");
+        let messages = response["data"]["messages"]
+            .as_array()
+            .expect("messages array");
+        let roles: Vec<&str> = messages
+            .iter()
+            .filter_map(|m| m["role"].as_str())
+            .collect();
+        eprintln!("restored roles: {roles:?}");
+
+        assert!(
+            roles.contains(&"user"),
+            "restored transcript missing the user message: {roles:?}"
+        );
+        assert!(
+            roles.contains(&"assistant"),
+            "restored transcript missing the assistant reply: {roles:?}"
         );
     }
 }

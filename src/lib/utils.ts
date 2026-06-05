@@ -21,3 +21,33 @@ export function formatRelativeTime(epochMs: number, now = Date.now()): string {
   if (months < 12) return `${months}mo`;
   return `${Math.floor(days / 365)}y`;
 }
+
+// Compact token counts for the one-line context bar: 1234 -> 1.2k, 200000 -> 200k.
+export function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  const k = n / 1000;
+  return k < 10 ? `${k.toFixed(1)}k` : `${Math.round(k)}k`;
+}
+
+export type RecencyBucket = "Today" | "Yesterday" | "This Week" | "Older";
+
+// Bucket an epoch-ms timestamp by recency for the Zed-style history view. Uses
+// calendar-day boundaries: Today, Yesterday, earlier this 7-day window, then Older.
+export function bucketByRecency(epochMs: number, now = Date.now()): RecencyBucket {
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const todayStart = startOfToday.getTime();
+  if (epochMs >= todayStart) return "Today";
+  if (epochMs >= todayStart - dayMs) return "Yesterday";
+  if (epochMs >= todayStart - 6 * dayMs) return "This Week";
+  return "Older";
+}
+
+// Display order of the recency buckets, most recent first.
+export const RECENCY_ORDER: RecencyBucket[] = [
+  "Today",
+  "Yesterday",
+  "This Week",
+  "Older",
+];

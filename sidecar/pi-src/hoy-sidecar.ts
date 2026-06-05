@@ -51,10 +51,27 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   return { ...result, services, diagnostics: services.diagnostics };
 };
 
+// M4 persistence: open the thread's existing session when Rust passes its file
+// (HOY_SESSION_FILE), else create a fresh one. create(cwd) resolves the session
+// dir under PI_CODING_AGENT_DIR (~/.hoy/agent/sessions/<encoded-cwd>/), so
+// transcripts stay in the branded dir. open() restores prior messages and keeps
+// appending to the same file (stable identity across restart and respawn); fall
+// back to a fresh session if the file is missing or unreadable.
+const sessionFile = process.env.HOY_SESSION_FILE;
+let sessionManager: SessionManager;
+try {
+  sessionManager = sessionFile
+    ? SessionManager.open(sessionFile)
+    : SessionManager.create(process.cwd());
+} catch (e) {
+  console.error(`hoy-sidecar: could not open ${sessionFile}, starting fresh: ${e}`);
+  sessionManager = SessionManager.create(process.cwd());
+}
+
 const runtime = await createAgentSessionRuntime(factory, {
   cwd: process.cwd(),
   agentDir,
-  sessionManager: SessionManager.inMemory(), // M1/M3 in-memory; M4 may persist
+  sessionManager,
 });
 
 await runRpcMode(runtime); // never returns

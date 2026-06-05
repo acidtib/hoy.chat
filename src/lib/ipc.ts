@@ -10,6 +10,7 @@ import type {
   ProviderAuth,
   ProviderInfo,
   SessionStats,
+  Workspace,
 } from "./types";
 
 // Native directory picker for adding a project. Returns the chosen absolute path,
@@ -59,8 +60,35 @@ export function supportedProviders(): Promise<ProviderInfo[]> {
 
 // Spawn a thread's own sidecar in its project dir, returning the sessionId the
 // thread then drives. Empty cwd falls back to the backend's default dir.
-export function createSession(cwd: string): Promise<string> {
-  return invoke<string>("create_session", { cwd });
+// `sessionFile` reopens an existing transcript (M4 restore); omit for a new one.
+export function createSession(
+  cwd: string,
+  sessionFile?: string | null,
+): Promise<string> {
+  return invoke<string>("create_session", { cwd, sessionFile: sessionFile ?? null });
+}
+
+// Tear down a thread's sidecar (panel close / delete). The control session is
+// never removed by the backend.
+export function closeSession(sessionId: string): Promise<void> {
+  return invoke<void>("close_session", { sessionId });
+}
+
+// Full transcript as raw Pi AgentMessage objects; mapped to turns by the caller.
+export function getMessages(sessionId: string): Promise<unknown[]> {
+  return invoke<unknown[]>("get_messages", { sessionId });
+}
+
+export function deleteSessionFile(sessionFile: string): Promise<void> {
+  return invoke<void>("delete_session_file", { sessionFile });
+}
+
+export function loadWorkspace(): Promise<Workspace> {
+  return invoke<Workspace>("load_workspace");
+}
+
+export function saveWorkspace(workspace: Workspace): Promise<void> {
+  return invoke<void>("save_workspace", { workspace });
 }
 
 // Send a prompt and stream the turn. Resolves once Pi accepts the prompt; tokens,

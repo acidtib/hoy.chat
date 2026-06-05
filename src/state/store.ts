@@ -1,12 +1,16 @@
 import { create } from "zustand";
-import { SEEDED_THREAD_ID } from "@/lib/mock-conversation";
 import {
   Channel,
+  closeSession,
   createSession,
+  deleteSessionFile,
+  getMessages,
   getSessionStats,
+  loadWorkspace,
+  saveWorkspace,
   sendPrompt,
 } from "@/lib/ipc";
-import { applyEvent } from "@/lib/turns";
+import { applyEvent, messagesToTurns } from "@/lib/turns";
 import type {
   AgentEvent,
   ModelInfo,
@@ -17,8 +21,6 @@ import type {
   Thread,
   Turn,
 } from "@/lib/types";
-
-const WEEK = 7 * 24 * 60 * 60 * 1000;
 
 export const SIDEBAR_MIN_WIDTH = 220;
 export const SIDEBAR_MAX_WIDTH = 480;
@@ -105,28 +107,6 @@ function placeNewPanel(
   };
 }
 
-// Seed projects so the sidebar is tangible while project/thread persistence is
-// still a frontend-only concept. Replaced by real data when the backend grows a
-// projects/threads store (next milestone).
-function seedProjects(): Project[] {
-  const now = Date.now();
-  return [
-    { id: "p_jiji", name: "jiji", threads: [] },
-    {
-      id: "p_hoy",
-      name: "hoy",
-      threads: [
-        {
-          id: SEEDED_THREAD_ID,
-          title: "lets work on ticket HOY-28",
-          updatedAt: now - 3 * WEEK,
-          sessionId: null,
-        },
-      ],
-    },
-  ];
-}
-
 function newId(prefix: string): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
@@ -145,6 +125,9 @@ interface SessionStore {
   activeThreadId: string | null;
   bodyWidth: number;
   sidebarCollapsed: boolean;
+  // Which view the sidebar shows: the projects -> threads tree, or the flat
+  // time-bucketed history (toggled from the bottom-bar clock).
+  sidebarView: "projects" | "history";
   sidebarWidth: number;
   activeSessionId: string | null;
   models: ModelInfo[];
@@ -164,6 +147,7 @@ interface SessionStore {
   setBodyWidth: (width: number) => void;
   resizePanelEdge: (index: number, deltaPx: number) => void;
   toggleSidebar: () => void;
+  setSidebarView: (view: "projects" | "history") => void;
   setSidebarWidth: (width: number) => void;
   addProject: (path: string) => void;
   addThread: (projectId: string) => string;
@@ -174,17 +158,26 @@ interface SessionStore {
   setSupportedProviders: (providers: ProviderInfo[]) => void;
   setProviderAuth: (providerAuth: ProviderAuth[]) => void;
 
+  // M4 persistence + lifecycle.
+  initWorkspace: () => Promise<void>;
+  hydrateThread: (threadId: string) => Promise<void>;
+  archiveThread: (threadId: string) => void;
+  unarchiveThread: (threadId: string) => void;
+  deleteThread: (threadId: string) => void;
+
   submitPrompt: (threadId: string, message: string) => Promise<void>;
   refreshStats: (threadId: string) => Promise<void>;
   setThreadSessionIdInternal: (threadId: string, sessionId: string) => void;
 }
 
 export const useSessionStore = create<SessionStore>((set, get) => ({
-  projects: seedProjects(),
+  // Empty until initWorkspace() loads the persisted tree from disk on boot.
+  projects: [],
   panels: [],
   activeThreadId: null,
   bodyWidth: initialBodyWidth(),
   sidebarCollapsed: false,
+  sidebarView: "projects",
   sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   activeSessionId: null,
   models: [],
@@ -195,15 +188,27 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   stats: {},
   threadErrors: {},
 
-  // Open the thread in a panel, or just focus it if it's already open.
-  openThread: (id) =>
+  // Open the thread in a panel, or just focus it if it's already open. A
+  // persisted thread (has a sessionFile, no live sidecar, nothing loaded) is
+  // hydrated from disk in the background.
+  openThread: (id) => {
     set((s) => {
       if (s.panels.some((p) => p.id === id)) return { activeThreadId: id };
       const { panels, width } = placeNewPanel(s.panels, s.bodyWidth);
       return { panels: [...panels, { id, width }], activeThreadId: id };
-    }),
+    });
+    void get().hydrateThread(id);
+  },
 
-  closePanel: (id) =>
+  closePanel: (id) => {
+    // Kill-on-close: tear down the live sidecar and drop the cached transcript so
+    // reopening re-spawns and reloads from disk. The durable sessionFile stays on
+    // the thread, so the conversation is not lost.
+    const live = findThread(get().projects, id)?.thread.sessionId;
+    if (live) void closeSession(live);
+    // Abandon the streaming channel so the killed sidecar's trailing error/done
+    // events are ignored rather than re-populating this thread's state.
+    activeChannels.delete(id);
     set((s) => {
       const index = s.panels.findIndex((p) => p.id === id);
       if (index < 0) return s;
@@ -219,8 +224,23 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         const neighbor = panels[index] ?? panels[index - 1] ?? null;
         activeThreadId = neighbor?.id ?? null;
       }
-      return { panels, activeThreadId };
-    }),
+      // Reset all per-thread live state so a reopen starts clean: a turn killed
+      // mid-stream must not leave streaming/error flags stuck on the thread.
+      const { [id]: _t, ...turns } = s.turns;
+      const { [id]: _st, ...stats } = s.stats;
+      const { [id]: _sg, ...streaming } = s.streaming;
+      const { [id]: _er, ...threadErrors } = s.threadErrors;
+      return {
+        panels,
+        activeThreadId,
+        turns,
+        stats,
+        streaming,
+        threadErrors,
+        projects: patchThread(s.projects, id, (th) => ({ ...th, sessionId: null })),
+      };
+    });
+  },
 
   setBodyWidth: (width) =>
     set((s) => {
@@ -252,6 +272,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }),
 
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setSidebarView: (view) => set({ sidebarView: view }),
   setSidebarWidth: (width) =>
     set({
       sidebarWidth: Math.min(
@@ -283,9 +304,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     get().openThread(thread.id);
     return thread.id;
   },
-  removeProject: (projectId) =>
+  removeProject: (projectId) => {
+    // Tear down any live sidecars the project's threads are running.
+    const removed = get().projects.find((p) => p.id === projectId);
+    for (const t of removed?.threads ?? []) {
+      if (t.sessionId) void closeSession(t.sessionId);
+    }
     set((s) => {
-      const removed = s.projects.find((p) => p.id === projectId);
       const ids = new Set(removed?.threads.map((t) => t.id) ?? []);
       const reclaimed = s.panels
         .filter((p) => ids.has(p.id))
@@ -304,7 +329,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         panels,
         activeThreadId,
       };
-    }),
+    });
+  },
 
   setActiveSessionId: (id) => set({ activeSessionId: id }),
   setModels: (models) => set({ models }),
@@ -348,12 +374,22 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     try {
       let sessionId = thread.sessionId ?? null;
       if (!sessionId) {
-        sessionId = await createSession(project.path ?? "");
+        // Reopen the thread's existing transcript when it has one (e.g. the
+        // sidecar was killed on panel close); else start a fresh session.
+        // acquireSession dedups with a concurrent hydrateThread so the two never
+        // spawn two sidecars for the same thread.
+        sessionId = await acquireSession(threadId, project.path ?? "", thread.sessionFile);
         get().setThreadSessionIdInternal(threadId, sessionId);
       }
 
       const channel = new Channel<AgentEvent>();
+      activeChannels.set(threadId, channel);
       channel.onmessage = (event) => {
+        // Ignore events from a superseded channel: closing a panel kills the
+        // sidecar, which makes the reader emit a (now-expected) error + done over
+        // this channel. Without this guard that stale error would resurface as a
+        // banner and orphaned turns when the thread is reopened.
+        if (activeChannels.get(threadId) !== channel) return;
         set((s) => ({
           turns: {
             ...s.turns,
@@ -361,6 +397,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           },
         }));
         if (event.kind === "done") {
+          activeChannels.delete(threadId);
           stopStreaming();
           void get().refreshStats(threadId);
         } else if (event.kind === "error") {
@@ -372,6 +409,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
       await sendPrompt(sessionId, text, channel);
     } catch (e) {
+      activeChannels.delete(threadId);
       stopStreaming();
       set((s) => {
         const list = s.turns[threadId] ?? [];
@@ -397,6 +435,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     try {
       const stats = await getSessionStats(sessionId);
       set((s) => ({ stats: { ...s.stats, [threadId]: stats } }));
+      // Capture the durable session file the first time it appears so the thread
+      // can be reopened after restart.
+      if (stats.sessionFile) {
+        const current = findThread(get().projects, threadId)?.thread;
+        if (current && current.sessionFile !== stats.sessionFile) {
+          set((s) => ({
+            projects: patchThread(s.projects, threadId, (th) => ({
+              ...th,
+              sessionFile: stats.sessionFile,
+            })),
+          }));
+        }
+      }
     } catch {
       // Stats are best-effort; a failure leaves the bar on its last value.
     }
@@ -411,7 +462,150 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         sessionId,
       })),
     })),
+
+  // Load the persisted projects -> threads tree on boot, then enable autosave.
+  initWorkspace: async () => {
+    try {
+      const ws = await loadWorkspace();
+      set({ projects: ws.projects ?? [] });
+    } catch {
+      // Corrupt/unreadable workspace: start empty rather than block the app.
+    } finally {
+      hydrated = true;
+    }
+  },
+
+  // Restore a reopened thread's transcript: spawn a sidecar that opens its
+  // session file, pull the messages, and fold them into turns. No-op for a
+  // brand-new thread (no sessionFile -> spawns lazily on first prompt) or one
+  // already live/loaded.
+  hydrateThread: async (threadId) => {
+    const found = findThread(get().projects, threadId);
+    if (!found) return;
+    const { thread, project } = found;
+    if (!thread.sessionFile || thread.sessionId) return;
+    if ((get().turns[threadId]?.length ?? 0) > 0) return;
+    try {
+      const sessionId = await acquireSession(
+        threadId,
+        project.path ?? "",
+        thread.sessionFile,
+      );
+      get().setThreadSessionIdInternal(threadId, sessionId);
+      // A concurrent submitPrompt may have populated turns and sent a prompt
+      // while we were spawning; don't clobber it with the restored transcript.
+      if ((get().turns[threadId]?.length ?? 0) > 0) return;
+      const messages = await getMessages(sessionId);
+      if ((get().turns[threadId]?.length ?? 0) > 0) return;
+      set((s) => ({
+        turns: { ...s.turns, [threadId]: messagesToTurns(messages) },
+      }));
+      void get().refreshStats(threadId);
+    } catch (e) {
+      set((s) => ({
+        threadErrors: { ...s.threadErrors, [threadId]: String(e) },
+      }));
+    }
+  },
+
+  archiveThread: (threadId) => {
+    get().closePanel(threadId); // kills the sidecar and clears cached turns
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({
+        ...th,
+        archived: true,
+      })),
+    }));
+  },
+
+  unarchiveThread: (threadId) =>
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({
+        ...th,
+        archived: false,
+      })),
+    })),
+
+  deleteThread: (threadId) => {
+    const thread = findThread(get().projects, threadId)?.thread;
+    if (thread?.sessionId) void closeSession(thread.sessionId);
+    if (thread?.sessionFile) void deleteSessionFile(thread.sessionFile);
+    get().closePanel(threadId);
+    set((s) => ({
+      projects: s.projects.map((p) => ({
+        ...p,
+        threads: p.threads.filter((t) => t.id !== threadId),
+      })),
+    }));
+  },
 }));
+
+// Dedup concurrent session spawns for one thread: openThread fires hydrateThread
+// while the user may submitPrompt before it resolves. Sharing the in-flight
+// promise means both get the same sidecar instead of spawning (and leaking) two.
+const pendingSessions = new Map<string, Promise<string>>();
+
+// The channel currently streaming a turn for each thread. Used to ignore trailing
+// events from a channel whose thread has moved on (panel closed, or a newer turn
+// started). Entry is dropped on done / close / send failure.
+const activeChannels = new Map<string, Channel<AgentEvent>>();
+
+function acquireSession(
+  threadId: string,
+  cwd: string,
+  sessionFile: string | null | undefined,
+): Promise<string> {
+  const existing = pendingSessions.get(threadId);
+  if (existing) return existing;
+  const spawn = createSession(cwd, sessionFile ?? null).finally(() =>
+    pendingSessions.delete(threadId),
+  );
+  pendingSessions.set(threadId, spawn);
+  return spawn;
+}
+
+// Autosave: persist the projects tree (debounced) whenever it changes, but only
+// after initWorkspace has loaded the existing file, so the initial empty state
+// never clobbers saved work. The live sessionId is ephemeral and not persisted.
+let hydrated = false;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+// Last serialized payload: skips redundant writes when a projects-ref change
+// (e.g. pinning the ephemeral sessionId) leaves the persisted shape unchanged.
+let lastSaved = "";
+
+function persistProjects(projects: Project[]): void {
+  const payload = {
+    projects: projects.map((p) => ({
+      id: p.id,
+      name: p.name,
+      path: p.path ?? null,
+      threads: p.threads.map((t) => ({
+        id: t.id,
+        title: t.title,
+        updatedAt: t.updatedAt,
+        sessionFile: t.sessionFile ?? null,
+        archived: !!t.archived,
+      })),
+    })),
+  };
+  const json = JSON.stringify(payload);
+  if (json === lastSaved) return;
+  // Record the saved content only after the write succeeds, so a transient
+  // failure doesn't make an identical next state skip the (still-needed) retry.
+  void saveWorkspace(payload).then(
+    () => {
+      lastSaved = json;
+    },
+    () => {},
+  );
+}
+
+useSessionStore.subscribe((state, prev) => {
+  if (state.projects === prev.projects) return;
+  if (!hydrated) return;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => persistProjects(state.projects), 300);
+});
 
 // Locate a thread and its owning project by id. Threads live nested under
 // projects; this is the one traversal submitPrompt/refreshStats share.

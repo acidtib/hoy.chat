@@ -5,7 +5,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn, formatTokens } from "@/lib/utils";
 import { pickDirectory } from "@/lib/ipc";
 import { useSessionStore } from "@/state/store";
 import type { PiState } from "@/lib/types";
@@ -19,6 +19,8 @@ export function ContextBar({ state }: { state: PiState | null }) {
   const toggleSidebar = useSessionStore((s) => s.toggleSidebar);
   const addProject = useSessionStore((s) => s.addProject);
   const sidebarWidth = useSessionStore((s) => s.sidebarWidth);
+  const sidebarView = useSessionStore((s) => s.sidebarView);
+  const setSidebarView = useSessionStore((s) => s.setSidebarView);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
   const stats = useSessionStore((s) =>
     activeThreadId ? (s.stats[activeThreadId] ?? null) : null,
@@ -68,7 +70,13 @@ export function ContextBar({ state }: { state: PiState | null }) {
           <FooterIconButton label="Toggle Sidebar" onClick={toggleSidebar}>
             <PanelLeftClose className="size-4" />
           </FooterIconButton>
-          <FooterIconButton label="Show Thread History">
+          <FooterIconButton
+            label={sidebarView === "history" ? "Show Projects" : "Show Thread History"}
+            onClick={() =>
+              setSidebarView(sidebarView === "history" ? "projects" : "history")
+            }
+            active={sidebarView === "history"}
+          >
             <Clock className="size-4" />
           </FooterIconButton>
           <FooterIconButton
@@ -117,12 +125,14 @@ function FooterIconButton({
   onClick,
   className,
   tooltipSide = "top",
+  active = false,
 }: {
   label: string;
   children: React.ReactNode;
   onClick?: () => void;
   className?: string;
   tooltipSide?: "top" | "right";
+  active?: boolean;
 }) {
   return (
     <Tooltip>
@@ -131,7 +141,8 @@ function FooterIconButton({
           variant="ghost"
           size="icon-sm"
           className={cn(
-            "size-7 text-muted-foreground hover:text-foreground",
+            "size-7 hover:text-foreground",
+            active ? "text-brand" : "text-muted-foreground",
             className,
           )}
           onClick={onClick}
@@ -147,11 +158,4 @@ function FooterIconButton({
 
 function Divider() {
   return <span className="h-3 w-px bg-border" aria-hidden />;
-}
-
-// Compact token counts for the one-line bar: 1234 -> 1.2k, 200000 -> 200k.
-function formatTokens(n: number): string {
-  if (n < 1000) return String(n);
-  const k = n / 1000;
-  return k < 10 ? `${k.toFixed(1)}k` : `${Math.round(k)}k`;
 }

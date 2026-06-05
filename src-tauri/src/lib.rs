@@ -3,6 +3,7 @@ mod events;
 mod pi_config;
 mod reader;
 mod sidecar;
+mod workspace;
 
 use sidecar::SidecarManager;
 
@@ -48,7 +49,12 @@ pub fn run() {
             commands::create_session,
             commands::send_prompt,
             commands::get_session_stats,
-            commands::abort
+            commands::abort,
+            commands::close_session,
+            commands::get_messages,
+            commands::delete_session_file,
+            commands::load_workspace,
+            commands::save_workspace
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

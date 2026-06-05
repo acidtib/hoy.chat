@@ -62,6 +62,21 @@ by the M3 diff (App.tsx unchanged), so left as-is here.
   yet, or deferring the choice until first prompt), and track the selected model per thread rather
   than from the single control-session `state.model`.
 
+## Session import (history view download icon)
+
+Status: open
+Introduced: M4
+
+### Context
+The Zed reference for the history view has an import/download icon beside the archive toggle.
+M4 shipped the history view without it. Pi supports importing a session JSONL
+(`AgentSessionRuntime.importFromJsonl` / the runtime `switch_session` path), so the plumbing
+exists; only the Hoy UI + a command to adopt an external session file into a project are missing.
+
+### What's needed
+- A `ThreadHistory` import action (file picker -> copy/adopt the JSONL into the project's
+  sessions dir -> add a thread pointing at it) and a Rust command to back it.
+
 ## Reasoning / thinking deltas in the transcript
 
 Status: open
@@ -111,3 +126,6 @@ note in `system[1]` ("user-facing identity is Hoy regardless of what the transpo
 - OAuth (Claude Pro/Max, Copilot) → 🔜 now possible (the SDK exposes login; the binary didn't), but not built, and gated by the identity-edge follow-up.
 
 - Provider switcher → ◐ partial — per-thread model selector + Settings exist; multi-provider works via auth.json.
+
+- Cross-restart restore of open panels — restore the sidebar/history; panels reopen
+ on demand.
