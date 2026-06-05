@@ -53,6 +53,9 @@ function App() {
   // When a panel is added beyond what fits, scroll the strip right so the new
   // rightmost panel is visible. A no-op when the panels still fit.
   const stripRef = useRef<HTMLDivElement>(null);
+  // The footer's per-panel stats slices mirror the strip's horizontal scroll so
+  // each slice stays under its panel (programmatic scrolls fire onScroll too).
+  const footerSlicesRef = useRef<HTMLDivElement>(null);
   const panelCount = useRef(panels.length);
   useEffect(() => {
     if (panels.length > panelCount.current && stripRef.current) {
@@ -131,7 +134,14 @@ function App() {
             {panels.length === 0 ? (
               <HomePage onOpenSettings={() => setSettingsOpen(true)} />
             ) : (
-              <div ref={stripRef} className="flex min-h-0 flex-1 overflow-x-auto">
+              <div
+                ref={stripRef}
+                onScroll={(e) => {
+                  const el = footerSlicesRef.current;
+                  if (el) el.scrollLeft = e.currentTarget.scrollLeft;
+                }}
+                className="flex min-h-0 flex-1 overflow-x-auto"
+              >
                 {panels.map((panel, i) => (
                   <Fragment key={panel.id}>
                     <div
@@ -164,7 +174,7 @@ function App() {
             )}
           </div>
         </div>
-        <ContextBar />
+        <ContextBar slicesRef={footerSlicesRef} />
       </div>
     </TooltipProvider>
   );

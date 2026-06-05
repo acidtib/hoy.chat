@@ -10,32 +10,23 @@ import { pickDirectory } from "@/lib/ipc";
 import { useSessionStore } from "@/state/store";
 
 // Single full-width status bar (Zed-style): the sidebar controls live in the
-// left segment, aligned to the sidebar's width and divided by its border, while
-// the right segment shows the focused thread's usage. The model is per thread
-// and lives in each composer's selector, not here; streaming state shows in the
-// panel itself. Context window and cost come from get_session_stats, refreshed
-// after each turn.
-export function ContextBar() {
+// left segment, aligned to the sidebar's width and divided by its border. The
+// rest mirrors the panel strip: each open panel owns a slice (same width,
+// horizontal scroll synced by App via `slicesRef`) showing its own thread's
+// context window and cost from get_session_stats, refreshed after each turn.
+// The model is per thread and lives in each composer's selector, not here.
+export function ContextBar({
+  slicesRef,
+}: {
+  slicesRef?: React.Ref<HTMLDivElement>;
+}) {
   const collapsed = useSessionStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useSessionStore((s) => s.toggleSidebar);
   const addProject = useSessionStore((s) => s.addProject);
   const sidebarWidth = useSessionStore((s) => s.sidebarWidth);
   const sidebarView = useSessionStore((s) => s.sidebarView);
   const setSidebarView = useSessionStore((s) => s.setSidebarView);
-  const activeThreadId = useSessionStore((s) => s.activeThreadId);
-  const stats = useSessionStore((s) =>
-    activeThreadId ? (s.stats[activeThreadId] ?? null) : null,
-  );
-
-  const usage = stats?.contextUsage;
-  const ctxLabel =
-    usage && usage.tokens != null
-      ? `ctx ${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)}`
-      : "ctx --/--";
-  const pctLabel =
-    usage && usage.percent != null ? `${Math.round(usage.percent)}%` : "--%";
-  const costLabel =
-    stats != null ? `$${stats.cost.toFixed(stats.cost < 1 ? 4 : 2)}` : "$--";
+  const panels = useSessionStore((s) => s.panels);
 
   async function handleAddProject() {
     const dir = await pickDirectory();
@@ -81,16 +72,45 @@ export function ContextBar() {
         </div>
       )}
 
-      <div className="flex flex-1 items-center gap-3 px-3">
-        <span className="font-mono tabular-nums">
-          {ctxLabel} &middot; {pctLabel}
-        </span>
-
-        <Divider />
-
-        <span className="font-mono tabular-nums">{costLabel}</span>
+      {/* overflow-x-hidden: no scrollbar of its own; App mirrors the panel
+          strip's scrollLeft here so each slice stays under its panel. */}
+      <div ref={slicesRef} className="flex flex-1 items-stretch overflow-x-hidden">
+        {panels.map((panel) => (
+          <PanelStats key={panel.id} threadId={panel.id} width={panel.width} />
+        ))}
       </div>
     </footer>
+  );
+}
+
+// One panel's footer slice: the thread's context window and cost, sized to the
+// panel above it.
+function PanelStats({ threadId, width }: { threadId: string; width: number }) {
+  const stats = useSessionStore((s) => s.stats[threadId] ?? null);
+
+  const usage = stats?.contextUsage;
+  const ctxLabel =
+    usage && usage.tokens != null
+      ? `ctx ${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)}`
+      : "ctx --/--";
+  const pctLabel =
+    usage && usage.percent != null ? `${Math.round(usage.percent)}%` : "--%";
+  const costLabel =
+    stats != null ? `$${stats.cost.toFixed(stats.cost < 1 ? 4 : 2)}` : "$--";
+
+  return (
+    <div
+      style={{ width }}
+      className="flex shrink-0 items-center gap-3 border-r border-border px-3 font-mono tabular-nums"
+    >
+      <span>
+        {ctxLabel} &middot; {pctLabel}
+      </span>
+
+      <Divider />
+
+      <span>{costLabel}</span>
+    </div>
   );
 }
 
