@@ -155,10 +155,15 @@ interface SessionStore {
   // restarts keep unsent text; persisted via the workspace autosave as each
   // thread's draft field. Never cleared on panel close.
   drafts: Record<string, string>;
+  // Full screen within the panel strip: the one panel rendered while set.
+  // Widths in panels stay untouched so exiting restores the exact layout.
+  // Not persisted.
+  expandedThreadId: string | null;
 
   openThread: (id: string) => void;
   closePanel: (id: string) => void;
   setDraft: (threadId: string, value: string) => void;
+  toggleFullScreen: (threadId: string) => void;
   setBodyWidth: (width: number) => void;
   resizePanelEdge: (index: number, deltaPx: number) => void;
   toggleSidebar: () => void;
@@ -217,15 +222,25 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   stats: {},
   threadErrors: {},
   drafts: {},
+  expandedThreadId: null,
 
   // Open the thread in a panel, or just focus it if it's already open. A
   // persisted thread (has a sessionFile, no live sidecar, nothing loaded) is
   // hydrated from disk in the background.
   openThread: (id) => {
     set((s) => {
-      if (s.panels.some((p) => p.id === id)) return { activeThreadId: id };
+      // Opening a different thread while full screen exits it: the user asked
+      // to see something else.
+      const expandedThreadId =
+        s.expandedThreadId === id ? s.expandedThreadId : null;
+      if (s.panels.some((p) => p.id === id))
+        return { activeThreadId: id, expandedThreadId };
       const { panels, width } = placeNewPanel(s.panels, s.bodyWidth);
-      return { panels: [...panels, { id, width }], activeThreadId: id };
+      return {
+        panels: [...panels, { id, width }],
+        activeThreadId: id,
+        expandedThreadId,
+      };
     });
     void get().hydrateThread(id);
   },
@@ -282,6 +297,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         threadErrors,
         modelSelecting,
         drafts: discard ? remainingDrafts : s.drafts,
+        expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
         projects: discard
           ? s.projects.map((p) => ({
               ...p,
@@ -294,6 +310,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   setDraft: (threadId, value) =>
     set((s) => ({ drafts: { ...s.drafts, [threadId]: value } })),
+
+  toggleFullScreen: (threadId) =>
+    set((s) => ({
+      expandedThreadId: s.expandedThreadId === threadId ? null : threadId,
+    })),
 
   setBodyWidth: (width) =>
     set((s) => {

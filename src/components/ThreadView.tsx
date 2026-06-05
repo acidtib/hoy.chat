@@ -5,6 +5,7 @@ import {
   Archive,
   FilePen,
   Maximize2,
+  Minimize2,
   MoreHorizontal,
   Plus,
   Search,
@@ -81,6 +82,8 @@ export function ThreadView({
   const defaultModel = useSessionStore((s) => s.defaultModel);
   const selecting = useSessionStore((s) => s.modelSelecting[threadId] ?? false);
   const selectModel = useSessionStore((s) => s.selectModel);
+  const fullScreen = useSessionStore((s) => s.expandedThreadId === threadId);
+  const toggleFullScreen = useSessionStore((s) => s.toggleFullScreen);
   const draft = useSessionStore((s) => s.drafts[threadId] ?? "");
   const setDraft = useSessionStore((s) => s.setDraft);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -168,14 +171,26 @@ export function ThreadView({
             </TooltipTrigger>
             <TooltipContent>New thread</TooltipContent>
           </Tooltip>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground"
-            aria-label="Expand"
-          >
-            <Maximize2 className="size-3.5" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
+                onClick={() => toggleFullScreen(threadId)}
+                aria-label={fullScreen ? "Exit Full Screen" : "Full Screen"}
+              >
+                {fullScreen ? (
+                  <Minimize2 className="size-3.5" />
+                ) : (
+                  <Maximize2 className="size-3.5" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {fullScreen ? "Exit Full Screen" : "Full Screen"}
+            </TooltipContent>
+          </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

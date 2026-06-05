@@ -24,6 +24,7 @@ import type { PiState } from "@/lib/types";
 function App() {
   const panels = useSessionStore((s) => s.panels);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
+  const expandedThreadId = useSessionStore((s) => s.expandedThreadId);
   const sidebarCollapsed = useSessionStore((s) => s.sidebarCollapsed);
   const sidebarView = useSessionStore((s) => s.sidebarView);
   const initWorkspace = useSessionStore((s) => s.initWorkspace);
@@ -33,6 +34,10 @@ function App() {
   const closePanel = useSessionStore((s) => s.closePanel);
   const focusPanel = useSessionStore((s) => s.openThread);
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
+
+  // Full screen: the one panel rendered while set, at full body width via CSS.
+  // Stored widths are untouched, so exiting restores the exact layout.
+  const expandedPanel = panels.find((p) => p.id === expandedThreadId) ?? null;
 
   // Restore the persisted projects -> threads tree on boot (then autosave kicks in).
   useEffect(() => {
@@ -159,33 +164,59 @@ function App() {
                   }}
                   className="flex min-h-0 flex-1 overflow-x-auto"
                 >
-                  {panels.map((panel, i) => (
-                    <Fragment key={panel.id}>
-                      <div
-                        style={{ width: panel.width }}
-                        onPointerDownCapture={() => focusPanel(panel.id)}
-                        className={cn(
-                          "flex min-h-0 shrink-0 flex-col border-r border-t-2 border-r-border",
-                          panel.id === activeThreadId
-                            ? "border-t-brand/70"
-                            : "border-t-transparent",
-                        )}
-                      >
-                        <ThreadView
-                          threadId={panel.id}
-                          active={panel.id === activeThreadId}
-                          onClose={() => closePanel(panel.id)}
-                          onDebug={handleDebug}
-                          busy={busy}
-                          debug={debug}
-                          error={error}
-                        />
-                      </div>
-                      {i < panels.length - 1 && <PanelResizeHandle index={i} />}
-                    </Fragment>
-                  ))}
-                  {/* Unused workspace beside the panels: new panels dock here. */}
-                  <div className="min-h-0 flex-1 bg-background" />
+                  {expandedPanel ? (
+                    <div
+                      onPointerDownCapture={() => focusPanel(expandedPanel.id)}
+                      className={cn(
+                        "flex min-h-0 flex-1 flex-col border-t-2",
+                        expandedPanel.id === activeThreadId
+                          ? "border-t-brand/70"
+                          : "border-t-transparent",
+                      )}
+                    >
+                      <ThreadView
+                        threadId={expandedPanel.id}
+                        active={expandedPanel.id === activeThreadId}
+                        onClose={() => closePanel(expandedPanel.id)}
+                        onDebug={handleDebug}
+                        busy={busy}
+                        debug={debug}
+                        error={error}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      {panels.map((panel, i) => (
+                        <Fragment key={panel.id}>
+                          <div
+                            style={{ width: panel.width }}
+                            onPointerDownCapture={() => focusPanel(panel.id)}
+                            className={cn(
+                              "flex min-h-0 shrink-0 flex-col border-r border-t-2 border-r-border",
+                              panel.id === activeThreadId
+                                ? "border-t-brand/70"
+                                : "border-t-transparent",
+                            )}
+                          >
+                            <ThreadView
+                              threadId={panel.id}
+                              active={panel.id === activeThreadId}
+                              onClose={() => closePanel(panel.id)}
+                              onDebug={handleDebug}
+                              busy={busy}
+                              debug={debug}
+                              error={error}
+                            />
+                          </div>
+                          {i < panels.length - 1 && (
+                            <PanelResizeHandle index={i} />
+                          )}
+                        </Fragment>
+                      ))}
+                      {/* Unused workspace beside the panels: new panels dock here. */}
+                      <div className="min-h-0 flex-1 bg-background" />
+                    </>
+                  )}
                 </div>
               )}
             </div>

@@ -27,6 +27,10 @@ export function ContextBar({
   const sidebarView = useSessionStore((s) => s.sidebarView);
   const setSidebarView = useSessionStore((s) => s.setSidebarView);
   const panels = useSessionStore((s) => s.panels);
+  const expandedThreadId = useSessionStore((s) => s.expandedThreadId);
+
+  // Mirror the panel strip: one full-width slice while a panel is full screen.
+  const expandedPanel = panels.find((p) => p.id === expandedThreadId) ?? null;
 
   async function handleAddProject() {
     const dir = await pickDirectory();
@@ -79,14 +83,22 @@ export function ContextBar({
       {/* overflow-x-hidden: no scrollbar of its own; App mirrors the panel
           strip's scrollLeft here so each slice stays under its panel. */}
       <div ref={slicesRef} className="flex flex-1 items-stretch overflow-x-hidden">
-        {panels.map((panel, i) => (
+        {expandedPanel ? (
           <PanelStats
-            key={panel.id}
-            threadId={panel.id}
-            width={panel.width}
-            inset={collapsed && i === 0}
+            threadId={expandedPanel.id}
+            fullWidth
+            inset={collapsed}
           />
-        ))}
+        ) : (
+          panels.map((panel, i) => (
+            <PanelStats
+              key={panel.id}
+              threadId={panel.id}
+              width={panel.width}
+              inset={collapsed && i === 0}
+            />
+          ))
+        )}
       </div>
     </footer>
   );
@@ -98,10 +110,12 @@ function PanelStats({
   threadId,
   width,
   inset = false,
+  fullWidth = false,
 }: {
   threadId: string;
-  width: number;
+  width?: number;
   inset?: boolean;
+  fullWidth?: boolean;
 }) {
   const stats = useSessionStore((s) => s.stats[threadId] ?? null);
 
@@ -117,9 +131,10 @@ function PanelStats({
 
   return (
     <div
-      style={{ width }}
+      style={fullWidth ? undefined : { width }}
       className={cn(
         "flex shrink-0 items-center gap-3 border-r border-border px-3 font-mono tabular-nums",
+        fullWidth && "flex-1 border-r-0",
         inset && "pl-10",
       )}
     >
