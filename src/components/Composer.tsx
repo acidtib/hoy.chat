@@ -81,9 +81,11 @@ export function Composer({
   // Click-driven focus: a non-zero signal focuses, including on mount (the
   // fresh-open path mounts with its own brand-new request). Re-renders with an
   // unchanged signal never re-fire. Remounts cannot replay a stale request;
-  // the store clears it on closePanel/toggleFullScreen.
+  // the store clears it on closePanel/toggleFullScreen. preventScroll: the
+  // focus must not fight ThreadView's smooth scrollIntoView, which owns
+  // bringing the panel into view (the race leaves the strip parked short).
   useEffect(() => {
-    if (focusSignal) textareaRef.current?.focus();
+    if (focusSignal) textareaRef.current?.focus({ preventScroll: true });
   }, [focusSignal]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
