@@ -34,9 +34,13 @@ export function ContextBar({
   }
 
   return (
-    <footer className="flex h-8 shrink-0 items-stretch border-t border-border bg-sidebar text-[11px] text-muted-foreground">
+    <footer className="relative flex h-8 shrink-0 items-stretch border-t border-border bg-sidebar text-[11px] text-muted-foreground">
       {collapsed ? (
-        <div className="flex items-center pl-1.5">
+        // With the sidebar collapsed the panels start at the window edge, so the
+        // open button floats over the slices (solid bg masks anything scrolled
+        // beneath) instead of taking a cell that would push them out of line;
+        // the first slice clears it with extra padding.
+        <div className="absolute inset-y-0 left-0 z-10 flex items-center bg-sidebar pl-1.5">
           <FooterIconButton
             label="Open Threads Sidebar"
             tooltipSide="right"
@@ -75,8 +79,13 @@ export function ContextBar({
       {/* overflow-x-hidden: no scrollbar of its own; App mirrors the panel
           strip's scrollLeft here so each slice stays under its panel. */}
       <div ref={slicesRef} className="flex flex-1 items-stretch overflow-x-hidden">
-        {panels.map((panel) => (
-          <PanelStats key={panel.id} threadId={panel.id} width={panel.width} />
+        {panels.map((panel, i) => (
+          <PanelStats
+            key={panel.id}
+            threadId={panel.id}
+            width={panel.width}
+            inset={collapsed && i === 0}
+          />
         ))}
       </div>
     </footer>
@@ -84,8 +93,16 @@ export function ContextBar({
 }
 
 // One panel's footer slice: the thread's context window and cost, sized to the
-// panel above it.
-function PanelStats({ threadId, width }: { threadId: string; width: number }) {
+// panel above it. `inset` clears the floating open-sidebar button.
+function PanelStats({
+  threadId,
+  width,
+  inset = false,
+}: {
+  threadId: string;
+  width: number;
+  inset?: boolean;
+}) {
   const stats = useSessionStore((s) => s.stats[threadId] ?? null);
 
   const usage = stats?.contextUsage;
@@ -101,7 +118,10 @@ function PanelStats({ threadId, width }: { threadId: string; width: number }) {
   return (
     <div
       style={{ width }}
-      className="flex shrink-0 items-center gap-3 border-r border-border px-3 font-mono tabular-nums"
+      className={cn(
+        "flex shrink-0 items-center gap-3 border-r border-border px-3 font-mono tabular-nums",
+        inset && "pl-10",
+      )}
     >
       <span>
         {ctxLabel} &middot; {pctLabel}
