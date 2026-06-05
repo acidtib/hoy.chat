@@ -86,10 +86,9 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
       for (const part of asParts(m.content)) {
         if (part.type === "text" && typeof part.text === "string") {
           a.text += part.text;
-        } else if (part.type === "thinking" && typeof part.thinking === "string") {
-          // Pi transcripts carry no thinking duration; leave seconds unset so
-          // the trigger renders its static finished label instead of the
-          // duration-0 shimmer.
+        } else if (part.type === "thinking" && typeof part.thinking === "string" && part.thinking) {
+          // Redacted thinking arrives as an empty string; skip it so no empty
+          // block renders. Pi transcripts carry no duration, seconds stays unset.
           a.reasoning = {
             text: (a.reasoning?.text ?? "") + part.thinking,
           };

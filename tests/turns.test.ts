@@ -23,9 +23,22 @@ describe("messagesToTurns reasoning", () => {
 
     const a = assistantTurn(turns, 1);
     expect(a.reasoning?.text).toBe("step one. ");
-    // Pi transcripts carry no thinking duration; a synthetic 0 makes the UI
-    // shimmer forever on finished blocks (HOY-179).
+    // Pi transcripts carry no thinking duration (HOY-179).
     expect(a.reasoning?.seconds).toBeUndefined();
+  });
+
+  test("redacted (empty) thinking parts produce no reasoning block", () => {
+    const turns = messagesToTurns([
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "" },
+          { type: "text", text: "answer" },
+        ],
+      },
+    ]);
+
+    expect(assistantTurn(turns).reasoning).toBeUndefined();
   });
 
   test("consecutive thinking parts concatenate", () => {

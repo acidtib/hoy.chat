@@ -256,7 +256,7 @@ export function ThreadView({
                       {turn.reasoning && (
                         <Reasoning
                           defaultOpen={false}
-                          duration={turn.reasoning.seconds || undefined}
+                          duration={turn.reasoning.seconds}
                         >
                           <ReasoningTrigger />
                           <ReasoningContent>
