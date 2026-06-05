@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AtSign,
   ChevronDown,
@@ -44,6 +44,7 @@ export function Composer({
   disabled = false,
   expanded = false,
   onToggleExpand,
+  focusSignal = 0,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -58,6 +59,7 @@ export function Composer({
   disabled?: boolean;
   expanded?: boolean;
   onToggleExpand?: () => void;
+  focusSignal?: number;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mode, setMode] = useState(MODES[0]);
@@ -75,6 +77,14 @@ export function Composer({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [value, fill]);
+
+  // Click-driven focus: a non-zero signal focuses, including on mount (the
+  // fresh-open path mounts with its own brand-new request). Re-renders with an
+  // unchanged signal never re-fire. Remounts cannot replay a stale request;
+  // the store clears it on closePanel/toggleFullScreen.
+  useEffect(() => {
+    if (focusSignal) textareaRef.current?.focus();
+  }, [focusSignal]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {

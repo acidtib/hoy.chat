@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertCircle,
@@ -84,6 +84,9 @@ export function ThreadView({
   const selectModel = useSessionStore((s) => s.selectModel);
   const fullScreen = useSessionStore((s) => s.expandedThreadId === threadId);
   const toggleFullScreen = useSessionStore((s) => s.toggleFullScreen);
+  const focusSignal = useSessionStore((s) =>
+    s.focusRequest?.threadId === threadId ? s.focusRequest.nonce : 0,
+  );
   const draft = useSessionStore((s) => s.drafts[threadId] ?? "");
   const setDraft = useSessionStore((s) => s.setDraft);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -100,6 +103,19 @@ export function ThreadView({
 
   const hasMessages = turns.length > 0;
   const shownError = threadError ?? error;
+
+  // Scroll the panel into view when this thread is the focus request target
+  // (sidebar/history click or fresh open). Composer handles the focus itself
+  // via the same signal.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focusSignal) return;
+    rootRef.current?.scrollIntoView({
+      behavior: "smooth",
+      inline: "nearest",
+      block: "nearest",
+    });
+  }, [focusSignal]);
 
   function handleSubmit() {
     const message = draft;
@@ -123,11 +139,12 @@ export function ThreadView({
       disabled={streaming}
       expanded={expanded}
       onToggleExpand={hasMessages ? () => setExpanded((v) => !v) : undefined}
+      focusSignal={focusSignal}
     />
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div ref={rootRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-0.5">
           <Sparkle

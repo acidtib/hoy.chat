@@ -32,7 +32,7 @@ function App() {
   const setDefaultModel = useSessionStore((s) => s.setDefaultModel);
   const setBodyWidth = useSessionStore((s) => s.setBodyWidth);
   const closePanel = useSessionStore((s) => s.closePanel);
-  const focusPanel = useSessionStore((s) => s.openThread);
+  const focusPanel = useSessionStore((s) => s.focusPanel);
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
 
   // Full screen: the one panel rendered while set, at full body width via CSS.
