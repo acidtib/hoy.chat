@@ -129,6 +129,8 @@ interface SessionStore {
   // time-bucketed history (toggled from the bottom-bar clock).
   sidebarView: "projects" | "history";
   sidebarWidth: number;
+  // Global settings modal, openable from any entry point (home cog, thread menu).
+  settingsOpen: boolean;
   activeSessionId: string | null;
   models: ModelInfo[];
   supportedProviders: ProviderInfo[];
@@ -148,6 +150,7 @@ interface SessionStore {
   resizePanelEdge: (index: number, deltaPx: number) => void;
   toggleSidebar: () => void;
   setSidebarView: (view: "projects" | "history") => void;
+  setSettingsOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
   addProject: (path: string) => void;
   addThread: (projectId: string) => string;
@@ -178,6 +181,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   bodyWidth: initialBodyWidth(),
   sidebarCollapsed: false,
   sidebarView: "projects",
+  settingsOpen: false,
   sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   activeSessionId: null,
   models: [],
@@ -273,6 +277,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setSidebarView: (view) => set({ sidebarView: view }),
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
   setSidebarWidth: (width) =>
     set({
       sidebarWidth: Math.min(

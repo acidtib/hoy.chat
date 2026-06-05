@@ -11,7 +11,7 @@ import { ThreadHistory } from "@/components/ThreadHistory";
 import { HomePage } from "@/components/HomePage";
 import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
-import { SettingsPage } from "@/components/SettingsPage";
+import { SettingsModal } from "@/components/settings/SettingsModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   activeSessionId,
@@ -41,6 +41,7 @@ function App() {
   const setModels = useSessionStore((s) => s.setModels);
   const setSupportedProviders = useSessionStore((s) => s.setSupportedProviders);
   const setProviderAuth = useSessionStore((s) => s.setProviderAuth);
+  const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
 
   // Restore the persisted projects -> threads tree on boot (then autosave kicks in).
   useEffect(() => {
@@ -74,7 +75,6 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selecting, setSelecting] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const refreshAuth = useCallback(async () => {
     const providers = useSessionStore.getState().supportedProviders;
@@ -128,23 +128,6 @@ function App() {
     }
   }
 
-  // After a key is saved or removed the sidecar was respawned in Rust; re-read
-  // state and configured status. Models may change (a newly configured provider
-  // surfaces its catalog), so refresh them too.
-  const handleConfigured = useCallback(async () => {
-    const id = useSessionStore.getState().activeSessionId;
-    try {
-      if (id) {
-        const [piState, modelList] = await Promise.all([getState(id), listModels()]);
-        setState(piState);
-        setModels(modelList);
-      }
-      await refreshAuth();
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [setModels, refreshAuth]);
-
   // Developer round-trip: toggle the raw get_state payload in the transcript.
   async function handleDebug() {
     if (!activeId) {
@@ -168,19 +151,9 @@ function App() {
     }
   }
 
-  if (settingsOpen) {
-    return (
-      <TooltipProvider delayDuration={200}>
-        <SettingsPage
-          onBack={() => setSettingsOpen(false)}
-          onConfigured={handleConfigured}
-        />
-      </TooltipProvider>
-    );
-  }
-
   return (
     <TooltipProvider delayDuration={200}>
+      <SettingsModal />
       <div className="flex h-screen flex-col bg-background text-foreground">
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           {!sidebarCollapsed &&
