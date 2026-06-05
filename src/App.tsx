@@ -11,6 +11,7 @@ import { ThreadHistory } from "@/components/ThreadHistory";
 import { HomePage } from "@/components/HomePage";
 import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
+import { ConfirmCloseDialog } from "@/components/ConfirmCloseDialog";
 import { TitleBar, WindowResizeHandles } from "@/components/TitleBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -31,7 +32,7 @@ function App() {
   const activeId = useSessionStore((s) => s.activeSessionId);
   const setDefaultModel = useSessionStore((s) => s.setDefaultModel);
   const setBodyWidth = useSessionStore((s) => s.setBodyWidth);
-  const closePanel = useSessionStore((s) => s.closePanel);
+  const requestTeardown = useSessionStore((s) => s.requestTeardown);
   const focusPanel = useSessionStore((s) => s.focusPanel);
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
 
@@ -139,6 +140,7 @@ function App() {
   return (
     <TooltipProvider delayDuration={200}>
       <SettingsModal />
+      <ConfirmCloseDialog />
       <WindowResizeHandles />
       <div className="flex h-screen flex-col bg-background text-foreground">
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -177,7 +179,9 @@ function App() {
                       <ThreadView
                         threadId={expandedPanel.id}
                         active={expandedPanel.id === activeThreadId}
-                        onClose={() => closePanel(expandedPanel.id)}
+                        onClose={() =>
+                          requestTeardown("close", expandedPanel.id)
+                        }
                         onDebug={handleDebug}
                         busy={busy}
                         debug={debug}
@@ -201,7 +205,9 @@ function App() {
                             <ThreadView
                               threadId={panel.id}
                               active={panel.id === activeThreadId}
-                              onClose={() => closePanel(panel.id)}
+                              onClose={() =>
+                                requestTeardown("close", panel.id)
+                              }
                               onDebug={handleDebug}
                               busy={busy}
                               debug={debug}

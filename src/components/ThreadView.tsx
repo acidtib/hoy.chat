@@ -72,7 +72,7 @@ export function ThreadView({
 }) {
   const projects = useSessionStore((s) => s.projects);
   const addThread = useSessionStore((s) => s.addThread);
-  const archiveThread = useSessionStore((s) => s.archiveThread);
+  const requestTeardown = useSessionStore((s) => s.requestTeardown);
   const turns = useSessionStore((s) => s.turns[threadId] ?? EMPTY_TURNS);
   const streaming = useSessionStore((s) => s.streaming[threadId] ?? false);
   const threadError = useSessionStore((s) => s.threadErrors[threadId] ?? null);
@@ -220,7 +220,9 @@ export function ThreadView({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-44">
-              <DropdownMenuItem onSelect={() => archiveThread(threadId)}>
+              <DropdownMenuItem
+                onSelect={() => requestTeardown("archive", threadId)}
+              >
                 <Archive className="size-4" />
                 Archive thread
               </DropdownMenuItem>

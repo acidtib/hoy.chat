@@ -299,7 +299,7 @@ function ThreadRow({
   onSelect: () => void;
 }) {
   const renameThread = useSessionStore((s) => s.renameThread);
-  const archiveThread = useSessionStore((s) => s.archiveThread);
+  const requestTeardown = useSessionStore((s) => s.requestTeardown);
   const [editing, setEditing] = useState(false);
 
   // A div, not a button: the hover actions nest inside the clickable row.
@@ -378,7 +378,7 @@ function ThreadRow({
                 className="size-6 text-muted-foreground hover:text-foreground"
                 onClick={(e) => {
                   e.stopPropagation();
-                  archiveThread(thread.id);
+                  requestTeardown("archive", thread.id);
                 }}
                 aria-label="Archive thread"
               >

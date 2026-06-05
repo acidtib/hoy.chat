@@ -40,9 +40,8 @@ export function ThreadHistory() {
   const projects = useSessionStore((s) => s.projects);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
   const openThread = useSessionStore((s) => s.openThread);
-  const archiveThread = useSessionStore((s) => s.archiveThread);
+  const requestTeardown = useSessionStore((s) => s.requestTeardown);
   const unarchiveThread = useSessionStore((s) => s.unarchiveThread);
-  const deleteThread = useSessionStore((s) => s.deleteThread);
 
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -137,9 +136,9 @@ export function ThreadHistory() {
                     active={thread.id === activeThreadId}
                     archived={showArchived}
                     onSelect={() => openThread(thread.id)}
-                    onArchive={() => archiveThread(thread.id)}
+                    onArchive={() => requestTeardown("archive", thread.id)}
                     onUnarchive={() => unarchiveThread(thread.id)}
-                    onDelete={() => deleteThread(thread.id)}
+                    onDelete={() => requestTeardown("delete", thread.id)}
                   />
                 ))}
               </ul>
