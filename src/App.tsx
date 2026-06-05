@@ -11,7 +11,7 @@ import { ThreadHistory } from "@/components/ThreadHistory";
 import { HomePage } from "@/components/HomePage";
 import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
-import { TitleBar } from "@/components/TitleBar";
+import { TitleBar, WindowResizeHandles } from "@/components/TitleBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { activeSessionId, getState } from "@/lib/ipc";
@@ -126,6 +126,7 @@ function App() {
   return (
     <TooltipProvider delayDuration={200}>
       <SettingsModal />
+      <WindowResizeHandles />
       <div className="flex h-screen flex-col bg-background text-foreground">
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           {!sidebarCollapsed &&

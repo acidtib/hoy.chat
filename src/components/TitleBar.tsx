@@ -4,6 +4,17 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/state/store";
 
+// Mirror of @tauri-apps/api window.d.ts ResizeDirection, which is not exported.
+type ResizeDirection =
+  | "East"
+  | "North"
+  | "NorthEast"
+  | "NorthWest"
+  | "South"
+  | "SouthEast"
+  | "SouthWest"
+  | "West";
+
 // Zed-style title bar over the main body (the window runs with native
 // decorations off). The bar is the drag region: data-tauri-drag-region only
 // applies to the element carrying it, so the attribute sits on the bar and the
@@ -62,7 +73,7 @@ export function TitleBar() {
   );
 }
 
-function WindowControls() {
+function useMaximized(): boolean {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
@@ -80,6 +91,47 @@ function WindowControls() {
       void unlisten.then((fn) => fn());
     };
   }, []);
+
+  return maximized;
+}
+
+// With decorations off the window manager provides no resize borders, so thin
+// invisible strips along the window edges hand the gesture to the WM via
+// startResizeDragging. Hidden while maximized (nothing to resize, and the top
+// strip would shadow the title bar's first pixels).
+const RESIZE_HANDLES: { dir: ResizeDirection; className: string }[] = [
+  { dir: "North", className: "inset-x-2 top-0 h-1 cursor-n-resize" },
+  { dir: "South", className: "inset-x-2 bottom-0 h-1 cursor-s-resize" },
+  { dir: "West", className: "inset-y-2 left-0 w-1 cursor-w-resize" },
+  { dir: "East", className: "inset-y-2 right-0 w-1 cursor-e-resize" },
+  { dir: "NorthWest", className: "left-0 top-0 size-2 cursor-nw-resize" },
+  { dir: "NorthEast", className: "right-0 top-0 size-2 cursor-ne-resize" },
+  { dir: "SouthWest", className: "bottom-0 left-0 size-2 cursor-sw-resize" },
+  { dir: "SouthEast", className: "bottom-0 right-0 size-2 cursor-se-resize" },
+];
+
+export function WindowResizeHandles() {
+  const maximized = useMaximized();
+  if (maximized) return null;
+
+  return (
+    <>
+      {RESIZE_HANDLES.map(({ dir, className }) => (
+        <div
+          key={dir}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            void getCurrentWindow().startResizeDragging(dir);
+          }}
+          className={cn("fixed z-50", className)}
+        />
+      ))}
+    </>
+  );
+}
+
+function WindowControls() {
+  const maximized = useMaximized();
 
   return (
     <>
