@@ -86,6 +86,13 @@ export interface PiState {
   autoCompactionEnabled: boolean;
 }
 
+// A provider/model pair as Pi's set_model takes it. Lighter than ModelInfo for
+// state that only needs identity, not capabilities.
+export interface ModelRef {
+  provider: string;
+  id: string;
+}
+
 // UI-only grouping. Not backed by Pi's RPC yet: a thread maps to a Pi session and
 // a project to a working directory once persistence lands (next milestone). Kept
 // here so the sidebar renders from typed state, not ad hoc shapes.
@@ -103,6 +110,10 @@ export interface Thread {
   // Archived threads leave the projects tree and live in the history view, where
   // they can be unarchived or permanently deleted.
   archived?: boolean;
+  // Selected model. Set on pick (deferred until a session exists), hydrated from
+  // get_state after spawn. Ephemeral: the session JSONL owns it after the first
+  // prompt, and persistProjects' allowlist never serializes it.
+  model?: ModelRef | null;
 }
 
 // Mirror of workspace.rs Workspace: the persisted projects -> threads tree.

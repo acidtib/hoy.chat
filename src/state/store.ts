@@ -9,11 +9,13 @@ import {
   loadWorkspace,
   saveWorkspace,
   sendPrompt,
+  setModel,
 } from "@/lib/ipc";
 import { applyEvent, messagesToTurns } from "@/lib/turns";
 import type {
   AgentEvent,
   ModelInfo,
+  ModelRef,
   Project,
   ProviderAuth,
   ProviderInfo,
@@ -135,6 +137,11 @@ interface SessionStore {
   models: ModelInfo[];
   supportedProviders: ProviderInfo[];
   providerAuth: ProviderAuth[];
+  // Pi's global defaultModel (boot-hydrated from the control session's state);
+  // what a thread shows before it has its own pick.
+  defaultModel: ModelRef | null;
+  // Per-thread selector busy flag, keyed by threadId like the records below.
+  modelSelecting: Record<string, boolean>;
 
   // Live streaming state, all keyed by threadId. `turns` is the transcript,
   // `streaming` gates each panel's composer, `stats` backs the context bar, and
@@ -160,6 +167,15 @@ interface SessionStore {
   setModels: (models: ModelInfo[]) => void;
   setSupportedProviders: (providers: ProviderInfo[]) => void;
   setProviderAuth: (providerAuth: ProviderAuth[]) => void;
+  setDefaultModel: (model: ModelRef | null) => void;
+  // Pick a model for one thread. Live session: set_model goes to that thread's
+  // own sidecar. No session yet: the pick is recorded on the thread and applied
+  // when its session spawns (defer, don't spawn).
+  selectModel: (
+    threadId: string,
+    provider: string,
+    modelId: string,
+  ) => Promise<void>;
 
   // M4 persistence + lifecycle.
   initWorkspace: () => Promise<void>;
@@ -187,6 +203,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   models: [],
   supportedProviders: [],
   providerAuth: [],
+  defaultModel: null,
+  modelSelecting: {},
   turns: {},
   streaming: {},
   stats: {},
@@ -234,6 +252,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const { [id]: _st, ...stats } = s.stats;
       const { [id]: _sg, ...streaming } = s.streaming;
       const { [id]: _er, ...threadErrors } = s.threadErrors;
+      const { [id]: _ms, ...modelSelecting } = s.modelSelecting;
+      // thread.model survives the close on purpose: a pending pick should still
+      // apply when the thread is reopened and prompted.
       return {
         panels,
         activeThreadId,
@@ -241,6 +262,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         stats,
         streaming,
         threadErrors,
+        modelSelecting,
         projects: patchThread(s.projects, id, (th) => ({ ...th, sessionId: null })),
       };
     });
@@ -341,6 +363,48 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setModels: (models) => set({ models }),
   setSupportedProviders: (supportedProviders) => set({ supportedProviders }),
   setProviderAuth: (providerAuth) => set({ providerAuth }),
+  setDefaultModel: (defaultModel) => set({ defaultModel }),
+
+  selectModel: async (threadId, provider, modelId) => {
+    const thread = findThread(get().projects, threadId)?.thread;
+    if (!thread) return;
+    const pick: ModelRef = { provider, id: modelId };
+    set((s) => ({
+      modelSelecting: { ...s.modelSelecting, [threadId]: true },
+      threadErrors: { ...s.threadErrors, [threadId]: null },
+    }));
+    try {
+      if (thread.sessionId) {
+        await setModel(thread.sessionId, provider, modelId);
+        // Pi persists the pick as the global defaultModel on every set_model,
+        // so mirror that here for threads still showing the default.
+        set((s) => ({
+          defaultModel: pick,
+          projects: patchThread(s.projects, threadId, (th) => ({
+            ...th,
+            model: pick,
+          })),
+        }));
+      } else {
+        // Defer, don't spawn: the pick is applied by the session-spawn path.
+        // defaultModel stays; Pi hasn't persisted anything yet.
+        set((s) => ({
+          projects: patchThread(s.projects, threadId, (th) => ({
+            ...th,
+            model: pick,
+          })),
+        }));
+      }
+    } catch (e) {
+      set((s) => ({
+        threadErrors: { ...s.threadErrors, [threadId]: String(e) },
+      }));
+    } finally {
+      set((s) => ({
+        modelSelecting: { ...s.modelSelecting, [threadId]: false },
+      }));
+    }
+  },
 
   // Send a prompt from a thread panel and stream the response into its turns.
   // Lazily spawns the thread's own sidecar (session per thread) in the project's
