@@ -6,8 +6,6 @@ acceptance criteria; track and action separately.
 ## Disk extension / skill discovery from the branded agent dir
 
 Status: open
-Depends on: the SDK-sidecar pivot (`docs/plans/sdk-sidecar-pivot.md`) landing first
-Introduced: SDK-sidecar pivot
 
 ### Context
 Once Hoy spawns our own SDK entry, `DefaultResourceLoader` can auto-discover extensions/skills
@@ -29,8 +27,6 @@ there is nothing to load yet — extensions are not a day-one need.
 ## In-process custom tools
 
 Status: open
-Depends on: the SDK-sidecar pivot (`docs/plans/sdk-sidecar-pivot.md`)
-Introduced: SDK-sidecar pivot
 
 ### Context
 Owning the sidecar entry means we can register custom tools as plain JS in the same process via
