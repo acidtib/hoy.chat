@@ -115,6 +115,9 @@ export interface Thread {
   // counts. A renamed-but-never-prompted thread is user work and persists;
   // untouched threads never reach workspace.json.
   renamed?: boolean;
+  // Unsent composer text, present only in the persisted workspace shape; the
+  // live value lives in the store's drafts slice.
+  draft?: string | null;
   // Selected model. Set on pick (deferred until a session exists), hydrated from
   // get_state after spawn. Ephemeral: the session JSONL owns it after the first
   // prompt, and persistProjects' allowlist never serializes it.

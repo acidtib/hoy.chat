@@ -151,9 +151,14 @@ interface SessionStore {
   streaming: Record<string, boolean>;
   stats: Record<string, SessionStats | null>;
   threadErrors: Record<string, string | null>;
+  // Composer drafts keyed by threadId. Store-held so hidden panels and app
+  // restarts keep unsent text; persisted via the workspace autosave as each
+  // thread's draft field. Never cleared on panel close.
+  drafts: Record<string, string>;
 
   openThread: (id: string) => void;
   closePanel: (id: string) => void;
+  setDraft: (threadId: string, value: string) => void;
   setBodyWidth: (width: number) => void;
   resizePanelEdge: (index: number, deltaPx: number) => void;
   toggleSidebar: () => void;
@@ -211,6 +216,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   streaming: {},
   stats: {},
   threadErrors: {},
+  drafts: {},
 
   // Open the thread in a panel, or just focus it if it's already open. A
   // persisted thread (has a sessionFile, no live sidecar, nothing loaded) is
@@ -240,7 +246,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // too, instead of an empty "New thread" lingering. Decided before the
       // turns record is dropped below.
       const found = findThread(s.projects, id);
-      const discard = found ? isUntouched(found.thread, s.turns) : false;
+      const discard = found
+        ? isUntouched(found.thread, s.turns, s.drafts)
+        : false;
       // Re-fit the survivors to the body, so closing re-flows the strip
       // instead of leaving a gap. Fit, not grow: when the strip was
       // overflowing, handing the closed panel's width to the survivors would
@@ -262,8 +270,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const { [id]: _sg, ...streaming } = s.streaming;
       const { [id]: _er, ...threadErrors } = s.threadErrors;
       const { [id]: _ms, ...modelSelecting } = s.modelSelecting;
-      // thread.model survives the close on purpose: a pending pick should still
-      // apply when the thread is reopened and prompted.
+      // The draft survives the close (it is user work, like thread.model);
+      // only a discarded thread takes its (whitespace-only) entry with it.
+      const { [id]: _dr, ...remainingDrafts } = s.drafts;
       return {
         panels,
         activeThreadId,
@@ -272,6 +281,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         streaming,
         threadErrors,
         modelSelecting,
+        drafts: discard ? remainingDrafts : s.drafts,
         projects: discard
           ? s.projects.map((p) => ({
               ...p,
@@ -281,6 +291,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       };
     });
   },
+
+  setDraft: (threadId, value) =>
+    set((s) => ({ drafts: { ...s.drafts, [threadId]: value } })),
 
   setBodyWidth: (width) =>
     set((s) => {
@@ -547,15 +560,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // custom title on a never-prompted thread can only have come from a
       // manual rename, and without the flag the untouched filter would drop
       // it. Threads with a transcript are protected by sessionFile already.
+      const drafts: Record<string, string> = {};
       const projects = (ws.projects ?? []).map((p) => ({
         ...p,
-        threads: p.threads.map((t) =>
-          !t.renamed && !t.sessionFile && t.title !== "New thread"
-            ? { ...t, renamed: true }
-            : t,
-        ),
+        threads: p.threads.map((t) => {
+          // Drafts live in the drafts slice, not on the in-memory thread.
+          const { draft, ...rest } = t;
+          if (draft) drafts[rest.id] = draft;
+          return !rest.renamed && !rest.sessionFile && rest.title !== "New thread"
+            ? { ...rest, renamed: true }
+            : rest;
+        }),
       }));
-      set({ projects });
+      set({ projects, drafts });
     } catch {
       // Corrupt/unreadable workspace: start empty rather than block the app.
     } finally {
@@ -622,7 +639,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // An untouched thread has nothing worth keeping in history; archiving it
     // deletes it instead.
     const found = findThread(get().projects, threadId);
-    if (found && isUntouched(found.thread, get().turns)) {
+    if (found && isUntouched(found.thread, get().turns, get().drafts)) {
       get().deleteThread(threadId);
       return;
     }
@@ -648,12 +665,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (thread?.sessionId) releaseSession(thread.sessionId);
     if (thread?.sessionFile) void deleteSessionFile(thread.sessionFile);
     get().closePanel(threadId);
-    set((s) => ({
-      projects: s.projects.map((p) => ({
-        ...p,
-        threads: p.threads.filter((t) => t.id !== threadId),
-      })),
-    }));
+    set((s) => {
+      const { [threadId]: _d, ...drafts } = s.drafts;
+      return {
+        drafts,
+        projects: s.projects.map((p) => ({
+          ...p,
+          threads: p.threads.filter((t) => t.id !== threadId),
+        })),
+      };
+    });
   },
 }));
 
@@ -755,6 +776,7 @@ let lastSaved = "";
 function persistProjects(
   projects: Project[],
   turns: Record<string, Turn[]>,
+  drafts: Record<string, string>,
 ): void {
   const payload = {
     projects: projects.map((p) => ({
@@ -765,7 +787,7 @@ function persistProjects(
       // their panel was left open, and legacy empty rows in an existing
       // workspace.json drop off on the next save.
       threads: p.threads
-        .filter((t) => !isUntouched(t, turns))
+        .filter((t) => !isUntouched(t, turns, drafts))
         .map((t) => ({
           id: t.id,
           title: t.title,
@@ -773,6 +795,7 @@ function persistProjects(
           sessionFile: t.sessionFile ?? null,
           archived: !!t.archived,
           renamed: !!t.renamed,
+          draft: drafts[t.id] || null,
         })),
     })),
   };
@@ -789,22 +812,32 @@ function persistProjects(
 }
 
 useSessionStore.subscribe((state, prev) => {
-  if (state.projects === prev.projects) return;
+  if (state.projects === prev.projects && state.drafts === prev.drafts) return;
   if (!hydrated) return;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     // Read at fire time: the debounce window may batch several changes, and
     // the untouched filter needs the turns that exist when the write happens.
     const s = useSessionStore.getState();
-    persistProjects(s.projects, s.turns);
+    persistProjects(s.projects, s.turns, s.drafts);
   }, 300);
 });
 
 // A thread the user never invested in: no prompt ever sent (no transcript on
-// disk or in memory) and never renamed. Untouched threads are never persisted
-// and are discarded when their panel closes or they are archived.
-function isUntouched(thread: Thread, turns: Record<string, Turn[]>): boolean {
-  return !thread.sessionFile && !turns[thread.id]?.length && !thread.renamed;
+// disk or in memory), never renamed, and no unsent draft. Untouched threads
+// are never persisted and are discarded when their panel closes or they are
+// archived.
+function isUntouched(
+  thread: Thread,
+  turns: Record<string, Turn[]>,
+  drafts: Record<string, string>,
+): boolean {
+  return (
+    !thread.sessionFile &&
+    !turns[thread.id]?.length &&
+    !thread.renamed &&
+    !drafts[thread.id]?.trim()
+  );
 }
 
 // Locate a thread and its owning project by id. Threads live nested under

@@ -81,7 +81,8 @@ export function ThreadView({
   const defaultModel = useSessionStore((s) => s.defaultModel);
   const selecting = useSessionStore((s) => s.modelSelecting[threadId] ?? false);
   const selectModel = useSessionStore((s) => s.selectModel);
-  const [draft, setDraft] = useState("");
+  const draft = useSessionStore((s) => s.drafts[threadId] ?? "");
+  const setDraft = useSessionStore((s) => s.setDraft);
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -99,14 +100,14 @@ export function ThreadView({
 
   function handleSubmit() {
     const message = draft;
-    setDraft("");
+    setDraft(threadId, "");
     void submitPrompt(threadId, message);
   }
 
   const composer = (
     <Composer
       value={draft}
-      onChange={setDraft}
+      onChange={(value) => setDraft(threadId, value)}
       onSubmit={handleSubmit}
       models={models}
       currentModel={threadModel ?? defaultModel}
