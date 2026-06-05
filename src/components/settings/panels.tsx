@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import type { CategoryId } from "./categories";
+import { ProvidersPanel } from "./ProvidersPanel";
 
 // Mock catalogs. No IPC: every control here is local state only.
 const PROVIDERS = ["Anthropic", "OpenAI", "Google", "OpenRouter", "Groq", "xAI"];
@@ -25,7 +26,7 @@ const MODELS = [
   "llama-4-scout",
 ];
 
-function PanelHeader({
+export function PanelHeader({
   title,
   description,
 }: {
@@ -42,7 +43,7 @@ function PanelHeader({
   );
 }
 
-function Section({
+export function Section({
   title,
   description,
   action,
@@ -478,81 +479,6 @@ function AdvancedPanel() {
             </Select>
           </Field>
         </div>
-      </Section>
-    </div>
-  );
-}
-
-const MOCK_PROVIDERS = [
-  { name: "Anthropic", kind: "API key" },
-  { name: "OpenRouter", kind: "API key" },
-];
-
-function ProvidersPanel() {
-  const [provider, setProvider] = useState("");
-  return (
-    <div className="space-y-8">
-      <PanelHeader
-        title="Providers"
-        description="Connect a model provider to start chatting."
-      />
-      <Section
-        title="Add a provider key"
-        description="Stored locally, never shown again."
-      >
-        <div className="mt-5 grid gap-4 sm:grid-cols-[180px_1fr]">
-          <Field label="Provider">
-            <Select value={provider} onValueChange={setProvider}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select provider" />
-              </SelectTrigger>
-              <SelectContent>
-                {PROVIDERS.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="API key">
-            <Input type="password" placeholder="Paste API key" autoComplete="off" />
-          </Field>
-        </div>
-        <div className="mt-5 flex justify-end">
-          <Button size="sm">Save key</Button>
-        </div>
-      </Section>
-
-      <Section title="Configured providers">
-        <ul className="mt-4 space-y-2">
-          {MOCK_PROVIDERS.map((p) => (
-            <li
-              key={p.name}
-              className="flex items-center justify-between gap-3 rounded-md border border-border bg-card/50 px-4 py-3"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <span
-                  className="size-2 shrink-0 rounded-full bg-emerald-500 shadow-[0_0_0_3px] shadow-emerald-500/15"
-                  aria-hidden
-                />
-                <span className="truncate text-sm font-medium">{p.name}</span>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Badge variant="outline" className="text-muted-foreground">
-                  {p.kind}
-                </Badge>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-destructive"
-                >
-                  Remove
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
       </Section>
     </div>
   );

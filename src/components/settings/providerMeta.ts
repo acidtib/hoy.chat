@@ -2,6 +2,8 @@
 // canonical provider list (ids, labels, env vars) comes from the backend via
 // supportedProviders(); this module only decorates it for display.
 
+import type { ProviderAuth, ProviderInfo } from "@/lib/types";
+
 export interface ProviderMeta {
   description: string;
   // Key console URL, opened in the system browser. Absent for non-featured
@@ -73,6 +75,38 @@ export function metaFor(id: string, label: string): ProviderMeta {
       placeholder: "Paste API key",
     }
   );
+}
+
+// List partition for the panel: configured pinned on top, then the featured
+// set, then everything else alphabetically. Within each group, featured ids
+// keep FEATURED order and the rest sort by label.
+export function partitionProviders(
+  providers: ProviderInfo[],
+  auth: ProviderAuth[],
+): {
+  configured: ProviderInfo[];
+  featured: ProviderInfo[];
+  rest: ProviderInfo[];
+} {
+  const configuredIds = new Set(
+    auth.filter((a) => a.configured).map((a) => a.provider),
+  );
+  const rank = (p: ProviderInfo) => {
+    const i = FEATURED.indexOf(p.id);
+    return i === -1 ? FEATURED.length : i;
+  };
+  const order = (a: ProviderInfo, b: ProviderInfo) =>
+    rank(a) - rank(b) || a.label.localeCompare(b.label);
+
+  const configured = providers.filter((p) => configuredIds.has(p.id)).sort(order);
+  const unconfigured = providers.filter((p) => !configuredIds.has(p.id));
+  const featured = unconfigured
+    .filter((p) => FEATURED.includes(p.id))
+    .sort(order);
+  const rest = unconfigured
+    .filter((p) => !FEATURED.includes(p.id))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  return { configured, featured, rest };
 }
 
 // Non-functional OAuth rows shown above the API-key list. Mock only; the
