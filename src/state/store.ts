@@ -6,6 +6,7 @@ import {
   deleteSessionFile,
   getMessages,
   getSessionStats,
+  getState,
   loadWorkspace,
   saveWorkspace,
   sendPrompt,
@@ -451,6 +452,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         get().setThreadSessionIdInternal(threadId, sessionId);
       }
 
+      // Apply a deferred pick (or adopt the session's model) before the prompt;
+      // a failure throws into the catch below so the prompt never rides on a
+      // model the user didn't choose. The guard makes repeat calls free.
+      await applyThreadModel(threadId, sessionId);
+
       const channel = new Channel<AgentEvent>();
       activeChannels.set(threadId, channel);
       channel.onmessage = (event) => {
@@ -561,6 +567,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         thread.sessionFile,
       );
       get().setThreadSessionIdInternal(threadId, sessionId);
+      // Reconcile the thread's model with the restored session off the critical
+      // path; hydration must not block the transcript restore.
+      void applyThreadModel(threadId, sessionId).catch((e) => {
+        set((s) => ({
+          threadErrors: { ...s.threadErrors, [threadId]: String(e) },
+        }));
+      });
       // A concurrent submitPrompt may have populated turns and sent a prompt
       // while we were spawning; don't clobber it with the restored transcript.
       if ((get().turns[threadId]?.length ?? 0) > 0) return;
@@ -631,6 +644,53 @@ function acquireSession(
   );
   pendingSessions.set(threadId, spawn);
   return spawn;
+}
+
+// Idempotence: submitPrompt and hydrateThread both call this after the deduped
+// acquireSession resolves; the Set is marked synchronously so a concurrent
+// second call returns while the first is still in flight. Session ids are never
+// reused, so no cleanup is needed.
+const modelApplied = new Set<string>();
+
+// Reconcile the thread's pending model pick with a freshly available session.
+// get_state gives the session truth; set_model fires only when the pick differs
+// (a redundant call would append a model_change JSONL entry on every reopen).
+// With no pick, the thread adopts the session's model (restore hydration).
+async function applyThreadModel(
+  threadId: string,
+  sessionId: string,
+): Promise<void> {
+  if (modelApplied.has(sessionId)) return;
+  modelApplied.add(sessionId);
+
+  const store = useSessionStore;
+  const pick = findThread(store.getState().projects, threadId)?.thread.model ?? null;
+  const piState = await getState(sessionId);
+  const truth: ModelRef | null = piState.model
+    ? { provider: piState.model.provider, id: piState.model.id }
+    : null;
+
+  const setThreadModel = (model: ModelRef | null) =>
+    store.setState((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({ ...th, model })),
+    }));
+
+  if (!pick) {
+    if (truth) setThreadModel(truth);
+    return;
+  }
+  if (truth && truth.provider === pick.provider && truth.id === pick.id) return;
+
+  try {
+    await setModel(sessionId, pick.provider, pick.id);
+    // Pi persisted the pick as the global defaultModel; mirror it.
+    store.setState({ defaultModel: pick });
+  } catch (e) {
+    // Revert to the session truth so the selector snaps back and a
+    // retry-after-fix starts clean.
+    setThreadModel(truth);
+    throw e;
+  }
 }
 
 // Autosave: persist the projects tree (debounced) whenever it changes, but only

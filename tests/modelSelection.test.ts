@@ -2,21 +2,26 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { Thread } from "@/lib/types";
 
 // Mock the ipc module before anything imports it. The mock carries every export
-// the store needs at import time; only setModel matters here.
+// the store needs at import time; the named ones drive these tests.
 const setModel =
   mock<(sessionId: string, provider: string, modelId: string) => Promise<unknown>>();
+const createSession = mock<() => Promise<string>>();
+const getState = mock<(sessionId: string) => Promise<unknown>>();
+const sendPrompt = mock<() => Promise<void>>();
+const getMessages = mock<() => Promise<unknown[]>>();
 
 mock.module("@/lib/ipc", () => ({
   Channel: class {},
   setModel,
+  createSession,
+  getState,
+  sendPrompt,
+  getMessages,
   abort: mock(),
   activeSessionId: mock(),
   closeSession: mock(),
-  createSession: mock(),
   deleteSessionFile: mock(),
-  getMessages: mock(),
   getSessionStats: mock(),
-  getState: mock(),
   listModels: mock(),
   loadWorkspace: mock(),
   pickDirectory: mock(),
@@ -24,7 +29,6 @@ mock.module("@/lib/ipc", () => ({
   removeProviderKey: mock(),
   saveProviderKey: mock(),
   saveWorkspace: mock(),
-  sendPrompt: mock(),
   supportedProviders: mock(),
 }));
 
@@ -43,6 +47,9 @@ function seed(thread: Partial<Thread>) {
       },
     ],
     panels: [],
+    turns: {},
+    streaming: {},
+    stats: {},
     threadErrors: {},
     modelSelecting: {},
     defaultModel: null,
@@ -55,6 +62,10 @@ function thread(): Thread {
 
 beforeEach(() => {
   setModel.mockReset();
+  createSession.mockReset();
+  getState.mockReset();
+  sendPrompt.mockReset();
+  getMessages.mockReset();
 });
 
 describe("selectModel", () => {
@@ -112,6 +123,98 @@ describe("selectModel", () => {
     await useSessionStore.getState().selectModel("missing", "anthropic", "m");
 
     expect(setModel).not.toHaveBeenCalled();
+  });
+});
+
+// The modelApplied guard is module-level, so every test uses a distinct
+// session id; session ids are never reused in the app either.
+describe("applyThreadModel at spawn", () => {
+  test("submitPrompt applies a deferred pick to the new session before sending", async () => {
+    seed({
+      sessionId: null,
+      model: { provider: "groq", id: "llama-3.3-70b" },
+    });
+    const order: string[] = [];
+    createSession.mockResolvedValue("sess_apply_a");
+    getState.mockResolvedValue({
+      model: { provider: "anthropic", id: "claude-opus-4-8" },
+    });
+    setModel.mockImplementation(async () => {
+      order.push("set_model");
+      return {};
+    });
+    sendPrompt.mockImplementation(async () => {
+      order.push("send_prompt");
+    });
+
+    await useSessionStore.getState().submitPrompt("t1", "hello");
+
+    expect(setModel).toHaveBeenCalledWith(
+      "sess_apply_a",
+      "groq",
+      "llama-3.3-70b",
+    );
+    expect(order).toEqual(["set_model", "send_prompt"]);
+    expect(useSessionStore.getState().defaultModel).toEqual({
+      provider: "groq",
+      id: "llama-3.3-70b",
+    });
+  });
+
+  test("already-matching pick: no redundant set_model, prompt still sent", async () => {
+    seed({
+      sessionId: null,
+      model: { provider: "anthropic", id: "claude-opus-4-8" },
+    });
+    createSession.mockResolvedValue("sess_apply_b");
+    getState.mockResolvedValue({
+      model: { provider: "anthropic", id: "claude-opus-4-8" },
+    });
+    sendPrompt.mockResolvedValue(undefined);
+
+    await useSessionStore.getState().submitPrompt("t1", "hello");
+
+    expect(setModel).not.toHaveBeenCalled();
+    expect(sendPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  test("restore hydration: no pick adopts the session's model, no set_model", async () => {
+    seed({ sessionId: null, sessionFile: "/tmp/s.jsonl" });
+    createSession.mockResolvedValue("sess_apply_c");
+    getState.mockResolvedValue({
+      model: { provider: "anthropic", id: "claude-opus-4-8" },
+    });
+    getMessages.mockResolvedValue([]);
+
+    await useSessionStore.getState().hydrateThread("t1");
+    // The model apply is fire-and-forget off the hydration path; flush it.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(thread().model).toEqual({
+      provider: "anthropic",
+      id: "claude-opus-4-8",
+    });
+    expect(setModel).not.toHaveBeenCalled();
+  });
+
+  test("apply failure: prompt not sent, error surfaced, pick reverted to session truth", async () => {
+    seed({ sessionId: null, model: { provider: "groq", id: "x" } });
+    createSession.mockResolvedValue("sess_apply_d");
+    getState.mockResolvedValue({
+      model: { provider: "anthropic", id: "claude-opus-4-8" },
+    });
+    setModel.mockRejectedValue(new Error("No API key for groq/x"));
+
+    await useSessionStore.getState().submitPrompt("t1", "hello");
+
+    expect(sendPrompt).not.toHaveBeenCalled();
+    const state = useSessionStore.getState();
+    expect(state.streaming["t1"]).toBe(false);
+    expect(state.threadErrors["t1"]).toContain("No API key for groq/x");
+    expect(thread().model).toEqual({
+      provider: "anthropic",
+      id: "claude-opus-4-8",
+    });
   });
 });
 
