@@ -9,7 +9,6 @@ import {
   MoreHorizontal,
   Plus,
   Search,
-  Settings,
   Sparkle,
   Terminal,
   X,
@@ -57,7 +56,6 @@ export function ThreadView({
   threadId,
   active,
   onClose,
-  onOpenSettings,
   onDebug,
   busy,
   debug,
@@ -66,7 +64,6 @@ export function ThreadView({
   threadId: string;
   active: boolean;
   onClose: () => void;
-  onOpenSettings: () => void;
   onDebug: () => void;
   busy: boolean;
   debug: PiState | null;
@@ -182,10 +179,6 @@ export function ThreadView({
               <DropdownMenuItem onSelect={() => archiveThread(threadId)}>
                 <Archive className="size-4" />
                 Archive thread
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onOpenSettings}>
-                <Settings className="size-4" />
-                Settings
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={onDebug} disabled={busy}>
                 <Activity className="size-4" />

@@ -33,7 +33,6 @@ function App() {
   const closePanel = useSessionStore((s) => s.closePanel);
   const focusPanel = useSessionStore((s) => s.openThread);
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
-  const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
 
   // Restore the persisted projects -> threads tree on boot (then autosave kicks in).
   useEffect(() => {
@@ -141,7 +140,7 @@ function App() {
               className="relative flex min-h-0 flex-1 overflow-hidden"
             >
               {panels.length === 0 ? (
-                <HomePage onOpenSettings={() => setSettingsOpen(true)} />
+                <HomePage />
               ) : (
                 <div
                   ref={stripRef}
@@ -167,7 +166,6 @@ function App() {
                           threadId={panel.id}
                           active={panel.id === activeThreadId}
                           onClose={() => closePanel(panel.id)}
-                          onOpenSettings={() => setSettingsOpen(true)}
                           onDebug={handleDebug}
                           busy={busy}
                           debug={debug}
