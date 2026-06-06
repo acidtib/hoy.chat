@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Build and install Hoy locally as the daily driver (HOY-207). Linux only; real
+# packaging (bundle.externalBin, per-platform payload placement) is the release
+# blocker tracked in TODO.md, this is the dogfooding stopgap.
+#
+# Installs to:
+#   ~/.local/share/hoy-desktop/   app binary, sidecar binary, pi-payload
+#   ~/.local/bin/hoy              launcher (env pins below)
+#   ~/.local/share/applications/hoy-desktop.desktop
+#
+# The launcher exports PI_SIDECAR_BIN / PI_SIDECAR_PAYLOAD because
+# resolve_sidecar_paths (sidecar.rs) prefers the repo's sidecar/ dev artifacts
+# over next-to-exe whenever the repo exists; without the pin the installed
+# release would run whatever sidecar dev last built.
+#
+# Usage: bun run local:install   (re-run to upgrade)
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+APP_DIR="$HOME/.local/share/hoy-desktop"
+BIN_DIR="$HOME/.local/bin"
+DESKTOP_DIR="$HOME/.local/share/applications"
+ICON_DIR="$HOME/.local/share/icons/hicolor/128x128/apps"
+
+echo "[1/4] sidecar build"
+"$ROOT/sidecar/build.sh" "$TRIPLE"
+
+echo "[2/4] release build (no bundle)"
+( cd "$ROOT" && bun run tauri build --no-bundle )
+
+echo "[3/4] install to $APP_DIR"
+mkdir -p "$APP_DIR" "$BIN_DIR" "$DESKTOP_DIR" "$ICON_DIR"
+install -m 755 "$ROOT/src-tauri/target/release/hoy-desktop" "$APP_DIR/hoy-desktop"
+install -m 755 "$ROOT/sidecar/pi-$TRIPLE" "$APP_DIR/pi-$TRIPLE"
+rm -rf "$APP_DIR/pi-payload"
+cp -r "$ROOT/sidecar/pi-payload" "$APP_DIR/pi-payload"
+install -m 644 "$ROOT/src-tauri/icons/128x128.png" "$ICON_DIR/hoy-desktop.png"
+
+echo "[4/4] launcher and desktop entry"
+cat > "$BIN_DIR/hoy" <<EOF
+#!/usr/bin/env bash
+# Installed by scripts/local-install.sh (HOY-207). Env pins keep the installed
+# release on its own sidecar instead of the repo's dev artifacts.
+export PI_SIDECAR_BIN="$APP_DIR/pi-$TRIPLE"
+export PI_SIDECAR_PAYLOAD="$APP_DIR/pi-payload"
+export GDK_BACKEND=x11
+exec "$APP_DIR/hoy-desktop" "\$@"
+EOF
+chmod 755 "$BIN_DIR/hoy"
+
+cat > "$DESKTOP_DIR/hoy-desktop.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Hoy Desktop
+Comment=Desktop GUI for the Pi coding agent
+Exec=$BIN_DIR/hoy
+Icon=hoy-desktop
+Terminal=false
+Categories=Development;
+EOF
+
+command -v update-desktop-database >/dev/null && update-desktop-database "$DESKTOP_DIR" || true
+
+echo
+echo "installed:"
+echo "  app:      $APP_DIR/hoy-desktop"
+echo "  sidecar:  $APP_DIR/pi-$TRIPLE"
+echo "  launcher: $BIN_DIR/hoy"
+echo "  desktop:  $DESKTOP_DIR/hoy-desktop.desktop"
