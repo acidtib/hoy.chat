@@ -9,7 +9,9 @@ import {
   getSessionStats,
   getState,
   loadWorkspace,
+  removeProviderKey as ipcRemoveProviderKey,
   respondPermission as ipcRespondPermission,
+  saveProviderKey as ipcSaveProviderKey,
   saveWorkspace,
   sendPrompt,
   setModel,
@@ -203,6 +205,13 @@ interface SessionStore {
   addProject: (path: string) => void;
   addThread: (projectId: string) => string;
   removeProject: (projectId: string) => void;
+
+  // Credential changes go through the store (HOY-196): the backend respawns
+  // idle sidecars under their existing sessionIds, so the per-session
+  // reconcile guards must be cleared for the next prompt to re-apply each
+  // thread's model pick and permission mode.
+  saveProviderKey: (provider: string, key: string) => Promise<void>;
+  removeProviderKey: (provider: string) => Promise<void>;
 
   setActiveSessionId: (id: string | null) => void;
   setModels: (models: ModelInfo[]) => void;
@@ -483,6 +492,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         activeThreadId,
       };
     });
+  },
+
+  saveProviderKey: async (provider, key) => {
+    await ipcSaveProviderKey(provider, key);
+    modelApplied.clear();
+    permissionModeApplied.clear();
+  },
+
+  removeProviderKey: async (provider) => {
+    await ipcRemoveProviderKey(provider);
+    modelApplied.clear();
+    permissionModeApplied.clear();
   },
 
   setActiveSessionId: (id) => set({ activeSessionId: id }),

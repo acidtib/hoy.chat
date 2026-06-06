@@ -9,7 +9,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { removeProviderKey, saveProviderKey } from "@/lib/ipc";
 import { refreshProviderData } from "@/lib/refresh";
 import { useSessionStore } from "@/state/store";
 import { cn } from "@/lib/utils";
@@ -82,6 +81,10 @@ function ProviderRow({
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Store actions, not the raw ipc: a key change respawns idle sidecars, and
+  // the store must reset its per-session reconcile guards (HOY-196).
+  const saveProviderKey = useSessionStore((s) => s.saveProviderKey);
+  const removeProviderKey = useSessionStore((s) => s.removeProviderKey);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);

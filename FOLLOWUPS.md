@@ -57,19 +57,22 @@ per-thread display.
 
 ## Live thread sessions miss newly saved provider keys
 
-Status: open
+Status: resolved (HOY-196)
 Introduced: M2 (key save respawn), surfaced by the per-thread model selection work
 
 ### Context
-Pi caches auth.json at process start, and `save_provider_key` respawns only the control session.
-A thread whose sidecar is already running keeps its stale credential view, so after saving a new
-provider key, `set_model` on that live thread fails with Pi's "No API key for <provider>/<id>"
-until the panel is closed and reopened (kill-on-close respawns with fresh auth).
+Pi caches auth.json at process start, and `save_provider_key` respawned only the control session.
+A thread whose sidecar was already running kept its stale credential view until the panel was
+closed and reopened.
 
-### What's needed
-- Either respawn all live sessions after a key save (disruptive mid-turn; would need draining),
-  or an auth-reload RPC in Pi when one becomes available. Until then the close/reopen workaround
-  stands.
+### Resolution
+`save_provider_key` / `remove_provider_key` now respawn every idle live session. Each session's
+current transcript file is captured live via get_session_stats and reopened by the respawn
+(HOY_SESSION_FILE), cwd and permission mode come from the manager mirrors (per-session cwd map,
+HOY_PERMISSION_MODE), and the renderer clears its per-session reconcile guards on key save so the
+next prompt re-applies the thread's model pick and mode. Boundary kept on purpose: a session that
+is mid-stream during the key save is skipped (killing a turn is worse than stale auth); the
+close/reopen path still refreshes it later.
 
 ## Real git status in the title bar
 

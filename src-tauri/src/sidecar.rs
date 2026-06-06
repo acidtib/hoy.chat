@@ -233,6 +233,12 @@ impl PiProcess {
             let _ = self.respond_ui(&id, None, None, true);
         }
     }
+
+    // A prompt is streaming on this session (its Channel is attached). Used to
+    // skip mid-turn sessions when respawning after a credential change.
+    pub fn is_streaming(&self) -> bool {
+        self.sink.lock().unwrap().is_some()
+    }
 }
 
 impl Drop for PiProcess {
@@ -461,6 +467,11 @@ pub struct SidecarManager {
     // sidecar's extension closure; this mirror feeds HOY_PERMISSION_MODE on
     // respawn so the mode survives the process swap.
     modes: Mutex<HashMap<SessionId, String>>,
+    // Per-session spawn cwd (HOY-196), so a respawn rebuilds the session in
+    // its own project dir instead of the manager default. The session file is
+    // not mirrored here: only pi knows it once a fresh session first writes,
+    // so respawn callers capture it live via get_session_stats.
+    cwds: Mutex<HashMap<SessionId, PathBuf>>,
     handle_counter: AtomicUsize,
     bin: PathBuf,
     payload: PathBuf,
@@ -482,6 +493,7 @@ impl SidecarManager {
             sessions: Mutex::new(HashMap::new()),
             active: Mutex::new(None),
             modes: Mutex::new(HashMap::new()),
+            cwds: Mutex::new(HashMap::new()),
             handle_counter: AtomicUsize::new(1),
             bin,
             payload,
@@ -540,6 +552,10 @@ impl SidecarManager {
         )?;
         let id = format!("s{}", self.handle_counter.fetch_add(1, Ordering::Relaxed));
         self.sessions.lock().unwrap().insert(id.clone(), proc);
+        self.cwds
+            .lock()
+            .unwrap()
+            .insert(id.clone(), cwd.to_path_buf());
         Ok(id)
     }
 
@@ -549,6 +565,7 @@ impl SidecarManager {
     pub fn remove(&self, id: &str) {
         let old = self.sessions.lock().unwrap().remove(id);
         self.modes.lock().unwrap().remove(id);
+        self.cwds.lock().unwrap().remove(id);
         drop(old);
     }
 
@@ -563,10 +580,14 @@ impl SidecarManager {
 
     // Replace a session's child with a fresh one under the same SessionId. Used
     // after writing auth.json so the running sidecar reloads credentials (Pi
-    // caches auth in memory at startup). The model selection survives because Pi
-    // persists defaultModel to settings.json and re-reads it on spawn. The old
-    // Arc is dropped outside the lock so its Drop (kill + wait) does not hold it.
-    pub fn respawn(&self, id: &str) -> Result<(), String> {
+    // caches auth in memory at startup). The session's cwd and permission mode
+    // come from the manager mirrors; `session_file` (captured live by the
+    // caller via get_session_stats) reopens the transcript so pi-side context
+    // survives the swap. Model selection survives because Pi persists
+    // defaultModel to settings.json and re-reads it on spawn; a thread pick is
+    // reconciled by the renderer. The old Arc is dropped outside the lock so
+    // its Drop (kill + wait) does not hold it.
+    pub fn respawn(&self, id: &str, session_file: Option<&str>) -> Result<(), String> {
         if !self.bin.exists() {
             return Err(format!(
                 "sidecar binary not found at {}. Run sidecar/build.sh.",
@@ -574,12 +595,19 @@ impl SidecarManager {
             ));
         }
         let mode = self.mode_of(id);
+        let cwd = self
+            .cwds
+            .lock()
+            .unwrap()
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| self.cwd.clone());
         let proc = PiProcess::spawn(
             &self.bin,
             &self.payload,
             &self.agent_dir,
-            &self.cwd,
-            None,
+            &cwd,
+            session_file,
             mode.as_deref(),
         )?;
         let old = {
@@ -591,6 +619,16 @@ impl SidecarManager {
         };
         drop(old);
         Ok(())
+    }
+
+    // Every live session id with its process, for credential-change respawns.
+    pub fn snapshot(&self) -> Vec<(SessionId, Arc<PiProcess>)> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(id, proc)| (id.clone(), proc.clone()))
+            .collect()
     }
 
     pub fn active_session_id(&self) -> Option<SessionId> {

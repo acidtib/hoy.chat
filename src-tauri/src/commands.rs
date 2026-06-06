@@ -86,8 +86,34 @@ pub async fn set_model(
     Ok(())
 }
 
-// Persist a provider API key into Pi's auth.json, then respawn the active sidecar
-// so it reloads credentials. The key value is never returned to the renderer.
+// Respawn every idle live session so each sidecar reloads auth.json (HOY-196).
+// Pi caches credentials at process start. For each session the current
+// transcript file is captured live via get_session_stats (only pi knows it
+// once a fresh session first writes) and reopened by the respawn, so pi-side
+// context survives; cwd and permission mode come from the manager mirrors.
+// Streaming sessions are skipped: killing a turn mid-flight is worse than
+// stale auth, and the close/reopen path still refreshes them later.
+async fn respawn_idle_sessions(manager: &SidecarManager) {
+    for (id, process) in manager.snapshot() {
+        if process.is_streaming() {
+            continue;
+        }
+        let session_file = match process.request(json!({ "type": "get_session_stats" })).await {
+            Ok(response) => response["data"]["sessionFile"]
+                .as_str()
+                .map(str::to_string),
+            // A wedged process still gets a fresh child; worst case the thread
+            // is hydrated from the renderer's persisted sessionFile on reopen.
+            Err(_) => None,
+        };
+        if let Err(e) = manager.respawn(&id, session_file.as_deref()) {
+            eprintln!("[hoy-desktop] respawn {id} after credential change failed: {e}");
+        }
+    }
+}
+
+// Persist a provider API key into Pi's auth.json, then respawn idle sidecars
+// so they reload credentials. The key value is never returned to the renderer.
 #[tauri::command]
 pub async fn save_provider_key(
     provider: String,
@@ -95,9 +121,7 @@ pub async fn save_provider_key(
     manager: State<'_, SidecarManager>,
 ) -> Result<(), String> {
     pi_config::set_api_key(&provider, &key)?;
-    if let Some(id) = manager.active_session_id() {
-        manager.respawn(&id)?;
-    }
+    respawn_idle_sessions(&manager).await;
     Ok(())
 }
 
@@ -107,9 +131,7 @@ pub async fn remove_provider_key(
     manager: State<'_, SidecarManager>,
 ) -> Result<(), String> {
     pi_config::remove_provider(&provider)?;
-    if let Some(id) = manager.active_session_id() {
-        manager.respawn(&id)?;
-    }
+    respawn_idle_sessions(&manager).await;
     Ok(())
 }
 
