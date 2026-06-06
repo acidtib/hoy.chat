@@ -1,6 +1,6 @@
 # CLAUDE.md — Pi Desktop
 
-Project conventions and guardrails. Read `PI_DESKTOP_SPEC.md` for the full build plan, milestones, and acceptance criteria. This file is the short, always-loaded version: the decisions that must not drift.
+Project conventions and guardrails. The MVP build spec (PI_DESKTOP_SPEC.md, M0-M4) is complete and deleted; it lives in git history. Open work is tracked in `TODO.md` and Linear. This file is the short, always-loaded version: the decisions that must not drift.
 
 ## What we're building
 A native desktop GUI for the **Pi coding agent** (`@earendil-works/pi-coding-agent`). Tauri v2 shell + React/TS webview + Pi running as a **spawned sidecar** over its RPC (JSONL-over-stdio) protocol. The sidecar is our own thin SDK entry running Pi's `runRpcMode` (see below), not the stock CLI. Same three-layer architecture as OpenAI's Codex desktop app (renderer → Rust main → spawned agent process), deliberately.
@@ -17,14 +17,13 @@ A native desktop GUI for the **Pi coding agent** (`@earendil-works/pi-coding-age
 ## Critical technical landmines
 - **JSONL framing:** Pi's RPC is strict JSONL delimited by `\n` ONLY. Do NOT use a line reader that splits on Unicode separators (U+2028 / U+2029) — they are valid inside JSON strings and will corrupt messages. Split on `\n` in Rust, strip a trailing `\r`. There must be a unit test for this against a payload containing U+2028 inside a string value.
 - **API keys are written to Pi's `auth.json` (mode 0600) in Hoy's branded dir, never to the renderer.** Decision (M2): Pi's RPC has no auth command and Pi's `getApiKey` resolves `auth.json` above env vars, so we drive Pi's existing credential store directly instead of inventing a parallel keychain/Stronghold layer or env-injection plumbing. All key handling is isolated in `pi_config.rs`: read-modify-write must preserve existing `oauth` entries (a Hoy/`pi` login) and write atomically. After a write, respawn the sidecar so it reloads. Key values never flow back to the renderer; only configured/not-configured status (`ProviderAuth`) does. The dir is **branded and isolated: `~/.hoy/agent`, NOT `~/.pi`** (override with `HOY_AGENT_DIR`). Rust writes there; `sidecar.rs` passes the same path to the sidecar as `PI_CODING_AGENT_DIR`, which our SDK entry honors, so both ends agree. The earlier keychain-plus-env-injection plan was dropped on purpose.
-- **Pin Pi's version exactly.** Its SDK/RPC surface is still evolving. Confirm exact RPC command names and fields against the installed version before relying on them — the names in the spec are from docs and must be verified.
+- **Pin Pi's version exactly.** Its SDK/RPC surface is still evolving. Confirm exact RPC command names and fields against the installed version (pinned 0.78.0) before relying on them. Version-bump checklist in `TODO.md`.
 - **Run dev with `bun run tauri:dev`.** `withGlobalTauri` is `false` in the base `tauri.conf.json` (it is pure attack surface in release). The dev MCP bridge needs `window.__TAURI__`, so `tauri:dev` merges `src-tauri/tauri.dev.conf.json` to turn it on for dev only. Plain `tauri dev` and release builds keep it off. Do not flip the base flag back to `true`.
 
 ## Working process
-- **Build milestones in order (M0 → M4).** Do not start a milestone until the previous one's acceptance criteria (in the spec) pass.
-- **M0 first, always.** The sidecar-packaging spike (turning Pi's Node CLI into a self-contained binary) is the highest risk. Prove it works with a no-UI round-trip before building anything else. If it can't be made to work, stop and surface the fallback options — do not plow ahead.
-- **Commit at every milestone boundary** with a message naming the milestone and what now works.
-- **Keep frontend and backend contracts in sync.** The `AgentEvent` union and command signatures (spec §6) are the source of truth shared between Rust `events.rs` and TS `types.ts`. Change both together.
+- **The MVP milestones (M0-M4) are done.** Post-MVP work flows through Linear tickets: assign, In Progress, design note, implement, test, live-verify via the tauri MCP bridge, commit to main with a `HOY-NNN:` prefix, Done with evidence.
+- **Rebuild the sidecar binary (`sidecar/build.sh`) whenever `sidecar/pi-src` changes**, before any live verification. A stale binary silently runs old prompt and gate code (HOY-200).
+- **Keep frontend and backend contracts in sync.** The `AgentEvent` union and command signatures are the source of truth shared between Rust `events.rs` and TS `types.ts`. Change both together.
 
 ## Code conventions
 - Rust: keep sidecar/process logic in `sidecar.rs` + `reader.rs`; `#[tauri::command]` fns in `commands.rs`; Pi config and credential file handling isolated in `pi_config.rs`. Prefer `Result` returns and surface errors to the frontend as structured events, not panics.
