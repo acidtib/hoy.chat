@@ -42,9 +42,15 @@ fn round_trip(bin: &Path, payload: &Path) -> Result<String, String> {
     // PI_PACKAGE_DIR points Pi at its bun-binary assets (package.json, theme/,
     // export-html/, assets/) decoupled from the executable's own location, which
     // is what the Tauri sidecar will do at spawn time.
+    // PI_CODING_AGENT_DIR is required by the hoy-sidecar entry since M2 (the
+    // branded agent dir Rust normally provides). A temp dir keeps the harness
+    // from touching ~/.hoy.
+    let agent_dir = std::env::temp_dir().join("hoy-m0-agent");
+    std::fs::create_dir_all(&agent_dir).map_err(|e| format!("create agent dir: {e}"))?;
     let mut child = Command::new(bin)
         .args(["--mode", "rpc", "--no-session", "--offline", "--no-context-files"])
         .env("PI_PACKAGE_DIR", payload)
+        .env("PI_CODING_AGENT_DIR", &agent_dir)
         .current_dir(std::env::temp_dir())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
