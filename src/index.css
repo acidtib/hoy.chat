@@ -1,11 +1,16 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
-/* Streamdown renders markdown with Tailwind utility classes baked into its
-   compiled JS; Tailwind v4 only scans our own source by default, so register it
-   as a source or its code blocks, tables, and lists render unstyled. */
+/* Explicit sources only. Auto-detection scans every non-gitignored file in the
+   repo, and the Tailwind Vite plugin full-reloads the webview whenever any
+   scanned file changes; with Hoy dogfooding on its own repo, every approved
+   agent edit (even to a markdown file) reloaded the window mid-conversation.
+   Class names live in src/ and index.html; Streamdown ships utility classes
+   baked into its compiled JS. */
+@source "../src";
+@source "../index.html";
 @source "../node_modules/streamdown/dist";
 
 @custom-variant dark (&:is(.dark *));
