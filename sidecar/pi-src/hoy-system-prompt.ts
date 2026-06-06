@@ -1,5 +1,7 @@
 // Hoy's system prompt, passed to pi via systemPromptOverride (full replacement
-// of pi's default coding prompt). Design and rationale: docs/prompts/03-hoy-system-prompt.md.
+// of pi's default coding prompt). Design and rationale: HOY-185 (replacement,
+// branding, docs pin), HOY-186 (modes), HOY-201 (agentic rules, reviewed
+// against Codex CLI, Claude Code, opencode, and Windsurf).
 //
 // Replacement freezes the parts pi normally assembles, so two invariants hold:
 // - The "Tool guidelines" entries are pi 0.78.0's promptGuidelines verbatim
