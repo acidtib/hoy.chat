@@ -6,10 +6,11 @@
 // are read-modify-write preserved untouched. Key values never leave Rust: the
 // renderer receives only configured/not-configured status.
 //
-// Branded, isolated dir: Hoy uses ~/.hoy/agent, NOT ~/.pi, so it never touches a
-// user's stock pi install. Rust writes auth.json here; the sidecar reads the same
-// dir because sidecar.rs passes it as PI_CODING_AGENT_DIR (the env our SDK entry
-// honors). Override with HOY_AGENT_DIR (tests / power users).
+// Branded, isolated dir: Hoy uses ~/.hoy/agent (~/.hoyd/agent in debug builds,
+// HOY-206), NOT ~/.pi, so it never touches a user's stock pi install. Rust writes
+// auth.json here; the sidecar reads the same dir because sidecar.rs passes it as
+// PI_CODING_AGENT_DIR (the env our SDK entry honors). Override with HOY_AGENT_DIR
+// (tests / power users).
 //
 // Schema (verified against pi-coding-agent 0.78.0 core/auth-storage.d.ts):
 //   auth.json = Record<provider, {type:"api_key", key} | {type:"oauth", ...tokens}>
@@ -64,13 +65,19 @@ pub fn agent_dir() -> Result<PathBuf, String> {
     )
 }
 
+// Debug builds run in a parallel "hoyd" namespace so a dev Hoy can work on Hoy
+// without touching the production ~/.hoy data (HOY-206). The Tauri identifier
+// gets the same split in tauri.dev.conf.json.
+const BRANDED_DIR: &str = if cfg!(debug_assertions) { ".hoyd" } else { ".hoy" };
+
 // Pure resolution split out so the branded-path logic is testable without
-// mutating process env. HOY_AGENT_DIR override wins; otherwise <home>/.hoy/agent.
+// mutating process env. HOY_AGENT_DIR override wins; otherwise
+// <home>/BRANDED_DIR/agent.
 fn agent_dir_from(override_dir: Option<PathBuf>, home: Option<PathBuf>) -> Result<PathBuf, String> {
     if let Some(dir) = override_dir.filter(|d| !d.as_os_str().is_empty()) {
         return Ok(dir);
     }
-    home.map(|h| h.join(".hoy").join("agent"))
+    home.map(|h| h.join(BRANDED_DIR).join("agent"))
         .ok_or_else(|| "cannot resolve home directory".to_string())
 }
 
@@ -401,9 +408,16 @@ mod tests {
     }
 
     #[test]
-    fn agent_dir_defaults_to_branded_hoy_dir() {
+    fn agent_dir_defaults_to_branded_dir() {
         let resolved = agent_dir_from(None, Some(PathBuf::from("/home/u"))).unwrap();
-        assert_eq!(resolved, PathBuf::from("/home/u/.hoy/agent"));
+        assert_eq!(resolved, PathBuf::from("/home/u").join(BRANDED_DIR).join("agent"));
+    }
+
+    // cargo test compiles with debug_assertions, so this pins the dev half of
+    // the HOY-206 namespace split; the release half is the const's else arm.
+    #[test]
+    fn debug_builds_use_the_hoyd_namespace() {
+        assert_eq!(BRANDED_DIR, ".hoyd");
     }
 
     #[test]
@@ -415,7 +429,7 @@ mod tests {
 
         let empty_ignored =
             agent_dir_from(Some(PathBuf::new()), Some(PathBuf::from("/home/u"))).unwrap();
-        assert_eq!(empty_ignored, PathBuf::from("/home/u/.hoy/agent"));
+        assert_eq!(empty_ignored, PathBuf::from("/home/u").join(BRANDED_DIR).join("agent"));
     }
 
     #[test]

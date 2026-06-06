@@ -29,6 +29,13 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            // Debug builds run in the hoyd namespace (HOY-206): retitle the OS
+            // window so taskbar/alt-tab tells the dev instance from production.
+            #[cfg(debug_assertions)]
+            if let Some(window) = tauri::Manager::get_webview_window(app, "main") {
+                let _ = window.set_title("Hoyd Desktop");
+            }
+
             // Spawn one sidecar on startup. MVP has a single session; the manager
             // is keyed by SessionId so adding more is a data change, not a rewrite.
             let manager = tauri::Manager::state::<SidecarManager>(app);
