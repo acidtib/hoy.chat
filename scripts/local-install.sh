@@ -26,7 +26,7 @@ ICON_DIR="$HOME/.local/share/icons/hicolor/128x128/apps"
 echo "[1/4] sidecar build"
 "$ROOT/sidecar/build.sh" "$TRIPLE"
 
-echo "[2/4] release build (no bundle)"
+echo "[2/4] release build (no bundle; the final link sits quiet for a minute or two)"
 ( cd "$ROOT" && bun run tauri build --no-bundle )
 
 echo "[3/4] install to $APP_DIR"
@@ -66,8 +66,9 @@ EOF
 command -v update-desktop-database >/dev/null && update-desktop-database "$DESKTOP_DIR" || true
 
 echo
-echo "installed:"
+echo "done. installed:"
 echo "  app:      $APP_DIR/hoy-desktop"
 echo "  sidecar:  $APP_DIR/pi-$TRIPLE"
 echo "  launcher: $BIN_DIR/hoy"
 echo "  desktop:  $DESKTOP_DIR/hoy-desktop.desktop"
+echo "launch with: hoy"
