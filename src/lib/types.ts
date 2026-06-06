@@ -14,8 +14,24 @@ export type AgentEvent =
       isError?: boolean;
     }
   | { kind: "status"; label: string }
+  | ({ kind: "permissionRequest" } & PermissionRequest)
   | { kind: "error"; message: string }
   | { kind: "done" };
+
+// An extension UI dialog awaiting an answer (HOY-186). The agent is blocked
+// until respondPermission resolves it; rendered as an inline approval card.
+export interface PermissionRequest {
+  requestId: string;
+  // "select" carries options; "confirm" carries a message for yes/no.
+  method: string;
+  title: string;
+  message?: string;
+  options?: string[];
+}
+
+// The four thread permission modes (HOY-186). Wire values; the composer maps
+// them to display labels.
+export type PermissionMode = "default" | "acceptEdits" | "plan" | "autonomous";
 
 // Mirror of events.rs SessionStats. Powers the bottom context bar. contextUsage
 // (and its tokens/percent) is null/absent right after compaction until the next
@@ -122,6 +138,9 @@ export interface Thread {
   // get_state after spawn. Ephemeral: the session JSONL owns it after the first
   // prompt, and persistProjects' allowlist never serializes it.
   model?: ModelRef | null;
+  // Permission mode (HOY-186). Persisted with the thread; absent means default.
+  // Applied to the live sidecar via /hoy_mode, re-applied after spawn/restore.
+  permissionMode?: PermissionMode | null;
 }
 
 // Mirror of workspace.rs Workspace: the persisted projects -> threads tree.

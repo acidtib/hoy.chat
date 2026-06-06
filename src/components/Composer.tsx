@@ -21,9 +21,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { ModelInfo, ModelRef } from "@/lib/types";
+import type { ModelInfo, ModelRef, PermissionMode } from "@/lib/types";
 
-const MODES = ["Agent", "Plan Mode"];
+// Thread permission modes (HOY-186), in selector order. Labels are display
+// only; the wire values are the PermissionMode union.
+const MODE_LABELS: Array<{ value: PermissionMode; label: string }> = [
+  { value: "default", label: "Default" },
+  { value: "acceptEdits", label: "Accept Edits" },
+  { value: "plan", label: "Plan" },
+  { value: "autonomous", label: "Autonomous" },
+];
 const THINKING = ["Minimal", "Low", "Medium", "High"];
 
 // Zed-style agent composer. `fill` makes it expand to fill the panel (the empty
@@ -38,6 +45,8 @@ export function Composer({
   currentModel,
   selecting,
   onSelectModel,
+  mode = "default",
+  onSelectMode,
   fill = false,
   placeholder = "Message  ·  @ to include context, / for commands",
   autoFocus = false,
@@ -53,6 +62,8 @@ export function Composer({
   currentModel?: ModelRef | null;
   selecting: boolean;
   onSelectModel: (provider: string, modelId: string) => void;
+  mode?: PermissionMode;
+  onSelectMode?: (mode: PermissionMode) => void;
   fill?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
@@ -62,7 +73,6 @@ export function Composer({
   focusSignal?: number;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [mode, setMode] = useState(MODES[0]);
   const [thinking, setThinking] = useState("High");
 
   useLayoutEffect(() => {
@@ -165,7 +175,16 @@ export function Composer({
         </div>
 
         <div className="flex items-center gap-0.5">
-          <PillSelect value={mode} options={MODES} onSelect={setMode} />
+          <PillSelect
+            value={
+              MODE_LABELS.find((m) => m.value === mode)?.label ?? "Default"
+            }
+            options={MODE_LABELS.map((m) => m.label)}
+            onSelect={(label) => {
+              const picked = MODE_LABELS.find((m) => m.label === label);
+              if (picked) onSelectMode?.(picked.value);
+            }}
+          />
           <ModelSelect
             models={models}
             current={currentModel ?? null}

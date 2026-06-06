@@ -9,6 +9,7 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  ShieldQuestion,
   Sparkle,
   Terminal,
   X,
@@ -47,11 +48,12 @@ import { Composer } from "@/components/Composer";
 import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
 import { findThread, useSessionStore } from "@/state/store";
-import type { PiState, ToolUI, Turn } from "@/lib/types";
+import type { PermissionRequest, PiState, ToolUI, Turn } from "@/lib/types";
 
-// Stable empty reference so the turns selector doesn't return a fresh [] each
-// render (which would loop zustand's snapshot equality check).
+// Stable empty references so selectors don't return a fresh value each render
+// (which would loop zustand's snapshot equality check).
 const EMPTY_TURNS: Turn[] = [];
+const EMPTY_PERMISSIONS: PermissionRequest[] = [];
 
 export function ThreadView({
   threadId,
@@ -84,6 +86,11 @@ export function ThreadView({
   const selectModel = useSessionStore((s) => s.selectModel);
   const fullScreen = useSessionStore((s) => s.expandedThreadId === threadId);
   const toggleFullScreen = useSessionStore((s) => s.toggleFullScreen);
+  const pendingPermissions = useSessionStore(
+    (s) => s.pendingPermissions[threadId] ?? EMPTY_PERMISSIONS,
+  );
+  const setPermissionMode = useSessionStore((s) => s.setPermissionMode);
+  const answerPermission = useSessionStore((s) => s.answerPermission);
   const focusSignal = useSessionStore((s) =>
     s.focusRequest?.threadId === threadId ? s.focusRequest.nonce : 0,
   );
@@ -92,12 +99,13 @@ export function ThreadView({
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const { title, projectId, threadModel } = useMemo(() => {
+  const { title, projectId, threadModel, permissionMode } = useMemo(() => {
     const found = findThread(projects, threadId);
     return {
       title: found?.thread.title ?? "New thread",
       projectId: found?.project.id ?? null,
       threadModel: found?.thread.model ?? null,
+      permissionMode: found?.thread.permissionMode ?? ("default" as const),
     };
   }, [projects, threadId]);
 
@@ -134,6 +142,8 @@ export function ThreadView({
       onSelectModel={(provider, modelId) =>
         void selectModel(threadId, provider, modelId)
       }
+      mode={permissionMode}
+      onSelectMode={(mode) => void setPermissionMode(threadId, mode)}
       fill={!hasMessages || expanded}
       autoFocus={!hasMessages}
       disabled={streaming}
@@ -324,6 +334,19 @@ export function ThreadView({
             <ConversationScrollButton />
           </Conversation>
 
+          {pendingPermissions.length > 0 && (
+            <ApprovalCard
+              request={pendingPermissions[0]}
+              onAnswer={(answer) =>
+                void answerPermission(
+                  threadId,
+                  pendingPermissions[0].requestId,
+                  answer,
+                )
+              }
+            />
+          )}
+
           <div
             className={cn(
               "shrink-0 border-t border-border",
@@ -338,6 +361,69 @@ export function ThreadView({
           {composer}
         </div>
       )}
+    </div>
+  );
+}
+
+// Inline approval card for a blocked tool call (HOY-186). A select dialog
+// renders its options as buttons (Deny-like choices styled destructive);
+// a confirm dialog renders Yes/No. The agent stays paused until answered.
+function ApprovalCard({
+  request,
+  onAnswer,
+}: {
+  request: PermissionRequest;
+  onAnswer: (answer: {
+    value?: string;
+    confirmed?: boolean;
+    cancelled?: boolean;
+  }) => void;
+}) {
+  const choices =
+    request.method === "confirm"
+      ? [
+          { label: "Yes", answer: { confirmed: true } },
+          { label: "No", answer: { confirmed: false }, decline: true },
+        ]
+      : (request.options ?? []).map((option) => ({
+          label: option,
+          answer: { value: option },
+          decline: /deny|block|no\b/i.test(option),
+        }));
+
+  return (
+    <div className="mx-3 mb-2 shrink-0 rounded-lg border border-brand/40 bg-card/70 px-3 py-2.5">
+      <div className="flex items-start gap-2.5">
+        <ShieldQuestion className="mt-0.5 size-4 shrink-0 text-brand" />
+        <div className="min-w-0 flex-1">
+          <div className="break-all font-mono text-xs leading-relaxed text-foreground">
+            {request.title}
+          </div>
+          {request.message && (
+            <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {request.message}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="mt-2 flex items-center justify-end gap-1.5">
+        {choices.map((choice) => (
+          <Button
+            key={choice.label}
+            variant={choice.decline ? "ghost" : "outline"}
+            size="sm"
+            className={cn(
+              "h-7 text-xs",
+              choice.decline
+                ? "text-muted-foreground hover:text-destructive"
+                : "border-brand/40 text-brand hover:text-brand",
+            )}
+            onClick={() => onAnswer(choice.answer)}
+          >
+            {choice.label}
+          </Button>
+        ))}
+      </div>
     </div>
   );
 }

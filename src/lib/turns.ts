@@ -42,6 +42,9 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
     case "status":
       // Retry/compaction notices: not rendered inline for now.
       break;
+    case "permissionRequest":
+      // Approval cards live in store.pendingPermissions, not in the transcript.
+      break;
     case "done":
       assistant.streaming = false;
       break;

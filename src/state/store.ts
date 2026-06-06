@@ -8,15 +8,19 @@ import {
   getSessionStats,
   getState,
   loadWorkspace,
+  respondPermission as ipcRespondPermission,
   saveWorkspace,
   sendPrompt,
   setModel,
+  setPermissionMode as ipcSetPermissionMode,
 } from "@/lib/ipc";
 import { applyEvent, messagesToTurns } from "@/lib/turns";
 import type {
   AgentEvent,
   ModelInfo,
   ModelRef,
+  PermissionMode,
+  PermissionRequest,
   Project,
   ProviderAuth,
   ProviderInfo,
@@ -151,6 +155,10 @@ interface SessionStore {
   streaming: Record<string, boolean>;
   stats: Record<string, SessionStats | null>;
   threadErrors: Record<string, string | null>;
+  // Approval cards awaiting an answer, keyed by threadId (HOY-186). Usually at
+  // most one; pi preflights sibling tool calls sequentially, but a queue keeps
+  // any overlap safe. Cleared on done and on panel close.
+  pendingPermissions: Record<string, PermissionRequest[]>;
   // Composer drafts keyed by threadId. Store-held so hidden panels and app
   // restarts keep unsent text; persisted via the workspace autosave as each
   // thread's draft field. Never cleared on panel close.
@@ -209,6 +217,17 @@ interface SessionStore {
     modelId: string,
   ) => Promise<void>;
 
+  // Switch a thread's permission mode (HOY-186). Live session: applied via
+  // /hoy_mode immediately (even mid-stream). No session yet: recorded on the
+  // thread and applied when one spawns.
+  setPermissionMode: (threadId: string, mode: PermissionMode) => Promise<void>;
+  // Answer the thread's oldest pending approval card.
+  answerPermission: (
+    threadId: string,
+    requestId: string,
+    answer: { value?: string; confirmed?: boolean; cancelled?: boolean },
+  ) => Promise<void>;
+
   // M4 persistence + lifecycle.
   initWorkspace: () => Promise<void>;
   hydrateThread: (threadId: string) => Promise<void>;
@@ -242,6 +261,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   streaming: {},
   stats: {},
   threadErrors: {},
+  pendingPermissions: {},
   drafts: {},
   expandedThreadId: null,
   focusRequest: null,
@@ -334,6 +354,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const { [id]: _sg, ...streaming } = s.streaming;
       const { [id]: _er, ...threadErrors } = s.threadErrors;
       const { [id]: _ms, ...modelSelecting } = s.modelSelecting;
+      // Pending approval cards die with the sidecar; the killed process needs
+      // no answers.
+      const { [id]: _pp, ...pendingPermissions } = s.pendingPermissions;
       // The draft survives the close (it is user work, like thread.model);
       // only a discarded thread takes its (whitespace-only) entry with it.
       const { [id]: _dr, ...remainingDrafts } = s.drafts;
@@ -345,6 +368,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         streaming,
         threadErrors,
         modelSelecting,
+        pendingPermissions,
         drafts: discard ? remainingDrafts : s.drafts,
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
         focusRequest: s.focusRequest?.threadId === id ? null : s.focusRequest,
@@ -495,6 +519,56 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
 
+  setPermissionMode: async (threadId, mode) => {
+    const thread = findThread(get().projects, threadId)?.thread;
+    if (!thread) return;
+    const previous = thread.permissionMode ?? "default";
+    if (previous === mode) return;
+    // Optimistic: the selector reflects the pick immediately; a live-session
+    // failure reverts it. No session: the pick is applied on spawn.
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({
+        ...th,
+        permissionMode: mode,
+      })),
+    }));
+    if (!thread.sessionId) return;
+    try {
+      await ipcSetPermissionMode(thread.sessionId, mode);
+      permissionModeApplied.add(thread.sessionId);
+    } catch (e) {
+      set((s) => ({
+        projects: patchThread(s.projects, threadId, (th) => ({
+          ...th,
+          permissionMode: previous,
+        })),
+        threadErrors: { ...s.threadErrors, [threadId]: String(e) },
+      }));
+    }
+  },
+
+  answerPermission: async (threadId, requestId, answer) => {
+    const sessionId = findThread(get().projects, threadId)?.thread.sessionId;
+    if (!sessionId) return;
+    // Remove the card first so a double click cannot answer twice; the backend
+    // treats an unknown request id as a no-op write.
+    set((s) => ({
+      pendingPermissions: {
+        ...s.pendingPermissions,
+        [threadId]: (s.pendingPermissions[threadId] ?? []).filter(
+          (r) => r.requestId !== requestId,
+        ),
+      },
+    }));
+    try {
+      await ipcRespondPermission(sessionId, requestId, answer);
+    } catch (e) {
+      set((s) => ({
+        threadErrors: { ...s.threadErrors, [threadId]: String(e) },
+      }));
+    }
+  },
+
   // Send a prompt from a thread panel and stream the response into its turns.
   // Lazily spawns the thread's own sidecar (session per thread) in the project's
   // cwd on first send, then drives one Channel per turn.
@@ -544,6 +618,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // a failure throws into the catch below so the prompt never rides on a
       // model the user didn't choose. The guard makes repeat calls free.
       await applyThreadModel(threadId, sessionId);
+      // Same for a deferred permission mode (HOY-186): the gate must be in
+      // place before the prompt streams.
+      await applyThreadPermissionMode(threadId, sessionId);
 
       const channel = new Channel<AgentEvent>();
       activeChannels.set(threadId, channel);
@@ -559,9 +636,22 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             [threadId]: applyEvent(s.turns[threadId] ?? [], event),
           },
         }));
-        if (event.kind === "done") {
+        if (event.kind === "permissionRequest") {
+          const { kind: _k, ...request } = event;
+          set((s) => ({
+            pendingPermissions: {
+              ...s.pendingPermissions,
+              [threadId]: [...(s.pendingPermissions[threadId] ?? []), request],
+            },
+          }));
+        } else if (event.kind === "done") {
           activeChannels.delete(threadId);
           stopStreaming();
+          // A turn cannot end with a dialog still blocking it; drop any
+          // leftovers so no orphaned card survives the turn.
+          set((s) => ({
+            pendingPermissions: { ...s.pendingPermissions, [threadId]: [] },
+          }));
           void get().refreshStats(threadId);
         } else if (event.kind === "error") {
           set((s) => ({
@@ -671,9 +761,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         thread.sessionFile,
       );
       get().setThreadSessionIdInternal(threadId, sessionId);
-      // Reconcile the thread's model with the restored session off the critical
-      // path; hydration must not block the transcript restore.
+      // Reconcile the thread's model and permission mode with the restored
+      // session off the critical path; hydration must not block the
+      // transcript restore.
       void applyThreadModel(threadId, sessionId).catch((e) => {
+        set((s) => ({
+          threadErrors: { ...s.threadErrors, [threadId]: String(e) },
+        }));
+      });
+      void applyThreadPermissionMode(threadId, sessionId).catch((e) => {
         set((s) => ({
           threadErrors: { ...s.threadErrors, [threadId]: String(e) },
         }));
@@ -784,10 +880,36 @@ function acquireSession(
 // close via releaseSession.
 const modelApplied = new Set<string>();
 
-// Tear down a live sidecar and the per-session guard entry that goes with it.
+// Tear down a live sidecar and the per-session guard entries that go with it.
 function releaseSession(sessionId: string): void {
   modelApplied.delete(sessionId);
+  permissionModeApplied.delete(sessionId);
   void closeSession(sessionId);
+}
+
+// Sessions whose sidecar already carries the thread's permission mode, so
+// repeat prompts skip the redundant /hoy_mode round trip. Same lifecycle as
+// modelApplied above.
+const permissionModeApplied = new Set<string>();
+
+// Apply a thread's recorded permission mode to a freshly available session
+// (HOY-186). A default-mode thread needs nothing: the extension starts there.
+async function applyThreadPermissionMode(
+  threadId: string,
+  sessionId: string,
+): Promise<void> {
+  if (permissionModeApplied.has(sessionId)) return;
+  permissionModeApplied.add(sessionId);
+  const mode =
+    findThread(useSessionStore.getState().projects, threadId)?.thread
+      .permissionMode ?? "default";
+  if (mode === "default") return;
+  try {
+    await ipcSetPermissionMode(sessionId, mode);
+  } catch (e) {
+    permissionModeApplied.delete(sessionId);
+    throw e;
+  }
 }
 
 // Reconcile the thread's pending model pick with a freshly available session.
@@ -870,6 +992,7 @@ function persistProjects(
           archived: !!t.archived,
           renamed: !!t.renamed,
           draft: drafts[t.id] || null,
+          permissionMode: t.permissionMode ?? null,
         })),
     })),
   };

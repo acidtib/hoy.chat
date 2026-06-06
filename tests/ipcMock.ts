@@ -19,10 +19,12 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     pickDirectory: mock(),
     providerStatuses: mock(),
     removeProviderKey: mock(),
+    respondPermission: mock(),
     saveProviderKey: mock(),
     saveWorkspace: mock(),
     sendPrompt: mock(),
     setModel: mock(),
+    setPermissionMode: mock(),
     supportedProviders: mock(),
     ...overrides,
   }));

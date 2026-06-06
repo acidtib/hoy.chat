@@ -6,6 +6,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AgentEvent,
   ModelInfo,
+  PermissionMode,
   PiState,
   ProviderAuth,
   ProviderInfo,
@@ -107,6 +108,31 @@ export function getSessionStats(sessionId: string): Promise<SessionStats> {
 
 export function abort(sessionId: string): Promise<void> {
   return invoke<void>("abort", { sessionId });
+}
+
+// Switch a session's permission mode (HOY-186). Applies immediately, even
+// mid-stream; the backend also remembers it for respawns.
+export function setPermissionMode(
+  sessionId: string,
+  mode: PermissionMode,
+): Promise<void> {
+  return invoke<void>("set_permission_mode", { sessionId, mode });
+}
+
+// Answer a pending approval card. `value` answers a select dialog, `confirmed`
+// a confirm dialog, `cancelled` declines either; exactly one should be set.
+export function respondPermission(
+  sessionId: string,
+  requestId: string,
+  answer: { value?: string; confirmed?: boolean; cancelled?: boolean },
+): Promise<void> {
+  return invoke<void>("respond_permission", {
+    sessionId,
+    requestId,
+    value: answer.value ?? null,
+    confirmed: answer.confirmed ?? null,
+    cancelled: answer.cancelled ?? null,
+  });
 }
 
 export { Channel };
