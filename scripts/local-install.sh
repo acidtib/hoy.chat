@@ -45,6 +45,9 @@ cat > "$BIN_DIR/hoy" <<EOF
 export PI_SIDECAR_BIN="$APP_DIR/pi-$TRIPLE"
 export PI_SIDECAR_PAYLOAD="$APP_DIR/pi-payload"
 export GDK_BACKEND=x11
+# webkit2gtk's DMABUF renderer fails on this GPU ("Failed to create GBM
+# buffer"), leaving the webview black; fall back to shared-memory rendering.
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
 exec "$APP_DIR/hoy-desktop" "\$@"
 EOF
 chmod 755 "$BIN_DIR/hoy"
