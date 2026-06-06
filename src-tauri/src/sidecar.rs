@@ -131,10 +131,16 @@ impl PiProcess {
             });
         }
 
-        // Drain stderr so a chatty child never blocks on a full pipe.
+        // Mirror stderr to the parent's stderr so debug logs (e.g. system
+        // prompt diagnostics) are visible. Drains line-by-line so the child
+        // never blocks on a full pipe.
         thread::spawn(move || {
-            let mut sink = String::new();
-            let _ = BufReader::new(stderr).read_to_string(&mut sink);
+            use std::io::BufRead;
+            for line in BufReader::new(stderr).lines() {
+                if let Ok(line) = line {
+                    eprintln!("[sidecar:stderr] {line}");
+                }
+            }
         });
 
         Ok(Arc::new(PiProcess {

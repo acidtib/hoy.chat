@@ -47,7 +47,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
     cwd,
     agentDir,
     resourceLoaderOptions: {
-      noContextFiles: true, // replaces the stock --no-context-files flag
+      noContextFiles: false,
       systemPromptOverride: () => HOY_SYSTEM_PROMPT,
       extensionFactories: [createHoyPermissions(initialMode)],
     },
