@@ -28,4 +28,5 @@ tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
 # debug_assertions (see lib.rs); the crate stays a normal dependency so its ACL
 # permission (mcp-bridge:default) resolves for the capability in all profiles.
 tauri-plugin-mcp-bridge = "0.2"
+tauri-plugin-window-state = "2.4.1"
 
