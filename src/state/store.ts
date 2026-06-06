@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import {
+  abort,
   Channel,
   closeSession,
   createSession,
@@ -237,6 +238,9 @@ interface SessionStore {
   deleteThread: (threadId: string) => void;
 
   submitPrompt: (threadId: string, message: string) => Promise<void>;
+  // Abort the thread's streaming turn (HOY-195). The turn's terminal events
+  // arrive over the channel as usual; no state is flipped here.
+  stopStreaming: (threadId: string) => Promise<void>;
   refreshStats: (threadId: string) => Promise<void>;
   setThreadSessionIdInternal: (threadId: string, sessionId: string) => void;
 }
@@ -679,6 +683,23 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             : s.turns;
         return { turns, threadErrors: { ...s.threadErrors, [threadId]: String(e) } };
       });
+    }
+  },
+
+  stopStreaming: async (threadId) => {
+    if (!get().streaming[threadId]) return;
+    const sessionId = findThread(get().projects, threadId)?.thread.sessionId;
+    if (!sessionId) return;
+    try {
+      // Rust cancels any pending approval dialog before sending pi's abort, so
+      // a blocked tool_call resumes (as a denial) and the abort lands. The
+      // aborted turn's error/done events flow back over the channel and reset
+      // streaming state and pending cards there.
+      await abort(sessionId);
+    } catch (e) {
+      set((s) => ({
+        threadErrors: { ...s.threadErrors, [threadId]: String(e) },
+      }));
     }
   },
 

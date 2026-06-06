@@ -6,6 +6,7 @@ import {
   Minimize2,
   Plus,
   SendHorizontal,
+  Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModelSelect } from "@/components/ModelSelect";
@@ -47,6 +48,7 @@ export function Composer({
   onSelectModel,
   mode = "default",
   onSelectMode,
+  onStop,
   fill = false,
   placeholder = "Message  ·  @ to include context, / for commands",
   autoFocus = false,
@@ -64,6 +66,9 @@ export function Composer({
   onSelectModel: (provider: string, modelId: string) => void;
   mode?: PermissionMode;
   onSelectMode?: (mode: PermissionMode) => void;
+  // While streaming, the send button becomes Stop (HOY-195). `disabled` keeps
+  // gating the textarea and sending; onStop is the abort.
+  onStop?: () => void;
   fill?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
@@ -196,21 +201,33 @@ export function Composer({
             options={THINKING}
             onSelect={setThinking}
           />
-          <Button
-            variant="outline"
-            size="icon-sm"
-            className={cn(
-              "ml-1 rounded-md",
-              canSend
-                ? "border-brand/40 text-brand hover:text-brand"
-                : "text-muted-foreground",
-            )}
-            disabled={!canSend}
-            onClick={() => canSend && onSubmit?.()}
-            aria-label="Send"
-          >
-            <SendHorizontal className="size-4" />
-          </Button>
+          {disabled && onStop ? (
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="ml-1 rounded-md border-destructive/40 text-destructive hover:text-destructive"
+              onClick={onStop}
+              aria-label="Stop"
+            >
+              <Square className="size-4" />
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className={cn(
+                "ml-1 rounded-md",
+                canSend
+                  ? "border-brand/40 text-brand hover:text-brand"
+                  : "text-muted-foreground",
+              )}
+              disabled={!canSend}
+              onClick={() => canSend && onSubmit?.()}
+              aria-label="Send"
+            >
+              <SendHorizontal className="size-4" />
+            </Button>
+          )}
         </div>
       </div>
     </div>

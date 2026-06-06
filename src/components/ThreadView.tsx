@@ -91,6 +91,7 @@ export function ThreadView({
   );
   const setPermissionMode = useSessionStore((s) => s.setPermissionMode);
   const answerPermission = useSessionStore((s) => s.answerPermission);
+  const stopStreaming = useSessionStore((s) => s.stopStreaming);
   const focusSignal = useSessionStore((s) =>
     s.focusRequest?.threadId === threadId ? s.focusRequest.nonce : 0,
   );
@@ -144,6 +145,7 @@ export function ThreadView({
       }
       mode={permissionMode}
       onSelectMode={(mode) => void setPermissionMode(threadId, mode)}
+      onStop={streaming ? () => void stopStreaming(threadId) : undefined}
       fill={!hasMessages || expanded}
       autoFocus={!hasMessages}
       disabled={streaming}
