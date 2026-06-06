@@ -83,6 +83,12 @@ describe("hoy system prompt assembly", () => {
     expect(prompt).toContain("permission mode");
     expect(prompt).toContain("Prefer read, grep, find, and ls over their bash equivalents");
 
+    // HOY-203: bash names its jobs, not the file ops the guidelines redirect.
+    expect(prompt).toContain("bash: Execute bash commands (git, builds, tests, project scripts)");
+    expect(prompt).toContain("issue the tool calls together in one message");
+    expect(prompt).toContain("ask one short question instead of guessing");
+    expect(prompt).toContain("Do not use emojis or em-dashes");
+
     // HOY-201: field-standard agentic rules.
     expect(prompt).toContain("Keep working until the request is fully resolved");
     expect(prompt).toContain("Never revert or overwrite changes you did not make");
