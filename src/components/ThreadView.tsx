@@ -67,7 +67,7 @@ export function ThreadView({
   threadId: string;
   active: boolean;
   onClose: () => void;
-  onDebug: () => void;
+  onDebug: (sessionId?: string | null) => void;
   busy: boolean;
   debug: PiState | null;
   error: string | null;
@@ -101,7 +101,7 @@ export function ThreadView({
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const { title, projectId, threadModel, permissionMode, thinkingLevel } = useMemo(() => {
+  const { title, projectId, threadModel, permissionMode, thinkingLevel, sessionId } = useMemo(() => {
     const found = findThread(projects, threadId);
     return {
       title: found?.thread.title ?? "New thread",
@@ -109,6 +109,7 @@ export function ThreadView({
       threadModel: found?.thread.model ?? null,
       permissionMode: found?.thread.permissionMode ?? ("default" as const),
       thinkingLevel: found?.thread.thinkingLevel ?? ("high" as const),
+      sessionId: found?.thread.sessionId ?? null,
     };
   }, [projects, threadId]);
 
@@ -242,7 +243,7 @@ export function ThreadView({
                 <Archive className="size-4" />
                 Archive thread
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onDebug} disabled={busy}>
+              <DropdownMenuItem onSelect={() => onDebug(sessionId)} disabled={busy}>
                 <Activity className="size-4" />
                 {busy ? "Calling get_state..." : "Debug: get_state"}
               </DropdownMenuItem>

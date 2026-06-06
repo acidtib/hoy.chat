@@ -563,6 +563,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (!thread.sessionId) return;
     try {
       await setThinkingLevel(thread.sessionId, level);
+      // Pi may clamp the level internally; sync the effective value back.
+      const synced = await getState(thread.sessionId).catch(() => null);
+      if (synced?.thinkingLevel) {
+        set((s) => ({
+          projects: patchThread(s.projects, threadId, (th) => ({
+            ...th,
+            thinkingLevel: synced.thinkingLevel,
+          })),
+        }));
+      }
     } catch (e) {
       const piState = await getState(thread.sessionId).catch(() => null);
       set((s) => ({
@@ -1029,6 +1039,9 @@ async function applyThreadModel(
     } else {
       try {
         await setThinkingLevel(sessionId, thinkPick);
+        // Pi may clamp the level; re-read to sync the effective value.
+        const fresh = await getState(sessionId);
+        setThreadThinking(fresh.thinkingLevel);
       } catch (e) {
         setThreadThinking(piState.thinkingLevel);
         store.setState((s) => ({

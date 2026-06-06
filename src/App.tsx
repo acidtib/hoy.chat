@@ -117,9 +117,10 @@ function App() {
   }, [setActiveSessionId, setDefaultModel]);
 
   // Developer round-trip: toggle the raw get_state payload in the transcript.
-  async function handleDebug() {
-    if (!activeId) {
-      setError("No active session. The sidecar may have failed to spawn.");
+  async function handleDebug(sessionId?: string | null) {
+    const targetId = sessionId ?? activeId;
+    if (!targetId) {
+      setError("No session available. The sidecar may have failed to spawn.");
       return;
     }
     if (debug) {
@@ -129,7 +130,7 @@ function App() {
     setBusy(true);
     setError(null);
     try {
-      setDebug(await getState(activeId));
+      setDebug(await getState(targetId));
     } catch (e) {
       setError(String(e));
     } finally {

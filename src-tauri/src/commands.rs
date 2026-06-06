@@ -99,7 +99,7 @@ pub async fn set_thinking_level(
             "level": level,
         }))
         .await?;
-    unwrap_response(response, "set_thinking_level")?;
+    check_success(&response, "set_thinking_level")?;
     Ok(())
 }
 

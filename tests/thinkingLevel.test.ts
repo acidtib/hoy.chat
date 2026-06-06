@@ -60,6 +60,8 @@ describe("selectThinkingLevel", () => {
   test("live session: set_thinking_level goes to the sidecar; thread updates", async () => {
     seed({ sessionId: "sess_think_live" });
     setThinkingLevel.mockResolvedValue({});
+    // Pi reflects the new level after set_thinking_level succeeds.
+    getState.mockResolvedValue({ thinkingLevel: "low" });
 
     await useSessionStore.getState().selectThinkingLevel("t1", "low");
 
@@ -96,7 +98,11 @@ describe("deferred pick at spawn", () => {
     seed({ sessionId: null, thinkingLevel: "low" });
     const order: string[] = [];
     createSession.mockResolvedValue("sess_think_a");
-    getState.mockResolvedValue({ thinkingLevel: "high" });
+    // First call: Pi's initial state before the pick is applied.
+    // Second call (after set_thinking_level): Pi reflects the new level.
+    getState
+      .mockResolvedValueOnce({ thinkingLevel: "high" })
+      .mockResolvedValueOnce({ thinkingLevel: "low" });
     setThinkingLevel.mockImplementation(async () => {
       order.push("set_thinking_level");
       return {};

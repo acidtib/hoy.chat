@@ -77,6 +77,14 @@ Spike ticket HOY-202 (backlog): research Windsurf/Claude Code/Cursor/opencode
 memory approaches, recommend a Hoy MVP (likely project-scoped markdown
 memories, index injection, a memory tool gated like edit/write).
 
+### Filter thinking levels to model capabilities (HOY-204 follow-up)
+The thinking dropdown always shows all six levels (off/minimal/low/medium/high/xhigh),
+but Pi clamps unsupported levels internally. DeepSeek maps low/medium to high and
+xhigh to max; other providers differ. Needed: query `getSupportedThinkingLevels` per
+model and only show the supported set in the PillSelect. The post-`set_thinking_level`
+sync (store.ts) already corrects the local state after clamping; this would prevent
+the optimistic flash entirely.
+
 ## Upstream (pi)
 
 ### Groq drops the system prompt for reasoning models
