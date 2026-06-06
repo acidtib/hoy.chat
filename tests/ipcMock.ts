@@ -25,6 +25,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     sendPrompt: mock(),
     setModel: mock(),
     setPermissionMode: mock(),
+    setThinkingLevel: mock(),
     supportedProviders: mock(),
     ...overrides,
   }));

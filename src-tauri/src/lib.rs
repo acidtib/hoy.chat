@@ -52,6 +52,7 @@ pub fn run() {
             commands::active_session_id,
             commands::list_models,
             commands::set_model,
+            commands::set_thinking_level,
             commands::save_provider_key,
             commands::remove_provider_key,
             commands::provider_statuses,

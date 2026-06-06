@@ -16,6 +16,7 @@ import {
   sendPrompt,
   setModel,
   setPermissionMode as ipcSetPermissionMode,
+  setThinkingLevel,
 } from "@/lib/ipc";
 import { applyEvent, messagesToTurns } from "@/lib/turns";
 import type {
@@ -28,6 +29,7 @@ import type {
   ProviderAuth,
   ProviderInfo,
   SessionStats,
+  ThinkingLevel,
   Thread,
   Turn,
 } from "@/lib/types";
@@ -226,6 +228,10 @@ interface SessionStore {
     provider: string,
     modelId: string,
   ) => Promise<void>;
+  // Pick a thinking level for one thread. Live session: set_thinking_level goes
+  // to the sidecar. No session: the pick is deferred and reconciled against
+  // get_state on spawn (applyThreadModel), like a deferred model pick.
+  selectThinkingLevel: (threadId: string, level: ThinkingLevel) => Promise<void>;
 
   // Switch a thread's permission mode (HOY-186). Live session: applied via
   // /hoy_mode immediately (even mid-stream). No session yet: recorded on the
@@ -540,6 +546,31 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     } finally {
       set((s) => ({
         modelSelecting: { ...s.modelSelecting, [threadId]: false },
+      }));
+    }
+  },
+
+  selectThinkingLevel: async (threadId, level) => {
+    const thread = findThread(get().projects, threadId)?.thread;
+    if (!thread) return;
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({
+        ...th,
+        thinkingLevel: level,
+      })),
+      threadErrors: { ...s.threadErrors, [threadId]: null },
+    }));
+    if (!thread.sessionId) return;
+    try {
+      await setThinkingLevel(thread.sessionId, level);
+    } catch (e) {
+      const piState = await getState(thread.sessionId).catch(() => null);
+      set((s) => ({
+        projects: patchThread(s.projects, threadId, (th) => ({
+          ...th,
+          thinkingLevel: piState?.thinkingLevel ?? "high",
+        })),
+        threadErrors: { ...s.threadErrors, [threadId]: String(e) },
       }));
     }
   },
@@ -978,6 +1009,33 @@ async function applyThreadModel(
     const truth: ModelRef | null = piState.model
       ? { provider: piState.model.provider, id: piState.model.id }
       : null;
+
+    // Thinking level: reconcile the deferred pick with the session truth, the
+    // same shape as the model below (HOY-204). No pick adopts pi's level; a
+    // differing pick is sent, reverting to truth if pi rejects it. Unlike the
+    // model, a failure here does not abort: the prompt can still go out.
+    const thinkPick =
+      findThread(store.getState().projects, threadId)?.thread.thinkingLevel ??
+      null;
+    const setThreadThinking = (level: ThinkingLevel) =>
+      store.setState((s) => ({
+        projects: patchThread(s.projects, threadId, (th) => ({
+          ...th,
+          thinkingLevel: level,
+        })),
+      }));
+    if (!thinkPick || thinkPick === piState.thinkingLevel) {
+      setThreadThinking(piState.thinkingLevel);
+    } else {
+      try {
+        await setThinkingLevel(sessionId, thinkPick);
+      } catch (e) {
+        setThreadThinking(piState.thinkingLevel);
+        store.setState((s) => ({
+          threadErrors: { ...s.threadErrors, [threadId]: String(e) },
+        }));
+      }
+    }
 
     if (!pick) {
       if (truth) setThreadModel(truth);

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import {
   AtSign,
   ChevronDown,
@@ -22,7 +22,19 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { ModelInfo, ModelRef, PermissionMode } from "@/lib/types";
+import type { ModelInfo, ModelRef, PermissionMode, ThinkingLevel } from "@/lib/types";
+import { THINKING_LEVELS } from "@/lib/types";
+
+// Thinking levels (HOY-204). Labels are display only; pi's lowercase
+// ThinkingLevel union is the wire value.
+const THINKING_LABELS: Record<ThinkingLevel, string> = {
+  off: "Off",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "X-High",
+};
 
 // Thread permission modes (HOY-186), in selector order. Labels are display
 // only; the wire values are the PermissionMode union.
@@ -32,7 +44,6 @@ const MODE_LABELS: Array<{ value: PermissionMode; label: string }> = [
   { value: "plan", label: "Plan" },
   { value: "autonomous", label: "Autonomous" },
 ];
-const THINKING = ["Minimal", "Low", "Medium", "High"];
 
 // Zed-style agent composer. `fill` makes it expand to fill the panel (the empty
 // thread state); otherwise it auto-grows from one line up to a cap and docks at
@@ -48,6 +59,8 @@ export function Composer({
   onSelectModel,
   mode = "default",
   onSelectMode,
+  thinking,
+  onSelectThinking,
   onStop,
   fill = false,
   placeholder = "Message  ·  @ to include context, / for commands",
@@ -66,6 +79,8 @@ export function Composer({
   onSelectModel: (provider: string, modelId: string) => void;
   mode?: PermissionMode;
   onSelectMode?: (mode: PermissionMode) => void;
+  thinking: ThinkingLevel;
+  onSelectThinking: (level: ThinkingLevel) => void;
   // While streaming, the send button becomes Stop (HOY-195). `disabled` keeps
   // gating the textarea and sending; onStop is the abort.
   onStop?: () => void;
@@ -78,7 +93,6 @@ export function Composer({
   focusSignal?: number;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [thinking, setThinking] = useState("High");
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -197,9 +211,14 @@ export function Composer({
             onSelect={onSelectModel}
           />
           <PillSelect
-            value={thinking}
-            options={THINKING}
-            onSelect={setThinking}
+            value={THINKING_LABELS[thinking]}
+            options={THINKING_LEVELS.map((l) => THINKING_LABELS[l])}
+            onSelect={(label) => {
+              const level = THINKING_LEVELS.find(
+                (l) => THINKING_LABELS[l] === label,
+              );
+              if (level) onSelectThinking(level);
+            }}
           />
           {disabled && onStop ? (
             <Button

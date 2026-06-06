@@ -84,6 +84,7 @@ export function ThreadView({
   const defaultModel = useSessionStore((s) => s.defaultModel);
   const selecting = useSessionStore((s) => s.modelSelecting[threadId] ?? false);
   const selectModel = useSessionStore((s) => s.selectModel);
+  const selectThinkingLevel = useSessionStore((s) => s.selectThinkingLevel);
   const fullScreen = useSessionStore((s) => s.expandedThreadId === threadId);
   const toggleFullScreen = useSessionStore((s) => s.toggleFullScreen);
   const pendingPermissions = useSessionStore(
@@ -100,13 +101,14 @@ export function ThreadView({
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const { title, projectId, threadModel, permissionMode } = useMemo(() => {
+  const { title, projectId, threadModel, permissionMode, thinkingLevel } = useMemo(() => {
     const found = findThread(projects, threadId);
     return {
       title: found?.thread.title ?? "New thread",
       projectId: found?.project.id ?? null,
       threadModel: found?.thread.model ?? null,
       permissionMode: found?.thread.permissionMode ?? ("default" as const),
+      thinkingLevel: found?.thread.thinkingLevel ?? ("high" as const),
     };
   }, [projects, threadId]);
 
@@ -145,6 +147,8 @@ export function ThreadView({
       }
       mode={permissionMode}
       onSelectMode={(mode) => void setPermissionMode(threadId, mode)}
+      thinking={thinkingLevel}
+      onSelectThinking={(level) => void selectThinkingLevel(threadId, level)}
       onStop={streaming ? () => void stopStreaming(threadId) : undefined}
       fill={!hasMessages || expanded}
       autoFocus={!hasMessages}

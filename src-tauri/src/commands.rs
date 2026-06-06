@@ -86,6 +86,23 @@ pub async fn set_model(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn set_thinking_level(
+    session_id: String,
+    level: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    let process = manager.get(&session_id)?;
+    let response = process
+        .request(json!({
+            "type": "set_thinking_level",
+            "level": level,
+        }))
+        .await?;
+    unwrap_response(response, "set_thinking_level")?;
+    Ok(())
+}
+
 // Respawn every idle live session so each sidecar reloads auth.json (HOY-196).
 // Pi caches credentials at process start. For each session the current
 // transcript file is captured live via get_session_stats (only pi knows it

@@ -11,6 +11,7 @@ import type {
   ProviderAuth,
   ProviderInfo,
   SessionStats,
+  ThinkingLevel,
   Workspace,
 } from "./types";
 
@@ -39,6 +40,13 @@ export function setModel(
   modelId: string,
 ): Promise<void> {
   return invoke<void>("set_model", { sessionId, provider, modelId });
+}
+
+export function setThinkingLevel(
+  sessionId: string,
+  level: ThinkingLevel,
+): Promise<void> {
+  return invoke<void>("set_thinking_level", { sessionId, level });
 }
 
 // The key value is sent down once and never read back; status comes from

@@ -90,9 +90,14 @@ export interface ModelInfo {
   reasoning?: boolean | null;
 }
 
+export type ThinkingLevel =
+  | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export const THINKING_LEVELS: ThinkingLevel[] =
+  ["off", "minimal", "low", "medium", "high", "xhigh"];
+
 export interface PiState {
   model?: ModelInfo | null;
-  thinkingLevel: string;
+  thinkingLevel: ThinkingLevel;
   isStreaming: boolean;
   isCompacting: boolean;
   sessionId: string;
@@ -141,6 +146,9 @@ export interface Thread {
   // Permission mode (HOY-186). Persisted with the thread; absent means default.
   // Applied to the live sidecar via /hoy_mode, re-applied after spawn/restore.
   permissionMode?: PermissionMode | null;
+  // Thinking level (HOY-204). Session-local only, not persisted; workspace.rs
+  // knows nothing of this field. Hydrated from get_state on session open.
+  thinkingLevel?: ThinkingLevel | null;
 }
 
 // Mirror of workspace.rs Workspace: the persisted projects -> threads tree.
