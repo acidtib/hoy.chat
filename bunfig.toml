@@ -1,0 +1,5 @@
+# Root `bun test` runs the frontend store tests only. The sidecar prompt test
+# lives in sidecar/pi-src (own node_modules, pi SDK import) and is run there:
+#   cd sidecar/pi-src && bun test
+[test]
+root = "tests"

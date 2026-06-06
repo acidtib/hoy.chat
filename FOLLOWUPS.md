@@ -123,22 +123,41 @@ thinking models.
 
 ## OAuth identity edge (Claude Pro/Max system prompt validation)
 
-Status: open
+Status: resolved (HOY-185, by source inspection of pinned pi-ai)
 
 ### Context
 The SDK-sidecar pivot (landed, a68dae5) rebrands identity via
 `DefaultResourceLoader.systemPromptOverride` ("you are Hoy").
-But for Claude Pro/Max OAuth, Anthropic's subscription endpoint validates that `system[0]` is the
-canonical `"You are Claude Code, Anthropic's official CLI for Claude."` string. `systemPromptOverride`
-affects the *discovered* system prompt (system[1]+), not `system[0]` — but we must not break that
-transport string for OAuth users. zosma's mitigation: keep `system[0]` intact and add an identity
-note in `system[1]` ("user-facing identity is Hoy regardless of what the transport layer says").
+For Claude Pro/Max OAuth, Anthropic's subscription endpoint validates that `system[0]` is the
+canonical `"You are Claude Code, Anthropic's official CLI for Claude."` string.
+
+### Resolution
+The transport spoof is below the prompt layer entirely. pi-ai's Anthropic provider injects
+`system[0]` itself for OAuth tokens ("For OAuth tokens, we MUST include Claude Code identity",
+dist/providers/anthropic.js) and sends the agent's system prompt as `system[1]`. A full
+`systemPromptOverride` therefore cannot break OAuth; HOY-185 shipped the full rebrand. No live
+OAuth credential was available to round-trip (auth.json has API keys only); re-check opportunistically
+when one is configured.
+
+## Groq drops the system prompt for reasoning models (developer role)
+
+Status: open
+Introduced: pre-existing in pi-ai, surfaced by HOY-185 live verification
+
+### Context
+pi-ai's openai-completions provider sends the system prompt as role `developer` when
+`model.reasoning && compat.supportsDeveloperRole` (dist/providers/openai-completions.js). Groq is
+not in the `isNonStandard` list, so `supportsDeveloperRole` is true, and for a Groq reasoning
+model (verified live with Qwen3 32B, thinking High) the entire system prompt is silently dropped:
+asked to quote its system prompt, the model quoted only Groq's own function-calling preamble
+("You may call one or more functions..."). The agent answers "I am Qwen", no Hoy identity, no
+tool guidelines. This predates HOY-185; the old append-based identity line was dropped the same way.
+Anthropic models are unaffected (verified live, identity and docs-fetch both correct).
 
 ### What's needed
-- Before relying on a full rebrand, verify against pinned Pi 0.78.0 that an OAuth (Claude Pro/Max,
-  also OpenAI Codex) request still succeeds with our override in place.
-- Use an identity-note paragraph rather than replacing `system[0]`; add a test/manual check with a
-  real OAuth provider.
+- Report upstream to pi (Groq should be `supportsDeveloperRole: false` or get a compat carve-out),
+  or override per-model compat in our models.json if pi exposes that for built-in Groq models.
+- Re-verify with a Groq reasoning model after the pi version bump that picks up a fix.
 
 
 

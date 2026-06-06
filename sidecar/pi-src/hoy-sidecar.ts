@@ -3,11 +3,13 @@
 // custom resource loader / in-process tools. The wire protocol is unchanged:
 // runRpcMode speaks the exact JSONL RPC our Rust already drives (sidecar.rs).
 //
-// Branding lives in appendSystemPromptOverride, NOT systemPromptOverride. In pi
-// 0.78.0 a customPrompt (the systemPromptOverride result) REPLACES the default
-// coding-agent system prompt (core/system-prompt.js), which would strip Pi's
-// tool-use guidelines. Appending keeps the full coding prompt and only adds a
-// name, which is also what the OAuth identity edge requires (system[0] stays).
+// The prompt is a FULL replacement via systemPromptOverride (HOY-185). It
+// restates pi's tool guidelines verbatim because a customPrompt replaces pi's
+// default coding prompt entirely; see hoy-system-prompt.ts for the invariants
+// that replacement freezes. OAuth is unaffected: the Claude Code identity edge
+// lives in pi-ai's Anthropic provider, which injects system[0] itself for
+// OAuth tokens and sends this prompt as system[1]. The earlier append-only
+// route attributed that requirement to the wrong layer.
 
 import {
   createAgentSessionFromServices,
@@ -17,9 +19,7 @@ import {
   SessionManager,
   type CreateAgentSessionRuntimeFactory,
 } from "@earendil-works/pi-coding-agent";
-
-const HOY_IDENTITY =
-  "You are Hoy, a coding assistant. Your name is Hoy. When asked who you are or what your name is, always answer that you are Hoy.";
+import { HOY_SYSTEM_PROMPT } from "./hoy-system-prompt";
 
 // Branded agent dir, set by Rust (pi_config::agent_dir, default ~/.hoy/agent).
 // auth.json, models.json, and settings.json all resolve from here.
@@ -40,7 +40,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
     agentDir,
     resourceLoaderOptions: {
       noContextFiles: true, // replaces the stock --no-context-files flag
-      appendSystemPromptOverride: (base) => [...base, HOY_IDENTITY],
+      systemPromptOverride: () => HOY_SYSTEM_PROMPT,
     },
   });
   const result = await createAgentSessionFromServices({
