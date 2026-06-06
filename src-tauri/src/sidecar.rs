@@ -32,8 +32,14 @@ type EventSink = Arc<Mutex<Option<Channel<AgentEvent>>>>;
 // of the prompt currently streaming on this session (None between turns).
 pub struct PiProcess {
     child: Mutex<Child>,
-    stdin: Mutex<ChildStdin>,
+    // Shared with the reader thread, which auto-cancels unanswerable extension
+    // UI dialogs (HOY-186) and must therefore write responses itself.
+    stdin: Arc<Mutex<ChildStdin>>,
     pending: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>,
+    // Ids of extension_ui_request dialogs forwarded to the renderer and not yet
+    // answered. The sidecar blocks on each until an extension_ui_response with
+    // its id lands on stdin, so teardown paths must cancel these.
+    pending_ui: Arc<Mutex<Vec<String>>>,
     next_id: AtomicU64,
     sink: EventSink,
 }
@@ -45,6 +51,7 @@ impl PiProcess {
         agent_dir: &Path,
         cwd: &Path,
         session_file: Option<&str>,
+        permission_mode: Option<&str>,
     ) -> Result<Arc<PiProcess>, String> {
         if agent_dir.as_os_str().is_empty() {
             return Err("agent dir not resolved (set HOME or HOY_AGENT_DIR)".into());
@@ -62,6 +69,11 @@ impl PiProcess {
         if let Some(file) = session_file {
             command.env("HOY_SESSION_FILE", file);
         }
+        // HOY-186: the permission extension reads its initial mode from the env,
+        // so a respawn restores the thread's mode without a /hoy_mode round trip.
+        if let Some(mode) = permission_mode {
+            command.env("HOY_PERMISSION_MODE", mode);
+        }
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -69,17 +81,22 @@ impl PiProcess {
             .spawn()
             .map_err(|e| format!("spawn {}: {e}", bin.display()))?;
 
-        let stdin = child.stdin.take().ok_or("child has no stdin")?;
+        let stdin = Arc::new(Mutex::new(
+            child.stdin.take().ok_or("child has no stdin")?,
+        ));
         let stdout = child.stdout.take().ok_or("child has no stdout")?;
         let stderr = child.stderr.take().ok_or("child has no stderr")?;
 
         let pending: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        let pending_ui: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let sink: EventSink = Arc::new(Mutex::new(None));
 
         {
             let pending = pending.clone();
+            let pending_ui = pending_ui.clone();
             let sink = sink.clone();
+            let stdin = stdin.clone();
             thread::spawn(move || {
                 let mut framer = JsonlFramer::new();
                 let mut reader = BufReader::new(stdout);
@@ -90,7 +107,7 @@ impl PiProcess {
                         Ok(n) => {
                             for record in framer.push(&buf[..n]) {
                                 if let Ok(value) = serde_json::from_str::<Value>(&record) {
-                                    route_message(&pending, &sink, value);
+                                    route_message(&pending, &pending_ui, &sink, &stdin, value);
                                 }
                             }
                         }
@@ -99,6 +116,7 @@ impl PiProcess {
                 // Stream closed: fail any in-flight requests so callers unblock,
                 // and surface the loss to a streaming prompt instead of hanging.
                 pending.lock().unwrap().clear();
+                pending_ui.lock().unwrap().clear();
                 let mut sink = sink.lock().unwrap();
                 if let Some(channel) = sink.take() {
                     let _ = channel.send(AgentEvent::Error {
@@ -121,8 +139,9 @@ impl PiProcess {
 
         Ok(Arc::new(PiProcess {
             child: Mutex::new(child),
-            stdin: Mutex::new(stdin),
+            stdin,
             pending,
+            pending_ui,
             next_id: AtomicU64::new(1),
             sink,
         }))
@@ -174,6 +193,46 @@ impl PiProcess {
             .and_then(|_| stdin.flush())
             .map_err(|e| format!("write to sidecar: {e}"))
     }
+
+    // Answer a pending extension UI dialog (HOY-186). `value` answers select,
+    // `confirmed` answers confirm, `cancelled` declines either; the sidecar's
+    // blocked tool_call handler resumes on receipt.
+    pub fn respond_ui(
+        &self,
+        request_id: &str,
+        value: Option<String>,
+        confirmed: Option<bool>,
+        cancelled: bool,
+    ) -> Result<(), String> {
+        self.pending_ui.lock().unwrap().retain(|id| id != request_id);
+        let mut response = json!({
+            "type": "extension_ui_response",
+            "id": request_id,
+        });
+        if cancelled {
+            response["cancelled"] = json!(true);
+        } else if let Some(confirmed) = confirmed {
+            response["confirmed"] = json!(confirmed);
+        } else if let Some(value) = value {
+            response["value"] = json!(value);
+        } else {
+            response["cancelled"] = json!(true);
+        }
+        let line = format!(
+            "{}\n",
+            serde_json::to_string(&response).map_err(|e| e.to_string())?
+        );
+        self.write_line(&line)
+    }
+
+    // Cancel every pending dialog so the sidecar's blocked tool_call handlers
+    // resume (as denials). Called on abort; a killed process needs no answers.
+    pub fn cancel_pending_ui(&self) {
+        let ids: Vec<String> = self.pending_ui.lock().unwrap().drain(..).collect();
+        for id in ids {
+            let _ = self.respond_ui(&id, None, None, true);
+        }
+    }
 }
 
 impl Drop for PiProcess {
@@ -187,7 +246,9 @@ impl Drop for PiProcess {
 
 fn route_message(
     pending: &Mutex<HashMap<String, oneshot::Sender<Value>>>,
+    pending_ui: &Mutex<Vec<String>>,
     sink: &EventSink,
+    stdin: &Arc<Mutex<ChildStdin>>,
     value: Value,
 ) {
     let ty = value.get("type").and_then(Value::as_str);
@@ -198,6 +259,68 @@ fn route_message(
             if let Some(tx) = pending.lock().unwrap().remove(id) {
                 let _ = tx.send(value);
             }
+        }
+        return;
+    }
+
+    // Extension UI sub-protocol (HOY-186). Dialog methods block the sidecar
+    // until a response lands on stdin; forward the renderable ones, immediately
+    // cancel anything we cannot render so the agent never deadlocks, and drop
+    // fire-and-forget methods (notify, setStatus, ...) which expect no answer.
+    if ty == Some("extension_ui_request") {
+        let Some(id) = value.get("id").and_then(Value::as_str) else {
+            return;
+        };
+        let method = value.get("method").and_then(Value::as_str).unwrap_or("");
+        let cancel = |id: &str| {
+            let response = json!({
+                "type": "extension_ui_response",
+                "id": id,
+                "cancelled": true,
+            });
+            if let Ok(text) = serde_json::to_string(&response) {
+                let mut stdin = stdin.lock().unwrap();
+                let _ = stdin
+                    .write_all(format!("{text}\n").as_bytes())
+                    .and_then(|_| stdin.flush());
+            }
+        };
+        match method {
+            "select" | "confirm" => {
+                let event = AgentEvent::PermissionRequest {
+                    request_id: id.to_string(),
+                    method: method.to_string(),
+                    title: value
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    message: value
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    options: value.get("options").and_then(Value::as_array).map(|a| {
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect()
+                    }),
+                };
+                let guard = sink.lock().unwrap();
+                match guard.as_ref() {
+                    Some(channel) => {
+                        pending_ui.lock().unwrap().push(id.to_string());
+                        let _ = channel.send(event);
+                    }
+                    // No streaming prompt is attached, so nothing can render or
+                    // answer the dialog; cancel it instead of deadlocking.
+                    None => cancel(id),
+                }
+            }
+            // Dialogs Hoy has no UI for yet (input, editor).
+            "input" | "editor" => cancel(id),
+            // Fire-and-forget (notify, setStatus, setWidget, ...): no response.
+            _ => {}
         }
         return;
     }
@@ -334,6 +457,10 @@ fn tool_output(result: Option<&Value>) -> Option<String> {
 pub struct SidecarManager {
     sessions: Mutex<HashMap<SessionId, Arc<PiProcess>>>,
     active: Mutex<Option<SessionId>>,
+    // Per-session permission mode (HOY-186). The live value lives in the
+    // sidecar's extension closure; this mirror feeds HOY_PERMISSION_MODE on
+    // respawn so the mode survives the process swap.
+    modes: Mutex<HashMap<SessionId, String>>,
     handle_counter: AtomicUsize,
     bin: PathBuf,
     payload: PathBuf,
@@ -354,12 +481,26 @@ impl SidecarManager {
         Self {
             sessions: Mutex::new(HashMap::new()),
             active: Mutex::new(None),
+            modes: Mutex::new(HashMap::new()),
             handle_counter: AtomicUsize::new(1),
             bin,
             payload,
             agent_dir,
             cwd: std::env::temp_dir(),
         }
+    }
+
+    // Record a session's permission mode for respawn. The caller separately
+    // tells the live sidecar via the /hoy_mode extension command.
+    pub fn set_mode(&self, id: &str, mode: &str) {
+        self.modes
+            .lock()
+            .unwrap()
+            .insert(id.to_string(), mode.to_string());
+    }
+
+    fn mode_of(&self, id: &str) -> Option<String> {
+        self.modes.lock().unwrap().get(id).cloned()
     }
 
     // Spawn the boot control session in the manager's default cwd. The first
@@ -389,8 +530,14 @@ impl SidecarManager {
                 self.bin.display()
             ));
         }
-        let proc =
-            PiProcess::spawn(&self.bin, &self.payload, &self.agent_dir, cwd, session_file)?;
+        let proc = PiProcess::spawn(
+            &self.bin,
+            &self.payload,
+            &self.agent_dir,
+            cwd,
+            session_file,
+            None,
+        )?;
         let id = format!("s{}", self.handle_counter.fetch_add(1, Ordering::Relaxed));
         self.sessions.lock().unwrap().insert(id.clone(), proc);
         Ok(id)
@@ -401,6 +548,7 @@ impl SidecarManager {
     // dropped outside the lock so Drop does not hold it.
     pub fn remove(&self, id: &str) {
         let old = self.sessions.lock().unwrap().remove(id);
+        self.modes.lock().unwrap().remove(id);
         drop(old);
     }
 
@@ -425,7 +573,15 @@ impl SidecarManager {
                 self.bin.display()
             ));
         }
-        let proc = PiProcess::spawn(&self.bin, &self.payload, &self.agent_dir, &self.cwd, None)?;
+        let mode = self.mode_of(id);
+        let proc = PiProcess::spawn(
+            &self.bin,
+            &self.payload,
+            &self.agent_dir,
+            &self.cwd,
+            None,
+            mode.as_deref(),
+        )?;
         let old = {
             let mut sessions = self.sessions.lock().unwrap();
             if !sessions.contains_key(id) {

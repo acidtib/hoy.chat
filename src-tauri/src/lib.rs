@@ -51,6 +51,8 @@ pub fn run() {
             commands::send_prompt,
             commands::get_session_stats,
             commands::abort,
+            commands::respond_permission,
+            commands::set_permission_mode,
             commands::close_session,
             commands::get_messages,
             commands::delete_session_file,

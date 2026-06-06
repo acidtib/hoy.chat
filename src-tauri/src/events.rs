@@ -27,6 +27,20 @@ pub enum AgentEvent {
     Status {
         label: String,
     },
+    // An extension UI dialog (Pi's extension_ui_request) awaiting a user answer.
+    // The agent is blocked until respond_permission writes the matching
+    // extension_ui_response; HOY-186 renders it as an inline approval card.
+    PermissionRequest {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        // "select" (options) or "confirm" (yes/no message)
+        method: String,
+        title: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        options: Option<Vec<String>>,
+    },
     Error {
         message: String,
     },

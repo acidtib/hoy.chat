@@ -250,6 +250,48 @@ pub async fn get_session_stats(
 #[tauri::command]
 pub async fn abort(session_id: String, manager: State<'_, SidecarManager>) -> Result<(), String> {
     let process = manager.get(&session_id)?;
+    // A pending approval dialog blocks the agent before abort can take effect;
+    // cancel it first so the blocked tool_call resumes (as a denial) and the
+    // abort lands (HOY-186).
+    process.cancel_pending_ui();
     let response = process.request(json!({ "type": "abort" })).await?;
     check_success(&response, "abort")
+}
+
+// Answer a pending approval card (HOY-186). `value` answers a select dialog,
+// `confirmed` a confirm dialog; `cancelled: true` declines either. Writes the
+// extension_ui_response the blocked sidecar is waiting on.
+#[tauri::command]
+pub fn respond_permission(
+    session_id: String,
+    request_id: String,
+    value: Option<String>,
+    confirmed: Option<bool>,
+    cancelled: Option<bool>,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    let process = manager.get(&session_id)?;
+    process.respond_ui(&request_id, value, confirmed, cancelled.unwrap_or(false))
+}
+
+// Switch a thread's permission mode (HOY-186). The /hoy_mode extension command
+// executes immediately even mid-stream; the manager mirror keeps the mode
+// across respawns via HOY_PERMISSION_MODE.
+#[tauri::command]
+pub async fn set_permission_mode(
+    session_id: String,
+    mode: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    const MODES: [&str; 4] = ["default", "acceptEdits", "plan", "autonomous"];
+    if !MODES.contains(&mode.as_str()) {
+        return Err(format!("unknown permission mode: {mode}"));
+    }
+    let process = manager.get(&session_id)?;
+    let response = process
+        .request(json!({ "type": "prompt", "message": format!("/hoy_mode {mode}") }))
+        .await?;
+    check_success(&response, "set_permission_mode")?;
+    manager.set_mode(&session_id, &mode);
+    Ok(())
 }
