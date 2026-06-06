@@ -82,5 +82,13 @@ describe("hoy system prompt assembly", () => {
     }
     expect(prompt).toContain("permission mode");
     expect(prompt).toContain("Prefer read, grep, find, and ls over their bash equivalents");
+
+    // HOY-201: field-standard agentic rules.
+    expect(prompt).toContain("Keep working until the request is fully resolved");
+    expect(prompt).toContain("Never revert or overwrite changes you did not make");
+    expect(prompt).toContain("Do not ask in prose before ordinary edits and commands");
+    expect(prompt).toContain("src/main.rs:42");
+    expect(prompt).toContain("Do not add tests to projects that have none");
+    expect(prompt).toContain("git reset --hard");
   });
 });
