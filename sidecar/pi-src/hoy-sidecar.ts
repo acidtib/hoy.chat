@@ -19,7 +19,15 @@ import {
   SessionManager,
   type CreateAgentSessionRuntimeFactory,
 } from "@earendil-works/pi-coding-agent";
+import { createHoyPermissions, isPermissionMode, type PermissionMode } from "./hoy-permissions";
 import { HOY_SYSTEM_PROMPT } from "./hoy-system-prompt";
+
+// Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
+// The session registers the full built-in tool set so plan mode can explore
+// with grep/find/ls while bash is blocked; the prompt's tools list matches.
+const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write"];
+const envMode = process.env.HOY_PERMISSION_MODE ?? "default";
+const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "default";
 
 // Branded agent dir, set by Rust (pi_config::agent_dir, default ~/.hoy/agent).
 // auth.json, models.json, and settings.json all resolve from here.
@@ -41,12 +49,14 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
     resourceLoaderOptions: {
       noContextFiles: true, // replaces the stock --no-context-files flag
       systemPromptOverride: () => HOY_SYSTEM_PROMPT,
+      extensionFactories: [createHoyPermissions(initialMode)],
     },
   });
   const result = await createAgentSessionFromServices({
     services,
     sessionManager,
     sessionStartEvent,
+    tools: HOY_TOOLS,
   });
   return { ...result, services, diagnostics: services.diagnostics };
 };

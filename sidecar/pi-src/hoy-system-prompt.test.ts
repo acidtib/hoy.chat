@@ -1,7 +1,8 @@
 // Asserts the system prompt pi actually assembles when the session is built
 // the same way hoy-sidecar.ts builds it (systemPromptOverride replacement,
-// noContextFiles). Guards the HOY-185 invariants: Hoy identity, no pi framing,
-// no local package docs paths, pi's tool guidelines intact, GitHub docs pin.
+// noContextFiles, full built-in tool allowlist). Guards the HOY-185/186
+// invariants: Hoy identity, no pi framing, no local package docs paths, pi's
+// tool guidelines intact, GitHub docs pin, 7-tool list matching registration.
 // Run with: bun test (in sidecar/pi-src)
 
 import { describe, expect, test } from "bun:test";
@@ -24,7 +25,9 @@ const PI_EDIT_GUIDELINES = [
   "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
 ];
 
-async function assembleSystemPrompt(): Promise<string> {
+const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write"];
+
+async function assembleSession(): Promise<{ prompt: string; toolNames: string[] }> {
   const agentDir = mkdtempSync(join(tmpdir(), "hoy-test-agent-"));
   const cwd = mkdtempSync(join(tmpdir(), "hoy-test-cwd-"));
   try {
@@ -39,8 +42,9 @@ async function assembleSystemPrompt(): Promise<string> {
     const { session } = await createAgentSessionFromServices({
       services,
       sessionManager: SessionManager.inMemory(cwd),
+      tools: HOY_TOOLS,
     });
-    return session.systemPrompt;
+    return { prompt: session.systemPrompt, toolNames: session.getActiveToolNames() };
   } finally {
     rmSync(agentDir, { recursive: true, force: true });
     rmSync(cwd, { recursive: true, force: true });
@@ -49,7 +53,7 @@ async function assembleSystemPrompt(): Promise<string> {
 
 describe("hoy system prompt assembly", () => {
   test("replacement prompt survives assembly with the Hoy invariants", async () => {
-    const prompt = await assembleSystemPrompt();
+    const { prompt, toolNames } = await assembleSession();
 
     // Identity: Hoy, not pi.
     expect(prompt).toContain("You are Hoy, a coding agent running inside the Hoy desktop app.");
@@ -71,8 +75,12 @@ describe("hoy system prompt assembly", () => {
     expect(prompt).toMatch(/Current date: \d{4}-\d{2}-\d{2}/);
     expect(prompt).toContain("Current working directory:");
 
-    // The deferred HOY-186 pieces must not leak in early.
-    expect(prompt).not.toContain("permission mode");
-    expect(prompt).not.toContain("- grep:");
+    // HOY-186: the prompt's tools list matches the registered set.
+    for (const tool of HOY_TOOLS) {
+      expect(prompt).toContain(`- ${tool}:`);
+      expect(toolNames).toContain(tool);
+    }
+    expect(prompt).toContain("permission mode");
+    expect(prompt).toContain("Prefer read, grep, find, and ls over their bash equivalents");
   });
 });
