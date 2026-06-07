@@ -319,12 +319,12 @@ export function ThreadView({
                           </ReasoningContent>
                         </Reasoning>
                       )}
-                      {turn.tools.map((tool) => (
-                        <ToolCall tool={tool} key={tool.id} />
-                      ))}
                       {turn.text && (
                         <MessageResponse>{turn.text}</MessageResponse>
                       )}
+                      {turn.tools.map((tool) => (
+                        <ToolCall tool={tool} key={tool.id} />
+                      ))}
                       {turn.streaming &&
                         !turn.text &&
                         turn.tools.length === 0 && (
