@@ -68,6 +68,13 @@ export interface ToolUI {
   running: boolean;
 }
 
+// An ordered block in an assistant turn, rendered top to bottom. Text blocks
+// and tool blocks interleave naturally so each message's content stays in the
+// order the model produced it.
+export type AssistantBlock =
+  | { kind: "text"; content: string }
+  | { kind: "tool"; tool: ToolUI };
+
 // The per-thread transcript model, keyed by threadId in the store. Replaces the
 // built live from streaming AgentEvents and restored transcripts (lib/turns.ts).
 export type Turn =
@@ -75,11 +82,7 @@ export type Turn =
   | {
       role: "assistant";
       reasoning?: { text: string; seconds?: number };
-      tools: ToolUI[];
-      text: string;
-      // Text produced after the first tool call started; rendered below tools
-      // so the agent's initial goal stays above the tools it runs.
-      textAfter?: string;
+      blocks: AssistantBlock[];
       streaming: boolean;
     };
 

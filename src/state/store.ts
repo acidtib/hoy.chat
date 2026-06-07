@@ -654,7 +654,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         [threadId]: [
           ...(s.turns[threadId] ?? []),
           { role: "user", text },
-          { role: "assistant", tools: [], text: "", streaming: true },
+          { role: "assistant", blocks: [], streaming: true },
         ],
       },
       streaming: { ...s.streaming, [threadId]: true },
@@ -723,6 +723,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           set((s) => ({
             threadErrors: { ...s.threadErrors, [threadId]: event.message },
           }));
+        } else if (event.kind === "tool" && event.phase === "end") {
+          // Tool output is added to context, so the usage bar slides (HOY-208).
+          void get().refreshStats(threadId);
+        } else if (event.kind === "status" && event.label === "compacting") {
+          // Compaction rewrites context; refresh after it's done (the next
+          // text/tool event will update the bar; this is a best-effort interim).
+          void get().refreshStats(threadId);
         }
       };
 

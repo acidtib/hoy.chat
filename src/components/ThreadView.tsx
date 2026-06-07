@@ -319,20 +319,15 @@ export function ThreadView({
                           </ReasoningContent>
                         </Reasoning>
                       )}
-                      {/* HOY-209: text above tools, textAfter below tools, so the conversation
-                          reads naturally as intent -> action -> follow-up. */}
-                      {turn.text && (
-                        <MessageResponse>{turn.text}</MessageResponse>
-                      )}
-                      {turn.tools.map((tool) => (
-                        <ToolCall tool={tool} key={tool.id} />
-                      ))}
-                      {turn.textAfter && (
-                        <MessageResponse>{turn.textAfter}</MessageResponse>
+                      {turn.blocks.map((block, bi) =>
+                        block.kind === "text" ? (
+                          <MessageResponse key={bi}>{block.content}</MessageResponse>
+                        ) : (
+                          <ToolCall tool={block.tool} key={block.tool.id} />
+                        ),
                       )}
                       {turn.streaming &&
-                        !turn.text &&
-                        turn.tools.length === 0 && (
+                        turn.blocks.length === 0 && (
                           <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
                             <span className="size-1.5 animate-pulse rounded-full bg-brand" />
                             Working...

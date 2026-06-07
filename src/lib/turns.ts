@@ -8,42 +8,56 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
   const last = turns[turns.length - 1];
   if (!last || last.role !== "assistant") return turns;
 
-  const assistant = { ...last, tools: [...last.tools] };
+  const assistant = { ...last, blocks: [...last.blocks] };
 
   switch (event.kind) {
-    case "text":
-      if (assistant.tools.length > 0) {
-        assistant.textAfter = (assistant.textAfter ?? "") + event.delta;
+    case "text": {
+      const lastBlock = assistant.blocks[assistant.blocks.length - 1];
+      if (lastBlock && lastBlock.kind === "text") {
+        lastBlock.content += event.delta;
       } else {
-        assistant.text += event.delta;
+        assistant.blocks.push({ kind: "text", content: event.delta });
       }
       break;
+    }
     case "tool": {
-      const index = assistant.tools.findIndex((t) => t.id === event.toolCallId);
       if (event.phase === "start") {
-        assistant.tools.push({
+        const tool: ToolUI = {
           id: event.toolCallId,
           name: event.toolName,
           title: toolTitle(event.toolName, event.args),
           command: commandArg(event.args),
           output: "",
           running: true,
-        });
-      } else if (index >= 0) {
-        const tool = { ...assistant.tools[index] };
-        if (event.output !== undefined) tool.output = event.output;
-        if (event.phase === "end") {
-          tool.running = false;
-          tool.isError = event.isError;
+        };
+        assistant.blocks.push({ kind: "tool", tool });
+      } else {
+        const blockIndex = assistant.blocks.findIndex(
+          (b) => b.kind === "tool" && b.tool.id === event.toolCallId,
+        );
+        if (blockIndex >= 0) {
+          const block = assistant.blocks[blockIndex];
+          if (block.kind === "tool") {
+            const tool = { ...block.tool };
+            if (event.output !== undefined) tool.output = event.output;
+            if (event.phase === "end") {
+              tool.running = false;
+              tool.isError = event.isError;
+            }
+            assistant.blocks[blockIndex] = { ...block, tool };
+          }
         }
-        assistant.tools[index] = tool;
       }
       break;
     }
     case "error": {
-      const target = assistant.tools.length > 0 ? "textAfter" : "text";
-      const existing = assistant[target] || "";
-      assistant[target] = `${existing}${existing ? "\n\n" : ""}[error] ${event.message}`;
+      const msg = `[error] ${event.message}`;
+      const lastBlock = assistant.blocks[assistant.blocks.length - 1];
+      if (lastBlock && lastBlock.kind === "text") {
+        lastBlock.content += `\n\n${msg}`;
+      } else {
+        assistant.blocks.push({ kind: "text", content: msg });
+      }
       break;
     }
     case "status":
@@ -81,6 +95,8 @@ type RawMessage = {
 // stream produces. Pi emits one assistant message per LLM step, so a tool loop is
 // assistant, toolResult, assistant, ...; we merge each run between user messages
 // into a single assistant turn so restored and streamed views render identically.
+// Within each message, content parts are pushed as ordered blocks so the model's
+// natural interleaving (text -> toolCall -> text -> toolCall) is preserved.
 type AssistantTurn = Extract<Turn, { role: "assistant" }>;
 
 export function messagesToTurns(messages: unknown[]): Turn[] {
@@ -89,48 +105,44 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
   for (const raw of messages) {
     const m = raw as RawMessage;
     if (m.role === "user") {
-      // Pushing a user turn means the next assistant message opens a fresh turn.
       turns.push({ role: "user", text: contentText(m.content) });
     } else if (m.role === "assistant") {
       const a = currentAssistantTurn(turns);
-      // Snapshot before this message's content parts so text and tool calls
-      // within the same message both land in the pre-tool position. Only text
-      // from a subsequent message (after some other message added tools) goes
-      // to textAfter, so the model's content-part order within one response
-      // never decides layout. The live stream (applyEvent) is naturally ordered
-      // by event arrival and uses the same accumulator fields.
-      const hadToolsBefore = a.tools.length > 0;
       for (const part of asParts(m.content)) {
-        if (part.type === "text" && typeof part.text === "string") {
-          if (hadToolsBefore) {
-            a.textAfter = (a.textAfter ?? "") + part.text;
-          } else {
-            a.text += part.text;
-          }
-        } else if (part.type === "thinking" && typeof part.thinking === "string" && part.thinking) {
-          // Redacted thinking arrives as an empty string; skip it so no empty
-          // block renders. Pi transcripts carry no duration, seconds stays unset.
+        if (part.type === "thinking" && typeof part.thinking === "string" && part.thinking) {
           a.reasoning = {
             text: (a.reasoning?.text ?? "") + part.thinking,
           };
+        } else if (part.type === "text" && typeof part.text === "string") {
+          const lastBlock = a.blocks[a.blocks.length - 1];
+          if (lastBlock && lastBlock.kind === "text") {
+            lastBlock.content += part.text;
+          } else {
+            a.blocks.push({ kind: "text", content: part.text });
+          }
         } else if (part.type === "toolCall" && typeof part.id === "string") {
-          a.tools.push({
-            id: part.id,
-            name: part.name ?? "tool",
-            title: toolTitle(part.name ?? "tool", part.arguments),
-            command: commandArg(part.arguments),
-            output: "",
-            running: false,
+          a.blocks.push({
+            kind: "tool",
+            tool: {
+              id: part.id,
+              name: part.name ?? "tool",
+              title: toolTitle(part.name ?? "tool", part.arguments),
+              command: commandArg(part.arguments),
+              output: "",
+              running: false,
+            },
           });
         }
       }
     } else if (m.role === "toolResult") {
       const last = turns[turns.length - 1];
       if (last && last.role === "assistant") {
-        const tool = last.tools.find((t) => t.id === m.toolCallId);
-        if (tool) {
-          tool.output = contentText(m.content);
-          tool.isError = m.isError;
+        const block = last.blocks.find(
+          (b) => b.kind === "tool" && b.tool.id === m.toolCallId,
+        );
+        if (block && block.kind === "tool") {
+          block.tool.output = contentText(m.content);
+          block.tool.isError = m.isError;
         }
       }
     }
@@ -145,8 +157,7 @@ function currentAssistantTurn(turns: Turn[]): AssistantTurn {
   if (last && last.role === "assistant") return last;
   const turn: AssistantTurn = {
     role: "assistant",
-    tools: [],
-    text: "",
+    blocks: [],
     streaming: false,
   };
   turns.push(turn);
