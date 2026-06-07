@@ -11,6 +11,10 @@
     "tauri": {
       "command": "bunx",
       "args": ["@hypothesi/tauri-mcp-server"]
+    },
+    "linear": {
+      "command": "bunx",
+      "args": ["-y", "mcp-remote", "https://mcp.linear.app/mcp"]
     }
   }
 }
