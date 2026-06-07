@@ -73,8 +73,8 @@ fn save_at(path: &Path, workspace: &Workspace) -> Result<(), String> {
     let dir = path.parent().ok_or("workspace.json path has no parent")?;
     std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
 
-    let mut body =
-        serde_json::to_vec_pretty(workspace).map_err(|e| format!("serialize workspace.json: {e}"))?;
+    let mut body = serde_json::to_vec_pretty(workspace)
+        .map_err(|e| format!("serialize workspace.json: {e}"))?;
     body.push(b'\n');
 
     let tmp = dir.join(format!("workspace.json.tmp-{}", std::process::id()));

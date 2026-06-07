@@ -115,10 +115,11 @@ async fn respawn_idle_sessions(manager: &SidecarManager) {
         if process.is_streaming() {
             continue;
         }
-        let session_file = match process.request(json!({ "type": "get_session_stats" })).await {
-            Ok(response) => response["data"]["sessionFile"]
-                .as_str()
-                .map(str::to_string),
+        let session_file = match process
+            .request(json!({ "type": "get_session_stats" }))
+            .await
+        {
+            Ok(response) => response["data"]["sessionFile"].as_str().map(str::to_string),
             // A wedged process still gets a fresh child; worst case the thread
             // is hydrated from the renderer's persisted sessionFile on reopen.
             Err(_) => None,
@@ -257,7 +258,10 @@ pub async fn send_prompt(
 ) -> Result<(), String> {
     let process = manager.get(&session_id)?;
     process.set_sink(on_event);
-    let response = match process.request(json!({ "type": "prompt", "message": message })).await {
+    let response = match process
+        .request(json!({ "type": "prompt", "message": message }))
+        .await
+    {
         Ok(response) => response,
         Err(e) => {
             process.clear_sink();

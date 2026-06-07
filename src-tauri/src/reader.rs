@@ -87,7 +87,10 @@ mod tests {
         assert!(f.push(b"{\"a\":").is_empty());
         assert!(f.push(b"1}").is_empty(), "no newline yet, nothing emitted");
         let records = f.push(b"\n{\"b\":2}\n");
-        assert_eq!(records, vec!["{\"a\":1}".to_string(), "{\"b\":2}".to_string()]);
+        assert_eq!(
+            records,
+            vec!["{\"a\":1}".to_string(), "{\"b\":2}".to_string()]
+        );
     }
 
     #[test]

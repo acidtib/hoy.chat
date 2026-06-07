@@ -81,9 +81,7 @@ impl PiProcess {
             .spawn()
             .map_err(|e| format!("spawn {}: {e}", bin.display()))?;
 
-        let stdin = Arc::new(Mutex::new(
-            child.stdin.take().ok_or("child has no stdin")?,
-        ));
+        let stdin = Arc::new(Mutex::new(child.stdin.take().ok_or("child has no stdin")?));
         let stdout = child.stdout.take().ok_or("child has no stdout")?;
         let stderr = child.stderr.take().ok_or("child has no stderr")?;
 
@@ -136,10 +134,8 @@ impl PiProcess {
         // never blocks on a full pipe.
         thread::spawn(move || {
             use std::io::BufRead;
-            for line in BufReader::new(stderr).lines() {
-                if let Ok(line) = line {
-                    eprintln!("[sidecar:stderr] {line}");
-                }
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                eprintln!("[sidecar:stderr] {line}");
             }
         });
 
@@ -187,7 +183,9 @@ impl PiProcess {
             Ok(Err(_)) => Err("sidecar closed before responding".into()),
             Err(_) => {
                 self.pending.lock().unwrap().remove(&id);
-                Err(format!("sidecar request timed out after {REQUEST_TIMEOUT:?}"))
+                Err(format!(
+                    "sidecar request timed out after {REQUEST_TIMEOUT:?}"
+                ))
             }
         }
     }
@@ -210,7 +208,10 @@ impl PiProcess {
         confirmed: Option<bool>,
         cancelled: bool,
     ) -> Result<(), String> {
-        self.pending_ui.lock().unwrap().retain(|id| id != request_id);
+        self.pending_ui
+            .lock()
+            .unwrap()
+            .retain(|id| id != request_id);
         let mut response = json!({
             "type": "extension_ui_response",
             "id": request_id,
@@ -755,7 +756,10 @@ mod live_tests {
         }
 
         let collected = events.lock().unwrap().clone();
-        let kinds: Vec<&str> = collected.iter().filter_map(|e| e["kind"].as_str()).collect();
+        let kinds: Vec<&str> = collected
+            .iter()
+            .filter_map(|e| e["kind"].as_str())
+            .collect();
         let text: String = collected
             .iter()
             .filter(|e| e["kind"] == "text")
@@ -814,7 +818,10 @@ mod live_tests {
         }
 
         let collected = events.lock().unwrap().clone();
-        let kinds: Vec<&str> = collected.iter().filter_map(|e| e["kind"].as_str()).collect();
+        let kinds: Vec<&str> = collected
+            .iter()
+            .filter_map(|e| e["kind"].as_str())
+            .collect();
         eprintln!("event kinds: {kinds:?}");
         let tools: Vec<&Value> = collected.iter().filter(|e| e["kind"] == "tool").collect();
         for t in &tools {
@@ -830,7 +837,9 @@ mod live_tests {
         );
         assert!(
             tools.iter().any(|t| t["phase"] == "end"
-                && t["output"].as_str().is_some_and(|o| o.contains("hoy-tool-probe"))),
+                && t["output"]
+                    .as_str()
+                    .is_some_and(|o| o.contains("hoy-tool-probe"))),
             "no tool end carrying the command output; kinds={kinds:?}"
         );
     }
@@ -903,10 +912,7 @@ mod live_tests {
         let messages = response["data"]["messages"]
             .as_array()
             .expect("messages array");
-        let roles: Vec<&str> = messages
-            .iter()
-            .filter_map(|m| m["role"].as_str())
-            .collect();
+        let roles: Vec<&str> = messages.iter().filter_map(|m| m["role"].as_str()).collect();
         eprintln!("restored roles: {roles:?}");
 
         assert!(
