@@ -77,6 +77,9 @@ export type Turn =
       reasoning?: { text: string; seconds?: number };
       tools: ToolUI[];
       text: string;
+      // Text produced after the first tool call started; rendered below tools
+      // so the agent's initial goal stays above the tools it runs.
+      textAfter?: string;
       streaming: boolean;
     };
 

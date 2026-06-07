@@ -325,6 +325,9 @@ export function ThreadView({
                       {turn.tools.map((tool) => (
                         <ToolCall tool={tool} key={tool.id} />
                       ))}
+                      {turn.textAfter && (
+                        <MessageResponse>{turn.textAfter}</MessageResponse>
+                      )}
                       {turn.streaming &&
                         !turn.text &&
                         turn.tools.length === 0 && (

@@ -12,7 +12,11 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
 
   switch (event.kind) {
     case "text":
-      assistant.text += event.delta;
+      if (assistant.tools.length > 0) {
+        assistant.textAfter = (assistant.textAfter ?? "") + event.delta;
+      } else {
+        assistant.text += event.delta;
+      }
       break;
     case "tool": {
       const index = assistant.tools.findIndex((t) => t.id === event.toolCallId);
@@ -36,9 +40,12 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
       }
       break;
     }
-    case "error":
-      assistant.text += `${assistant.text ? "\n\n" : ""}[error] ${event.message}`;
+    case "error": {
+      const target = assistant.tools.length > 0 ? "textAfter" : "text";
+      const existing = assistant[target] || "";
+      assistant[target] = `${existing}${existing ? "\n\n" : ""}[error] ${event.message}`;
       break;
+    }
     case "status":
       // Retry/compaction notices: not rendered inline for now.
       break;
@@ -86,9 +93,14 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
       turns.push({ role: "user", text: contentText(m.content) });
     } else if (m.role === "assistant") {
       const a = currentAssistantTurn(turns);
+      const hasTools = a.tools.length > 0;
       for (const part of asParts(m.content)) {
         if (part.type === "text" && typeof part.text === "string") {
-          a.text += part.text;
+          if (hasTools) {
+            a.textAfter = (a.textAfter ?? "") + part.text;
+          } else {
+            a.text += part.text;
+          }
         } else if (part.type === "thinking" && typeof part.thinking === "string" && part.thinking) {
           // Redacted thinking arrives as an empty string; skip it so no empty
           // block renders. Pi transcripts carry no duration, seconds stays unset.
