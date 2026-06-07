@@ -704,7 +704,7 @@ function ArchivedPanel() {
 }
 
 function AboutPanel() {
-  const [host, setHost] = useState<string | null>(null);
+  const [_host, setHost] = useState<string | null>(null);
 
   useEffect(() => {
     hostname()
