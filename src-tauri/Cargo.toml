@@ -29,4 +29,5 @@ tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
 # permission (mcp-bridge:default) resolves for the capability in all profiles.
 tauri-plugin-mcp-bridge = "0.2"
 tauri-plugin-window-state = "2.4.1"
+tauri-plugin-os = "2"
 

@@ -9,7 +9,16 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "GDK_BACKEND=x11 tauri dev --config src-tauri/tauri.dev.conf.json",
-    "local:install": "bash scripts/local-install.sh"
+    "local:install": "bash scripts/local-install.sh",
+    "check": "bun run check:ts && bun run check:rust && bun run clippy && bun run check:fmt",
+    "check:ts": "tsc --noEmit",
+    "check:rust": "cargo check --manifest-path src-tauri/Cargo.toml",
+    "clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml",
+    "check:fmt": "cargo fmt --check --manifest-path src-tauri/Cargo.toml",
+    "lint": "bun run lint:js && bun run lint:rust",
+    "lint:js": "bunx oxlint src",
+    "lint:js:fix": "bunx oxlint src --fix",
+    "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
@@ -20,6 +29,7 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-os": "~2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

@@ -1,5 +1,12 @@
-import { useState, type ReactNode } from "react";
-import { Boxes } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Boxes, Monitor } from "lucide-react";
+import {
+  arch,
+  hostname,
+  platform,
+  type as osType,
+  version,
+} from "@tauri-apps/plugin-os";
 import {
   Select,
   SelectContent,
@@ -17,7 +24,14 @@ import type { CategoryId } from "./categories";
 import { ProvidersPanel } from "./ProvidersPanel";
 
 // Mock catalogs. No IPC: every control here is local state only.
-const PROVIDERS = ["Anthropic", "OpenAI", "Google", "OpenRouter", "Groq", "xAI"];
+const PROVIDERS = [
+  "Anthropic",
+  "OpenAI",
+  "Google",
+  "OpenRouter",
+  "Groq",
+  "xAI",
+];
 const MODELS = [
   "claude-opus-4.8",
   "claude-sonnet-4.6",
@@ -61,7 +75,9 @@ export function Section({
           <div>
             {title && <h2 className="text-sm font-semibold">{title}</h2>}
             {description && (
-              <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {description}
+              </p>
             )}
           </div>
           {action}
@@ -257,14 +273,19 @@ function ChatPanel() {
       </Section>
       <Section title="Defaults">
         <div className="mt-4">
-          <Field label="Auto-scroll" hint="Follow the transcript while streaming.">
+          <Field
+            label="Auto-scroll"
+            hint="Follow the transcript while streaming."
+          >
             <Select defaultValue="smart">
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="always">Always</SelectItem>
-                <SelectItem value="smart">Smart (pause on scroll up)</SelectItem>
+                <SelectItem value="smart">
+                  Smart (pause on scroll up)
+                </SelectItem>
                 <SelectItem value="never">Never</SelectItem>
               </SelectContent>
             </Select>
@@ -512,7 +533,10 @@ function GatewayPanel() {
         />
         <div className="mt-4 space-y-4">
           <Field label="Gateway URL">
-            <Input placeholder="https://gateway.example.com" spellCheck={false} />
+            <Input
+              placeholder="https://gateway.example.com"
+              spellCheck={false}
+            />
           </Field>
           <Field label="Timeout" hint="Connection timeout in milliseconds.">
             <Input defaultValue="15000" inputMode="numeric" />
@@ -541,7 +565,11 @@ function ToolsPanel() {
             <Input placeholder="MY_API_KEY" spellCheck={false} />
           </Field>
           <Field label="Value">
-            <Input type="password" placeholder="Paste value" autoComplete="off" />
+            <Input
+              type="password"
+              placeholder="Paste value"
+              autoComplete="off"
+            />
           </Field>
         </div>
         <div className="mt-5 flex justify-end">
@@ -609,7 +637,11 @@ function McpPanel() {
                 <Badge variant="outline" className="text-muted-foreground">
                   {s.status === "connected" ? `${s.tools} tools` : "offline"}
                 </Badge>
-                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                >
                   Configure
                 </Button>
               </div>
@@ -648,7 +680,11 @@ function ArchivedPanel() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                >
                   Unarchive
                 </Button>
                 <Button
@@ -668,6 +704,14 @@ function ArchivedPanel() {
 }
 
 function AboutPanel() {
+  const [host, setHost] = useState<string | null>(null);
+
+  useEffect(() => {
+    hostname()
+      .then(setHost)
+      .catch(() => setHost(null));
+  }, []);
+
   return (
     <div className="space-y-8">
       <PanelHeader title="About" />
@@ -679,7 +723,7 @@ function AboutPanel() {
           <div>
             <p className="text-sm font-semibold">Hoy</p>
             <p className="text-xs text-muted-foreground">
-              A native desktop GUI for the Pi coding agent.
+              Your AI coding companion.
             </p>
           </div>
         </div>
@@ -692,6 +736,31 @@ function AboutPanel() {
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Pi agent</dt>
             <dd className="font-mono text-xs">0.78.0</dd>
+          </div>
+        </dl>
+      </Section>
+
+      <Section>
+        <div className="mb-3 flex items-center gap-2">
+          <Monitor className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Host Computer</h2>
+        </div>
+        <dl className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <dt className="text-muted-foreground">Platform</dt>
+            <dd className="font-mono text-xs">{platform()}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-muted-foreground">OS type</dt>
+            <dd className="font-mono text-xs">{osType()}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-muted-foreground">Version</dt>
+            <dd className="font-mono text-xs">{version()}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-muted-foreground">Architecture</dt>
+            <dd className="font-mono text-xs">{arch()}</dd>
           </div>
         </dl>
       </Section>
