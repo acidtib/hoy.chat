@@ -25,7 +25,7 @@ import { HOY_SYSTEM_PROMPT } from "./hoy-system-prompt";
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
 // with grep/find/ls while bash is blocked; the prompt's tools list matches.
-const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write"];
+const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"];
 const envMode = process.env.HOY_PERMISSION_MODE ?? "default";
 const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "default";
 
