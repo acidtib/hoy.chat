@@ -319,6 +319,8 @@ export function ThreadView({
                           </ReasoningContent>
                         </Reasoning>
                       )}
+                      {/* HOY-209: text above tools, textAfter below tools, so the conversation
+                          reads naturally as intent -> action -> follow-up. */}
                       {turn.text && (
                         <MessageResponse>{turn.text}</MessageResponse>
                       )}
