@@ -32,7 +32,10 @@ export type GateDecision = "allow" | "ask" | "block";
 export function decide(mode: PermissionMode, toolName: string): GateDecision {
   if (READ_ONLY_TOOLS.has(toolName)) return "allow";
   if (mode === "autonomous") return "allow";
-  if (mode === "plan") return "block";
+  if (mode === "plan") {
+    if (toolName === "write") return "allow";
+    return "block";
+  }
   if (MUTATING_TOOLS.has(toolName)) return mode === "acceptEdits" ? "allow" : "ask";
   return "ask"; // bash and unknown/custom tools in default and acceptEdits
 }

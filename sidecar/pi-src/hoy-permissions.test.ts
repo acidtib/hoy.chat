@@ -27,7 +27,7 @@ describe("gate policy table", () => {
     ["plan", "read", "allow"],
     ["plan", "grep", "allow"],
     ["plan", "edit", "block"],
-    ["plan", "write", "block"],
+    ["plan", "write", "allow"],
     ["plan", "bash", "block"],
     ["plan", "some_custom_tool", "block"],
     ["autonomous", "edit", "allow"],
