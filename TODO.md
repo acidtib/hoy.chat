@@ -107,3 +107,11 @@ Themes, keyboard shortcuts, session rename/delete polish, the multi-session
 orchestration dashboard (spec M5: per-thread status overview, cross-thread
 coordination; the architecture keeps it open, everything is keyed by
 sessionId). Build when wanted, nothing blocks them.
+
+### Project-level config dir still uses `.pi` instead of `.hoy`
+Pi hardcodes the project config directory as `.pi` (`CONFIG_DIR_NAME` in
+config.js). The global agent dir was branded to `~/.hoy/agent`, but the
+project-level dir (`.pi/settings.json`, `.pi/npm/`, `.pi/extensions/`, etc.)
+is unchanged. Should become `.hoy/` for consistency, e.g.
+`.hoy/settings.json`. Requires a Pi upstream change or a patch in the
+resource-loader / package-manager to accept a config dir override.
