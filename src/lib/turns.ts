@@ -93,10 +93,16 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
       turns.push({ role: "user", text: contentText(m.content) });
     } else if (m.role === "assistant") {
       const a = currentAssistantTurn(turns);
-      const hasTools = a.tools.length > 0;
+      // Snapshot before this message's content parts so text and tool calls
+      // within the same message both land in the pre-tool position. Only text
+      // from a subsequent message (after some other message added tools) goes
+      // to textAfter, so the model's content-part order within one response
+      // never decides layout. The live stream (applyEvent) is naturally ordered
+      // by event arrival and uses the same accumulator fields.
+      const hadToolsBefore = a.tools.length > 0;
       for (const part of asParts(m.content)) {
         if (part.type === "text" && typeof part.text === "string") {
-          if (hasTools) {
+          if (hadToolsBefore) {
             a.textAfter = (a.textAfter ?? "") + part.text;
           } else {
             a.text += part.text;
