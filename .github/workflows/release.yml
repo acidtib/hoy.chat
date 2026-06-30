@@ -67,6 +67,11 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # linuxdeploy ships as an AppImage and the ubuntu runner has no FUSE2,
+          # so it must extract-and-run instead of mounting. Linux-only var,
+          # ignored on macOS/Windows. Required for the AppImage the Linux updater
+          # consumes (deb/rpm are not auto-updatable).
+          APPIMAGE_EXTRACT_AND_RUN: '1'
           # Updater signing (HOY-187). Add these as repo secrets; without them the
           # build still produces installers but no signed updater artifacts.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
