@@ -16,7 +16,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { HOY_SYSTEM_PROMPT } from "./hoy-system-prompt";
 
-// Pi 0.78.0 edit guidelines (core/tools/edit.js). The prompt must carry these
+// Pi 0.80.2 edit guidelines (core/tools/edit.js). The prompt must carry these
 // verbatim; replacement strips pi's ability to inject them.
 const PI_EDIT_GUIDELINES = [
   "Use edit for precise changes (edits[].oldText must match exactly)",
@@ -62,7 +62,7 @@ describe("hoy system prompt assembly", () => {
 
     // Docs block points at the pinned GitHub tag, never at local package paths.
     expect(prompt).toContain(
-      "https://raw.githubusercontent.com/earendil-works/pi/v0.78.0/packages/coding-agent/docs/extensions.md",
+      "https://raw.githubusercontent.com/earendil-works/pi/v0.80.2/packages/coding-agent/docs/extensions.md",
     );
     expect(prompt).not.toContain("node_modules");
 
@@ -89,10 +89,11 @@ describe("hoy system prompt assembly", () => {
     expect(prompt).toContain("ask one short question instead of guessing");
     expect(prompt).toContain("Do not use emojis or em-dashes");
 
-    // HOY-201: field-standard agentic rules.
+    // HOY-201: field-standard agentic rules. HOY-209 reworded the
+    // ask-before-acting rule to "state intent, don't ask permission".
     expect(prompt).toContain("Keep working until the request is fully resolved");
     expect(prompt).toContain("Never revert or overwrite changes you did not make");
-    expect(prompt).toContain("Do not ask in prose before ordinary edits and commands");
+    expect(prompt).toContain("do not ask for permission before ordinary reads, searches, or edits");
     expect(prompt).toContain("src/main.rs:42");
     expect(prompt).toContain("Do not add tests to projects that have none");
     expect(prompt).toContain("git reset --hard");

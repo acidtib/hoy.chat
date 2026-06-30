@@ -96,7 +96,7 @@ Report upstream (Groq needs `supportsDeveloperRole: false` or a compat
 carve-out) and re-verify after the pi bump that picks up a fix.
 
 ### Pi version bump checklist
-Pinned 0.78.0. On every bump: re-verify the tool promptGuidelines in
+Pinned 0.80.2. On every bump: re-verify the tool promptGuidelines in
 `hoy-system-prompt.ts` against pi source (the edit guidelines are load-bearing),
 repoint the docs-block GitHub tag, re-check the provider list and env-var
 mapping in `pi_config.rs`, and re-run the prompt assembly tests.
