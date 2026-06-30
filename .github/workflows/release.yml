@@ -17,20 +17,26 @@ jobs:
             args: '--target aarch64-apple-darwin'
             triple: aarch64-apple-darwin
             rust_targets: aarch64-apple-darwin
+            tauri_script: ''
           - platform: macos-latest # Intel
             args: '--target x86_64-apple-darwin'
             triple: x86_64-apple-darwin
             rust_targets: x86_64-apple-darwin
+            tauri_script: ''
           - platform: ubuntu-22.04
             # --verbose is a documented workaround: without it, linuxdeploy's
             # AppImage step fails on the CI runner (tauri-apps/tauri#14796).
             args: '--verbose'
             triple: x86_64-unknown-linux-gnu
             rust_targets: ''
+            # Linux builds through a wrapper that shelters + repacks the bun
+            # sidecar so the AppImage's sidecar is not corrupted (HOY-217).
+            tauri_script: 'bash scripts/linux/build-appimage.sh'
           - platform: windows-latest
             args: ''
             triple: x86_64-pc-windows-msvc
             rust_targets: ''
+            tauri_script: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -87,3 +93,6 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+          # Empty on macOS/Windows (tauri-action auto-detects the build command);
+          # Linux runs the shelter+repack wrapper (HOY-217).
+          tauriScript: ${{ matrix.tauri_script }}
