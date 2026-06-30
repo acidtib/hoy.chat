@@ -7,6 +7,7 @@ import {
   type as osType,
   version,
 } from "@tauri-apps/plugin-os";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   Select,
   SelectContent,
@@ -705,11 +706,15 @@ function ArchivedPanel() {
 
 function AboutPanel() {
   const [_host, setHost] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   useEffect(() => {
     hostname()
       .then(setHost)
       .catch(() => setHost(null));
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion(null));
   }, []);
 
   return (
@@ -731,11 +736,11 @@ function AboutPanel() {
         <dl className="space-y-2 text-sm">
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Version</dt>
-            <dd className="font-mono text-xs">0.1.0</dd>
+            <dd className="font-mono text-xs">{appVersion ?? "-"}</dd>
           </div>
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Pi agent</dt>
-            <dd className="font-mono text-xs">0.78.0</dd>
+            <dd className="font-mono text-xs">0.80.2</dd>
           </div>
         </dl>
       </Section>
