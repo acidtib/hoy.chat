@@ -26,9 +26,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_TAURI_SIGNER_PUBLIC_KEY",
+      "endpoints": [
+        "https://github.com/<owner>/<repo>/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "externalBin": ["../sidecar/pi"],
     "resources": {
       "../sidecar/pi-payload": "pi-payload"

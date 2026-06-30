@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Boxes, Monitor } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Boxes, Download, Monitor, RefreshCw } from "lucide-react";
 import {
   arch,
   hostname,
@@ -704,6 +704,125 @@ function ArchivedPanel() {
   );
 }
 
+// The Update object from @tauri-apps/plugin-updater, narrowed to what we use.
+interface PendingUpdate {
+  version: string;
+  body?: string;
+  downloadAndInstall: () => Promise<void>;
+}
+
+type UpdateStatus =
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "uptodate"
+  | "error";
+
+// HOY-187: check-for-updates against GitHub releases. The plugins are dynamically
+// imported so no updater code runs in dev, where the check is disabled (the hoyd
+// namespace must never check against production releases).
+function UpdateCheck() {
+  const [status, setStatus] = useState<UpdateStatus>("idle");
+  const [info, setInfo] = useState<{ version: string; notes?: string } | null>(
+    null,
+  );
+  const [message, setMessage] = useState<string | null>(null);
+  const pending = useRef<PendingUpdate | null>(null);
+
+  const onCheck = async () => {
+    setStatus("checking");
+    setMessage(null);
+    try {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const update = await check();
+      if (!update) {
+        setStatus("uptodate");
+        return;
+      }
+      pending.current = update as unknown as PendingUpdate;
+      setInfo({ version: update.version, notes: update.body ?? undefined });
+      setStatus("available");
+    } catch (e) {
+      setMessage(String(e));
+      setStatus("error");
+    }
+  };
+
+  const onInstall = async () => {
+    if (!pending.current) return;
+    setStatus("downloading");
+    setMessage(null);
+    try {
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      await pending.current.downloadAndInstall();
+      await relaunch();
+    } catch (e) {
+      setMessage(String(e));
+      setStatus("error");
+    }
+  };
+
+  if (import.meta.env.DEV) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Updates are checked in release builds.
+      </p>
+    );
+  }
+
+  const installing = status === "available" || status === "downloading";
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm">
+          {status === "available" && info ? (
+            <span>
+              Update available:{" "}
+              <span className="font-mono text-xs">{info.version}</span>
+            </span>
+          ) : status === "uptodate" ? (
+            <span className="text-muted-foreground">
+              You are on the latest version.
+            </span>
+          ) : status === "error" ? (
+            <span className="text-destructive">
+              {message ?? "Update check failed."}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">Check for a new version.</span>
+          )}
+        </div>
+        {installing ? (
+          <Button
+            size="sm"
+            onClick={onInstall}
+            disabled={status === "downloading"}
+          >
+            <Download className="size-4" />
+            {status === "downloading" ? "Installing..." : "Install & restart"}
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onCheck}
+            disabled={status === "checking"}
+          >
+            <RefreshCw className="size-4" />
+            {status === "checking" ? "Checking..." : "Check for updates"}
+          </Button>
+        )}
+      </div>
+      {status === "available" && info?.notes ? (
+        <p className="whitespace-pre-line text-xs text-muted-foreground">
+          {info.notes}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function AboutPanel() {
   const [_host, setHost] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
@@ -743,6 +862,8 @@ function AboutPanel() {
             <dd className="font-mono text-xs">0.80.2</dd>
           </div>
         </dl>
+        <Separator className="my-4" />
+        <UpdateCheck />
       </Section>
 
       <Section>

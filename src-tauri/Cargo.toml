@@ -30,6 +30,8 @@ tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
 tauri-plugin-mcp-bridge = "0.2"
 tauri-plugin-window-state = "2.4.1"
 tauri-plugin-os = "2"
+tauri-plugin-updater = "2.10.1"
+tauri-plugin-process = "2.3.1"
 
 [dev-dependencies]
 # test-util enables tokio's paused virtual clock (start_paused) for the

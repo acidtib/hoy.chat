@@ -15,7 +15,15 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_window_state::Builder::default().build());
+
+    // Auto-updater (HOY-187), desktop-only. The frontend drives the check via
+    // the About panel; updates are pulled from GitHub releases.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
 
     // Dev-only automation bridge for the Tauri MCP server (screenshots, clicks,
     // IPC inspection). Bound to localhost and gated to debug builds so it never
