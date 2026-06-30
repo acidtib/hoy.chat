@@ -42,6 +42,14 @@ function thread(): Thread {
   return useSessionStore.getState().projects[0].threads[0];
 }
 
+// Since HOY-214 a failed submitPrompt attaches its error to the in-flight
+// assistant turn (rendered inline), not the thread-level banner.
+function lastTurnError(): string | undefined {
+  const turns = useSessionStore.getState().turns["t1"] ?? [];
+  const last = turns[turns.length - 1];
+  return last && last.role === "assistant" ? last.error : undefined;
+}
+
 beforeEach(() => {
   setModel.mockReset();
   createSession.mockReset();
@@ -192,7 +200,7 @@ describe("applyThreadModel at spawn", () => {
     expect(sendPrompt).not.toHaveBeenCalled();
     const state = useSessionStore.getState();
     expect(state.streaming["t1"]).toBe(false);
-    expect(state.threadErrors["t1"]).toContain("No API key for groq/x");
+    expect(lastTurnError()).toContain("No API key for groq/x");
     expect(thread().model).toEqual({
       provider: "anthropic",
       id: "claude-opus-4-8",
@@ -208,7 +216,7 @@ describe("applyThreadModel failure recovery", () => {
 
     await useSessionStore.getState().submitPrompt("t1", "hello");
     expect(sendPrompt).not.toHaveBeenCalled();
-    expect(useSessionStore.getState().threadErrors["t1"]).toContain("rpc timeout");
+    expect(lastTurnError()).toContain("rpc timeout");
 
     // The transient failure clears; the retry must re-apply the pick.
     getState.mockResolvedValue({
