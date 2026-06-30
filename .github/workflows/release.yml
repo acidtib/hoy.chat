@@ -22,7 +22,9 @@ jobs:
             triple: x86_64-apple-darwin
             rust_targets: x86_64-apple-darwin
           - platform: ubuntu-22.04
-            args: ''
+            # --verbose is a documented workaround: without it, linuxdeploy's
+            # AppImage step fails on the CI runner (tauri-apps/tauri#14796).
+            args: '--verbose'
             triple: x86_64-unknown-linux-gnu
             rust_targets: ''
           - platform: windows-latest
@@ -67,11 +69,13 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # linuxdeploy ships as an AppImage and the ubuntu runner has no FUSE2,
-          # so it must extract-and-run instead of mounting. Linux-only var,
-          # ignored on macOS/Windows. Required for the AppImage the Linux updater
-          # consumes (deb/rpm are not auto-updatable).
+          # AppImage bundling workarounds (Linux-only, ignored elsewhere). The
+          # Linux updater consumes the AppImage; deb/rpm are not auto-updatable.
+          # - extract-and-run: linuxdeploy is an AppImage, runner has no FUSE2.
+          # - NO_STRIP: linuxdeploy's strip rejects modern .relr.dyn sections
+          #   (tauri-apps/tauri#14755). Harmless on glibc 2.35 runners.
           APPIMAGE_EXTRACT_AND_RUN: '1'
+          NO_STRIP: 'true'
           # Updater signing (HOY-187). Add these as repo secrets; without them the
           # build still produces installers but no signed updater artifacts.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
