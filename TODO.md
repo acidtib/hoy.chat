@@ -18,12 +18,6 @@ in Tauri's resource dir. TODO marker at `src-tauri/src/sidecar.rs:647`
 Unsigned installers trip SmartScreen (Hermes desktop hit this). Needed before
 any Windows distribution; not before.
 
-### Identifier ends in .app
-Tauri warns that `dev.hoy-desktop.app` conflicts with the macOS bundle
-extension. Renaming the identifier moves the per-app data dirs (window state,
-webview storage), so existing installs lose that state unless migrated. Decide
-before the first macOS build; pointless churn before then.
-
 ## Visible gaps
 
 ### Reasoning / thinking deltas in the transcript
