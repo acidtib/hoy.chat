@@ -3,6 +3,7 @@ import {
   Activity,
   AlertCircle,
   Archive,
+  CircleStop,
   FilePen,
   Maximize2,
   Minimize2,
@@ -327,12 +328,19 @@ export function ThreadView({
                         ),
                       )}
                       {turn.streaming &&
-                        turn.blocks.length === 0 && (
+                        turn.blocks.length === 0 &&
+                        !turn.aborted && (
                           <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
                             <span className="size-1.5 animate-pulse rounded-full bg-brand" />
                             Working...
                           </span>
                         )}
+                      {turn.aborted && (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <CircleStop className="size-3.5" />
+                          Stopped
+                        </span>
+                      )}
                     </MessageContent>
                   </Message>
                 ),

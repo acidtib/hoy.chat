@@ -418,9 +418,12 @@ fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
         }
         "message_end" => {
             // Surface a failed/aborted turn; agent_end still follows to finalize.
+            // Abort is a user action, not a failure: it renders inline on the
+            // turn, not as the error banner (HOY-197).
             let message = value.get("message")?;
             match message.get("stopReason").and_then(Value::as_str) {
-                Some("error") | Some("aborted") => Some(AgentEvent::Error {
+                Some("aborted") => Some(AgentEvent::Aborted),
+                Some("error") => Some(AgentEvent::Error {
                     message: message
                         .get("errorMessage")
                         .and_then(Value::as_str)
@@ -956,5 +959,23 @@ mod live_tests {
             roles.contains(&"assistant"),
             "restored transcript missing the assistant reply: {roles:?}"
         );
+    }
+
+    // HOY-197: a user-stopped turn maps to Aborted (rendered inline), not Error
+    // (the thread-level failure banner). Hermetic: map_pi_event is pure.
+    #[test]
+    fn message_end_aborted_maps_to_aborted() {
+        let value = json!({ "message": { "stopReason": "aborted" } });
+        let event = map_pi_event(Some("message_end"), &value);
+        assert!(matches!(event, Some(AgentEvent::Aborted)), "got {event:?}");
+    }
+
+    #[test]
+    fn message_end_error_maps_to_error_with_message() {
+        let value = json!({ "message": { "stopReason": "error", "errorMessage": "boom" } });
+        match map_pi_event(Some("message_end"), &value) {
+            Some(AgentEvent::Error { message }) => assert_eq!(message, "boom"),
+            other => panic!("expected Error, got {other:?}"),
+        }
     }
 }

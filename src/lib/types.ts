@@ -16,6 +16,7 @@ export type AgentEvent =
   | { kind: "status"; label: string }
   | ({ kind: "permissionRequest" } & PermissionRequest)
   | { kind: "error"; message: string }
+  | { kind: "aborted" }
   | { kind: "done" };
 
 // An extension UI dialog awaiting an answer (HOY-186). The agent is blocked
@@ -92,6 +93,9 @@ export type Turn =
       reasoning?: { text: string; seconds?: number };
       blocks: AssistantBlock[];
       streaming: boolean;
+      // The user stopped this turn (HOY-197). Renders a subtle inline marker
+      // after the turn's content instead of a thread-level error banner.
+      aborted?: boolean;
     };
 
 export interface ModelInfo {

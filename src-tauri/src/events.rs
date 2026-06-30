@@ -51,6 +51,10 @@ pub enum AgentEvent {
     Error {
         message: String,
     },
+    // A turn the user stopped (Pi's message_end stopReason "aborted"). Distinct
+    // from Error so the renderer shows it inline on the turn, not as the
+    // thread-level failure banner (HOY-197). Done still follows to finalize.
+    Aborted,
     Done,
 }
 

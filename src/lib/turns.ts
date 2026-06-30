@@ -82,6 +82,11 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
       }
       break;
     }
+    case "aborted":
+      // The user stopped the turn (HOY-197). Flag it so the transcript shows a
+      // subtle inline marker; Done follows to clear the streaming state.
+      assistant.aborted = true;
+      break;
     case "status":
       // Retry/compaction notices: not rendered inline for now.
       break;
@@ -111,6 +116,8 @@ type RawMessage = {
   content?: string | RawContentPart[];
   toolCallId?: string;
   isError?: boolean;
+  // Pi sets this on the assistant message when a turn was stopped (HOY-197).
+  stopReason?: string;
 };
 
 // Fold a persisted Pi transcript (get_messages) into the same Turn[] the live
@@ -130,6 +137,7 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
       turns.push({ role: "user", text: contentText(m.content) });
     } else if (m.role === "assistant") {
       const a = currentAssistantTurn(turns);
+      if (m.stopReason === "aborted") a.aborted = true;
       for (const part of asParts(m.content)) {
         if (part.type === "thinking" && typeof part.thinking === "string" && part.thinking) {
           a.reasoning = {
