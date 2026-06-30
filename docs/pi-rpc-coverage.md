@@ -42,7 +42,7 @@ settlement are now dropped instead of emitting stale `tool_execution_update`
 Status key: **used** (wired end to end), **partial** (some of the surface wired),
 **planned** (Linear ticket filed), **unused** (never invoked or mapped).
 
-## Commands (8 of 30 used)
+## Commands (9 of 30 used)
 
 | RPC command | What it does | Hoy status | Notes |
 |---|---|---|---|
@@ -58,7 +58,7 @@ Status key: **used** (wired end to end), **partial** (some of the surface wired)
 | `follow_up` | Queue a message for after the turn ends | unused | |
 | `set_steering_mode` | Queue delivery: `all` or `one-at-a-time` | unused | |
 | `set_follow_up_mode` | Same for follow-ups | unused | |
-| `set_thinking_level` | Set thinking: off, minimal, low, medium, high, xhigh | planned (HOY-204) | Composer dropdown exists but is local state only, `Composer.tsx:81` |
+| `set_thinking_level` | Set thinking: off, minimal, low, medium, high, xhigh | used (HOY-204) | `commands.rs:90`; composer dropdown drives it via `store.selectThinkingLevel`, re-synced from `get_state` (pi clamps per model) |
 | `cycle_thinking_level` | Step through thinking levels | unused | |
 | `cycle_model` | Step through scoped models | unused | Deferred with keyboard shortcuts |
 | `compact` | Manual compaction, optional custom instructions | unused | Hoy only renders the `compaction_start` status |
