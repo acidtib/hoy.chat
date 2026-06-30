@@ -44,17 +44,64 @@ const ALLOW = "Allow";
 const ALLOW_SESSION = "Allow for this session";
 const DENY = "Deny";
 
-// One-line summary of what the tool wants to do, for the approval card title.
-function describeToolCall(toolName: string, input: any): string {
-  let detail = "";
-  if (toolName === "bash" && typeof input?.command === "string") {
-    detail = input.command;
-  } else if (typeof input?.path === "string") {
-    detail = input.path;
+// Summary of what the tool wants to do, for the approval card title.
+// For edit and write tools, also embeds tool call metadata as a JSON prefix
+// (HOY_TOOL_DATA:{...}\n) so the frontend can render a pending tool block
+// with a diff in the conversation while the approval card waits (HOY-199).
+function describeToolCall(toolName: string, toolCallId: string, input: any): string {
+  const label = describeToolLabel(toolName, input);
+  if (toolName === "edit" && typeof input?.path === "string" && Array.isArray(input?.edits)) {
+    return toolDataPrefix(toolName, toolCallId, input, label);
   }
+  if (toolName === "write" && typeof input?.path === "string" && typeof input?.content === "string") {
+    return toolDataPrefix(toolName, toolCallId, input, label);
+  }
+  return label;
+}
+
+// Readable one-line label for the approval card title.
+function describeToolLabel(toolName: string, input: any): string {
+  if (toolName === "bash" && typeof input?.command === "string") {
+    let detail = input.command.replace(/\s+/g, " ").trim();
+    if (detail.length > 160) detail = `${detail.slice(0, 157)}...`;
+    return `${toolName}: ${detail}`;
+  }
+  let detail = "";
+  if (typeof input?.path === "string") detail = input.path;
   detail = detail.replace(/\s+/g, " ").trim();
   if (detail.length > 160) detail = `${detail.slice(0, 157)}...`;
   return detail ? `${toolName}: ${detail}` : toolName;
+}
+
+const MAX_TOOL_DATA_BYTES = 5000;
+
+function toolDataPrefix(toolName: string, toolCallId: string, input: any, label: string): string {
+  const data = JSON.stringify({ toolName, toolCallId, input });
+  const prefix = data.length > MAX_TOOL_DATA_BYTES
+    ? JSON.stringify({ toolName, toolCallId, input: slimInput(toolName, input) })
+    : data;
+  return `HOY_TOOL_DATA:${prefix}\n${label}`;
+}
+
+// Truncate content fields to keep the serialized prefix under MAX_TOOL_DATA_BYTES.
+function slimInput(toolName: string, input: any): any {
+  if (toolName === "edit" && Array.isArray(input?.edits)) {
+    return {
+      ...input,
+      edits: input.edits.map((e: any) => ({
+        oldText: e.oldText.length > 400 ? `${e.oldText.slice(0, 397)}...` : e.oldText,
+        newText: e.newText.length > 400 ? `${e.newText.slice(0, 397)}...` : e.newText,
+      })),
+    };
+  }
+  if (toolName === "write" && typeof input?.content === "string" && input.content.length > 1500) {
+    return { ...input, content: `${input.content.slice(0, 1497)}...` };
+  }
+  return input;
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
 function blockReason(mode: PermissionMode, toolName: string): string {
@@ -107,7 +154,7 @@ export function createHoyPermissions(initialMode: PermissionMode) {
       }
       if (sessionAllowed.has(event.toolName)) return undefined;
 
-      const choice = await ctx.ui.select(describeToolCall(event.toolName, event.input), [
+      const choice = await ctx.ui.select(describeToolCall(event.toolName, event.toolCallId, event.input), [
         ALLOW,
         ALLOW_SESSION,
         DENY,

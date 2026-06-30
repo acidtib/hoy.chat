@@ -456,38 +456,33 @@ function toolIcon(kind: ToolKind): ReactNode {
 // shows on expand.
 function ToolCall({ tool }: { tool: ToolUI }) {
   const kind = toolKind(tool.name);
-  const card = kind === "edit" || kind === "terminal";
+  // Every tool renders as a bordered card, open by default so its body (diff,
+  // command + output, or result) is visible without a click.
+  // The terminal body already shows the command ($ ...), so the header stays a
+  // generic tool label (lowercase, like the other tools) instead of repeating it.
+  const headerTitle = kind === "terminal" ? tool.name : tool.title;
 
   return (
     <Tool
-      defaultOpen={card}
-      className={cn(
-        "group",
-        card
-          ? "my-0.5 overflow-hidden rounded-md border border-border/70"
-          : "",
-      )}
+      defaultOpen
+      className="group my-0.5 overflow-hidden rounded-md border border-border/70"
     >
       <ToolHeader
-        title={tool.title}
+        title={headerTitle}
         type={`tool-${tool.name}`}
         state={
-          tool.running
-            ? "input-available"
-            : tool.isError
-              ? "output-error"
-              : "output-available"
+          tool.pending
+            ? "approval-requested"
+            : tool.running
+              ? "input-available"
+              : tool.isError
+                ? "output-error"
+                : "output-available"
         }
         icon={toolIcon(kind)}
-        className={cn(card && "bg-muted/25 px-2 py-1.5 text-foreground")}
+        className="bg-muted/25 px-2 py-1.5 text-foreground"
       />
-      <ToolContent
-        className={cn(
-          card
-            ? "border-t border-border/70"
-            : "ml-[7px] border-l border-border/60",
-        )}
-      >
+      <ToolContent className="border-t border-border/70">
         {kind === "edit" && tool.diff ? (
           <CodeBlock
             code={tool.diff}
@@ -506,7 +501,7 @@ function ToolCall({ tool }: { tool: ToolUI }) {
             </pre>
           </div>
         ) : (
-          <pre className="scrollbar-thin overflow-x-auto whitespace-pre-wrap py-1.5 pl-4 font-mono text-xs leading-relaxed text-muted-foreground">
+          <pre className="scrollbar-thin overflow-x-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground">
             {tool.output}
           </pre>
         )}

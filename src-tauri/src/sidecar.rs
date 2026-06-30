@@ -300,14 +300,44 @@ fn route_message(
         };
         match method {
             "select" | "confirm" => {
+                let raw_title = value
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+
+                // HOY-199: the sidecar may embed tool call metadata as a JSON
+                // prefix in the title: "HOY_TOOL_DATA:{...json...}\n{label}"
+                let (tool_call_id, tool_name, tool_args, title) = if let Some(rest) =
+                    raw_title.strip_prefix("HOY_TOOL_DATA:")
+                {
+                    if let Some(nl) = rest.find('\n') {
+                        let data_str = &rest[..nl];
+                        let clean = rest[nl + 1..].to_string();
+                        match serde_json::from_str::<Value>(data_str) {
+                            Ok(data) => (
+                                data.get("toolCallId")
+                                    .and_then(Value::as_str)
+                                    .map(String::from),
+                                data.get("toolName")
+                                    .and_then(Value::as_str)
+                                    .map(String::from),
+                                data.get("input").cloned(),
+                                clean,
+                            ),
+                            Err(_) => (None, None, None, raw_title),
+                        }
+                    } else {
+                        (None, None, None, raw_title)
+                    }
+                } else {
+                    (None, None, None, raw_title)
+                };
+
                 let event = AgentEvent::PermissionRequest {
                     request_id: id.to_string(),
                     method: method.to_string(),
-                    title: value
-                        .get("title")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string(),
+                    title,
                     message: value
                         .get("message")
                         .and_then(Value::as_str)
@@ -318,6 +348,9 @@ fn route_message(
                             .map(str::to_string)
                             .collect()
                     }),
+                    tool_call_id,
+                    tool_name,
+                    tool_args,
                 };
                 let guard = sink.lock().unwrap();
                 match guard.as_ref() {

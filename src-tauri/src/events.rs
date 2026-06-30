@@ -40,6 +40,13 @@ pub enum AgentEvent {
         message: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         options: Option<Vec<String>>,
+        // HOY-199: tool call metadata extracted from HOY_TOOL_DATA prefix.
+        #[serde(rename = "toolCallId", skip_serializing_if = "Option::is_none")]
+        tool_call_id: Option<String>,
+        #[serde(rename = "toolName", skip_serializing_if = "Option::is_none")]
+        tool_name: Option<String>,
+        #[serde(rename = "toolArgs", skip_serializing_if = "Option::is_none")]
+        tool_args: Option<serde_json::Value>,
     },
     Error {
         message: String,

@@ -27,6 +27,11 @@ export interface PermissionRequest {
   title: string;
   message?: string;
   options?: string[];
+  // HOY-199: tool call metadata for rendering a pending tool block in the
+  // conversation while the approval card waits for a decision.
+  toolCallId?: string;
+  toolName?: string;
+  toolArgs?: unknown;
 }
 
 // The four thread permission modes (HOY-186). Wire values; the composer maps
@@ -57,6 +62,8 @@ export interface SessionStats {
 
 // A single tool call rendered in a turn. Built from `tool` AgentEvents (start
 // opens it, update/end fill output). `running` flips false on the end event.
+// `pending` is true for blocks inserted before execution (from permissionRequest,
+// HOY-199) while awaiting user approval.
 export interface ToolUI {
   id: string;
   name: string;
@@ -66,6 +73,7 @@ export interface ToolUI {
   output: string;
   isError?: boolean;
   running: boolean;
+  pending?: boolean;
 }
 
 // An ordered block in an assistant turn, rendered top to bottom. Text blocks

@@ -18,7 +18,7 @@ import {
   setPermissionMode as ipcSetPermissionMode,
   setThinkingLevel,
 } from "@/lib/ipc";
-import { applyEvent, messagesToTurns } from "@/lib/turns";
+import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import type {
   AgentEvent,
   ModelInfo,
@@ -704,20 +704,52 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         }));
         if (event.kind === "permissionRequest") {
           const { kind: _k, ...request } = event;
-          set((s) => ({
-            pendingPermissions: {
-              ...s.pendingPermissions,
-              [threadId]: [...(s.pendingPermissions[threadId] ?? []), request],
-            },
-          }));
+          set((s) => {
+            let turns = s.turns;
+            // HOY-199: mark the tool block awaiting approval so the user sees
+            // what the tool will do (the diff) before deciding. The block was
+            // created by the tool `start` event that precedes this request.
+            if (request.toolCallId) {
+              turns = {
+                ...turns,
+                [threadId]: markToolPending(
+                  turns[threadId] ?? [],
+                  request.toolCallId,
+                  request.toolName,
+                  request.toolArgs,
+                ),
+              };
+            }
+            return {
+              turns,
+              pendingPermissions: {
+                ...s.pendingPermissions,
+                [threadId]: [
+                  ...(s.pendingPermissions[threadId] ?? []),
+                  request,
+                ],
+              },
+            };
+          });
         } else if (event.kind === "done") {
           activeChannels.delete(threadId);
           stopStreaming();
           // A turn cannot end with a dialog still blocking it; drop any
-          // leftovers so no orphaned card survives the turn.
-          set((s) => ({
-            pendingPermissions: { ...s.pendingPermissions, [threadId]: [] },
-          }));
+          // leftovers so no orphaned card survives the turn. Also remove
+          // pending tool blocks that were never replaced (HOY-199).
+          set((s) => {
+            const turns = s.turns[threadId];
+            if (!turns) return { pendingPermissions: { ...s.pendingPermissions, [threadId]: [] } };
+            const last = turns[turns.length - 1];
+            if (last && last.role === "assistant") {
+              const filtered = { ...last, blocks: last.blocks.filter((b) => b.kind !== "tool" || !b.tool.pending) };
+              return {
+                turns: { ...s.turns, [threadId]: [...turns.slice(0, -1), filtered] },
+                pendingPermissions: { ...s.pendingPermissions, [threadId]: [] },
+              };
+            }
+            return { pendingPermissions: { ...s.pendingPermissions, [threadId]: [] } };
+          });
           void get().refreshStats(threadId);
         } else if (event.kind === "error") {
           set((s) => ({

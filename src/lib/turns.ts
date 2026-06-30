@@ -22,15 +22,32 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
     }
     case "tool": {
       if (event.phase === "start") {
-        const tool: ToolUI = {
-          id: event.toolCallId,
-          name: event.toolName,
-          title: toolTitle(event.toolName, event.args),
-          command: commandArg(event.args),
-          output: "",
-          running: true,
-        };
-        assistant.blocks.push({ kind: "tool", tool });
+        // HOY-199: if any block exists for this toolCallId (pending from
+        // permissionRequest, or an earlier execution event), promote/update
+        // it instead of creating a duplicate.
+        const existingIndex = assistant.blocks.findIndex(
+          (b) => b.kind === "tool" && b.tool.id === event.toolCallId,
+        );
+        if (existingIndex >= 0) {
+          const block = assistant.blocks[existingIndex];
+          if (block.kind === "tool") {
+            assistant.blocks[existingIndex] = {
+              ...block,
+              tool: { ...block.tool, pending: false, running: true },
+            };
+          }
+        } else {
+          const tool: ToolUI = {
+            id: event.toolCallId,
+            name: event.toolName,
+            title: toolTitle(event.toolName, event.args),
+            command: commandArg(event.args),
+            diff: buildDiff(event.toolName, event.args),
+            output: "",
+            running: true,
+          };
+          assistant.blocks.push({ kind: "tool", tool });
+        }
       } else {
         const blockIndex = assistant.blocks.findIndex(
           (b) => b.kind === "tool" && b.tool.id === event.toolCallId,
@@ -39,10 +56,15 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
           const block = assistant.blocks[blockIndex];
           if (block.kind === "tool") {
             const tool = { ...block.tool };
+            // Any post-start event means the gate cleared and the tool is
+            // executing or done; it is no longer awaiting approval (HOY-199).
+            tool.pending = false;
             if (event.output !== undefined) tool.output = event.output;
             if (event.phase === "end") {
               tool.running = false;
               tool.isError = event.isError;
+            } else {
+              tool.running = true;
             }
             assistant.blocks[blockIndex] = { ...block, tool };
           }
@@ -128,6 +150,9 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
               name: part.name ?? "tool",
               title: toolTitle(part.name ?? "tool", part.arguments),
               command: commandArg(part.arguments),
+              // Keep the diff on restore so an approved or denied edit always
+              // shows what changed, not just the tool's result text (HOY-199).
+              diff: buildDiff(part.name ?? "tool", part.arguments),
               output: "",
               running: false,
             },
@@ -192,6 +217,77 @@ function toolTitle(name: string, args: unknown): string {
 function commandArg(args: unknown): string | undefined {
   const command = (args as Record<string, unknown> | null | undefined)?.command;
   return typeof command === "string" ? command : undefined;
+}
+
+// HOY-199: build a pending tool block from permission request tool data.
+// Rendered in the conversation with the "Awaiting Approval" badge while the
+// approval card waits for the user's decision.
+export function buildPendingToolBlock(
+  toolCallId: string,
+  toolName: string,
+  args: unknown,
+): ToolUI {
+  return {
+    id: toolCallId,
+    name: toolName,
+    title: toolTitle(toolName, args),
+    command: commandArg(args),
+    diff: buildDiff(toolName, args),
+    output: "",
+    running: false,
+    pending: true,
+  };
+}
+
+// HOY-199: mark a tool call as awaiting approval. Pi emits the tool `start`
+// event before the permission gate, so the block almost always already exists;
+// flip it to pending in place. If a permission request ever arrives before the
+// start event, insert a fresh pending block instead so the diff still shows.
+export function markToolPending(
+  turns: Turn[],
+  toolCallId: string,
+  toolName: string | undefined,
+  args: unknown,
+): Turn[] {
+  const last = turns[turns.length - 1];
+  if (!last || last.role !== "assistant") return turns;
+  const idx = last.blocks.findIndex(
+    (b) => b.kind === "tool" && b.tool.id === toolCallId,
+  );
+  const blocks = [...last.blocks];
+  if (idx >= 0) {
+    const block = blocks[idx];
+    if (block.kind !== "tool") return turns;
+    blocks[idx] = {
+      ...block,
+      tool: { ...block.tool, pending: true, running: false },
+    };
+  } else {
+    blocks.push({
+      kind: "tool",
+      tool: buildPendingToolBlock(toolCallId, toolName ?? "tool", args),
+    });
+  }
+  return [...turns.slice(0, -1), { ...last, blocks }];
+}
+
+function buildDiff(toolName: string, args: unknown): string | undefined {
+  const a = (args ?? {}) as Record<string, unknown>;
+  if (toolName === "edit" && Array.isArray(a.edits)) {
+    const parts: string[] = [];
+    for (const edit of a.edits as Array<{ oldText: string; newText: string }>) {
+      for (const line of edit.oldText.split("\n")) parts.push(`- ${line}`);
+      for (const line of edit.newText.split("\n")) parts.push(`+ ${line}`);
+    }
+    return parts.join("\n");
+  }
+  if (toolName === "write" && typeof a.content === "string") {
+    return a.content
+      .split("\n")
+      .map((line) => `+ ${line}`)
+      .join("\n");
+  }
+  return undefined;
 }
 
 export type { ToolUI };
