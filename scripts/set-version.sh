@@ -29,6 +29,12 @@ VERSION="$VERSION" ROOT="$ROOT" bun --eval '
   set("package.json", /"version": "[^"]*"/, `"version": "${v}"`);
   set("src-tauri/tauri.conf.json", /"version": "[^"]*"/, `"version": "${v}"`);
   set("src-tauri/Cargo.toml", /^version = "[^"]*"/m, `version = "${v}"`);
+  // Keep Cargo.lock in sync so the committed lockfile matches Cargo.toml.
+  set(
+    "src-tauri/Cargo.lock",
+    /(name = "hoy-desktop"\nversion = )"[^"]*"/,
+    `$1"${v}"`,
+  );
 '
 
-echo "set version to $VERSION in package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml"
+echo "set version to $VERSION in package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml, src-tauri/Cargo.lock"
