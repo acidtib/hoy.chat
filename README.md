@@ -1,6 +1,6 @@
-# Tauri + React + Typescript
+# Hoy Desktop
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+A native desktop GUI for the Pi coding agent. Built with Tauri v2, React, and TypeScript.
 
 ## Recommended IDE Setup
 
