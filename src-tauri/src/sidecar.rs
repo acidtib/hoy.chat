@@ -26,6 +26,44 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 type EventSink = Arc<Mutex<Option<Channel<AgentEvent>>>>;
 
+// Outcome of awaiting a correlated response, before it is mapped to the public
+// String error in request()/request_with_dialog_grace().
+enum RequestError {
+    Closed,
+    TimedOut,
+}
+
+// Await a oneshot response, charging `dead_air_budget` only against time with no
+// response AND no outstanding dialog. While `dialog_outstanding()` is true the
+// budget is reset each tick, so a slash-command handler blocked on a dialog
+// (HOY-215) never trips it, while a genuinely wedged sidecar (no dialog, no
+// bytes) still times out after the budget of dead air. `&mut rx` keeps the
+// receiver alive across ticks.
+async fn await_with_dialog_grace(
+    mut rx: oneshot::Receiver<Value>,
+    dead_air_budget: Duration,
+    tick: Duration,
+    dialog_outstanding: impl Fn() -> bool,
+) -> Result<Value, RequestError> {
+    let mut dead_air = Duration::ZERO;
+    loop {
+        match tokio::time::timeout(tick, &mut rx).await {
+            Ok(Ok(value)) => return Ok(value),
+            Ok(Err(_)) => return Err(RequestError::Closed),
+            Err(_) => {
+                if dialog_outstanding() {
+                    dead_air = Duration::ZERO;
+                } else {
+                    dead_air += tick;
+                    if dead_air >= dead_air_budget {
+                        return Err(RequestError::TimedOut);
+                    }
+                }
+            }
+        }
+    }
+}
+
 // A single spawned sidecar child (our SDK entry running Pi's runRpcMode) plus
 // the machinery to issue request/response RPC commands against it. Unsolicited
 // events (no `id`) are mapped to AgentEvent and forwarded to `sink`, the Channel
@@ -160,9 +198,13 @@ impl PiProcess {
         *self.sink.lock().unwrap() = None;
     }
 
-    // Send an RPC command and await its correlated response. The `id` is
-    // assigned here; callers pass the command body without one.
-    pub async fn request(&self, mut command: Value) -> Result<Value, String> {
+    // Assign an `id`, register a pending sender, and write the command line.
+    // Callers pass the command body without an `id`. Returns the id and the
+    // receiver to await the correlated response on.
+    fn send_command(
+        &self,
+        mut command: Value,
+    ) -> Result<(String, oneshot::Receiver<Value>), String> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed).to_string();
         command["id"] = json!(id);
         let line = format!(
@@ -177,17 +219,43 @@ impl PiProcess {
             self.pending.lock().unwrap().remove(&id);
             return Err(e);
         }
+        Ok((id, rx))
+    }
 
-        match tokio::time::timeout(REQUEST_TIMEOUT, rx).await {
-            Ok(Ok(value)) => Ok(value),
-            Ok(Err(_)) => Err("sidecar closed before responding".into()),
-            Err(_) => {
-                self.pending.lock().unwrap().remove(&id);
-                Err(format!(
-                    "sidecar request timed out after {REQUEST_TIMEOUT:?}"
-                ))
+    fn map_request_error(&self, id: &str, err: RequestError) -> String {
+        match err {
+            RequestError::Closed => "sidecar closed before responding".into(),
+            RequestError::TimedOut => {
+                self.pending.lock().unwrap().remove(id);
+                format!("sidecar request timed out after {REQUEST_TIMEOUT:?}")
             }
         }
+    }
+
+    // Send an RPC command and await its correlated response. Subject to a flat
+    // REQUEST_TIMEOUT; use this for everything except the prompt that may carry
+    // a dialog-opening slash command (see request_with_dialog_grace).
+    pub async fn request(&self, command: Value) -> Result<Value, String> {
+        let (id, rx) = self.send_command(command)?;
+        await_with_dialog_grace(rx, REQUEST_TIMEOUT, REQUEST_TIMEOUT, || false)
+            .await
+            .map_err(|e| self.map_request_error(&id, e))
+    }
+
+    // HOY-215: a `prompt` can deliver a slash command whose handler blocks
+    // synchronously on an extension UI dialog (ctx.ui.input/editor/...), which
+    // delays the prompt's preflight response past REQUEST_TIMEOUT. Charge the
+    // timeout only against dead air: while a dialog is outstanding the countdown
+    // is suspended, so a slow user no longer trips it, but a wedged sidecar with
+    // no dialog still times out.
+    pub async fn request_with_dialog_grace(&self, command: Value) -> Result<Value, String> {
+        let (id, rx) = self.send_command(command)?;
+        let pending_ui = self.pending_ui.clone();
+        await_with_dialog_grace(rx, REQUEST_TIMEOUT, Duration::from_secs(1), move || {
+            !pending_ui.lock().unwrap().is_empty()
+        })
+        .await
+        .map_err(|e| self.map_request_error(&id, e))
     }
 
     fn write_line(&self, line: &str) -> Result<(), String> {
@@ -1109,5 +1177,60 @@ mod live_tests {
             classify_extension_ui("r", "somethingNew", &json!({ "method": "somethingNew" })),
             ExtUiOutcome::Ignore
         ));
+    }
+
+    // HOY-215: await_with_dialog_grace charges its budget only against dead air
+    // (no response and no outstanding dialog). Hermetic; start_paused
+    // auto-advances tokio's virtual clock so these run instantly.
+    #[tokio::test(start_paused = true)]
+    async fn grace_returns_value_before_budget() {
+        let (tx, rx) = oneshot::channel();
+        tx.send(json!("ok")).unwrap();
+        let out =
+            await_with_dialog_grace(rx, Duration::from_secs(15), Duration::from_secs(1), || {
+                false
+            })
+            .await;
+        assert!(matches!(out, Ok(v) if v == json!("ok")));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn grace_reports_closed_when_sender_dropped() {
+        let (tx, rx) = oneshot::channel::<Value>();
+        drop(tx);
+        let out =
+            await_with_dialog_grace(rx, Duration::from_secs(15), Duration::from_secs(1), || {
+                false
+            })
+            .await;
+        assert!(matches!(out, Err(RequestError::Closed)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn grace_times_out_on_dead_air() {
+        // Keep the sender alive so the receiver is not Closed; with no dialog
+        // outstanding the dead-air budget elapses and the wait times out.
+        let (_tx, rx) = oneshot::channel::<Value>();
+        let out =
+            await_with_dialog_grace(rx, Duration::from_secs(15), Duration::from_secs(1), || {
+                false
+            })
+            .await;
+        assert!(matches!(out, Err(RequestError::TimedOut)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn grace_suspends_budget_while_dialog_outstanding() {
+        let (tx, rx) = oneshot::channel();
+        // Answer well past the 15s budget; an outstanding dialog must keep the
+        // countdown suspended so the late value still resolves, not times out.
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(45)).await;
+            let _ = tx.send(json!("late answer"));
+        });
+        let out =
+            await_with_dialog_grace(rx, Duration::from_secs(15), Duration::from_secs(1), || true)
+                .await;
+        assert!(matches!(out, Ok(v) if v == json!("late answer")));
     }
 }

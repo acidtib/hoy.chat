@@ -31,3 +31,8 @@ tauri-plugin-mcp-bridge = "0.2"
 tauri-plugin-window-state = "2.4.1"
 tauri-plugin-os = "2"
 
+[dev-dependencies]
+# test-util enables tokio's paused virtual clock (start_paused) for the
+# hermetic timeout tests in sidecar.rs; kept dev-only so it never ships.
+tokio = { version = "1", features = ["test-util", "macros", "rt"] }
+

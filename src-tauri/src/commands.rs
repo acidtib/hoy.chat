@@ -258,8 +258,10 @@ pub async fn send_prompt(
 ) -> Result<(), String> {
     let process = manager.get(&session_id)?;
     process.set_sink(on_event);
+    // request_with_dialog_grace, not request: a slash command in this prompt may
+    // block its preflight on an extension UI dialog past REQUEST_TIMEOUT (HOY-215).
     let response = match process
-        .request(json!({ "type": "prompt", "message": message }))
+        .request_with_dialog_grace(json!({ "type": "prompt", "message": message }))
         .await
     {
         Ok(response) => response,
