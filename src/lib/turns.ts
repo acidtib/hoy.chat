@@ -72,16 +72,11 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
       }
       break;
     }
-    case "error": {
-      const msg = `[error] ${event.message}`;
-      const lastBlock = assistant.blocks[assistant.blocks.length - 1];
-      if (lastBlock && lastBlock.kind === "text") {
-        lastBlock.content += `\n\n${msg}`;
-      } else {
-        assistant.blocks.push({ kind: "text", content: msg });
-      }
+    case "error":
+      // Render inline at the bottom of the turn (HOY-214), not as the
+      // thread-level banner. Any streamed text/tools above it are kept.
+      assistant.error = event.message;
       break;
-    }
     case "aborted":
       // The user stopped the turn (HOY-197). Flag it so the transcript shows a
       // subtle inline marker; Done follows to clear the streaming state.
@@ -116,8 +111,10 @@ type RawMessage = {
   content?: string | RawContentPart[];
   toolCallId?: string;
   isError?: boolean;
-  // Pi sets this on the assistant message when a turn was stopped (HOY-197).
+  // Pi sets these on the assistant message when a turn was stopped (HOY-197) or
+  // failed (HOY-214).
   stopReason?: string;
+  errorMessage?: string;
 };
 
 // Fold a persisted Pi transcript (get_messages) into the same Turn[] the live
@@ -138,6 +135,9 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
     } else if (m.role === "assistant") {
       const a = currentAssistantTurn(turns);
       if (m.stopReason === "aborted") a.aborted = true;
+      if (m.stopReason === "error") {
+        a.error = m.errorMessage ?? "the agent stopped unexpectedly";
+      }
       for (const part of asParts(m.content)) {
         if (part.type === "thinking" && typeof part.thinking === "string" && part.thinking) {
           a.reasoning = {

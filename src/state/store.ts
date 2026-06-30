@@ -780,10 +780,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             return { pendingPermissions: { ...s.pendingPermissions, [threadId]: [] } };
           });
           void get().refreshStats(threadId);
-        } else if (event.kind === "error") {
-          set((s) => ({
-            threadErrors: { ...s.threadErrors, [threadId]: event.message },
-          }));
         } else if (event.kind === "notify") {
           // Transient notice; auto-expire so it does not pile up (ext UI).
           const id = ++noticeSeq;
@@ -838,17 +834,20 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       set((s) => {
         const list = s.turns[threadId] ?? [];
         const last = list[list.length - 1];
-        const turns =
-          last && last.role === "assistant"
-            ? {
-                ...s.turns,
-                [threadId]: [
-                  ...list.slice(0, -1),
-                  { ...last, streaming: false },
-                ],
-              }
-            : s.turns;
-        return { turns, threadErrors: { ...s.threadErrors, [threadId]: String(e) } };
+        // Render the failure inline on the turn (HOY-214). Fall back to the
+        // thread banner only when there is no turn to attach it to.
+        if (last && last.role === "assistant") {
+          return {
+            turns: {
+              ...s.turns,
+              [threadId]: [
+                ...list.slice(0, -1),
+                { ...last, streaming: false, error: String(e) },
+              ],
+            },
+          };
+        }
+        return { threadErrors: { ...s.threadErrors, [threadId]: String(e) } };
       });
     }
   },

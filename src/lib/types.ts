@@ -128,6 +128,9 @@ export type Turn =
       // The user stopped this turn (HOY-197). Renders a subtle inline marker
       // after the turn's content instead of a thread-level error banner.
       aborted?: boolean;
+      // The turn failed (a stream error or a failed prompt request). Renders
+      // inline at the bottom of the turn, not as the top banner (HOY-214).
+      error?: string;
     };
 
 export interface ModelInfo {
