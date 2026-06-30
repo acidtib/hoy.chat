@@ -644,8 +644,23 @@ pub struct SidecarManager {
 }
 
 impl SidecarManager {
+    // No-resolver construction: dev/env paths only (no bundled resource lookup).
+    // Used by the live tests; the app uses new_with_resolver from .setup.
     pub fn new() -> Self {
-        let (bin, payload) = resolve_sidecar_paths();
+        Self::from_paths(resolve_sidecar_paths(None))
+    }
+
+    // App construction: resolves the bundled payload against Tauri's resource dir
+    // ($RESOURCE/pi-payload) so a packaged install finds it. Requires an
+    // AppHandle, so it runs in .setup, not at .manage time.
+    pub fn new_with_resolver<R: tauri::Runtime>(resolver: &tauri::path::PathResolver<R>) -> Self {
+        let resource_payload = resolver
+            .resolve("pi-payload", tauri::path::BaseDirectory::Resource)
+            .ok();
+        Self::from_paths(resolve_sidecar_paths(resource_payload))
+    }
+
+    fn from_paths((bin, payload): (PathBuf, PathBuf)) -> Self {
         let agent_dir = crate::pi_config::agent_dir().unwrap_or_else(|e| {
             eprintln!("[hoy-desktop] could not resolve agent dir: {e}");
             PathBuf::new()
@@ -804,10 +819,11 @@ impl Default for SidecarManager {
 }
 
 // Locate the bundled sidecar binary and its PI_PACKAGE_DIR asset payload.
-// Order: explicit env overrides, then the dev build under sidecar/, then next
-// to the app executable (release). TODO(M4/release): wire externalBin so the
-// release branch resolves against Tauri's resource dir.
-fn resolve_sidecar_paths() -> (PathBuf, PathBuf) {
+// Order: explicit env overrides, then the dev build under sidecar/, then the
+// bundled artifacts of a packaged app. `resource_payload` is the Tauri-resolved
+// $RESOURCE/pi-payload (Some only when an AppHandle is available); the binary is
+// shipped via externalBin next to the executable with its triple stripped.
+fn resolve_sidecar_paths(resource_payload: Option<PathBuf>) -> (PathBuf, PathBuf) {
     let triple = env!("TARGET_TRIPLE");
 
     let env_bin = std::env::var_os("PI_SIDECAR_BIN").map(PathBuf::from);
@@ -816,21 +832,52 @@ fn resolve_sidecar_paths() -> (PathBuf, PathBuf) {
     let dev_sidecar = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(|root| root.join("sidecar"));
-    let dev_bin = dev_sidecar.as_ref().map(|d| d.join(format!("pi-{triple}")));
-    let dev_payload = dev_sidecar.as_ref().map(|d| d.join("pi-payload"));
+    let dev_bin = dev_sidecar
+        .as_ref()
+        .map(|d| d.join(format!("pi-{triple}")))
+        .filter(|p| p.exists());
+    let dev_payload = dev_sidecar
+        .as_ref()
+        .map(|d| d.join("pi-payload"))
+        .filter(|p| p.exists());
 
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(Path::to_path_buf));
 
+    select_sidecar_paths(
+        env_bin,
+        env_payload,
+        dev_bin,
+        dev_payload,
+        exe_dir.as_deref(),
+        resource_payload,
+    )
+}
+
+// Pure precedence chain (no filesystem access), split out for unit testing.
+// `dev_bin`/`dev_payload` are passed Some only when they exist on disk. The
+// bundled binary sits next to the executable as `pi`(`.exe`): Tauri's externalBin
+// strips the target triple build.sh wrote. The bundled payload comes from the
+// Tauri resource dir; a final exe-dir join is a legacy fallback.
+fn select_sidecar_paths(
+    env_bin: Option<PathBuf>,
+    env_payload: Option<PathBuf>,
+    dev_bin: Option<PathBuf>,
+    dev_payload: Option<PathBuf>,
+    exe_dir: Option<&Path>,
+    resource_payload: Option<PathBuf>,
+) -> (PathBuf, PathBuf) {
+    let bundled_bin_name = format!("pi{}", std::env::consts::EXE_SUFFIX);
     let bin = env_bin
-        .or_else(|| dev_bin.filter(|p| p.exists()))
-        .or_else(|| exe_dir.as_ref().map(|d| d.join(format!("pi-{triple}"))))
-        .unwrap_or_else(|| PathBuf::from(format!("pi-{triple}")));
+        .or(dev_bin)
+        .or_else(|| exe_dir.map(|d| d.join(&bundled_bin_name)))
+        .unwrap_or_else(|| PathBuf::from(&bundled_bin_name));
 
     let payload = env_payload
-        .or_else(|| dev_payload.filter(|p| p.exists()))
-        .or_else(|| exe_dir.as_ref().map(|d| d.join("pi-payload")))
+        .or(dev_payload)
+        .or(resource_payload)
+        .or_else(|| exe_dir.map(|d| d.join("pi-payload")))
         .unwrap_or_else(|| PathBuf::from("pi-payload"));
 
     (bin, payload)
@@ -1232,5 +1279,53 @@ mod live_tests {
             await_with_dialog_grace(rx, Duration::from_secs(15), Duration::from_secs(1), || true)
                 .await;
         assert!(matches!(out, Ok(v) if v == json!("late answer")));
+    }
+
+    // HOY-193: the sidecar path precedence chain (env > dev > bundled).
+    #[test]
+    fn select_paths_env_override_wins() {
+        let (bin, payload) = select_sidecar_paths(
+            Some(PathBuf::from("/env/bin")),
+            Some(PathBuf::from("/env/payload")),
+            Some(PathBuf::from("/dev/pi-triple")),
+            Some(PathBuf::from("/dev/pi-payload")),
+            Some(Path::new("/exe")),
+            Some(PathBuf::from("/res/pi-payload")),
+        );
+        assert_eq!(bin, PathBuf::from("/env/bin"));
+        assert_eq!(payload, PathBuf::from("/env/payload"));
+    }
+
+    #[test]
+    fn select_paths_prefers_dev_when_present() {
+        let (bin, payload) = select_sidecar_paths(
+            None,
+            None,
+            Some(PathBuf::from("/dev/pi-triple")),
+            Some(PathBuf::from("/dev/pi-payload")),
+            Some(Path::new("/exe")),
+            Some(PathBuf::from("/res/pi-payload")),
+        );
+        assert_eq!(bin, PathBuf::from("/dev/pi-triple"));
+        assert_eq!(payload, PathBuf::from("/dev/pi-payload"));
+    }
+
+    #[test]
+    fn select_paths_bundled_branch() {
+        // No env, no dev artifacts: a packaged app finds the externalBin next to
+        // the exe (triple stripped) and the payload in the Tauri resource dir.
+        let (bin, payload) = select_sidecar_paths(
+            None,
+            None,
+            None,
+            None,
+            Some(Path::new("/app")),
+            Some(PathBuf::from("/app/resources/pi-payload")),
+        );
+        assert_eq!(
+            bin,
+            Path::new("/app").join(format!("pi{}", std::env::consts::EXE_SUFFIX))
+        );
+        assert_eq!(payload, PathBuf::from("/app/resources/pi-payload"));
     }
 }

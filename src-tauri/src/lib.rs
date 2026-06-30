@@ -15,8 +15,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
-        .manage(SidecarManager::new());
+        .plugin(tauri_plugin_window_state::Builder::default().build());
 
     // Dev-only automation bridge for the Tauri MCP server (screenshots, clicks,
     // IPC inspection). Bound to localhost and gated to debug builds so it never
@@ -38,6 +37,13 @@ pub fn run() {
             if let Some(window) = tauri::Manager::get_webview_window(app, "main") {
                 let _ = window.set_title("Hoyd Desktop");
             }
+
+            // Construct the manager here, not at .manage time: new_with_resolver
+            // needs an AppHandle to locate the bundled pi-payload in $RESOURCE.
+            tauri::Manager::manage(
+                app,
+                SidecarManager::new_with_resolver(tauri::Manager::path(app)),
+            );
 
             // Spawn one sidecar on startup. MVP has a single session; the manager
             // is keyed by SessionId so adding more is a data change, not a rewrite.

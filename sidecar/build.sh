@@ -13,8 +13,23 @@ TRIPLE="${1:-$(rustc -vV | sed -n 's/^host: //p')}"
 PKG_DIR="$SIDECAR_DIR/pi-src/node_modules/@earendil-works/pi-coding-agent"
 DIST="$PKG_DIR/dist"
 ENTRY="$SIDECAR_DIR/pi-src/hoy-sidecar.ts"   # our SDK entry (runRpcMode + branding), not Pi's CLI
-BIN="$SIDECAR_DIR/pi-$TRIPLE"
 PAYLOAD="$SIDECAR_DIR/pi-payload"
+
+# Map the rust target triple to a bun --compile target so CI can cross-compile
+# the sidecar per platform (bun build --compile is host-targeted by default).
+# Unknown triples fall back to the host build (no --target). Windows binaries
+# need a .exe suffix to match Tauri's externalBin lookup.
+BUN_TARGET=""
+BIN_EXT=""
+case "$TRIPLE" in
+  x86_64-unknown-linux-gnu)   BUN_TARGET="bun-linux-x64" ;;
+  aarch64-unknown-linux-gnu)  BUN_TARGET="bun-linux-arm64" ;;
+  x86_64-apple-darwin)        BUN_TARGET="bun-darwin-x64" ;;
+  aarch64-apple-darwin)       BUN_TARGET="bun-darwin-arm64" ;;
+  x86_64-pc-windows-msvc)     BUN_TARGET="bun-windows-x64"; BIN_EXT=".exe" ;;
+  *) echo "warning: no bun target mapping for $TRIPLE; building for host" >&2 ;;
+esac
+BIN="$SIDECAR_DIR/pi-$TRIPLE$BIN_EXT"
 
 echo "[1/3] installing pinned Pi into sidecar/pi-src"
 ( cd "$SIDECAR_DIR/pi-src" && npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund )
@@ -28,8 +43,12 @@ if [ ! -d "$DIST" ]; then
   exit 1
 fi
 
-echo "[2/3] bun build --compile -> pi-$TRIPLE"
-bun build --compile "$ENTRY" --outfile "$BIN"
+echo "[2/3] bun build --compile -> $(basename "$BIN")"
+if [ -n "$BUN_TARGET" ]; then
+  bun build --compile --target="$BUN_TARGET" "$ENTRY" --outfile "$BIN"
+else
+  bun build --compile "$ENTRY" --outfile "$BIN"
+fi
 chmod +x "$BIN"
 
 echo "[3/3] assembling pi-payload (PI_PACKAGE_DIR assets)"
