@@ -285,87 +285,34 @@ fn route_message(
             return;
         };
         let method = value.get("method").and_then(Value::as_str).unwrap_or("");
-        let cancel = |id: &str| {
-            let response = json!({
-                "type": "extension_ui_response",
-                "id": id,
-                "cancelled": true,
-            });
-            if let Ok(text) = serde_json::to_string(&response) {
-                let mut stdin = stdin.lock().unwrap();
-                let _ = stdin
-                    .write_all(format!("{text}\n").as_bytes())
-                    .and_then(|_| stdin.flush());
-            }
-        };
-        match method {
-            "select" | "confirm" => {
-                let raw_title = value
-                    .get("title")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string();
-
-                // HOY-199: the sidecar may embed tool call metadata as a JSON
-                // prefix in the title: "HOY_TOOL_DATA:{...json...}\n{label}"
-                let (tool_call_id, tool_name, tool_args, title) =
-                    if let Some(rest) = raw_title.strip_prefix("HOY_TOOL_DATA:") {
-                        if let Some(nl) = rest.find('\n') {
-                            let data_str = &rest[..nl];
-                            let clean = rest[nl + 1..].to_string();
-                            match serde_json::from_str::<Value>(data_str) {
-                                Ok(data) => (
-                                    data.get("toolCallId")
-                                        .and_then(Value::as_str)
-                                        .map(String::from),
-                                    data.get("toolName")
-                                        .and_then(Value::as_str)
-                                        .map(String::from),
-                                    data.get("input").cloned(),
-                                    clean,
-                                ),
-                                Err(_) => (None, None, None, raw_title),
-                            }
-                        } else {
-                            (None, None, None, raw_title)
-                        }
-                    } else {
-                        (None, None, None, raw_title)
-                    };
-
-                let event = AgentEvent::PermissionRequest {
-                    request_id: id.to_string(),
-                    method: method.to_string(),
-                    title,
-                    message: value
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
-                    options: value.get("options").and_then(Value::as_array).map(|a| {
-                        a.iter()
-                            .filter_map(Value::as_str)
-                            .map(str::to_string)
-                            .collect()
-                    }),
-                    tool_call_id,
-                    tool_name,
-                    tool_args,
-                };
-                let guard = sink.lock().unwrap();
-                match guard.as_ref() {
-                    Some(channel) => {
-                        pending_ui.lock().unwrap().push(id.to_string());
-                        let _ = channel.send(event);
+        match classify_extension_ui(id, method, &value) {
+            // Blocking dialog: forward to the streaming prompt and track it so
+            // teardown can cancel it; cancel now if no prompt is attached so the
+            // agent never deadlocks.
+            ExtUiOutcome::Dialog(event) => match sink.lock().unwrap().as_ref() {
+                Some(channel) => {
+                    pending_ui.lock().unwrap().push(id.to_string());
+                    let _ = channel.send(event);
+                }
+                None => {
+                    let response =
+                        json!({ "type": "extension_ui_response", "id": id, "cancelled": true });
+                    if let Ok(text) = serde_json::to_string(&response) {
+                        let mut stdin = stdin.lock().unwrap();
+                        let _ = stdin
+                            .write_all(format!("{text}\n").as_bytes())
+                            .and_then(|_| stdin.flush());
                     }
-                    // No streaming prompt is attached, so nothing can render or
-                    // answer the dialog; cancel it instead of deadlocking.
-                    None => cancel(id),
+                }
+            },
+            // Fire-and-forget display method: surface it if a prompt is streaming,
+            // else drop it (these expect no response, so dropping is safe).
+            ExtUiOutcome::Notify(event) => {
+                if let Some(channel) = sink.lock().unwrap().as_ref() {
+                    let _ = channel.send(event);
                 }
             }
-            // Dialogs Hoy has no UI for yet (input, editor).
-            "input" | "editor" => cancel(id),
-            // Fire-and-forget (notify, setStatus, setWidget, ...): no response.
-            _ => {}
+            ExtUiOutcome::Ignore => {}
         }
         return;
     }
@@ -401,6 +348,110 @@ fn route_message(
 // (start/end-of-text markers, thinking deltas, queue updates, ...). agent_end and
 // command responses are handled by the caller. Mapping is pinned to Pi 0.78.0's
 // AgentSessionEvent + AssistantMessageEvent shapes.
+// Outcome of classifying an extension_ui_request. Kept pure (no stdin/sink I/O)
+// so route_message stays a thin dispatcher and this is unit-testable.
+enum ExtUiOutcome {
+    // select/confirm/input/editor: awaits an extension_ui_response.
+    Dialog(AgentEvent),
+    // notify/setStatus/setWidget/setTitle/set_editor_text: no response.
+    Notify(AgentEvent),
+    // Unknown/unsupported method.
+    Ignore,
+}
+
+// Map an extension_ui_request to a frontend event. Dialogs become
+// PermissionRequest (input/editor carry placeholder/prefill and answer with the
+// same {value} shape as select); fire-and-forget methods become their own
+// events. Mirrors Pi 0.80.2's RpcExtensionUIRequest union.
+fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome {
+    let str_field = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
+    let str_array = |key: &str| {
+        value.get(key).and_then(Value::as_array).map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+    };
+    match method {
+        "select" | "confirm" => {
+            let raw_title = str_field("title").unwrap_or_default();
+            // HOY-199: title may embed tool metadata as a JSON prefix:
+            // "HOY_TOOL_DATA:{...json...}\n{label}".
+            let (tool_call_id, tool_name, tool_args, title) =
+                if let Some(rest) = raw_title.strip_prefix("HOY_TOOL_DATA:") {
+                    if let Some(nl) = rest.find('\n') {
+                        let data_str = &rest[..nl];
+                        let clean = rest[nl + 1..].to_string();
+                        match serde_json::from_str::<Value>(data_str) {
+                            Ok(data) => (
+                                data.get("toolCallId")
+                                    .and_then(Value::as_str)
+                                    .map(String::from),
+                                data.get("toolName")
+                                    .and_then(Value::as_str)
+                                    .map(String::from),
+                                data.get("input").cloned(),
+                                clean,
+                            ),
+                            Err(_) => (None, None, None, raw_title),
+                        }
+                    } else {
+                        (None, None, None, raw_title)
+                    }
+                } else {
+                    (None, None, None, raw_title)
+                };
+            ExtUiOutcome::Dialog(AgentEvent::PermissionRequest {
+                request_id: id.to_string(),
+                method: method.to_string(),
+                title,
+                message: str_field("message"),
+                options: str_array("options"),
+                placeholder: None,
+                prefill: None,
+                tool_call_id,
+                tool_name,
+                tool_args,
+            })
+        }
+        // Text dialogs: input carries a placeholder hint, editor a seed value.
+        // Both answer with {value}, the same shape select uses.
+        "input" | "editor" => ExtUiOutcome::Dialog(AgentEvent::PermissionRequest {
+            request_id: id.to_string(),
+            method: method.to_string(),
+            title: str_field("title").unwrap_or_default(),
+            message: None,
+            options: None,
+            placeholder: str_field("placeholder"),
+            prefill: str_field("prefill"),
+            tool_call_id: None,
+            tool_name: None,
+            tool_args: None,
+        }),
+        "notify" => ExtUiOutcome::Notify(AgentEvent::Notify {
+            message: str_field("message").unwrap_or_default(),
+            notify_type: str_field("notifyType"),
+        }),
+        "setStatus" => ExtUiOutcome::Notify(AgentEvent::SetStatus {
+            status_key: str_field("statusKey").unwrap_or_default(),
+            status_text: str_field("statusText"),
+        }),
+        "setWidget" => ExtUiOutcome::Notify(AgentEvent::SetWidget {
+            widget_key: str_field("widgetKey").unwrap_or_default(),
+            widget_lines: str_array("widgetLines"),
+            widget_placement: str_field("widgetPlacement"),
+        }),
+        "setTitle" => ExtUiOutcome::Notify(AgentEvent::SetTitle {
+            title: str_field("title").unwrap_or_default(),
+        }),
+        "set_editor_text" => ExtUiOutcome::Notify(AgentEvent::SetEditorText {
+            text: str_field("text").unwrap_or_default(),
+        }),
+        _ => ExtUiOutcome::Ignore,
+    }
+}
+
 fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
     match ty? {
         "message_update" => {
@@ -976,5 +1027,87 @@ mod live_tests {
             Some(AgentEvent::Error { message }) => assert_eq!(message, "boom"),
             other => panic!("expected Error, got {other:?}"),
         }
+    }
+
+    // Extension UI coverage: input/editor become text dialogs carrying
+    // placeholder/prefill; the five display methods become fire-and-forget events.
+    #[test]
+    fn input_dialog_carries_placeholder() {
+        let v = json!({ "method": "input", "title": "Name?", "placeholder": "type here" });
+        match classify_extension_ui("r1", "input", &v) {
+            ExtUiOutcome::Dialog(AgentEvent::PermissionRequest {
+                method,
+                title,
+                placeholder,
+                prefill,
+                ..
+            }) => {
+                assert_eq!(method, "input");
+                assert_eq!(title, "Name?");
+                assert_eq!(placeholder.as_deref(), Some("type here"));
+                assert_eq!(prefill, None);
+            }
+            _ => panic!("expected input dialog"),
+        }
+    }
+
+    #[test]
+    fn editor_dialog_carries_prefill() {
+        let v = json!({ "method": "editor", "title": "Edit", "prefill": "seed" });
+        match classify_extension_ui("r2", "editor", &v) {
+            ExtUiOutcome::Dialog(AgentEvent::PermissionRequest {
+                method, prefill, ..
+            }) => {
+                assert_eq!(method, "editor");
+                assert_eq!(prefill.as_deref(), Some("seed"));
+            }
+            _ => panic!("expected editor dialog"),
+        }
+    }
+
+    #[test]
+    fn fire_and_forget_methods_map_to_their_events() {
+        assert!(matches!(
+            classify_extension_ui("r", "notify", &json!({ "method": "notify", "message": "m", "notifyType": "warning" })),
+            ExtUiOutcome::Notify(AgentEvent::Notify { notify_type, .. }) if notify_type.as_deref() == Some("warning")
+        ));
+        assert!(matches!(
+            classify_extension_ui("r", "setStatus", &json!({ "method": "setStatus", "statusKey": "k", "statusText": "t" })),
+            ExtUiOutcome::Notify(AgentEvent::SetStatus { status_key, .. }) if status_key == "k"
+        ));
+        assert!(matches!(
+            classify_extension_ui("r", "setWidget", &json!({ "method": "setWidget", "widgetKey": "k", "widgetLines": ["a", "b"] })),
+            ExtUiOutcome::Notify(AgentEvent::SetWidget { widget_lines: Some(lines), .. }) if lines == ["a", "b"]
+        ));
+        assert!(matches!(
+            classify_extension_ui("r", "setTitle", &json!({ "method": "setTitle", "title": "T" })),
+            ExtUiOutcome::Notify(AgentEvent::SetTitle { title }) if title == "T"
+        ));
+        assert!(matches!(
+            classify_extension_ui("r", "set_editor_text", &json!({ "method": "set_editor_text", "text": "x" })),
+            ExtUiOutcome::Notify(AgentEvent::SetEditorText { text }) if text == "x"
+        ));
+    }
+
+    #[test]
+    fn setstatus_without_text_clears_the_key() {
+        match classify_extension_ui(
+            "r",
+            "setStatus",
+            &json!({ "method": "setStatus", "statusKey": "k" }),
+        ) {
+            ExtUiOutcome::Notify(AgentEvent::SetStatus { status_text, .. }) => {
+                assert_eq!(status_text, None);
+            }
+            _ => panic!("expected setStatus"),
+        }
+    }
+
+    #[test]
+    fn unknown_method_is_ignored() {
+        assert!(matches!(
+            classify_extension_ui("r", "somethingNew", &json!({ "method": "somethingNew" })),
+            ExtUiOutcome::Ignore
+        ));
     }
 }

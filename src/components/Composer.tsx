@@ -22,7 +22,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { ModelInfo, ModelRef, PermissionMode, ThinkingLevel } from "@/lib/types";
+import type {
+  ExtWidget,
+  ModelInfo,
+  ModelRef,
+  PermissionMode,
+  ThinkingLevel,
+} from "@/lib/types";
 import { THINKING_LEVELS } from "@/lib/types";
 
 // Thinking levels (HOY-204). Labels are display only; pi's lowercase
@@ -69,6 +75,7 @@ export function Composer({
   expanded = false,
   onToggleExpand,
   focusSignal = 0,
+  widgets = [],
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -91,8 +98,12 @@ export function Composer({
   expanded?: boolean;
   onToggleExpand?: () => void;
   focusSignal?: number;
+  // Extension setWidget panels, rendered above or below the editor (ext UI).
+  widgets?: ExtWidget[];
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const aboveWidgets = widgets.filter((w) => w.placement === "aboveEditor");
+  const belowWidgets = widgets.filter((w) => w.placement === "belowEditor");
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -153,6 +164,10 @@ export function Composer({
         </Tooltip>
       )}
 
+      {aboveWidgets.map((w, i) => (
+        <WidgetPanel key={`above-${i}`} lines={w.lines} />
+      ))}
+
       <textarea
         ref={textareaRef}
         rows={fill ? undefined : 1}
@@ -172,6 +187,10 @@ export function Composer({
             : "max-h-[240px] min-h-[80px] overflow-y-auto pr-10",
         )}
       />
+
+      {belowWidgets.map((w, i) => (
+        <WidgetPanel key={`below-${i}`} lines={w.lines} />
+      ))}
 
       <div className="flex items-center justify-between gap-2 px-2 py-1.5">
         <div className="flex items-center gap-0.5">
@@ -249,6 +268,20 @@ export function Composer({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// An extension setWidget panel: muted, monospace, multi-line, docked at the
+// edge of the editor.
+function WidgetPanel({ lines }: { lines: string[] }) {
+  return (
+    <div className="mx-2 mt-1.5 rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground">
+      {lines.map((line, i) => (
+        <div key={i} className="whitespace-pre-wrap">
+          {line}
+        </div>
+      ))}
     </div>
   );
 }

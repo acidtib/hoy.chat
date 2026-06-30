@@ -118,6 +118,8 @@ function PanelStats({
   fullWidth?: boolean;
 }) {
   const stats = useSessionStore((s) => s.stats[threadId] ?? null);
+  const statuses = useSessionStore((s) => s.statuses[threadId]);
+  const statusEntries = statuses ? Object.entries(statuses) : [];
 
   const usage = stats?.contextUsage;
   const ctxLabel =
@@ -145,6 +147,13 @@ function PanelStats({
       <Divider />
 
       <span>{costLabel}</span>
+
+      {statusEntries.map(([key, text]) => (
+        <span key={key} className="contents">
+          <Divider />
+          <span className="truncate text-foreground/80">{text}</span>
+        </span>
+      ))}
     </div>
   );
 }

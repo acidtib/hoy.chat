@@ -15,19 +15,51 @@ export type AgentEvent =
     }
   | { kind: "status"; label: string }
   | ({ kind: "permissionRequest" } & PermissionRequest)
+  // Fire-and-forget extension UI display methods (no response). Mirror of the
+  // Notify/SetStatus/SetWidget/SetTitle/SetEditorText events in events.rs.
+  | { kind: "notify"; message: string; notifyType?: NotifyType }
+  | { kind: "setStatus"; statusKey: string; statusText?: string }
+  | {
+      kind: "setWidget";
+      widgetKey: string;
+      widgetLines?: string[];
+      widgetPlacement?: WidgetPlacement;
+    }
+  | { kind: "setTitle"; title: string }
+  | { kind: "setEditorText"; text: string }
   | { kind: "error"; message: string }
   | { kind: "aborted" }
   | { kind: "done" };
+
+export type NotifyType = "info" | "warning" | "error";
+export type WidgetPlacement = "aboveEditor" | "belowEditor";
+
+// An extension `notify` notice, surfaced transiently in the thread (HOY: ext UI).
+export interface Notice {
+  id: number;
+  message: string;
+  type: NotifyType;
+}
+
+// An extension `setWidget` panel, keyed by widgetKey, rendered around the composer.
+export interface ExtWidget {
+  lines: string[];
+  placement: WidgetPlacement;
+}
 
 // An extension UI dialog awaiting an answer (HOY-186). The agent is blocked
 // until respondPermission resolves it; rendered as an inline approval card.
 export interface PermissionRequest {
   requestId: string;
-  // "select" carries options; "confirm" carries a message for yes/no.
+  // "select" (options), "confirm" (yes/no message), "input" (text + placeholder),
+  // "editor" (multiline + prefill).
   method: string;
   title: string;
   message?: string;
   options?: string[];
+  // "input" hint and "editor" seed text (extension UI coverage).
+  placeholder?: string;
+  prefill?: string;
   // HOY-199: tool call metadata for rendering a pending tool block in the
   // conversation while the approval card waits for a decision.
   toolCallId?: string;

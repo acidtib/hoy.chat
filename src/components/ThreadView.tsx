@@ -5,6 +5,7 @@ import {
   Archive,
   CircleStop,
   FilePen,
+  Info,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -13,10 +14,13 @@ import {
   ShieldQuestion,
   Sparkle,
   Terminal,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,12 +53,20 @@ import { Composer } from "@/components/Composer";
 import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
 import { findThread, useSessionStore } from "@/state/store";
-import type { PermissionRequest, PiState, ToolUI, Turn } from "@/lib/types";
+import type {
+  ExtWidget,
+  Notice,
+  PermissionRequest,
+  PiState,
+  ToolUI,
+  Turn,
+} from "@/lib/types";
 
 // Stable empty references so selectors don't return a fresh value each render
 // (which would loop zustand's snapshot equality check).
 const EMPTY_TURNS: Turn[] = [];
 const EMPTY_PERMISSIONS: PermissionRequest[] = [];
+const EMPTY_NOTICES: Notice[] = [];
 
 export function ThreadView({
   threadId,
@@ -93,6 +105,9 @@ export function ThreadView({
   );
   const setPermissionMode = useSessionStore((s) => s.setPermissionMode);
   const answerPermission = useSessionStore((s) => s.answerPermission);
+  const notices = useSessionStore((s) => s.notices[threadId] ?? EMPTY_NOTICES);
+  const dismissNotice = useSessionStore((s) => s.dismissNotice);
+  const threadWidgets = useSessionStore((s) => s.widgets[threadId]);
   const stopStreaming = useSessionStore((s) => s.stopStreaming);
   const focusSignal = useSessionStore((s) =>
     s.focusRequest?.threadId === threadId ? s.focusRequest.nonce : 0,
@@ -136,6 +151,9 @@ export function ThreadView({
     void submitPrompt(threadId, message);
   }
 
+  const widgetList: ExtWidget[] = threadWidgets
+    ? Object.values(threadWidgets)
+    : [];
   const composer = (
     <Composer
       value={draft}
@@ -158,6 +176,7 @@ export function ThreadView({
       expanded={expanded}
       onToggleExpand={hasMessages ? () => setExpanded((v) => !v) : undefined}
       focusSignal={focusSignal}
+      widgets={widgetList}
     />
   );
 
@@ -349,8 +368,21 @@ export function ThreadView({
             <ConversationScrollButton />
           </Conversation>
 
+          {notices.length > 0 && (
+            <div className="mx-3 mb-2 space-y-1.5">
+              {notices.map((notice) => (
+                <NoticeRow
+                  key={notice.id}
+                  notice={notice}
+                  onDismiss={() => dismissNotice(threadId, notice.id)}
+                />
+              ))}
+            </div>
+          )}
+
           {pendingPermissions.length > 0 && (
             <ApprovalCard
+              key={pendingPermissions[0].requestId}
               request={pendingPermissions[0]}
               onAnswer={(answer) =>
                 void answerPermission(
@@ -380,9 +412,10 @@ export function ThreadView({
   );
 }
 
-// Inline approval card for a blocked tool call (HOY-186). A select dialog
-// renders its options as buttons (Deny-like choices styled destructive);
-// a confirm dialog renders Yes/No. The agent stays paused until answered.
+// Inline approval/dialog card for a blocked extension UI request (HOY-186).
+// confirm -> Yes/No; select -> option buttons; input/editor -> a text field with
+// Submit/Cancel. The agent stays paused until answered. Keyed by requestId at
+// the mount so a text field's local state resets between dialogs.
 function ApprovalCard({
   request,
   onAnswer,
@@ -394,6 +427,7 @@ function ApprovalCard({
     cancelled?: boolean;
   }) => void;
 }) {
+  const isText = request.method === "input" || request.method === "editor";
   const choices =
     request.method === "confirm"
       ? [
@@ -411,7 +445,12 @@ function ApprovalCard({
       <div className="flex items-start gap-2.5">
         <ShieldQuestion className="mt-0.5 size-4 shrink-0 text-brand" />
         <div className="min-w-0 flex-1">
-          <div className="break-all font-mono text-xs leading-relaxed text-foreground">
+          <div
+            className={cn(
+              "text-xs leading-relaxed text-foreground",
+              !isText && "break-all font-mono",
+            )}
+          >
             {request.title}
           </div>
           {request.message && (
@@ -421,24 +460,136 @@ function ApprovalCard({
           )}
         </div>
       </div>
-      <div className="mt-2 flex items-center justify-end gap-1.5">
-        {choices.map((choice) => (
-          <Button
-            key={choice.label}
-            variant={choice.decline ? "ghost" : "outline"}
-            size="sm"
-            className={cn(
-              "h-7 text-xs",
-              choice.decline
-                ? "text-muted-foreground hover:text-destructive"
-                : "border-brand/40 text-brand hover:text-brand",
-            )}
-            onClick={() => onAnswer(choice.answer)}
-          >
-            {choice.label}
-          </Button>
-        ))}
+      {isText ? (
+        <TextDialog request={request} onAnswer={onAnswer} />
+      ) : (
+        <div className="mt-2 flex items-center justify-end gap-1.5">
+          {choices.map((choice) => (
+            <Button
+              key={choice.label}
+              variant={choice.decline ? "ghost" : "outline"}
+              size="sm"
+              className={cn(
+                "h-7 text-xs",
+                choice.decline
+                  ? "text-muted-foreground hover:text-destructive"
+                  : "border-brand/40 text-brand hover:text-brand",
+              )}
+              onClick={() => onAnswer(choice.answer)}
+            >
+              {choice.label}
+            </Button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Text entry for input (single line, Enter submits) and editor (multiline,
+// Cmd/Ctrl+Enter submits) dialogs. Both answer with {value}.
+function TextDialog({
+  request,
+  onAnswer,
+}: {
+  request: PermissionRequest;
+  onAnswer: (answer: { value?: string; cancelled?: boolean }) => void;
+}) {
+  const [text, setText] = useState(request.prefill ?? "");
+  const multiline = request.method === "editor";
+  const submit = () => onAnswer({ value: text });
+
+  return (
+    <div className="mt-2 space-y-2">
+      {multiline ? (
+        <Textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          autoFocus
+          rows={5}
+          className="scrollbar-thin text-xs"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+      ) : (
+        <Input
+          value={text}
+          placeholder={request.placeholder}
+          onChange={(e) => setText(e.target.value)}
+          autoFocus
+          className="h-8 text-xs"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+      )}
+      <div className="flex items-center justify-end gap-1.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs text-muted-foreground hover:text-destructive"
+          onClick={() => onAnswer({ cancelled: true })}
+        >
+          Cancel
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 border-brand/40 text-xs text-brand hover:text-brand"
+          onClick={submit}
+        >
+          Submit
+        </Button>
       </div>
+    </div>
+  );
+}
+
+// A transient extension `notify` notice, styled by severity and dismissible.
+function NoticeRow({
+  notice,
+  onDismiss,
+}: {
+  notice: Notice;
+  onDismiss: () => void;
+}) {
+  const Icon =
+    notice.type === "error"
+      ? AlertCircle
+      : notice.type === "warning"
+        ? TriangleAlert
+        : Info;
+  const tone =
+    notice.type === "error"
+      ? "border-destructive/30 bg-destructive/10 text-destructive"
+      : notice.type === "warning"
+        ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+        : "border-border/60 bg-muted/40 text-muted-foreground";
+
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-2.5 rounded-lg border px-3 py-2 text-xs",
+        tone,
+      )}
+    >
+      <Icon className="mt-0.5 size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 leading-relaxed">{notice.message}</span>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="shrink-0 opacity-70 hover:opacity-100"
+        aria-label="Dismiss notice"
+      >
+        <X className="size-3.5" />
+      </button>
     </div>
   );
 }

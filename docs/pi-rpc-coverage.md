@@ -53,7 +53,7 @@ Status key: **used** (wired end to end), **partial** (some of the surface wired)
 | `get_available_models` | List models | used | `commands.rs:54`, model selector |
 | `get_session_stats` | Tokens, cost, contextUsage, sessionFile | used | `commands.rs:260`; contextUsage fetched, no context meter UI |
 | `set_model` | Switch active model | used | `commands.rs:70` |
-| `extension_ui_response` | Answer extension dialogs | partial | `sidecar.rs:200`; `select`/`confirm` wired (approval cards), `input`/`editor` auto-cancelled, fire-and-forget methods dropped |
+| `extension_ui_response` | Answer extension dialogs | used | `select`/`confirm`/`input`/`editor` all wired (approval + text cards); `input`/`editor` answer with `{value}` like select |
 | `steer` | Inject a message mid-turn, after current tool calls | unused | Biggest gap; pi's signature interruption feature |
 | `follow_up` | Queue a message for after the turn ends | unused | |
 | `set_steering_mode` | Queue delivery: `all` or `one-at-a-time` | unused | |
@@ -93,7 +93,7 @@ Status key: **used** (wired end to end), **partial** (some of the surface wired)
 | `queue_update` | planned (HOY-205) | Backs the queued-message UI for mid-turn sends |
 | `extension_error` | unused | |
 | `project_trust` | n/a | Extension event only (0.79.0), not in the RPC stream; trust defaults to trusted since the sidecar sets no `projectTrustContextFactory` |
-| `extension_ui_request` | partial | `select`/`confirm` become `PermissionRequest`; `input`/`editor` cancelled; `notify`/`setStatus`/`setWidget`/`setTitle`/`set_editor_text` dropped, `sidecar.rs:327` |
+| `extension_ui_request` | used | all methods routed in `classify_extension_ui` (`sidecar.rs`): `select`/`confirm`/`input`/`editor` -> `PermissionRequest`; `notify`/`setStatus`/`setWidget`/`setTitle`/`set_editor_text` -> their own events. Delivered through the per-turn sink, so events with no active prompt are not surfaced (between-turn delivery would need a persistent UI channel) |
 
 ## Not reachable over RPC
 

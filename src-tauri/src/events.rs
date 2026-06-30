@@ -33,13 +33,18 @@ pub enum AgentEvent {
     PermissionRequest {
         #[serde(rename = "requestId")]
         request_id: String,
-        // "select" (options) or "confirm" (yes/no message)
+        // "select" (options), "confirm" (yes/no), "input" (text), "editor" (multiline)
         method: String,
         title: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         message: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         options: Option<Vec<String>>,
+        // Input dialog hint and editor seed text (HOY: extension UI coverage).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        prefill: Option<String>,
         // HOY-199: tool call metadata extracted from HOY_TOOL_DATA prefix.
         #[serde(rename = "toolCallId", skip_serializing_if = "Option::is_none")]
         tool_call_id: Option<String>,
@@ -47,6 +52,36 @@ pub enum AgentEvent {
         tool_name: Option<String>,
         #[serde(rename = "toolArgs", skip_serializing_if = "Option::is_none")]
         tool_args: Option<serde_json::Value>,
+    },
+    // Fire-and-forget extension UI display methods (Pi's extension_ui_request
+    // with no response). Forwarded to the renderer to surface; never answered.
+    Notify {
+        message: String,
+        #[serde(rename = "notifyType", skip_serializing_if = "Option::is_none")]
+        notify_type: Option<String>,
+    },
+    SetStatus {
+        #[serde(rename = "statusKey")]
+        status_key: String,
+        // None clears the key.
+        #[serde(rename = "statusText", skip_serializing_if = "Option::is_none")]
+        status_text: Option<String>,
+    },
+    SetWidget {
+        #[serde(rename = "widgetKey")]
+        widget_key: String,
+        // None clears the widget.
+        #[serde(rename = "widgetLines", skip_serializing_if = "Option::is_none")]
+        widget_lines: Option<Vec<String>>,
+        // "aboveEditor" (default) or "belowEditor".
+        #[serde(rename = "widgetPlacement", skip_serializing_if = "Option::is_none")]
+        widget_placement: Option<String>,
+    },
+    SetTitle {
+        title: String,
+    },
+    SetEditorText {
+        text: String,
     },
     Error {
         message: String,

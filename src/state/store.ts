@@ -21,8 +21,10 @@ import {
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import type {
   AgentEvent,
+  ExtWidget,
   ModelInfo,
   ModelRef,
+  Notice,
   PermissionMode,
   PermissionRequest,
   Project,
@@ -33,6 +35,7 @@ import type {
   Thread,
   Turn,
 } from "@/lib/types";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export const SIDEBAR_MIN_WIDTH = 220;
 export const SIDEBAR_MAX_WIDTH = 480;
@@ -164,6 +167,13 @@ interface SessionStore {
   // most one; pi preflights sibling tool calls sequentially, but a queue keeps
   // any overlap safe. Cleared on done and on panel close.
   pendingPermissions: Record<string, PermissionRequest[]>;
+  // Extension UI display state, keyed by threadId (ext UI coverage). `notices`
+  // are transient (notify); `statuses` are keyed footer chips (setStatus);
+  // `widgets` are keyed panels around the composer (setWidget). statuses and
+  // widgets persist across turns; all three are cleared on panel close.
+  notices: Record<string, Notice[]>;
+  statuses: Record<string, Record<string, string>>;
+  widgets: Record<string, Record<string, ExtWidget>>;
   // Composer drafts keyed by threadId. Store-held so hidden panels and app
   // restarts keep unsent text; persisted via the workspace autosave as each
   // thread's draft field. Never cleared on panel close.
@@ -196,6 +206,7 @@ interface SessionStore {
   confirmTeardown: () => void;
   cancelTeardown: () => void;
   closePanel: (id: string) => void;
+  dismissNotice: (threadId: string, id: number) => void;
   setDraft: (threadId: string, value: string) => void;
   toggleFullScreen: (threadId: string) => void;
   setBodyWidth: (width: number) => void;
@@ -281,6 +292,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   stats: {},
   threadErrors: {},
   pendingPermissions: {},
+  notices: {},
+  statuses: {},
+  widgets: {},
   drafts: {},
   expandedThreadId: null,
   focusRequest: null,
@@ -376,6 +390,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Pending approval cards die with the sidecar; the killed process needs
       // no answers.
       const { [id]: _pp, ...pendingPermissions } = s.pendingPermissions;
+      // Extension UI display state is tied to the live sidecar; drop it too.
+      const { [id]: _nt, ...notices } = s.notices;
+      const { [id]: _ss, ...statuses } = s.statuses;
+      const { [id]: _wg, ...widgets } = s.widgets;
       // The draft survives the close (it is user work, like thread.model);
       // only a discarded thread takes its (whitespace-only) entry with it.
       const { [id]: _dr, ...remainingDrafts } = s.drafts;
@@ -388,6 +406,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         threadErrors,
         modelSelecting,
         pendingPermissions,
+        notices,
+        statuses,
+        widgets,
         drafts: discard ? remainingDrafts : s.drafts,
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
         focusRequest: s.focusRequest?.threadId === id ? null : s.focusRequest,
@@ -400,6 +421,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       };
     });
   },
+
+  dismissNotice: (threadId, id) =>
+    set((s) => ({
+      notices: {
+        ...s.notices,
+        [threadId]: (s.notices[threadId] ?? []).filter((n) => n.id !== id),
+      },
+    })),
 
   setDraft: (threadId, value) =>
     set((s) => ({ drafts: { ...s.drafts, [threadId]: value } })),
@@ -755,6 +784,43 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           set((s) => ({
             threadErrors: { ...s.threadErrors, [threadId]: event.message },
           }));
+        } else if (event.kind === "notify") {
+          // Transient notice; auto-expire so it does not pile up (ext UI).
+          const id = ++noticeSeq;
+          set((s) => ({
+            notices: {
+              ...s.notices,
+              [threadId]: [
+                ...(s.notices[threadId] ?? []),
+                { id, message: event.message, type: event.notifyType ?? "info" },
+              ],
+            },
+          }));
+          setTimeout(() => get().dismissNotice(threadId, id), NOTICE_TTL_MS);
+        } else if (event.kind === "setStatus") {
+          // Keyed footer status; an absent statusText clears that key.
+          set((s) => {
+            const thread = { ...(s.statuses[threadId] ?? {}) };
+            if (event.statusText === undefined) delete thread[event.statusKey];
+            else thread[event.statusKey] = event.statusText;
+            return { statuses: { ...s.statuses, [threadId]: thread } };
+          });
+        } else if (event.kind === "setWidget") {
+          // Keyed composer widget; absent widgetLines clears that key.
+          set((s) => {
+            const thread = { ...(s.widgets[threadId] ?? {}) };
+            if (event.widgetLines === undefined) delete thread[event.widgetKey];
+            else
+              thread[event.widgetKey] = {
+                lines: event.widgetLines,
+                placement: event.widgetPlacement ?? "aboveEditor",
+              };
+            return { widgets: { ...s.widgets, [threadId]: thread } };
+          });
+        } else if (event.kind === "setTitle") {
+          void getCurrentWindow().setTitle(event.title);
+        } else if (event.kind === "setEditorText") {
+          get().setDraft(threadId, event.text);
         } else if (event.kind === "tool" && event.phase === "end") {
           // Tool output is added to context, so the usage bar slides (HOY-208).
           void get().refreshStats(threadId);
@@ -979,6 +1045,11 @@ const pendingSessions = new Map<string, Promise<string>>();
 // events from a channel whose thread has moved on (panel closed, or a newer turn
 // started). Entry is dropped on done / close / send failure.
 const activeChannels = new Map<string, Channel<AgentEvent>>();
+
+// Monotonic id for transient extension `notify` notices, so each can be
+// dismissed (by click or auto-expiry) without colliding.
+let noticeSeq = 0;
+const NOTICE_TTL_MS = 6000;
 
 function acquireSession(
   threadId: string,
