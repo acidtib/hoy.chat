@@ -33,6 +33,12 @@ Repo is a Bun-workspaces monorepo (HOY-227): `hoy.chat` at the root, the desktop
 - TS: typed wrappers around `invoke()` live in `lib/ipc.ts`; never call `invoke` with stringly-typed args scattered through components. Shared types in `lib/types.ts` mirror the Rust event/command shapes.
 - UI: match the reference layout (sidebar of sessions / top bar with model + settings / streaming transcript / composer). Render the session list even when there's one session.
 
+## Design context
+- Each frontend workspace carries its own `PRODUCT.md` (strategy: register, users, brand, principles, a11y) and `DESIGN.md` (visual system: tokens, type, components, layout), maintained via the impeccable skill. Read them before any UI work; keep them in sync when the visual system changes.
+- `apps/desktop` register is **product**: dark-first layered near-black, **square theme** (`--radius: 0`), indigo/violet brand accent, shadcn/ui + AI Elements, the transcript is the focal surface.
+- `apps/site` register is **brand**: marketing landing mirroring the desktop dark identity, softer `10px` radius, amber reserved for beta/honesty signals.
+- Live-mode config for both lives at `<app>/.impeccable/live/config.json`.
+
 ## Writing style and output rules
 - No emojis anywhere: not in code, comments, docs, commit messages, or any output.
 - No em-dashes (--). Use a comma, semicolon, or rewrite the sentence.
