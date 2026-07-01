@@ -2,15 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import {
   AtSign,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Code,
   File as FileIcon,
   Folder,
+  GitBranch,
   Image as ImageIcon,
   Maximize2,
   MessageSquare,
   Minimize2,
   Plus,
   SendHorizontal,
+  Sparkles,
   Square,
+  TextCursor,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,6 +41,7 @@ import {
   mentionLabel,
   mentionMarker,
 } from "@/lib/mentions";
+import { addRecentContext, getRecentContexts } from "@/lib/recentContexts";
 import type {
   ContextRef,
   ExtWidget,
@@ -44,7 +52,7 @@ import type {
   PermissionMode,
   ThinkingLevel,
 } from "@/lib/types";
-import { THINKING_LEVELS } from "@/lib/types";
+import { contextKey, THINKING_LEVELS } from "@/lib/types";
 
 // The composer thread reference for the @ picker's Threads section (HOY-220).
 interface ContextThread {
@@ -165,6 +173,7 @@ export function Composer({
   canAttachImages = true,
   searchPaths,
   threads = [],
+  projectPath,
 }: {
   // The draft, with @ mentions encoded inline as markers (lib/mentions.ts).
   value: string;
@@ -200,10 +209,12 @@ export function Composer({
   onAddFiles?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
   canAttachImages?: boolean;
-  // @ context picker (HOY-220): the gitignore-aware path search and the thread
-  // list for the Threads section. Selected refs become inline chips in the draft.
+  // @ context picker (HOY-220): the gitignore-aware path search, the thread list
+  // for the Threads section, and the project path (keys the Recent section).
+  // Selected refs become inline chips in the draft.
   searchPaths?: (query: string) => Promise<PathEntry[]>;
   threads?: ContextThread[];
+  projectPath?: string | null;
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -213,10 +224,16 @@ export function Composer({
   const lastEmitted = useRef<string | null>(null);
   const [dragging, setDragging] = useState(false);
   // Active @-mention (HOY-220): the picker is open while this is set; `query`
-  // filters the results. The exact @ position is recomputed from the live caret
-  // at insert time.
-  const [picker, setPicker] = useState<{ query: string } | null>(null);
+  // filters the results. `view` is the drill-down: "root" shows Recent +
+  // category rows (empty query), "files"/"threads" browse one category. A
+  // non-empty query always shows live search regardless of view. The exact @
+  // position is recomputed from the live caret at insert time.
+  const [picker, setPicker] = useState<{
+    query: string;
+    view: "root" | "files" | "threads";
+  } | null>(null);
   const [pathResults, setPathResults] = useState<PathEntry[]>([]);
+  const [recents, setRecents] = useState<ContextRef[]>([]);
   // Fixed-viewport position for the picker menu, anchored at the @ caret.
   const [menuPos, setMenuPos] = useState<{
     left: number;
@@ -308,11 +325,18 @@ export function Composer({
   function updateMention() {
     const mention = currentMention();
     if (mention) {
-      setPicker({ query: mention.query });
+      setPicker((prev) => ({
+        query: mention.query,
+        view: prev?.view ?? "root",
+      }));
       setMenuPos(computeMenuPos());
     } else {
       setPicker(null);
     }
+  }
+
+  function setView(view: "root" | "files" | "threads") {
+    setPicker((p) => (p ? { ...p, view } : p));
   }
 
   function insertTextAtCaret(text: string) {
@@ -356,6 +380,7 @@ export function Composer({
     sel?.addRange(after);
     setPicker(null);
     setPathResults([]);
+    addRecentContext(projectPath, ref);
     emit();
     root.focus();
   }
@@ -417,6 +442,12 @@ export function Composer({
     };
   }, [picker, searchPaths]);
 
+  // Load the Recent section when the picker opens (and after an insert reopens it).
+  const pickerOpen = !!picker;
+  useEffect(() => {
+    if (pickerOpen) setRecents(getRecentContexts(projectPath));
+  }, [pickerOpen, projectPath]);
+
   // Sync external draft changes into the editor DOM (init, clear-on-submit,
   // restore, setEditorText). Our own edits set lastEmitted first, so they are
   // skipped here and the caret is preserved.
@@ -450,12 +481,57 @@ export function Composer({
   }, [focusSignal]);
 
   const query = picker?.query.toLowerCase() ?? "";
+  const view = picker?.view ?? "root";
+  const showSearch = query.length > 0;
   const shownPaths = pathResults.slice(0, 8);
   const shownThreads = (
     query
       ? threads.filter((t) => t.title.toLowerCase().includes(query))
       : threads
-  ).slice(0, 6);
+  ).slice(0, 8);
+
+  const renderFileRows = () =>
+    shownPaths.length === 0 ? (
+      <PickerEmpty>No matching files</PickerEmpty>
+    ) : (
+      shownPaths.map((entry) => (
+        <PickerRow
+          key={entry.path}
+          onSelect={() => insertMention(pathToRef(entry))}
+        >
+          {entry.isDir ? (
+            <Folder className="size-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+          )}
+          <span className="truncate">{entry.name}</span>
+          <span className="ml-auto truncate pl-2 text-xs text-muted-foreground/70">
+            {entry.path}
+          </span>
+        </PickerRow>
+      ))
+    );
+
+  const renderThreadRows = () =>
+    shownThreads.length === 0 ? (
+      <PickerEmpty>No threads</PickerEmpty>
+    ) : (
+      shownThreads.map((thread) => (
+        <PickerRow
+          key={thread.threadId}
+          onSelect={() =>
+            insertMention({
+              kind: "thread",
+              threadId: thread.threadId,
+              title: thread.title,
+            })
+          }
+        >
+          <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
+          <span className="truncate">{thread.title}</span>
+        </PickerRow>
+      ))
+    );
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     // The @ picker takes keys first (HOY-220): Escape closes it, Enter selects
@@ -632,58 +708,91 @@ export function Composer({
             top: menuPos.top,
             bottom: menuPos.bottom,
           }}
-          className="scrollbar-thin z-50 max-h-[300px] w-[22rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+          className="scrollbar-thin z-50 max-h-[320px] w-[22rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
-          <PickerSection label="Files & Directories">
-            {shownPaths.length === 0 ? (
-              <PickerEmpty>No matching files</PickerEmpty>
-            ) : (
-              shownPaths.map((entry) => (
-                <PickerRow
-                  key={entry.path}
-                  onSelect={() => insertMention(pathToRef(entry))}
-                >
-                  {entry.isDir ? (
-                    <Folder className="size-4 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <FileIcon className="size-4 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="truncate">{entry.name}</span>
-                  <span className="ml-auto truncate pl-2 text-xs text-muted-foreground/70">
-                    {entry.path}
-                  </span>
-                </PickerRow>
-              ))
-            )}
-          </PickerSection>
-
-          {shownThreads.length > 0 && (
-            <PickerSection label="Threads">
-              {shownThreads.map((thread) => (
-                <PickerRow
-                  key={thread.threadId}
-                  onSelect={() =>
-                    insertMention({
-                      kind: "thread",
-                      threadId: thread.threadId,
-                      title: thread.title,
-                    })
+          {showSearch ? (
+            <>
+              <PickerSection label="Files & Directories">
+                {renderFileRows()}
+              </PickerSection>
+              {shownThreads.length > 0 && (
+                <PickerSection label="Threads">{renderThreadRows()}</PickerSection>
+              )}
+            </>
+          ) : view === "files" ? (
+            <>
+              <BackRow onBack={() => setView("root")} />
+              <PickerSection label="Files & Directories">
+                {renderFileRows()}
+              </PickerSection>
+            </>
+          ) : view === "threads" ? (
+            <>
+              <BackRow onBack={() => setView("root")} />
+              <PickerSection label="Threads">{renderThreadRows()}</PickerSection>
+            </>
+          ) : (
+            <>
+              {recents.length > 0 && (
+                <>
+                  <PickerSection label="Recent">
+                    {recents.map((ref) => (
+                      <RecentRow
+                        key={contextKey(ref)}
+                        contextRef={ref}
+                        onSelect={() => insertMention(ref)}
+                      />
+                    ))}
+                  </PickerSection>
+                  <div className="my-1 border-t border-border/60" />
+                </>
+              )}
+              <div className="py-0.5">
+                <CategoryRow
+                  icon={<Folder className="size-4 shrink-0 text-muted-foreground" />}
+                  label="Files & Directories"
+                  chevron
+                  onSelect={() => setView("files")}
+                />
+                <CategoryRow
+                  icon={<Code className="size-4 shrink-0" />}
+                  label="Symbols"
+                  disabled
+                />
+                <CategoryRow
+                  icon={
+                    <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
                   }
-                >
-                  <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{thread.title}</span>
-                </PickerRow>
-              ))}
-            </PickerSection>
-          )}
-
-          {canAttachImages && (
-            <PickerSection label="Image">
-              <PickerRow onSelect={pickImage}>
-                <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate">Attach an image...</span>
-              </PickerRow>
-            </PickerSection>
+                  label="Threads"
+                  chevron
+                  onSelect={() => setView("threads")}
+                />
+                <CategoryRow
+                  icon={<Sparkles className="size-4 shrink-0" />}
+                  label="Skills"
+                  disabled
+                />
+                {canAttachImages && (
+                  <CategoryRow
+                    icon={
+                      <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
+                    }
+                    label="Image"
+                    onSelect={pickImage}
+                  />
+                )}
+                <CategoryRow
+                  icon={<TextCursor className="size-4 shrink-0" />}
+                  label="Selection"
+                  disabled
+                />
+                <CategoryRow
+                  icon={<GitBranch className="size-4 shrink-0" />}
+                  label="Branch Diff"
+                  disabled
+                />
+              </div>
+            </>
           )}
         </div>
       )}
@@ -820,6 +929,78 @@ function PickerRow({
 function PickerEmpty({ children }: { children: React.ReactNode }) {
   return (
     <div className="px-2 py-1.5 text-sm text-muted-foreground/70">{children}</div>
+  );
+}
+
+// A recently used @ context (HOY-220). Clock icon + label + dimmed secondary,
+// mirroring Zed's Recent section.
+function RecentRow({
+  contextRef,
+  onSelect,
+}: {
+  contextRef: ContextRef;
+  onSelect: () => void;
+}) {
+  const secondary = contextRef.kind === "thread" ? "thread" : contextRef.path;
+  return (
+    <PickerRow onSelect={onSelect}>
+      <Clock className="size-4 shrink-0 text-muted-foreground" />
+      <span className="truncate">{mentionLabel(contextRef)}</span>
+      <span className="ml-auto truncate pl-2 text-xs text-muted-foreground/70">
+        {secondary}
+      </span>
+    </PickerRow>
+  );
+}
+
+// A category row in the picker's root view. Supported categories drill in (chevron)
+// or act; deferred ones render dimmed and inert to match Zed's menu (HOY-220).
+function CategoryRow({
+  icon,
+  label,
+  chevron = false,
+  disabled = false,
+  onSelect,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  chevron?: boolean;
+  disabled?: boolean;
+  onSelect?: () => void;
+}) {
+  if (disabled) {
+    return (
+      <div className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-muted-foreground/40">
+        {icon}
+        <span>{label}</span>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent"
+    >
+      {icon}
+      <span>{label}</span>
+      {chevron && (
+        <ChevronRight className="ml-auto size-4 text-muted-foreground/50" />
+      )}
+    </button>
+  );
+}
+
+function BackRow({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      className="flex w-full items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+    >
+      <ChevronLeft className="size-3.5" />
+      Back
+    </button>
   );
 }
 

@@ -238,6 +238,7 @@ export function ThreadView({
       canAttachImages={canAttachImages}
       searchPaths={searchPaths}
       threads={contextThreads}
+      projectPath={projectPath}
     />
   );
 
