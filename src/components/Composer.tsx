@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   AtSign,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Clock,
   Code,
@@ -141,6 +140,30 @@ function pathToRef(entry: PathEntry): ContextRef {
   };
 }
 
+// Parse the raw @token (text after the @, or null when button-opened) into the
+// picker view (HOY-220). "@file:q" / "@thread:q" scope to a category; a bare @ or
+// button-open is the root menu; anything else is a fuzzy search over files+threads.
+type ParsedToken = {
+  view: "root" | "file" | "thread" | "search";
+  q: string;
+  wantFiles: boolean;
+};
+function parseToken(token: string | null): ParsedToken {
+  if (token === null || token === "") {
+    return { view: "root", q: "", wantFiles: false };
+  }
+  const typed = /^(file|thread):(.*)$/i.exec(token);
+  if (typed) {
+    const kind = typed[1].toLowerCase();
+    return {
+      view: kind === "thread" ? "thread" : "file",
+      q: typed[2],
+      wantFiles: kind !== "thread",
+    };
+  }
+  return { view: "search", q: token, wantFiles: true };
+}
+
 // Zed-style agent composer. The message editor is a contenteditable surface so @
 // mentions render as inline chips (HOY-220). `fill` makes it expand to fill the
 // panel (the empty thread state); otherwise it auto-grows up to a cap and docks
@@ -223,15 +246,13 @@ export function Composer({
   // extension setEditorText).
   const lastEmitted = useRef<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  // Active @-mention (HOY-220): the picker is open while this is set; `query`
-  // filters the results. `view` is the drill-down: "root" shows Recent +
-  // category rows (empty query), "files"/"threads" browse one category. A
-  // non-empty query always shows live search regardless of view. The exact @
+  // The @ picker (HOY-220). `token` is the raw text after the @ in the editor, or
+  // null when opened from the @ button (no @ typed yet). The token grammar drives
+  // the view: "" / null -> root (Recent + categories); "file:q" / "thread:q" ->
+  // that category filtered by q; any other text -> a fuzzy search. Picking a
+  // category rewrites the token to its "@type:" prefix (Zed-style). The exact @
   // position is recomputed from the live caret at insert time.
-  const [picker, setPicker] = useState<{
-    query: string;
-    view: "root" | "files" | "threads";
-  } | null>(null);
+  const [picker, setPicker] = useState<{ token: string | null } | null>(null);
   const [pathResults, setPathResults] = useState<PathEntry[]>([]);
   const [recents, setRecents] = useState<ContextRef[]>([]);
   // Fixed-viewport position for the picker menu, anchored at the @ caret.
@@ -305,7 +326,11 @@ export function Composer({
     const rects = range.getClientRects();
     let rect: DOMRect | undefined = rects[0] ?? range.getBoundingClientRect();
     if (!rect || (rect.top === 0 && rect.left === 0 && rect.height === 0)) {
-      rect = editorRef.current?.getBoundingClientRect();
+      // A collapsed caret at an element boundary (e.g. an empty editor) reports a
+      // zero rect; anchor at the editor's top-left, not its full-height rect
+      // (whose bottom sits at the screen edge and throws the menu to the bottom).
+      const er = editorRef.current?.getBoundingClientRect();
+      rect = er ? new DOMRect(er.left, er.top, 0, 20) : undefined;
     }
     if (!rect) return null;
     const MENU_MAX = 300;
@@ -321,22 +346,16 @@ export function Composer({
     return { left, top: rect.bottom + GAP };
   }
 
-  // Reflect the caret's @-mention (open/update/close the picker) after any edit.
+  // Reflect the caret's @-mention after any edit. Typing a non-@ character closes
+  // a menu (including a button-opened one, which has no @ to anchor it).
   function updateMention() {
     const mention = currentMention();
     if (mention) {
-      setPicker((prev) => ({
-        query: mention.query,
-        view: prev?.view ?? "root",
-      }));
+      setPicker({ token: mention.query });
       setMenuPos(computeMenuPos());
     } else {
       setPicker(null);
     }
-  }
-
-  function setView(view: "root" | "files" | "threads") {
-    setPicker((p) => (p ? { ...p, view } : p));
   }
 
   function insertTextAtCaret(text: string) {
@@ -357,18 +376,33 @@ export function Composer({
     updateMention();
   }
 
-  // Replace the @query at the caret with an inline chip, then a trailing space so
-  // the caret has a spot to keep typing after the chip.
+  // A collapsed range at the caret, or over the current @token when one exists.
+  function mentionOrCaretRange(): Range | null {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const mention = currentMention();
+    const range = document.createRange();
+    if (mention) {
+      range.setStart(mention.node, mention.at);
+      range.setEnd(mention.node, mention.offset);
+    } else {
+      const live = sel.getRangeAt(0);
+      range.setStart(live.startContainer, live.startOffset);
+      range.setEnd(live.endContainer, live.endOffset);
+    }
+    return range;
+  }
+
+  // Insert an inline chip for `ref`, replacing the @token if the picker was opened
+  // by typing @, or at the caret when opened from the button. A trailing space
+  // gives the caret a spot after the chip.
   function insertMention(ref: ContextRef) {
     const root = editorRef.current;
-    const mention = currentMention();
-    if (!root || !mention) {
+    const range = mentionOrCaretRange();
+    if (!root || !range) {
       dismissPicker();
       return;
     }
-    const range = document.createRange();
-    range.setStart(mention.node, mention.at);
-    range.setEnd(mention.node, mention.offset);
     range.deleteContents();
     const frag = document.createDocumentFragment();
     frag.appendChild(createChip(ref));
@@ -388,12 +422,34 @@ export function Composer({
     root.focus();
   }
 
-  // Close the menu, leaving the typed @query text in place (Escape / blur).
+  // Rewrite the @token to `text` (e.g. "@file:") and keep the caret after it, so
+  // picking a category drops its "@type:" prefix in the editor and the menu
+  // switches into that category (Zed-style). Used for category rows and Back.
+  function setToken(text: string) {
+    const root = editorRef.current;
+    const range = mentionOrCaretRange();
+    if (!root || !range) return;
+    range.deleteContents();
+    const node = document.createTextNode(text);
+    range.insertNode(node);
+    range.setStart(node, node.data.length);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    emit();
+    updateMention();
+    root.focus();
+  }
+
+  // Close the menu, leaving any typed @token text in place (Escape / blur).
   function dismissPicker() {
     setPicker(null);
     setPathResults([]);
   }
 
+  // The @ button opens the menu at the caret without typing anything; the token
+  // is null (root view) until the user picks a category.
   function openPickerFromButton() {
     const root = editorRef.current;
     if (!root) return;
@@ -407,31 +463,38 @@ export function Composer({
       sel.removeAllRanges();
       sel.addRange(range);
     }
-    const node = sel.anchorNode;
-    const offset = sel.anchorOffset;
-    let insert = "@";
-    if (node && node.nodeType === Node.TEXT_NODE && offset > 0) {
-      const prev = (node.textContent ?? "")[offset - 1];
-      if (prev && !/\s/.test(prev)) insert = " @";
-    }
-    insertTextAtCaret(insert);
+    setPicker({ token: null });
+    setMenuPos(computeMenuPos());
   }
 
   function pickImage() {
+    // Image is an attachment, not a mention: drop any @token, then open the OS
+    // picker (nothing is typed into the composer).
+    const range = mentionOrCaretRange();
+    const mention = currentMention();
+    if (range && mention) {
+      range.deleteContents();
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      emit();
+    }
     dismissPicker();
     fileInputRef.current?.click();
   }
 
-  // Live path search while the picker is open (debounced). Empty query returns
-  // the first paths (Rust caps the count).
+  // Live path search while a file/search view is active (debounced). Empty query
+  // returns the first paths (Rust caps the count).
   useEffect(() => {
-    if (!picker || !searchPaths) {
+    const parsed = parseToken(picker?.token ?? null);
+    if (!picker || !searchPaths || !parsed.wantFiles) {
       setPathResults([]);
       return;
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      searchPaths(picker.query)
+      searchPaths(parsed.q)
         .then((results) => {
           if (!cancelled) setPathResults(results);
         })
@@ -483,13 +546,12 @@ export function Composer({
     if (focusSignal) editorRef.current?.focus({ preventScroll: true });
   }, [focusSignal]);
 
-  const query = picker?.query.toLowerCase() ?? "";
-  const view = picker?.view ?? "root";
-  const showSearch = query.length > 0;
+  const parsed = parseToken(picker?.token ?? null);
+  const threadFilter = parsed.q.toLowerCase();
   const shownPaths = pathResults.slice(0, 8);
   const shownThreads = (
-    query
-      ? threads.filter((t) => t.title.toLowerCase().includes(query))
+    threadFilter
+      ? threads.filter((t) => t.title.toLowerCase().includes(threadFilter))
       : threads
   ).slice(0, 8);
 
@@ -538,7 +600,8 @@ export function Composer({
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     // The @ picker takes keys first (HOY-220): Escape closes it, Enter selects
-    // the top match instead of sending.
+    // the top match instead of sending. In the root view Enter just closes (there
+    // is no single obvious pick).
     if (picker) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -547,8 +610,16 @@ export function Composer({
       }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        if (shownPaths.length > 0) insertMention(pathToRef(shownPaths[0]));
-        else if (shownThreads.length > 0) {
+        if (parsed.view === "root") {
+          dismissPicker();
+        } else if (parsed.view === "thread") {
+          if (shownThreads.length > 0) {
+            const t = shownThreads[0];
+            insertMention({ kind: "thread", threadId: t.threadId, title: t.title });
+          } else dismissPicker();
+        } else if (shownPaths.length > 0) {
+          insertMention(pathToRef(shownPaths[0]));
+        } else if (shownThreads.length > 0) {
           const t = shownThreads[0];
           insertMention({ kind: "thread", threadId: t.threadId, title: t.title });
         } else dismissPicker();
@@ -713,7 +784,7 @@ export function Composer({
           }}
           className="scrollbar-thin z-50 max-h-[320px] w-[22rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
-          {showSearch ? (
+          {parsed.view === "search" ? (
             <>
               <PickerSection label="Files & Directories">
                 {renderFileRows()}
@@ -722,18 +793,12 @@ export function Composer({
                 <PickerSection label="Threads">{renderThreadRows()}</PickerSection>
               )}
             </>
-          ) : view === "files" ? (
-            <>
-              <BackRow onBack={() => setView("root")} />
-              <PickerSection label="Files & Directories">
-                {renderFileRows()}
-              </PickerSection>
-            </>
-          ) : view === "threads" ? (
-            <>
-              <BackRow onBack={() => setView("root")} />
-              <PickerSection label="Threads">{renderThreadRows()}</PickerSection>
-            </>
+          ) : parsed.view === "file" ? (
+            <PickerSection label="Files & Directories">
+              {renderFileRows()}
+            </PickerSection>
+          ) : parsed.view === "thread" ? (
+            <PickerSection label="Threads">{renderThreadRows()}</PickerSection>
           ) : (
             <>
               {recents.length > 0 && (
@@ -755,7 +820,7 @@ export function Composer({
                   icon={<Folder className="size-4 shrink-0 text-muted-foreground" />}
                   label="Files & Directories"
                   chevron
-                  onSelect={() => setView("files")}
+                  onSelect={() => setToken("@file:")}
                 />
                 <CategoryRow
                   icon={<Code className="size-4 shrink-0" />}
@@ -768,7 +833,7 @@ export function Composer({
                   }
                   label="Threads"
                   chevron
-                  onSelect={() => setView("threads")}
+                  onSelect={() => setToken("@thread:")}
                 />
                 <CategoryRow
                   icon={<Sparkles className="size-4 shrink-0" />}
@@ -994,19 +1059,6 @@ function CategoryRow({
       {chevron && (
         <ChevronRight className="ml-auto size-4 text-muted-foreground/50" />
       )}
-    </button>
-  );
-}
-
-function BackRow({ onBack }: { onBack: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onBack}
-      className="flex w-full items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-    >
-      <ChevronLeft className="size-3.5" />
-      Back
     </button>
   );
 }
