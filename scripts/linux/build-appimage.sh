@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Linux release build wrapper (HOY-217), used as tauri-action's `tauriScript`.
 #
-# linuxdeploy and our bun-compiled `pi` sidecar do not coexist: linuxdeploy
+# linuxdeploy and our bun-compiled `hoy-pi` sidecar do not coexist: linuxdeploy
 # crashes running `ldd` on it (build failure), and otherwise rpath-rewrites it so
 # the dynamically-linked bun binary loads the wrong libc and SIGSEGVs at runtime.
 # Tauri's Linux updater needs the AppImage (deb/rpm are not auto-updatable), so we
@@ -18,7 +18,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
-PRISTINE="$ROOT/packages/sidecar/pi-$TRIPLE"
+PRISTINE="$ROOT/packages/sidecar/hoy-pi-$TRIPLE"
 APPIMAGETOOL_VERSION="1.9.1"
 CACHE="$HOME/.cache/tauri"
 
@@ -28,7 +28,7 @@ CACHE="$HOME/.cache/tauri"
 mkdir -p "$CACHE"
 cp "$ROOT/scripts/linux/linuxdeploy-plugin-gtk.sh" "$CACHE/linuxdeploy-plugin-gtk.sh"
 chmod +x "$CACHE/linuxdeploy-plugin-gtk.sh"
-export LINUXDEPLOY_SHELTER_BINS="${LINUXDEPLOY_SHELTER_BINS:-pi}"
+export LINUXDEPLOY_SHELTER_BINS="${LINUXDEPLOY_SHELTER_BINS:-hoy-pi}"
 
 # 2. Run the real build (tauri build <args>); produces + signs the bundles.
 bunx tauri "$@"
@@ -54,8 +54,8 @@ fi
 
 WORK="$(mktemp -d)"
 ( cd "$WORK" && APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE" --appimage-extract >/dev/null )
-cp -f "$PRISTINE" "$WORK/squashfs-root/usr/bin/pi"
-chmod +x "$WORK/squashfs-root/usr/bin/pi"
+cp -f "$PRISTINE" "$WORK/squashfs-root/usr/bin/hoy-pi"
+chmod +x "$WORK/squashfs-root/usr/bin/hoy-pi"
 rm -f "$APPIMAGE"
 APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" "$WORK/squashfs-root" "$APPIMAGE"
 rm -rf "$WORK"

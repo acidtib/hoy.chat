@@ -38,7 +38,7 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
-    "externalBin": ["../../../packages/sidecar/pi"],
+    "externalBin": ["../../../packages/sidecar/hoy-pi"],
     "resources": {
       "../../../packages/sidecar/pi-payload": "pi-payload"
     },

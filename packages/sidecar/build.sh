@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Produce a self-contained Pi sidecar binary plus its asset payload for the
 # current host. Output (gitignored, regenerated on demand):
-#   sidecar/pi-<target-triple>     bun-compiled binary, named for Tauri externalBin
+#   sidecar/hoy-pi-<target-triple> bun-compiled binary, named for Tauri externalBin
 #   sidecar/pi-payload/            assets Pi's bun binary resolves via PI_PACKAGE_DIR
 #
 # Usage: sidecar/build.sh [target-triple]
@@ -29,7 +29,7 @@ case "$TRIPLE" in
   x86_64-pc-windows-msvc)     BUN_TARGET="bun-windows-x64"; BIN_EXT=".exe" ;;
   *) echo "warning: no bun target mapping for $TRIPLE; building for host" >&2 ;;
 esac
-BIN="$SIDECAR_DIR/pi-$TRIPLE$BIN_EXT"
+BIN="$SIDECAR_DIR/hoy-pi-$TRIPLE$BIN_EXT"
 
 echo "[1/3] installing pinned Pi into sidecar/pi-src"
 ( cd "$SIDECAR_DIR/pi-src" && npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund )

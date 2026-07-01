@@ -4,7 +4,7 @@
 # patch (HOY-217) to keep linuxdeploy away from our spawned sidecar.
 #
 # Tauri's AppImage bundler runs `linuxdeploy --plugin gtk`, which scans every
-# executable in AppDir/usr/bin/. Our `pi` sidecar is a bun-compiled binary:
+# executable in AppDir/usr/bin/. Our `hoy-pi` sidecar is a bun-compiled binary:
 # linuxdeploy crashes when `ldd` exits non-zero on it (build failure), and even
 # when it does not, linuxdeploy rewrites the binary's rpath to $ORIGIN, which
 # makes the dynamically-linked bun binary load the wrong libc and SIGSEGV at
@@ -12,7 +12,7 @@
 # linuxdeploy runs and restoring it pristine after.
 #
 # Binaries are sheltered when `ldd` fails OR their name is listed in
-# LINUXDEPLOY_SHELTER_BINS (space-separated; set to "pi" by the release build).
+# LINUXDEPLOY_SHELTER_BINS (space-separated; set to "hoy-pi" by the release build).
 # The name list makes this deterministic even where `ldd` succeeds on the bun
 # binary (e.g. a glibc that matches bun's), so it is testable off-CI.
 #

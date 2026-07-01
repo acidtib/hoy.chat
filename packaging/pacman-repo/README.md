@@ -100,6 +100,6 @@ The repo is live at `pkgs.hoy.chat`. For a rebuild-from-scratch:
 - The signing key is passphraseless for unattended CI signing; its secrecy rests
   on the private-key file and the CI secret. Rotate by generating a new key,
   bumping `hoy-keyring`, and re-publishing.
-- The sidecar installs as `/usr/bin/pi`, a generic name that can file-conflict with
-  another package owning `/usr/bin/pi`. Namespacing it upstream (e.g. `hoy-pi`) or
-  relocating under `/usr/lib` is tracked in HOY-230.
+- The sidecar installs as `/usr/bin/hoy-pi` (namespaced under HOY-230). It used to
+  ship as the generic `/usr/bin/pi`, which risked a file conflict with any other
+  package owning that path; the `externalBin` rename removed that risk.

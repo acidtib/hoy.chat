@@ -12,7 +12,7 @@ asset payload answers `get_state` over JSONL when spawned from Rust.
 ## Recipe
 
 ```
-packages/sidecar/build.sh   # builds pi-<host-triple> + pi-payload/
+packages/sidecar/build.sh   # builds hoy-pi-<host-triple> + pi-payload/
 ```
 
 `build.sh` does three things:
@@ -20,7 +20,7 @@ packages/sidecar/build.sh   # builds pi-<host-triple> + pi-payload/
 1. Installs the pinned Pi (`@earendil-works/pi-coding-agent`, version in
    `pi-src/package.json`) into `pi-src/node_modules`.
 2. `bun build --compile` of Pi's **bun entry** (`dist/bun/cli.js`, which restores
-   sandbox env and registers bedrock) into `pi-<target-triple>`, named for
+   sandbox env and registers bedrock) into `hoy-pi-<target-triple>`, named for
    Tauri's `externalBin` convention.
 3. Assembles `pi-payload/` with the assets Pi's bun binary expects.
 
@@ -45,7 +45,7 @@ and are never reached in `--mode rpc`, so they do not block the sidecar.
 ## Spawn contract used by the harness
 
 ```
-pi-<triple> --mode rpc --no-session --offline --no-context-files
+hoy-pi-<triple> --mode rpc --no-session --offline --no-context-files
   env: PI_PACKAGE_DIR=<abs path to pi-payload>
   stdin:  {"type":"get_state","id":"..."}\n
   stdout: {"type":"response","command":"get_state","success":true,"data":{...}}\n
@@ -71,5 +71,5 @@ Neither was required at 0.80.3.
 
 - `pi-src/` — pinned install workspace (`package.json` + lockfile tracked,
   `node_modules/` gitignored)
-- `build.sh` — produces `pi-<triple>` + `pi-payload/`
-- `pi-<triple>`, `pi-payload/` — build artifacts, gitignored
+- `build.sh` — produces `hoy-pi-<triple>` + `pi-payload/`
+- `hoy-pi-<triple>`, `pi-payload/` — build artifacts, gitignored

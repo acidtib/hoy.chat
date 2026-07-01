@@ -915,7 +915,7 @@ fn resolve_sidecar_paths(resource_payload: Option<PathBuf>) -> (PathBuf, PathBuf
         .map(|root| root.join("packages/sidecar"));
     let dev_bin = dev_sidecar
         .as_ref()
-        .map(|d| d.join(format!("pi-{triple}")))
+        .map(|d| d.join(format!("hoy-pi-{triple}")))
         .filter(|p| p.exists());
     let dev_payload = dev_sidecar
         .as_ref()
@@ -938,8 +938,8 @@ fn resolve_sidecar_paths(resource_payload: Option<PathBuf>) -> (PathBuf, PathBuf
 
 // Pure precedence chain (no filesystem access), split out for unit testing.
 // `dev_bin`/`dev_payload` are passed Some only when they exist on disk. The
-// bundled binary sits next to the executable as `pi`(`.exe`): Tauri's externalBin
-// strips the target triple build.sh wrote. The bundled payload comes from the
+// bundled binary sits next to the executable as `hoy-pi`(`.exe`): Tauri's
+// externalBin strips the target triple build.sh wrote. The bundled payload comes from the
 // Tauri resource dir; a final exe-dir join is a legacy fallback.
 fn select_sidecar_paths(
     env_bin: Option<PathBuf>,
@@ -949,7 +949,7 @@ fn select_sidecar_paths(
     exe_dir: Option<&Path>,
     resource_payload: Option<PathBuf>,
 ) -> (PathBuf, PathBuf) {
-    let bundled_bin_name = format!("pi{}", std::env::consts::EXE_SUFFIX);
+    let bundled_bin_name = format!("hoy-pi{}", std::env::consts::EXE_SUFFIX);
     let bin = env_bin
         .or(dev_bin)
         .or_else(|| exe_dir.map(|d| d.join(&bundled_bin_name)))
@@ -970,7 +970,7 @@ mod live_tests {
 
     // Exercises the exact path the get_state command takes: spawn a sidecar via
     // the manager, then round-trip get_state against the live process. Requires
-    // sidecar/pi-<triple> + pi-payload (run sidecar/build.sh), so it is ignored
+    // sidecar/hoy-pi-<triple> + pi-payload (run sidecar/build.sh), so it is ignored
     // by default to keep `cargo test` hermetic. Run with:
     //   cargo test --test-threads=1 -- --ignored live_get_state_round_trip
     #[tokio::test]
@@ -1516,7 +1516,7 @@ mod live_tests {
         );
         assert_eq!(
             bin,
-            Path::new("/app").join(format!("pi{}", std::env::consts::EXE_SUFFIX))
+            Path::new("/app").join(format!("hoy-pi{}", std::env::consts::EXE_SUFFIX))
         );
         assert_eq!(payload, PathBuf::from("/app/resources/pi-payload"));
     }

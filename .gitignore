@@ -1,7 +1,7 @@
 # Pi sidecar build artifacts (regenerate with packages/sidecar/build.sh)
-/packages/sidecar/pi-*-unknown-*
-/packages/sidecar/pi-*-apple-*
-/packages/sidecar/pi-*-pc-windows-*
+/packages/sidecar/hoy-pi-*-unknown-*
+/packages/sidecar/hoy-pi-*-apple-*
+/packages/sidecar/hoy-pi-*-pc-windows-*
 /packages/sidecar/pi-payload/
 
 # Credentials / secrets defense-in-depth (none are tracked today; this keeps it

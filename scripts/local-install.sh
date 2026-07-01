@@ -32,7 +32,7 @@ echo "[2/4] release build (no bundle; the final link sits quiet for a minute or 
 echo "[3/4] install to $APP_DIR"
 mkdir -p "$APP_DIR" "$BIN_DIR" "$DESKTOP_DIR" "$ICON_DIR"
 install -m 755 "$ROOT/apps/desktop/src-tauri/target/release/hoy-desktop" "$APP_DIR/hoy-desktop"
-install -m 755 "$ROOT/packages/sidecar/pi-$TRIPLE" "$APP_DIR/pi-$TRIPLE"
+install -m 755 "$ROOT/packages/sidecar/hoy-pi-$TRIPLE" "$APP_DIR/hoy-pi-$TRIPLE"
 rm -rf "$APP_DIR/pi-payload"
 cp -r "$ROOT/packages/sidecar/pi-payload" "$APP_DIR/pi-payload"
 install -m 644 "$ROOT/apps/desktop/src-tauri/icons/128x128.png" "$ICON_DIR/hoy-desktop.png"
@@ -42,7 +42,7 @@ cat > "$BIN_DIR/hoy" <<EOF
 #!/usr/bin/env bash
 # Installed by scripts/local-install.sh (HOY-207). Env pins keep the installed
 # release on its own sidecar instead of the repo's dev artifacts.
-export PI_SIDECAR_BIN="$APP_DIR/pi-$TRIPLE"
+export PI_SIDECAR_BIN="$APP_DIR/hoy-pi-$TRIPLE"
 export PI_SIDECAR_PAYLOAD="$APP_DIR/pi-payload"
 export GDK_BACKEND=x11
 # webkit2gtk's DMABUF renderer fails on this GPU ("Failed to create GBM
@@ -68,7 +68,7 @@ command -v update-desktop-database >/dev/null && update-desktop-database "$DESKT
 echo
 echo "done. installed:"
 echo "  app:      $APP_DIR/hoy-desktop"
-echo "  sidecar:  $APP_DIR/pi-$TRIPLE"
+echo "  sidecar:  $APP_DIR/hoy-pi-$TRIPLE"
 echo "  launcher: $BIN_DIR/hoy"
 echo "  desktop:  $DESKTOP_DIR/hoy-desktop.desktop"
 echo "launch with: hoy"
