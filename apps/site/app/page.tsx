@@ -4,6 +4,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { HeroStage } from "@/components/HeroStage";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { PlatformPicker } from "@/components/PlatformPicker";
+import { HeroDownload } from "@/components/HeroDownload";
 import { InstallPanel } from "@/components/InstallPanel";
 import {
   AppWindow,
@@ -12,7 +13,6 @@ import {
   ModelBeat,
 } from "@/components/AppMock";
 import { getLatestVersion } from "@/lib/releases";
-import { RELEASES_LATEST_URL } from "@/lib/site";
 
 // Resolved at build time via the static export; a new GitHub release refreshes
 // the displayed version on the next deploy without editing this file.
@@ -39,9 +39,7 @@ export default async function Home() {
               </p>
 
               <div className="cta-row cta-row-center">
-                <a className="btn btn-primary" href={RELEASES_LATEST_URL}>
-                  Download v{version}
-                </a>
+                <HeroDownload version={version} />
                 <Link className="btn btn-ghost" href="/changelog">
                   Changelog
                 </Link>
@@ -62,8 +60,8 @@ export default async function Home() {
               <h2 className="heading">Get running</h2>
             </div>
             <p className="lead">
-              One download, then a couple of first-run steps for your platform.
-              Current build is v{version}.
+              Pick your platform and the real installer downloads. A couple of
+              first-run clicks and you are in a running window.
             </p>
 
             <InstallPanel version={version} />

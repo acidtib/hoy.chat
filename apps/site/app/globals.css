@@ -316,158 +316,142 @@ h3.heading {
   text-wrap: pretty;
 }
 
-/* Install module: auto-detected download + an OS segmented control that swaps a
-   compact per-platform first-run panel, so each OS carries its own unsigned-build
-   note instead of one footnote wall. */
-.install {
-  max-width: 640px;
+/* Download module: one big auto-detected direct-download button, then a flat
+   three-row matrix of every OS/arch variant (real asset links, no releases-page
+   detour), then a single honesty line. Deliberately card-free: rows are held by
+   hairlines and rhythm, not boxes. */
+.dl {
+  max-width: 680px;
   margin: 0 auto;
 }
-.install-top {
+.btn-lg {
+  min-height: 54px;
+  padding: 0 30px;
+  font-size: 16px;
+}
+.dl-hero {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
   text-align: center;
-  margin-bottom: 28px;
+  margin-bottom: 40px;
 }
-.btn-lg {
-  min-height: 52px;
-  padding: 0 28px;
-  font-size: 16px;
-}
-.install-meta {
+.dl-caption {
   margin: 0;
   font-size: 13px;
   color: var(--muted);
 }
-.install-others {
-  color: var(--muted-2);
+.dl-grid {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--border);
 }
-.install-panel {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--panel);
-}
-.seg {
-  display: flex;
+.dl-os {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  grid-template-areas:
+    "name links"
+    "name note";
+  align-items: baseline;
+  gap: 4px 20px;
+  padding: 18px 4px;
   border-bottom: 1px solid var(--border);
 }
-.seg-btn {
-  flex: 1;
+.dl-os-active {
+  padding-left: 16px;
+  padding-right: 16px;
+  margin: 0 -16px;
+  border-radius: 10px;
+  border-bottom-color: transparent;
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+}
+.dl-os-active + .dl-os {
+  border-top: 1px solid var(--border);
+}
+.dl-os-name {
+  grid-area: name;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 48px;
-  border: none;
-  border-right: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    color 120ms ease,
-    background 120ms ease;
-}
-.seg-btn:last-child {
-  border-right: none;
-}
-.seg-btn svg {
-  width: 15px;
-  height: 15px;
-}
-.seg-btn:hover {
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 550;
   color: var(--fg);
-  background: color-mix(in srgb, var(--fg) 4%, transparent);
 }
-.seg-btn-active {
-  color: var(--fg);
-  background: color-mix(in srgb, var(--brand) 12%, transparent);
-  box-shadow: inset 0 -2px 0 var(--brand);
+.dl-tag {
+  margin-left: 2px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--brand-fg);
+  background: color-mix(in srgb, var(--brand) 28%, transparent);
 }
-.seg-btn:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: -2px;
-}
-.install-body {
-  padding: 20px 22px 22px;
-}
-.install-artifacts {
-  margin: 0 0 16px;
-  font-size: 13.5px;
+.dl-os-name svg {
+  width: 17px;
+  height: 17px;
   color: var(--muted);
 }
-.install-artifacts a {
+.dl-os-active .dl-os-name svg {
   color: var(--brand);
 }
-.install-steps {
-  margin: 0;
-  padding-left: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.dl-os-links {
+  grid-area: links;
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   font-size: 14px;
-  color: var(--fg);
 }
-.install-steps li {
-  line-height: 1.5;
-}
-.cmd {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-  padding: 7px 8px 7px 12px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.cmd code {
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  white-space: nowrap;
-  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
-  font-size: 12.5px;
-  color: var(--fg);
-}
-.cmd-copy {
-  flex: none;
-  min-height: 34px;
-  padding: 0 12px;
-  font: inherit;
-  font-size: 12px;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
+.dl-os-links a {
+  color: var(--brand-fg);
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--brand) 45%, transparent);
   transition:
     color 120ms ease,
     border-color 120ms ease;
 }
-.cmd-copy:hover {
-  color: var(--fg);
-  border-color: var(--border-strong);
+.dl-os-links a:hover {
+  color: #fff;
+  border-color: var(--brand);
 }
-.cmd-copy:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
+.dl-sep {
+  color: var(--muted-2);
+  margin-right: 4px;
 }
-.install-note {
-  margin: 18px 0 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+.dl-os-note {
+  grid-area: note;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted-2);
+  max-width: 62ch;
+}
+.dl-foot {
+  margin: 22px 0 0;
   font-size: 13px;
-  color: var(--warn);
+  color: var(--muted-2);
+  text-align: center;
 }
-.install-note a {
+.dl-foot a {
   color: var(--muted);
   text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dl-foot a:hover {
+  color: var(--fg);
+}
+@media (max-width: 560px) {
+  .dl-os {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "name"
+      "links"
+      "note";
+    gap: 8px;
+  }
 }
 
 /* Footer */

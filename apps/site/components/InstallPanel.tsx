@@ -1,16 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RELEASES_LATEST_URL, RELEASES_URL } from "@/lib/site";
-
-type OS = "macos" | "windows" | "linux";
-
-const LABEL: Record<OS, string> = {
-  macos: "macOS",
-  windows: "Windows",
-  linux: "Linux",
-};
-const OSES: OS[] = ["macos", "windows", "linux"];
+import {
+  assetUrl,
+  OS_DOWNLOADS,
+  OS_ORDER,
+  RELEASES_LIST_URL,
+  type OS,
+} from "@/lib/downloads";
 
 function detectOS(): OS | null {
   if (typeof navigator === "undefined") return null;
@@ -37,148 +34,72 @@ function OSIcon({ os }: { os: OS }) {
     );
   }
   return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M7 9l3 3-3 3M13 15h4" />
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2c-1.5 0-2.6 1.3-2.6 3 0 .8.1 1.6.1 2.4-.5.7-1.3 1.5-2 2.6-.8 1.2-1.4 2.7-1.4 4.4 0 .4-.3.7-.7 1.2-.4.4-.9.9-.9 1.6 0 .3.1.6.4.7.2.1.5.2.8.3.6.2 1.2.4 1.6.9.5.6 1.3 1.2 2.9 1.2h1.6c1.6 0 2.4-.6 2.9-1.2.4-.5 1-.7 1.6-.9.3-.1.6-.2.8-.3.3-.1.4-.4.4-.7 0-.7-.5-1.2-.9-1.6-.4-.5-.7-.8-.7-1.2 0-1.7-.6-3.2-1.4-4.4-.7-1.1-1.5-1.9-2-2.6 0-.8.1-1.6.1-2.4 0-1.7-1.1-3-2.6-3zm-1 4.6c.3 0 .5.3.5.7s-.2.7-.5.7-.5-.3-.5-.7.2-.7.5-.7zm2 0c.3 0 .5.3.5.7s-.2.7-.5.7-.5-.3-.5-.7.2-.7.5-.7z" />
     </svg>
   );
 }
 
-type Step = { text: string; cmd?: string };
-const CONTENT: Record<OS, { artifacts: string; steps: Step[]; note: string }> = {
-  macos: {
-    artifacts: "Universal .dmg, Apple Silicon and Intel",
-    steps: [
-      { text: "Download the .dmg and drag Hoy to Applications." },
-      { text: "First launch: right-click the app and choose Open." },
-      {
-        text: "Or clear the quarantine flag from a terminal:",
-        cmd: "xattr -dr com.apple.quarantine /Applications/Hoy.app",
-      },
-    ],
-    note: "Unsigned build, Gatekeeper warns on first open. Code signing is a known pre-1.0 gap.",
-  },
-  windows: {
-    artifacts: ".msi installer or portable .exe",
-    steps: [
-      { text: "Download the installer and run it." },
-      { text: "SmartScreen warns: choose More info, then Run anyway." },
-    ],
-    note: "Unsigned build, SmartScreen and some antivirus tools will flag it.",
-  },
-  linux: {
-    artifacts: ".AppImage or .deb, x86_64",
-    steps: [
-      {
-        text: "AppImage: make it executable, then run it.",
-        cmd: "chmod +x Hoy_*.AppImage && ./Hoy_*.AppImage",
-      },
-      { text: "Debian/Ubuntu: install the .deb.", cmd: "sudo dpkg -i hoy_*.deb" },
-    ],
-    note: "No apt/rpm repo yet, grab the file straight from Releases.",
-  },
-};
-
-function Cmd({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="cmd">
-      <code>{text}</code>
-      <button
-        type="button"
-        className="cmd-copy"
-        onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(text);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          } catch {
-            /* clipboard unavailable */
-          }
-        }}
-        aria-label="Copy command"
-      >
-        {copied ? "Copied" : "Copy"}
-      </button>
-    </div>
-  );
-}
-
 export function InstallPanel({ version }: { version: string }) {
-  const [os, setOs] = useState<OS>("macos");
   const [detected, setDetected] = useState<OS | null>(null);
 
   useEffect(() => {
-    const d = detectOS();
-    if (d) {
-      setDetected(d);
-      setOs(d);
-    }
+    setDetected(detectOS());
   }, []);
 
-  const primaryLabel = detected
-    ? `Download for ${LABEL[detected]}`
-    : `Download v${version}`;
-  const others = OSES.filter((o) => o !== detected).map((o) => LABEL[o]);
-  const c = CONTENT[os];
+  const primaryOS = detected ?? "macos";
+  const primary = OS_DOWNLOADS[primaryOS];
+  const primaryAsset = primary.assets[0];
 
   return (
-    <div className="install">
-      <div className="install-top">
-        <a className="btn btn-primary btn-lg" href={RELEASES_LATEST_URL}>
-          {primaryLabel}
+    <div className="dl">
+      <div className="dl-hero">
+        <a
+          className="btn btn-primary btn-lg"
+          href={assetUrl(version, primaryAsset.file(version))}
+        >
+          Download for {primary.name}
         </a>
-        <p className="install-meta">
-          Free, bring your own API key.
-          {detected && (
-            <span className="install-others"> Also on {others.join(" and ")}.</span>
-          )}
+        <p className="dl-caption">
+          {primaryAsset.label}
+          {" · "}v{version}
+          {" · "}free, bring your own API key
         </p>
       </div>
 
-      <div className="install-panel">
-        <div className="seg" role="tablist" aria-label="Platform">
-          {OSES.map((o) => (
-            <button
-              key={o}
-              type="button"
-              role="tab"
-              aria-selected={o === os}
-              className={o === os ? "seg-btn seg-btn-active" : "seg-btn"}
-              onClick={() => setOs(o)}
+      <div className="dl-grid">
+        {OS_ORDER.map((os) => {
+          const d = OS_DOWNLOADS[os];
+          return (
+            <div
+              key={os}
+              className={os === detected ? "dl-os dl-os-active" : "dl-os"}
             >
-              <OSIcon os={o} />
-              {LABEL[o]}
-            </button>
-          ))}
-        </div>
-
-        <div className="install-body">
-          <p className="install-artifacts">
-            {c.artifacts} {"·"}{" "}
-            <a href={RELEASES_LATEST_URL}>v{version}</a>
-          </p>
-          <ol className="install-steps">
-            {c.steps.map((s, i) => (
-              <li key={i}>
-                {s.text}
-                {s.cmd && <Cmd text={s.cmd} />}
-              </li>
-            ))}
-          </ol>
-          <p className="install-note">
-            {c.note} <a href={RELEASES_URL}>All releases</a>
-          </p>
-        </div>
+              <span className="dl-os-name">
+                <OSIcon os={os} />
+                {d.name}
+                {os === detected && <span className="dl-tag">Detected</span>}
+              </span>
+              <span className="dl-os-links">
+                {d.assets.map((a, i) => (
+                  <span key={a.label}>
+                    {i > 0 && <span className="dl-sep">/</span>}
+                    <a href={assetUrl(version, a.file(version))}>{a.label}</a>
+                  </span>
+                ))}
+              </span>
+              <span className="dl-os-note">{d.note}</span>
+            </div>
+          );
+        })}
       </div>
+
+      <p className="dl-foot">
+        Every build is unsigned before 1.0, so your OS shows a first-run warning.{" "}
+        <a href={RELEASES_LIST_URL} target="_blank" rel="noreferrer">
+          All releases and checksums
+        </a>
+      </p>
     </div>
   );
 }
