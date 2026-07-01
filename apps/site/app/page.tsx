@@ -1,10 +1,16 @@
 import Link from "next/link";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
-import { StreamingPreview } from "@/components/StreamingPreview";
+import { HeroStage } from "@/components/HeroStage";
+import { RevealOnScroll } from "@/components/RevealOnScroll";
 import { PlatformPicker } from "@/components/PlatformPicker";
+import {
+  AppWindow,
+  SidebarBeat,
+  ToolCallsBeat,
+  ModelBeat,
+} from "@/components/AppMock";
 import { getLatestVersion } from "@/lib/releases";
-import { availableShots } from "@/lib/screenshots";
 import { RELEASES_URL, RELEASES_LATEST_URL } from "@/lib/site";
 
 function AppleIcon() {
@@ -44,7 +50,6 @@ function WindowsIcon() {
 // the displayed version on the next deploy without editing this file.
 export default async function Home() {
   const version = await getLatestVersion();
-  const shots = availableShots();
 
   return (
     <>
@@ -52,25 +57,20 @@ export default async function Home() {
 
       <main>
         <section className="hero">
-          <div className="wrap-wide hero-grid">
-            <div className="hero-copy">
+          <div className="hero-bg" aria-hidden="true" />
+          <div className="wrap-wide">
+            <div className="hero-lead">
               <span className="badge">
                 <span className="pulse" aria-hidden="true" />
                 Beta / Experimental
               </span>
               <h1>Hoy</h1>
               <p className="tagline">
-                A native desktop home for the Pi coding agent, its streaming
-                output, tool calls, and sessions in a real window.
+                The Pi coding agent, in a real window. Streaming output, inline
+                tool calls, and every session kept.
               </p>
 
-              <p className="beta-note">
-                <strong>Pre-1.0 and honest about it.</strong> Expect bugs and
-                breaking changes between builds. You bring your own API key, and
-                nothing here is meant for production use yet.
-              </p>
-
-              <div className="cta-row">
+              <div className="cta-row cta-row-center">
                 <a className="btn btn-primary" href={RELEASES_LATEST_URL}>
                   Download v{version}
                 </a>
@@ -81,11 +81,63 @@ export default async function Home() {
               <PlatformPicker />
             </div>
 
-            <div>
-              <StreamingPreview />
-              <p className="appwin-caption">
-                A live session, streaming, not a screenshot.
+            <HeroStage>
+              <AppWindow />
+            </HeroStage>
+          </div>
+        </section>
+
+        <section id="how" className="beats">
+          <div className="wrap-wide">
+            <div className="beats-head">
+              <div className="section-head">
+                <span className="dot" aria-hidden="true" />
+                <h2 className="heading">See it work</h2>
+              </div>
+              <p className="lead">
+                Hoy runs on your machine and talks to the Pi coding agent as a
+                separate local process. Your API key stays local and never leaves
+                through Hoy.
               </p>
+            </div>
+
+            <div className="beat">
+              <div className="beat-copy">
+                <h3 className="heading">Every session, kept</h3>
+                <p className="lead">
+                  Projects and threads live in a sidebar that survives restarts.
+                  Reopen any conversation exactly where you left it.
+                </p>
+              </div>
+              <RevealOnScroll className="beat-visual">
+                <SidebarBeat />
+              </RevealOnScroll>
+            </div>
+
+            <div className="beat beat-reverse">
+              <div className="beat-copy">
+                <h3 className="heading">Tool calls, rendered inline</h3>
+                <p className="lead">
+                  Reads, edits, and shell commands appear in the transcript as the
+                  agent runs them, with their results, not walls of raw output.
+                </p>
+              </div>
+              <RevealOnScroll className="beat-visual">
+                <ToolCallsBeat />
+              </RevealOnScroll>
+            </div>
+
+            <div className="beat">
+              <div className="beat-copy">
+                <h3 className="heading">Any model you have a key for</h3>
+                <p className="lead">
+                  Bring your own key and switch between Anthropic, OpenAI,
+                  DeepSeek, Groq, and more from one picker.
+                </p>
+              </div>
+              <RevealOnScroll className="beat-visual">
+                <ModelBeat />
+              </RevealOnScroll>
             </div>
           </div>
         </section>
@@ -173,31 +225,6 @@ export default async function Home() {
                 All releases
               </a>
             </div>
-          </div>
-        </section>
-
-        <section id="how">
-          <div className="wrap">
-            <div className="section-head">
-              <span className="dot" aria-hidden="true" />
-              <h2 className="heading">Local, and yours</h2>
-            </div>
-            <p className="lead">
-              Hoy runs on your machine and talks to the Pi coding agent as a
-              separate local process. You bring your own API key; it is stored
-              locally and never leaves your machine through Hoy.
-            </p>
-
-            {shots.length > 0 && (
-              <div className="gallery">
-                {shots.map((shot) => (
-                  <figure key={shot.src}>
-                    <img src={shot.src} alt={shot.alt} loading="lazy" />
-                    <figcaption>{shot.caption}</figcaption>
-                  </figure>
-                ))}
-              </div>
-            )}
           </div>
         </section>
       </main>

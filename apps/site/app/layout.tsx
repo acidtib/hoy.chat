@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 // Fontsource ships the Geist variable font as a local dependency, so the static
 // build does not depend on fetching fonts from a network at build time. This is
 // the same package the desktop app uses (@fontsource-variable/geist).
@@ -24,7 +25,14 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {/* Set .js before paint so scroll-reveal pre-states apply only when JS
+            can undo them; no-JS and headless renders stay fully visible. */}
+        <Script id="js-flag" strategy="beforeInteractive">
+          {`document.documentElement.classList.add('js')`}
+        </Script>
+        {children}
+      </body>
     </html>
   );
 }
