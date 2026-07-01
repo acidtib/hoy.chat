@@ -92,8 +92,13 @@ a {
   font-size: 14px;
 }
 .nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px;
   color: var(--muted);
   text-decoration: none;
+  transition: color 120ms ease;
 }
 .nav a:hover {
   color: var(--fg);
@@ -223,11 +228,13 @@ a {
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  min-height: 44px;
   font-size: 15px;
   font-weight: 600;
   text-decoration: none;
-  padding: 11px 20px;
+  padding: 10px 20px;
   border-radius: var(--radius);
   border: 1px solid transparent;
   transition: background 120ms ease, border-color 120ms ease;
@@ -294,10 +301,6 @@ h2.heading {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
-}
-.card h3 {
-  margin: 0 0 6px;
-  font-size: 17px;
 }
 .card ol {
   margin: 12px 0 0;
@@ -429,8 +432,14 @@ h2.heading {
 }
 .footer-links {
   display: flex;
-  gap: 20px;
+  gap: 8px 20px;
   flex-wrap: wrap;
+}
+.footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  transition: color 120ms ease;
 }
 
 /* Changelog */
@@ -543,10 +552,19 @@ h2.heading {
    a live reasoning timer. It mirrors the desktop app's SQUARE theme (radius 0)
    to read as "the product," distinct from the site's 10px chrome. */
 .appwin {
+  /* Scoped palette: this window depicts the desktop APP, so it deliberately
+     runs its own surfaces (darker, squarer) rather than the site tokens. */
+  --app-bg: #141417;
+  --app-bar: #17171b;
+  --app-side: #151519;
+  --app-bubble: #1b1b20;
+  --app-ink: #d9d9de;
+  --app-code: #1f1f25;
+  --app-ok: #3fb950;
   position: relative;
   border: 1px solid var(--border-strong);
   border-radius: 12px;
-  background: #141417;
+  background: var(--app-bg);
   overflow: hidden;
   box-shadow:
     0 30px 70px -28px rgba(0, 0, 0, 0.8),
@@ -567,7 +585,7 @@ h2.heading {
   gap: 10px;
   padding: 9px 13px;
   border-bottom: 1px solid var(--border);
-  background: #17171b;
+  background: var(--app-bar);
 }
 .appwin-dots {
   display: flex;
@@ -602,7 +620,7 @@ h2.heading {
   gap: 9px;
   padding: 12px 10px;
   border-right: 1px solid var(--border);
-  background: #151519;
+  background: var(--app-side);
 }
 .appwin-side span {
   display: block;
@@ -635,17 +653,17 @@ h2.heading {
   max-width: 84%;
   padding: 8px 12px;
   color: var(--fg);
-  background: color-mix(in srgb, var(--brand) 16%, #1b1b20);
+  background: color-mix(in srgb, var(--brand) 16%, var(--app-bubble));
   border: 1px solid color-mix(in srgb, var(--brand) 34%, transparent);
 }
 .chat-asst {
-  color: #d9d9de;
+  color: var(--app-ink);
 }
 .chat-asst code {
   font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
   font-size: 12px;
   color: var(--fg);
-  background: #1f1f25;
+  background: var(--app-code);
   padding: 1px 5px;
 }
 .caret {
@@ -675,12 +693,12 @@ h2.heading {
   font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
   font-size: 12px;
   color: var(--muted);
-  background: #1b1b20;
+  background: var(--app-bubble);
   border: 1px solid var(--border);
   padding: 6px 10px;
 }
 .tool-chip .tick {
-  color: #3fb950;
+  color: var(--app-ok);
   font-weight: 700;
 }
 .tool-chip .path {

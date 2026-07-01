@@ -49,11 +49,17 @@ export function StreamingPreview() {
           </div>
 
           <span className="tool-chip">
-            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <svg
+              className="tick"
+              viewBox="0 0 16 16"
+              width="13"
+              height="13"
+              aria-hidden="true"
+            >
               <path
                 d="M3.5 8.5l3 3 6-7"
                 fill="none"
-                stroke="#3fb950"
+                stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
