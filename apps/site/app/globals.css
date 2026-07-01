@@ -289,16 +289,7 @@ section {
 .section-head {
   display: flex;
   align-items: baseline;
-  gap: 12px;
   margin: 0 0 8px;
-}
-.section-head .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--brand);
-  flex: none;
-  transform: translateY(-2px);
 }
 .heading {
   font-size: clamp(24px, 5vw, 32px);

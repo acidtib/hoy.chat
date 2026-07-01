@@ -56,7 +56,6 @@ export default async function Home() {
         <section id="install">
           <div className="wrap">
             <div className="section-head">
-              <span className="dot" aria-hidden="true" />
               <h2 className="heading">Get running</h2>
             </div>
             <p className="lead">
@@ -72,7 +71,6 @@ export default async function Home() {
           <div className="wrap-wide">
             <div className="beats-head">
               <div className="section-head">
-                <span className="dot" aria-hidden="true" />
                 <h2 className="heading">See it work</h2>
               </div>
               <p className="lead">
