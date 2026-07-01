@@ -82,6 +82,8 @@ pub fn run() {
             commands::close_session,
             commands::get_messages,
             commands::delete_session_file,
+            commands::list_project_paths,
+            commands::read_context_file,
             commands::load_workspace,
             commands::save_workspace
         ])

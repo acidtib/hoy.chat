@@ -136,7 +136,7 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
     if (m.role === "user") {
       turns.push({
         role: "user",
-        text: contentText(m.content),
+        text: stripContextBlock(contentText(m.content)),
         images: contentImages(m.content),
       });
     } else if (m.role === "assistant") {
@@ -215,6 +215,17 @@ function contentText(content: string | RawContentPart[] | undefined): string {
     .filter((p) => p.type === "text" && typeof p.text === "string")
     .map((p) => p.text)
     .join("");
+}
+
+// Strip a leading @ context block from a restored user message (HOY-220). The
+// content is inlined into the message text on submit; on restore we show the
+// user's actual text, not the inlined files/transcripts. Matches our own
+// <context>...</context> prefix only, so ordinary messages are untouched.
+function stripContextBlock(text: string): string {
+  if (!text.startsWith("<context>")) return text;
+  const end = text.indexOf("</context>");
+  if (end < 0) return text;
+  return text.slice(end + "</context>".length).replace(/^\s+/, "");
 }
 
 // Image parts of a restored user message, so reopened threads keep the images the

@@ -93,6 +93,30 @@ describe("messagesToTurns images (HOY-205)", () => {
   });
 });
 
+describe("messagesToTurns context block (HOY-220)", () => {
+  test("strips a leading inlined context block from restored user text", () => {
+    const turns = messagesToTurns([
+      {
+        role: "user",
+        content:
+          '<context>\n<file path="a.ts">const a = 1;</file>\n</context>\n\nwhat does this do?',
+      },
+    ]);
+    const turn = turns[0];
+    if (turn.role !== "user") throw new Error("expected user turn");
+    expect(turn.text).toBe("what does this do?");
+  });
+
+  test("leaves an ordinary message untouched", () => {
+    const turns = messagesToTurns([
+      { role: "user", content: "a normal message" },
+    ]);
+    const turn = turns[0];
+    if (turn.role !== "user") throw new Error("expected user turn");
+    expect(turn.text).toBe("a normal message");
+  });
+});
+
 describe("applyEvent queueUpdate (HOY-218)", () => {
   test("queueUpdate is session-level and leaves the transcript unchanged", () => {
     const turns: Turn[] = [

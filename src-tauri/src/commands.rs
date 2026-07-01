@@ -389,6 +389,105 @@ pub async fn set_permission_mode(
     Ok(())
 }
 
+// One entry in the composer @ context picker's file list (HOY-220). `path` is
+// relative to the project root (forward-slashed); `name` is the leaf.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathEntry {
+    path: String,
+    name: String,
+    is_dir: bool,
+}
+
+// A single context file is inlined into the prompt text, so cap it: large files
+// would blow the context window and are rarely what the user means to attach.
+const MAX_CONTEXT_FILE_BYTES: usize = 256 * 1024;
+
+// List paths under a project root for the @ context picker (HOY-220). Pi has no
+// file-listing RPC, so this is Hoy-side. Gitignore-aware (require_git(false) so a
+// .gitignore is honored even without a .git dir); `query` is a case-insensitive
+// substring filter over the relative path; results are capped at `limit`.
+#[tauri::command]
+pub fn list_project_paths(
+    root: String,
+    query: String,
+    limit: usize,
+) -> Result<Vec<PathEntry>, String> {
+    let root_path = PathBuf::from(&root);
+    if !root_path.is_dir() {
+        return Err(format!("not a directory: {root}"));
+    }
+    let needle = query.to_lowercase();
+    let mut out = Vec::new();
+    let walker = ignore::WalkBuilder::new(&root_path)
+        .git_ignore(true)
+        .require_git(false)
+        .hidden(true)
+        .parents(false)
+        .build();
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        if path == root_path {
+            continue;
+        }
+        let rel = match path.strip_prefix(&root_path) {
+            Ok(r) => r.to_string_lossy().replace('\\', "/"),
+            Err(_) => continue,
+        };
+        if !needle.is_empty() && !rel.to_lowercase().contains(&needle) {
+            continue;
+        }
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        out.push(PathEntry {
+            path: rel,
+            name: entry.file_name().to_string_lossy().to_string(),
+            is_dir,
+        });
+        if out.len() >= limit {
+            break;
+        }
+    }
+    Ok(out)
+}
+
+// Read a project file for inlining as @ context (HOY-220). Path-guarded to the
+// project root (like delete_session_file) and size-capped. `path` is relative to
+// `root`; a canonicalized prefix re-check defends against symlink escapes.
+#[tauri::command]
+pub fn read_context_file(root: String, path: String) -> Result<String, String> {
+    let rel = PathBuf::from(&path);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("refusing to read outside the project root".into());
+    }
+    let root_path = PathBuf::from(&root);
+    let canon_root = root_path
+        .canonicalize()
+        .map_err(|e| format!("resolve root: {e}"))?;
+    let canon = root_path
+        .join(&rel)
+        .canonicalize()
+        .map_err(|e| format!("resolve file: {e}"))?;
+    if !canon.starts_with(&canon_root) {
+        return Err("refusing to read outside the project root".into());
+    }
+    let bytes = std::fs::read(&canon).map_err(|e| format!("read file: {e}"))?;
+    let truncated = bytes.len() > MAX_CONTEXT_FILE_BYTES;
+    let end = bytes.len().min(MAX_CONTEXT_FILE_BYTES);
+    let mut content = String::from_utf8_lossy(&bytes[..end]).into_owned();
+    if truncated {
+        content.push_str("\n... [truncated]");
+    }
+    Ok(content)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,5 +525,57 @@ mod tests {
     fn build_prompt_body_with_streaming_behavior() {
         let body = build_prompt_body("more", None, Some("steer".into()));
         assert_eq!(body["streamingBehavior"], "steer");
+    }
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // A unique scratch dir per test so the parallel test runner never collides.
+    fn scratch_dir() -> PathBuf {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("hoy_ctx_test_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn list_project_paths_respects_gitignore_and_filters() {
+        let root = scratch_dir();
+        std::fs::write(root.join("keep.txt"), "keep").unwrap();
+        std::fs::write(root.join("ignored.txt"), "ignored").unwrap();
+        std::fs::write(root.join(".gitignore"), "ignored.txt\n").unwrap();
+
+        let all = list_project_paths(root.to_string_lossy().into(), String::new(), 50).unwrap();
+        let names: Vec<&str> = all.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"keep.txt"));
+        assert!(!names.contains(&"ignored.txt"));
+
+        let filtered =
+            list_project_paths(root.to_string_lossy().into(), "keep".into(), 50).unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].path, "keep.txt");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn read_context_file_rejects_traversal() {
+        let root = scratch_dir();
+        assert!(read_context_file(root.to_string_lossy().into(), "../secret".into()).is_err());
+        assert!(read_context_file(root.to_string_lossy().into(), "/etc/passwd".into()).is_err());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn read_context_file_caps_size() {
+        let root = scratch_dir();
+        let big = "a".repeat(MAX_CONTEXT_FILE_BYTES + 5000);
+        std::fs::write(root.join("big.txt"), &big).unwrap();
+
+        let content = read_context_file(root.to_string_lossy().into(), "big.txt".into()).unwrap();
+        assert!(content.ends_with("[truncated]"));
+        assert!(content.len() <= MAX_CONTEXT_FILE_BYTES + "\n... [truncated]".len());
+
+        std::fs::remove_dir_all(&root).ok();
     }
 }

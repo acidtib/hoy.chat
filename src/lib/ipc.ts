@@ -7,6 +7,7 @@ import type {
   AgentEvent,
   ImageContent,
   ModelInfo,
+  PathEntry,
   PermissionMode,
   PiState,
   ProviderAuth,
@@ -137,6 +138,22 @@ export function enqueuePrompt(
     images: images && images.length > 0 ? images : null,
     streamingBehavior,
   });
+}
+
+// List project files/dirs for the @ context picker (HOY-220). `query` is a
+// substring filter over the relative path; results are gitignore-aware and capped.
+export function listProjectPaths(
+  root: string,
+  query: string,
+  limit = 50,
+): Promise<PathEntry[]> {
+  return invoke<PathEntry[]>("list_project_paths", { root, query, limit });
+}
+
+// Read a project file's content to inline as @ context (HOY-220). Path-guarded to
+// `root` and size-capped in Rust.
+export function readContextFile(root: string, path: string): Promise<string> {
+  return invoke<string>("read_context_file", { root, path });
 }
 
 export function getSessionStats(sessionId: string): Promise<SessionStats> {

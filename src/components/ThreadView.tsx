@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertCircle,
   Archive,
   CircleStop,
+  File as FileIcon,
   FilePen,
+  Folder,
   Info,
   Maximize2,
+  MessageSquare,
   Minimize2,
   MoreHorizontal,
   Plus,
@@ -53,8 +56,10 @@ import { Composer } from "@/components/Composer";
 import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
 import { findThread, useSessionStore } from "@/state/store";
-import { modelSupportsImages } from "@/lib/types";
+import { listProjectPaths } from "@/lib/ipc";
+import { contextKey, modelSupportsImages } from "@/lib/types";
 import type {
+  ContextRef,
   ExtWidget,
   ImageAttachment,
   Notice,
@@ -70,6 +75,7 @@ const EMPTY_TURNS: Turn[] = [];
 const EMPTY_PERMISSIONS: PermissionRequest[] = [];
 const EMPTY_NOTICES: Notice[] = [];
 const EMPTY_ATTACHMENTS: ImageAttachment[] = [];
+const EMPTY_CONTEXTS: ContextRef[] = [];
 const EMPTY_QUEUE: { steering: string[]; followUp: string[] } = {
   steering: [],
   followUp: [],
@@ -126,21 +132,44 @@ export function ThreadView({
   );
   const addAttachments = useSessionStore((s) => s.addAttachments);
   const removeAttachment = useSessionStore((s) => s.removeAttachment);
+  const contexts = useSessionStore(
+    (s) => s.composerContexts[threadId] ?? EMPTY_CONTEXTS,
+  );
+  const addContext = useSessionStore((s) => s.addContext);
+  const removeContext = useSessionStore((s) => s.removeContext);
   const queued = useSessionStore((s) => s.queued[threadId] ?? EMPTY_QUEUE);
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const { title, projectId, threadModel, permissionMode, thinkingLevel, sessionId } = useMemo(() => {
+  const { title, projectId, projectPath, threadModel, permissionMode, thinkingLevel, sessionId } = useMemo(() => {
     const found = findThread(projects, threadId);
     return {
       title: found?.thread.title ?? "New thread",
       projectId: found?.project.id ?? null,
+      projectPath: found?.project.path ?? null,
       threadModel: found?.thread.model ?? null,
       permissionMode: found?.thread.permissionMode ?? ("default" as const),
       thinkingLevel: found?.thread.thinkingLevel ?? ("high" as const),
       sessionId: found?.thread.sessionId ?? null,
     };
   }, [projects, threadId]);
+
+  // @ context picker inputs (HOY-220): the gitignore-aware path search for this
+  // project, and the other threads offered under the Threads section.
+  const searchPaths = useCallback(
+    (query: string) =>
+      projectPath ? listProjectPaths(projectPath, query, 50) : Promise.resolve([]),
+    [projectPath],
+  );
+  const contextThreads = useMemo(
+    () =>
+      projects.flatMap((p) =>
+        p.threads
+          .filter((t) => t.id !== threadId)
+          .map((t) => ({ threadId: t.id, title: t.title })),
+      ),
+    [projects, threadId],
+  );
 
   const hasMessages = turns.length > 0;
   const shownError = threadError ?? error;
@@ -213,6 +242,11 @@ export function ThreadView({
       onAddFiles={(files) => void addAttachments(threadId, files)}
       onRemoveAttachment={(id) => removeAttachment(threadId, id)}
       canAttachImages={canAttachImages}
+      contexts={contexts}
+      onAddContext={(ref) => addContext(threadId, ref)}
+      onRemoveContext={(key) => removeContext(threadId, key)}
+      searchPaths={searchPaths}
+      threads={contextThreads}
     />
   );
 
@@ -368,6 +402,13 @@ export function ThreadView({
                             alt="attachment"
                             className="size-20 rounded-md border border-border/60 object-cover"
                           />
+                        ))}
+                      </div>
+                    )}
+                    {turn.contexts && turn.contexts.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-1.5">
+                        {turn.contexts.map((ref) => (
+                          <TurnContextPill key={contextKey(ref)} contextRef={ref} />
                         ))}
                       </div>
                     )}
@@ -651,6 +692,24 @@ function QueuedMessages({
         </p>
       )}
     </div>
+  );
+}
+
+// Read-only @ context marker on a sent user turn (HOY-220). Mirrors the composer
+// pill without a remove affordance.
+function TurnContextPill({ contextRef }: { contextRef: ContextRef }) {
+  const Icon =
+    contextRef.kind === "thread"
+      ? MessageSquare
+      : contextRef.kind === "directory"
+        ? Folder
+        : FileIcon;
+  const label = contextRef.kind === "thread" ? contextRef.title : contextRef.name;
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-xs text-muted-foreground">
+      <Icon className="size-3 shrink-0" />
+      <span className="truncate">{label}</span>
+    </span>
   );
 }
 

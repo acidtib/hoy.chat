@@ -143,8 +143,36 @@ export interface ImageAttachment {
 // How a mid-turn prompt is delivered while a turn already streams (HOY-218).
 export type StreamingBehavior = "steer" | "followUp";
 
+// One entry in the @ context picker's file list (HOY-220). Mirror of commands.rs
+// PathEntry; `path` is relative to the project root.
+export interface PathEntry {
+  path: string;
+  name: string;
+  isDir: boolean;
+}
+
+// A piece of context attached to a message via the @ picker (HOY-220). Pi has no
+// per-message context, so on submit each ref is inlined into the message text
+// (file/dir content or a thread transcript). Rendered as a removable pill.
+export type ContextRef =
+  | { kind: "file"; path: string; name: string }
+  | { kind: "directory"; path: string; name: string }
+  | { kind: "thread"; threadId: string; title: string };
+
+// Stable identity for dedup and removal: files/dirs by path, threads by id.
+export function contextKey(ref: ContextRef): string {
+  return ref.kind === "thread" ? `t:${ref.threadId}` : `${ref.kind[0]}:${ref.path}`;
+}
+
 export type Turn =
-  | { role: "user"; text: string; images?: ImageContent[] }
+  | {
+      role: "user";
+      text: string;
+      images?: ImageContent[];
+      // @ context attached to this send (HOY-220), for display pills. Not
+      // restored from disk (the content is inlined into the message text).
+      contexts?: ContextRef[];
+    }
   | {
       role: "assistant";
       reasoning?: { text: string; seconds?: number };

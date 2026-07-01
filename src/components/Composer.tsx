@@ -2,7 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AtSign,
   ChevronDown,
+  File as FileIcon,
+  Folder,
+  Image as ImageIcon,
   Maximize2,
+  MessageSquare,
   Minimize2,
   Plus,
   SendHorizontal,
@@ -23,15 +27,24 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { detectMention } from "@/lib/mention";
 import type {
+  ContextRef,
   ExtWidget,
   ImageAttachment,
   ModelInfo,
   ModelRef,
+  PathEntry,
   PermissionMode,
   ThinkingLevel,
 } from "@/lib/types";
-import { THINKING_LEVELS } from "@/lib/types";
+import { contextKey, THINKING_LEVELS } from "@/lib/types";
+
+// The composer thread reference for the @ picker's Threads section (HOY-220).
+interface ContextThread {
+  threadId: string;
+  title: string;
+}
 
 // Thinking levels (HOY-204). Labels are display only; pi's lowercase
 // ThinkingLevel union is the wire value.
@@ -83,6 +96,11 @@ export function Composer({
   onAddFiles,
   onRemoveAttachment,
   canAttachImages = true,
+  contexts = [],
+  onAddContext,
+  onRemoveContext,
+  searchPaths,
+  threads = [],
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -117,10 +135,23 @@ export function Composer({
   onAddFiles?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
   canAttachImages?: boolean;
+  // @ context picker (HOY-220): current pills, add/remove, the gitignore-aware
+  // path search, and the thread list for the Threads section.
+  contexts?: ContextRef[];
+  onAddContext?: (ref: ContextRef) => void;
+  onRemoveContext?: (key: string) => void;
+  searchPaths?: (query: string) => Promise<PathEntry[]>;
+  threads?: ContextThread[];
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  // Active @-mention (HOY-220): the picker is open while this is set. `at` is the
+  // `@` index in the value; `query` is the text typed after it (the filter).
+  const [picker, setPicker] = useState<{ at: number; query: string } | null>(
+    null,
+  );
+  const [pathResults, setPathResults] = useState<PathEntry[]>([]);
   const aboveWidgets = widgets.filter((w) => w.placement === "aboveEditor");
   const belowWidgets = widgets.filter((w) => w.placement === "belowEditor");
 
@@ -128,6 +159,103 @@ export function Composer({
     if (!files || !onAddFiles || !canAttachImages) return;
     const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (images.length > 0) onAddFiles(images);
+  }
+
+  // Live path search while the @ picker is open (HOY-220), debounced so each
+  // keystroke does not fire an ipc round trip. Empty query returns the first
+  // paths (Rust caps the count).
+  useEffect(() => {
+    if (!picker || !searchPaths) {
+      setPathResults([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      searchPaths(picker.query)
+        .then((results) => {
+          if (!cancelled) setPathResults(results);
+        })
+        .catch(() => {
+          if (!cancelled) setPathResults([]);
+        });
+    }, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [picker, searchPaths]);
+
+  const query = picker?.query.toLowerCase() ?? "";
+  const shownPaths = pathResults.slice(0, 8);
+  const shownThreads = (
+    query
+      ? threads.filter((t) => t.title.toLowerCase().includes(query))
+      : threads
+  ).slice(0, 6);
+
+  // Reflect the textarea's current @-mention (or clear it) after every edit.
+  function handleChange(value: string, cursor: number) {
+    onChange(value);
+    const mention = detectMention(value, cursor);
+    setPicker(mention ? { at: mention.at, query: mention.query } : null);
+  }
+
+  // The @ button opens the picker by inserting an `@` at the cursor (on a word
+  // boundary), which the mention detector then picks up.
+  function openPickerFromButton() {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    const pos = el.selectionStart ?? value.length;
+    const needsSpace = pos > 0 && !/\s/.test(value[pos - 1] ?? "");
+    const insert = `${needsSpace ? " " : ""}@`;
+    const next = value.slice(0, pos) + insert + value.slice(pos);
+    const at = pos + insert.length - 1;
+    onChange(next);
+    setPicker({ at, query: "" });
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = at + 1;
+    });
+  }
+
+  // Remove the `@query` token from the textarea and close the picker, restoring
+  // the caret to where the `@` was.
+  function closePicker() {
+    if (picker) {
+      const end = picker.at + 1 + picker.query.length;
+      onChange(value.slice(0, picker.at) + value.slice(end));
+      const el = textareaRef.current;
+      if (el)
+        requestAnimationFrame(() => {
+          el.focus();
+          el.selectionStart = el.selectionEnd = picker.at;
+        });
+    }
+    setPicker(null);
+    setPathResults([]);
+  }
+
+  function pickPath(entry: PathEntry) {
+    onAddContext?.({
+      kind: entry.isDir ? "directory" : "file",
+      path: entry.path,
+      name: entry.name,
+    });
+    closePicker();
+  }
+
+  function pickThread(thread: ContextThread) {
+    onAddContext?.({
+      kind: "thread",
+      threadId: thread.threadId,
+      title: thread.title,
+    });
+    closePicker();
+  }
+
+  function pickImage() {
+    closePicker();
+    fileInputRef.current?.click();
   }
 
   useLayoutEffect(() => {
@@ -154,6 +282,22 @@ export function Composer({
   }, [focusSignal]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // The @ picker takes keys first (HOY-220): Escape closes it, Enter selects
+    // the top match instead of sending the message.
+    if (picker) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closePicker();
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (shownPaths.length > 0) pickPath(shownPaths[0]);
+        else if (shownThreads.length > 0) pickThread(shownThreads[0]);
+        else closePicker();
+        return;
+      }
+    }
     if (e.key !== "Enter") return;
     if (!e.shiftKey) {
       e.preventDefault();
@@ -167,7 +311,10 @@ export function Composer({
   }
 
   const canSend =
-    !disabled && (value.trim().length > 0 || attachments.length > 0);
+    !disabled &&
+    (value.trim().length > 0 ||
+      attachments.length > 0 ||
+      contexts.length > 0);
 
   return (
     <div
@@ -242,11 +389,25 @@ export function Composer({
         </div>
       )}
 
+      {contexts.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+          {contexts.map((ref) => (
+            <ContextPill
+              key={contextKey(ref)}
+              contextRef={ref}
+              onRemove={() => onRemoveContext?.(contextKey(ref))}
+            />
+          ))}
+        </div>
+      )}
+
       <textarea
         ref={textareaRef}
         rows={fill ? undefined : 1}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) =>
+          handleChange(e.target.value, e.target.selectionStart ?? e.target.value.length)
+        }
         onKeyDown={handleKeyDown}
         onPaste={(e) => {
           if (!canAttachImages || !onAddFiles) return;
@@ -277,6 +438,57 @@ export function Composer({
         <WidgetPanel key={`below-${i}`} lines={w.lines} />
       ))}
 
+      {picker && (
+        <div
+          // Keep the textarea focused so typing keeps updating the @query.
+          onMouseDown={(e) => e.preventDefault()}
+          className="scrollbar-thin absolute bottom-14 left-2 z-30 max-h-72 w-[22rem] max-w-[calc(100%-1rem)] overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+        >
+          <PickerSection label="Files & Directories">
+            {shownPaths.length === 0 ? (
+              <PickerEmpty>No matching files</PickerEmpty>
+            ) : (
+              shownPaths.map((entry) => (
+                <PickerRow key={entry.path} onSelect={() => pickPath(entry)}>
+                  {entry.isDir ? (
+                    <Folder className="size-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="truncate">{entry.name}</span>
+                  <span className="ml-auto truncate pl-2 text-xs text-muted-foreground/70">
+                    {entry.path}
+                  </span>
+                </PickerRow>
+              ))
+            )}
+          </PickerSection>
+
+          {shownThreads.length > 0 && (
+            <PickerSection label="Threads">
+              {shownThreads.map((thread) => (
+                <PickerRow
+                  key={thread.threadId}
+                  onSelect={() => pickThread(thread)}
+                >
+                  <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{thread.title}</span>
+                </PickerRow>
+              ))}
+            </PickerSection>
+          )}
+
+          {canAttachImages && (
+            <PickerSection label="Image">
+              <PickerRow onSelect={pickImage}>
+                <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
+                <span className="truncate">Attach an image...</span>
+              </PickerRow>
+            </PickerSection>
+          )}
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-2 px-2 py-1.5">
         <div className="flex items-center gap-0.5">
           <input
@@ -306,6 +518,7 @@ export function Composer({
             size="icon-sm"
             className="text-muted-foreground"
             aria-label="Mention context"
+            onClick={openPickerFromButton}
           >
             <AtSign className="size-4" />
           </Button>
@@ -367,6 +580,79 @@ export function Composer({
         </div>
       </div>
     </div>
+  );
+}
+
+// A removable @ context pill above the editor (HOY-220). Files/dirs show the
+// leaf name, threads show the title.
+function ContextPill({
+  contextRef,
+  onRemove,
+}: {
+  contextRef: ContextRef;
+  onRemove: () => void;
+}) {
+  const Icon =
+    contextRef.kind === "thread"
+      ? MessageSquare
+      : contextRef.kind === "directory"
+        ? Folder
+        : FileIcon;
+  const label = contextRef.kind === "thread" ? contextRef.title : contextRef.name;
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/60 bg-muted/40 py-0.5 pl-1.5 pr-1 text-xs text-muted-foreground">
+      <Icon className="size-3 shrink-0" />
+      <span className="truncate">{label}</span>
+      <button
+        type="button"
+        aria-label={`Remove ${label}`}
+        onClick={onRemove}
+        className="shrink-0 rounded-full p-0.5 hover:text-foreground"
+      >
+        <X className="size-3" />
+      </button>
+    </span>
+  );
+}
+
+function PickerSection({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="py-0.5">
+      <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function PickerRow({
+  onSelect,
+  children,
+}: {
+  onSelect: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent"
+    >
+      {children}
+    </button>
+  );
+}
+
+function PickerEmpty({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-2 py-1.5 text-sm text-muted-foreground/70">{children}</div>
   );
 }
 

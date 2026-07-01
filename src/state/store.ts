@@ -9,7 +9,9 @@ import {
   getMessages,
   getSessionStats,
   getState,
+  listProjectPaths,
   loadWorkspace,
+  readContextFile,
   removeProviderKey as ipcRemoveProviderKey,
   respondPermission as ipcRespondPermission,
   saveProviderKey as ipcSaveProviderKey,
@@ -21,8 +23,10 @@ import {
 } from "@/lib/ipc";
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { fileToImageAttachment } from "@/lib/images";
+import { contextKey } from "@/lib/types";
 import type {
   AgentEvent,
+  ContextRef,
   ExtWidget,
   ImageAttachment,
   ImageContent,
@@ -147,6 +151,85 @@ function removedItems(prev: string[], next: string[]): string[] {
   return removed;
 }
 
+// Join a project root with a relative path for an ipc call (HOY-220). Paths are
+// forward-slashed from list_project_paths; a trailing slash on root is tolerated.
+function joinPath(root: string, rel: string): string {
+  if (!root) return rel;
+  return `${root.replace(/\/+$/, "")}/${rel}`;
+}
+
+const MAX_THREAD_TRANSCRIPT_CHARS = 50000;
+
+// Flatten a referenced thread's transcript to text for inlining as @ context
+// (HOY-220). Built from the in-memory turns, so an unopened thread contributes
+// nothing (its turns are not loaded); capped to bound token blowup.
+function threadTranscript(threadId: string): string {
+  const turns = useSessionStore.getState().turns[threadId] ?? [];
+  const lines: string[] = [];
+  for (const turn of turns) {
+    if (turn.role === "user") {
+      if (turn.text) lines.push(`user: ${turn.text}`);
+    } else {
+      const text = turn.blocks
+        .filter((b) => b.kind === "text")
+        .map((b) => (b.kind === "text" ? b.content : ""))
+        .join("");
+      if (text) lines.push(`assistant: ${text}`);
+    }
+  }
+  const joined = lines.join("\n\n");
+  return joined.length > MAX_THREAD_TRANSCRIPT_CHARS
+    ? `${joined.slice(0, MAX_THREAD_TRANSCRIPT_CHARS)}\n... [truncated]`
+    : joined;
+}
+
+// Build the delimited <context> block prepended to a message on submit (HOY-220).
+// Files inline their (size-capped) content, directories a recursive path listing,
+// threads their transcript. An unreadable ref is skipped rather than failing the
+// send. Returns "" when nothing usable was gathered.
+async function buildContextBlock(
+  contexts: ContextRef[],
+  root: string,
+): Promise<string> {
+  if (contexts.length === 0) return "";
+  const parts: string[] = [];
+  for (const ref of contexts) {
+    if (ref.kind === "file") {
+      if (!root) continue;
+      try {
+        const content = await readContextFile(root, ref.path);
+        parts.push(`<file path="${attr(ref.path)}">\n${content}\n</file>`);
+      } catch {
+        // Skip an unreadable file; the rest of the send proceeds.
+      }
+    } else if (ref.kind === "directory") {
+      if (!root) continue;
+      try {
+        const entries = await listProjectPaths(joinPath(root, ref.path), "", 500);
+        const listing = entries
+          .map((e) => `${e.path}${e.isDir ? "/" : ""}`)
+          .join("\n");
+        parts.push(
+          `<directory path="${attr(ref.path)}">\n${listing}\n</directory>`,
+        );
+      } catch {
+        // Skip an unreadable directory.
+      }
+    } else {
+      const transcript = threadTranscript(ref.threadId);
+      parts.push(`<thread title="${attr(ref.title)}">\n${transcript}\n</thread>`);
+    }
+  }
+  if (parts.length === 0) return "";
+  return `<context>\n${parts.join("\n")}\n</context>`;
+}
+
+// Sanitize a value for an XML-ish attribute in the context block; the model reads
+// it as text, so a double quote just becomes a single quote.
+function attr(value: string): string {
+  return value.replace(/"/g, "'");
+}
+
 // Session list is keyed by sessionId from the start so multi-session is a data
 // change, not a redesign. Models, supported providers, and provider auth status
 // are cached here so the top bar and settings page render from our state.
@@ -200,6 +283,10 @@ interface SessionStore {
   // In-memory only (base64 never touches disk); cleared on submit and on panel
   // close, revoking each preview object URL.
   composerAttachments: Record<string, ImageAttachment[]>;
+  // Pending @ context refs for the composer, keyed by threadId (HOY-220). Each is
+  // inlined into the message on submit (file/dir content or a thread transcript);
+  // cleared on submit and on panel close.
+  composerContexts: Record<string, ContextRef[]>;
   // Pi's per-session steering/follow-up queues, keyed by threadId (HOY-218). Fed
   // by queueUpdate events (Pi sends full arrays, so we replace). Drives the
   // read-only queued-message chips. Cleared on panel close; abort leaves it
@@ -241,6 +328,11 @@ interface SessionStore {
   addAttachments: (threadId: string, files: File[]) => Promise<void>;
   removeAttachment: (threadId: string, id: string) => void;
   clearAttachments: (threadId: string) => void;
+  // @ context management for the composer (HOY-220). addContext dedups by
+  // contextKey; clearContexts runs on submit and panel close.
+  addContext: (threadId: string, ref: ContextRef) => void;
+  removeContext: (threadId: string, key: string) => void;
+  clearContexts: (threadId: string) => void;
   toggleFullScreen: (threadId: string) => void;
   setBodyWidth: (width: number) => void;
   resizePanelEdge: (index: number, deltaPx: number) => void;
@@ -338,6 +430,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   widgets: {},
   drafts: {},
   composerAttachments: {},
+  composerContexts: {},
   queued: {},
   expandedThreadId: null,
   focusRequest: null,
@@ -445,6 +538,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const { [id]: closedAttachments, ...composerAttachments } =
         s.composerAttachments;
       for (const a of closedAttachments ?? []) URL.revokeObjectURL(a.previewUrl);
+      // Pending @ contexts die with the composer session (HOY-220).
+      const { [id]: _cx, ...composerContexts } = s.composerContexts;
       // Queued messages die with the sidecar (HOY-218).
       const { [id]: _q, ...queued } = s.queued;
       return {
@@ -460,6 +555,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         statuses,
         widgets,
         composerAttachments,
+        composerContexts,
         queued,
         drafts: discard ? remainingDrafts : s.drafts,
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
@@ -516,6 +612,34 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         URL.revokeObjectURL(a.previewUrl);
       const { [threadId]: _drop, ...rest } = s.composerAttachments;
       return { composerAttachments: rest };
+    }),
+
+  addContext: (threadId, ref) =>
+    set((s) => {
+      const list = s.composerContexts[threadId] ?? [];
+      if (list.some((r) => contextKey(r) === contextKey(ref))) return s;
+      return {
+        composerContexts: {
+          ...s.composerContexts,
+          [threadId]: [...list, ref],
+        },
+      };
+    }),
+
+  removeContext: (threadId, key) =>
+    set((s) => ({
+      composerContexts: {
+        ...s.composerContexts,
+        [threadId]: (s.composerContexts[threadId] ?? []).filter(
+          (r) => contextKey(r) !== key,
+        ),
+      },
+    })),
+
+  clearContexts: (threadId) =>
+    set((s) => {
+      const { [threadId]: _drop, ...rest } = s.composerContexts;
+      return { composerContexts: rest };
     }),
 
   toggleFullScreen: (threadId) =>
@@ -755,15 +879,24 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   submitPrompt: async (threadId, message, images, behavior) => {
     const text = message.trim();
     const hasImages = !!images && images.length > 0;
-    if (!text && !hasImages) return;
 
     const found = findThread(get().projects, threadId);
     if (!found) return;
     const { thread, project } = found;
 
+    // @ contexts (HOY-220) are inlined into the message on submit. Read the files
+    // and thread transcripts, build a delimited block, and prepend it to the text
+    // Pi receives; the transcript still shows the user's clean text. Cleared after
+    // building so they cannot be attached twice.
+    const contexts = get().composerContexts[threadId] ?? [];
+    if (!text && !hasImages && contexts.length === 0) return;
+
     // The composer's attachments are consumed by this send; clear them (and
     // revoke their previews) so they cannot be sent twice (HOY-205).
     get().clearAttachments(threadId);
+    const contextBlock = await buildContextBlock(contexts, project.path ?? "");
+    get().clearContexts(threadId);
+    const outbound = contextBlock ? `${contextBlock}\n\n${text}` : text;
 
     // Mid-turn send (HOY-218): a turn is streaming, so queue the message into that
     // run via enqueue_prompt. It shows as a queued chip (from queueUpdate) until Pi
@@ -778,7 +911,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       thread.sessionId
     ) {
       try {
-        await enqueuePrompt(thread.sessionId, text, images, behavior ?? "steer");
+        await enqueuePrompt(
+          thread.sessionId,
+          outbound,
+          images,
+          behavior ?? "steer",
+        );
       } catch (e) {
         set((s) => ({
           threadErrors: { ...s.threadErrors, [threadId]: String(e) },
@@ -794,7 +932,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         ...s.turns,
         [threadId]: [
           ...(s.turns[threadId] ?? []),
-          { role: "user", text, ...(hasImages ? { images } : {}) },
+          {
+            role: "user",
+            text,
+            ...(hasImages ? { images } : {}),
+            ...(contexts.length > 0 ? { contexts } : {}),
+          },
           { role: "assistant", blocks: [], streaming: true },
         ],
       },
@@ -805,7 +948,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         updatedAt: Date.now(),
         title:
           th.title === "New thread"
-            ? truncateTitle(text || "Image")
+            ? truncateTitle(text || (hasImages ? "Image" : "Context"))
             : th.title,
       })),
     }));
@@ -989,7 +1132,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         }
       };
 
-      await sendPrompt(sessionId, text, channel, images);
+      await sendPrompt(sessionId, outbound, channel, images);
     } catch (e) {
       activeChannels.delete(threadId);
       stopStreaming();
