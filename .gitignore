@@ -4,6 +4,18 @@
 /packages/sidecar/pi-*-pc-windows-*
 /packages/sidecar/pi-payload/
 
+# Credentials / secrets defense-in-depth (none are tracked today; this keeps it
+# that way if the agent ever runs with cwd inside the repo, esp. the project-level
+# .hoy/ dir from HOY-222). Public keys (updater pubkey in tauri.conf.json) are fine.
+auth.json
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
 # Dependencies
 node_modules/
 
