@@ -17,6 +17,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -100,6 +110,10 @@ export function Sidebar() {
                     activeThreadId={activeThreadId}
                     openIds={openIds}
                     searching={normalized.length > 0}
+                    threadCount={
+                      projects.find((p) => p.id === project.id)?.threads.length ??
+                      project.threads.length
+                    }
                     onSelectThread={openThread}
                     onNewThread={() => addThread(project.id)}
                     onRemove={() => removeProject(project.id)}
@@ -196,6 +210,7 @@ function ProjectGroup({
   activeThreadId,
   openIds,
   searching,
+  threadCount,
   onSelectThread,
   onNewThread,
   onRemove,
@@ -204,12 +219,16 @@ function ProjectGroup({
   activeThreadId: string | null;
   openIds: Set<string>;
   searching: boolean;
+  threadCount: number;
   onSelectThread: (id: string) => void;
   onNewThread: () => void;
   onRemove: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const expanded = searching || !collapsed;
+  // Removing a project is destructive (drops the project and all its threads
+  // from the workspace); gate it behind a confirm (HOY-225).
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
     <li>
@@ -255,12 +274,39 @@ function ProjectGroup({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem variant="destructive" onSelect={onRemove}>
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={(e) => {
+                  // Keep the menu's select from firing the removal directly;
+                  // open the confirm dialog instead.
+                  e.preventDefault();
+                  setConfirmOpen(true);
+                }}
+              >
                 <Trash2 />
                 Remove project
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove {project.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This removes the project and its {threadCount}{" "}
+                  {threadCount === 1 ? "thread" : "threads"} from Hoy. It does not
+                  delete the agent's session files on disk. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction variant="destructive" onClick={onRemove}>
+                  Remove project
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 
