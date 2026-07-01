@@ -95,6 +95,16 @@ Pinned 0.80.2. On every bump: re-verify the tool promptGuidelines in
 repoint the docs-block GitHub tag, re-check the provider list and env-var
 mapping in `pi_config.rs`, and re-run the prompt assembly tests.
 
+### Bump to 0.80.3 + wire get_entries / get_tree (HOY-221)
+0.80.3 (2026-06-30) adds two RPC commands absent from pinned 0.80.2:
+`get_entries` (read session entries) and `get_tree` (read a tree snapshot), the
+read side of the fork/tree gap. Do the version bump (checklist above), confirm
+the exact request/response shapes against the installed 0.80.3
+`rpc-types.d.ts`, land typed `invoke` wrappers plus matching Rust commands
+(`events.rs`/`types.ts` in sync), and write a plan for the `/tree` navigator UI
+as a follow-up. Delta recorded in `docs/pi-rpc-coverage.md` ("Not yet pinned:
+0.80.3").
+
 ## Deferred by design (MVP scope cuts)
 
 Themes, keyboard shortcuts, session rename/delete polish, the multi-session
@@ -102,10 +112,12 @@ orchestration dashboard (spec M5: per-thread status overview, cross-thread
 coordination; the architecture keeps it open, everything is keyed by
 sessionId). Build when wanted, nothing blocks them.
 
-### Project-level config dir still uses `.pi` instead of `.hoy`
-Pi hardcodes the project config directory as `.pi` (`CONFIG_DIR_NAME` in
-config.js). The global agent dir was branded to `~/.hoy/agent`, but the
-project-level dir (`.pi/settings.json`, `.pi/npm/`, `.pi/extensions/`, etc.)
-is unchanged. Should become `.hoy/` for consistency, e.g.
-`.hoy/settings.json`. Requires a Pi upstream change or a patch in the
-resource-loader / package-manager to accept a config dir override.
+### Project-level config dir still uses `.pi` instead of `.hoy` (HOY-222)
+The global agent dir was branded to `~/.hoy/agent`, but the project-level dir
+(`.pi/settings.json`, `.pi/npm/`, `.pi/extensions/`, etc.) is unchanged. Should
+become `.hoy/` for consistency. Not an upstream requirement: Pi derives the dir
+from `CONFIG_DIR_NAME = pkg.piConfig?.configDir || ".pi"` (`config.js`), and the
+sidecar payload `package.json` (read at runtime via `PI_PACKAGE_DIR`) is ours.
+Plan in HOY-222: rewrite `piConfig.configDir` to `.hoy` in `sidecar/build.sh`
+during payload assembly; leave `piConfig.name` unset so the app name and
+`PI_CODING_AGENT_DIR` env var are unchanged.
