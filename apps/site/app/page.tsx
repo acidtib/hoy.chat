@@ -31,7 +31,7 @@ export default async function Home() {
                 <span className="pulse" aria-hidden="true" />
                 Beta / Experimental
               </span>
-              <h1>Native. Fast. Yours.</h1>
+              <h1>Simple. Fast. Yours.</h1>
               <p className="tagline">
                 Hoy gives your coding agent a real desktop window, so you can
                 watch it work, keep every session, and switch models without ever

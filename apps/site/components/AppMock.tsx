@@ -178,7 +178,7 @@ export function AppWindow() {
     <div
       className="appwin appwin-hero"
       role="img"
-      aria-label="The Hoy desktop app: a project sidebar of coding sessions on the left, a title bar showing the hoy project on the main branch, and an open thread where the user asks to add a health-check endpoint. The agent shows a collapsed reasoning line, streams a reply with an inline Edit tool call and diff on server.ts, and a composer at the bottom with the deepseek-v4 model selected. A status bar shows context usage and cost."
+      aria-label="The Hoy desktop app: a project sidebar of threads on the left, a title bar showing the hoy project on the main branch, and an open thread where the user asks to add a health-check endpoint. The agent shows a collapsed reasoning line, streams a reply with an inline Edit tool call and diff on server.ts, and a composer at the bottom with the deepseek-v4 model selected. A status bar shows context usage and cost."
     >
       <div className="aw-main" aria-hidden="true">
         <Sidebar />
@@ -283,7 +283,7 @@ export function SidebarBeat() {
     <div
       className="appwin appwin-beat"
       role="img"
-      aria-label="Hoy's sidebar listing coding sessions under the hoy project, each with a relative timestamp, with the active session highlighted."
+      aria-label="Hoy's sidebar listing threads under the hoy project, each with a relative timestamp, with the active thread highlighted."
     >
       <div className="aw-cap" aria-hidden="true">
         Threads
