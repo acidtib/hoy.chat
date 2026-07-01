@@ -40,6 +40,41 @@ function OSIcon({ os }: { os: OS }) {
   );
 }
 
+// The signed [hoy] pacman repo: trust the key over HTTPS, add the repo, install.
+// Unlike the .deb/.AppImage, these packages are signed with our key, so there is
+// no first-run warning and `pacman -Syu` keeps Hoy current.
+const ARCH_SETUP = `curl -fsSL https://pkgs.hoy.chat/hoy-packages.pub | sudo pacman-key --add -
+sudo pacman-key --lsign-key DC196437C706CF3B2FE583FBCEEBA907B734C05F
+echo -e '\\n[hoy]\\nServer = https://pkgs.hoy.chat/arch/$arch' | sudo tee -a /etc/pacman.conf
+sudo pacman -Sy hoy-desktop`;
+
+function CopyBlock({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="dl-code">
+      <pre>
+        <code>{code}</code>
+      </pre>
+      <button
+        type="button"
+        className="dl-copy"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(code);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          } catch {
+            /* clipboard unavailable */
+          }
+        }}
+        aria-label="Copy commands"
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
 export function InstallPanel({ version }: { version: string }) {
   const [detected, setDetected] = useState<OS | null>(null);
 
@@ -94,8 +129,20 @@ export function InstallPanel({ version }: { version: string }) {
         })}
       </div>
 
+      <div className="dl-arch">
+        <div className="dl-arch-head">
+          Arch Linux <span className="dl-arch-sub">signed pacman repo</span>
+        </div>
+        <p className="dl-arch-lead">
+          Trust our key, add the repo, install. Signed end to end, so no first-run
+          warning and <code>pacman -Syu</code> keeps it current.
+        </p>
+        <CopyBlock code={ARCH_SETUP} />
+      </div>
+
       <p className="dl-foot">
-        Nothing is signed until 1.0, so every OS shows a first-run warning.{" "}
+        The .dmg, .msi, and .AppImage are unsigned until 1.0, so those show a
+        first-run warning.{" "}
         <a href={RELEASES_LIST_URL} target="_blank" rel="noreferrer">
           All releases and checksums
         </a>

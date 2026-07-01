@@ -444,6 +444,81 @@ h3.heading {
 .dl-foot a:hover {
   color: var(--fg);
 }
+
+/* Arch Linux: signed pacman repo setup, a copyable command block. */
+.dl-arch {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+}
+.dl-arch-head {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 550;
+  color: var(--fg);
+}
+.dl-arch-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-2);
+}
+.dl-arch-lead {
+  margin: 6px 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.dl-arch-lead code {
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 12px;
+  color: var(--fg);
+}
+.dl-code {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.dl-code pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+.dl-code code {
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--fg);
+  white-space: pre;
+}
+.dl-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-height: 30px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.dl-copy:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.dl-copy:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
 @media (max-width: 560px) {
   .dl-os {
     grid-template-columns: 1fr;
@@ -452,6 +527,9 @@ h3.heading {
       "links"
       "note";
     gap: 8px;
+  }
+  .dl-code code {
+    font-size: 11.5px;
   }
 }
 
