@@ -31,11 +31,11 @@ export default async function Home() {
                 <span className="pulse" aria-hidden="true" />
                 Beta / Experimental
               </span>
-              <h1>Hoy Chat</h1>
+              <h1>Native. Fast. Yours.</h1>
               <p className="tagline">
-                The Pi coding agent lives in a terminal. Hoy gives it a window,
-                so you can see what it is doing instead of squinting at
-                scrollback.
+                Hoy gives your coding agent a real desktop window, so you can
+                watch it work, keep every session, and switch models without ever
+                opening a terminal.
               </p>
 
               <div className="cta-row cta-row-center">
@@ -73,9 +73,9 @@ export default async function Home() {
                 <h2 className="heading">See it work</h2>
               </div>
               <p className="lead">
-                It all runs on your machine. Hoy talks to Pi as a separate local
-                process, and your API key stays on your disk instead of passing
-                through a server we run.
+                Everything runs on your machine. Under the hood Hoy drives the Pi
+                agent as a separate local process, and your API key stays on your
+                disk instead of passing through a server we run.
               </p>
             </div>
 
@@ -97,9 +97,9 @@ export default async function Home() {
               <div className="beat-copy">
                 <h3 className="heading">Tool calls, rendered inline</h3>
                 <p className="lead">
-                  When Pi reads a file, edits code, or runs a command, it lands in
-                  the thread as it happens with the result attached. You never dig
-                  through raw logs to work out what changed.
+                  When the agent reads a file, edits code, or runs a command, it
+                  lands in the thread as it happens with the result attached. You
+                  never dig through raw logs to work out what changed.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">
@@ -112,8 +112,8 @@ export default async function Home() {
                 <h3 className="heading">Any model you have a key for</h3>
                 <p className="lead">
                   Paste in a key from Anthropic, OpenAI, DeepSeek, or Groq and
-                  switch between them from one menu. If Pi can talk to it, Hoy
-                  lists it.
+                  switch between them from one menu. Every model your agent
+                  supports shows up in the picker.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">

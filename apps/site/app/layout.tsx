@@ -7,13 +7,13 @@ import "@fontsource-variable/geist";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Hoy Chat, a desktop app for the Pi coding agent",
+  title: "Hoy Chat, a native desktop app for coding agents",
   description:
-    "A desktop window for the Pi coding agent. It runs on your machine and uses your own API keys. Beta, expect rough edges.",
+    "A real desktop app for your coding agent. It runs on your machine, uses your own API keys, and is powered by the Pi agent. Beta, expect rough edges.",
   metadataBase: new URL("https://hoy.chat"),
   openGraph: {
     title: "Hoy Chat",
-    description: "A desktop window for the Pi coding agent. Beta.",
+    description: "A native desktop app for your coding agent. Runs locally, your keys. Beta.",
     url: "https://hoy.chat",
     siteName: "Hoy Chat",
     type: "website",
