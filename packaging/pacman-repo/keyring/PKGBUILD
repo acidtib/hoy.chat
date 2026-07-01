@@ -1,0 +1,23 @@
+# Maintainer: acidtib <arubinofaux@gmail.com>
+
+# Ships Hoy's package-signing key and registers it in pacman's keyring, so users
+# trust the [hoy] repo with a single install instead of importing keys by hand.
+# Mirrors how archlinux-keyring works: install the key material under
+# /usr/share/pacman/keyrings and run `pacman-key --populate hoy` on install.
+
+pkgname=hoy-keyring
+pkgver=20260701
+pkgrel=1
+pkgdesc="Hoy package-signing key for the [hoy] pacman repository"
+arch=('any')
+url="https://hoy.chat"
+license=('MIT')
+install="${pkgname}.install"
+source=('hoy.gpg' 'hoy-trusted' 'hoy-revoked')
+sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+package() {
+  install -Dm644 hoy.gpg "${pkgdir}/usr/share/pacman/keyrings/hoy.gpg"
+  install -Dm644 hoy-trusted "${pkgdir}/usr/share/pacman/keyrings/hoy-trusted"
+  install -Dm644 hoy-revoked "${pkgdir}/usr/share/pacman/keyrings/hoy-revoked"
+}

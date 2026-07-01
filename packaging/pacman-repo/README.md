@@ -1,25 +1,28 @@
 # Official signed pacman repo
 
 A repository we host and sign, so Arch users install and update Hoy without the
-AUR. This is the recommended Arch channel (see `../README.md` for why).
+AUR. This is the Arch channel (see `../README.md` for why not the AUR).
 
-## User side (what we document on the site)
+- Host: **`https://pkgs.hoy.chat`** (Cloudflare R2, static objects).
+- Signing key: **Hoy Packages** `<packages@hoy.chat>`
+  fingerprint `DC196437C706CF3B2FE583FBCEEBA907B734C05F`.
+  Public key committed as `hoy-packages.pub`; private key held offline (never in
+  this repo), added to CI as a secret.
 
-```ini
-# /etc/pacman.conf  — add at the bottom
-[hoy]
-Server = https://pkgs.hoy.chat/arch/$arch
-```
+## User setup (what we document on the site)
 
-Then, one time, trust our package-signing key:
+Trust our key once (fetched over HTTPS, before any signed package exists):
 
 ```sh
-# Option A: install our keyring package (preferred once published)
-sudo pacman -U https://pkgs.hoy.chat/arch/x86_64/hoy-keyring-<ver>-any.pkg.tar.zst
+curl -fsSL https://pkgs.hoy.chat/hoy-packages.pub | sudo pacman-key --add -
+sudo pacman-key --lsign-key DC196437C706CF3B2FE583FBCEEBA907B734C05F
+```
 
-# Option B: import the key directly into pacman's keyring
-sudo pacman-key --recv-keys <FINGERPRINT>
-sudo pacman-key --lsign-key <FINGERPRINT>
+Add the repo to `/etc/pacman.conf`:
+
+```ini
+[hoy]
+Server = https://pkgs.hoy.chat/arch/$arch
 ```
 
 Install and stay current:
@@ -29,37 +32,66 @@ sudo pacman -Sy hoy-desktop
 sudo pacman -Syu            # future releases upgrade like any repo package
 ```
 
-## Maintainer side
+Optionally install `hoy-keyring` (also in the repo) so key updates/rotations flow
+through `pacman -Syu`. It is not the bootstrap: a new user can't `pacman -U` a
+package signed by a key they don't trust yet, which is why the key is fetched over
+HTTPS above.
 
-`build-repo.sh` turns a release `.deb` into a signed, hostable repo. It repacks
-the exact bytes we release (no rebuild), so there's nothing extra to trust.
+## Maintainer: build + publish
+
+Run from an Arch box (needs `makepkg`, `repo-add`, `gpg`, `aws-cli`), with the
+private key imported into your gpg keyring.
 
 ```sh
+cd packaging/pacman-repo
+
+# 1. Build the signed repo (app package from the release .deb, plus hoy-keyring).
 ./build-repo.sh --version 0.1.2 \
                 --deb ./Hoy.Desktop_0.1.2_amd64.deb \
-                --key <GPG_KEY_ID> \
+                --key DC196437C706CF3B2FE583FBCEEBA907B734C05F \
                 --out ./out
-# sync ./out/* to https://pkgs.hoy.chat/arch/x86_64/
+
+# 2. Publish to R2 (needs the R2_* / AWS_* env below), including the public key.
+R2_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com \
+R2_BUCKET=<bucket> \
+AWS_ACCESS_KEY_ID=<id> AWS_SECRET_ACCESS_KEY=<secret> \
+  ./publish-r2.sh --out ./out --pubkey ./hoy-packages.pub
 ```
 
-Output: `hoy-desktop-<ver>-1-x86_64.pkg.tar.zst` (+ `.sig`), and the repo DB
-`hoy.db` / `hoy.files` (+ `.sig`). pacman needs nothing more than static file
-hosting.
+`build-repo.sh` repacks the exact release `.deb` (no rebuild), so the bytes users
+get are the bytes we release. Output: signed `hoy-desktop-*.pkg.tar.zst`,
+`hoy-keyring-*.pkg.tar.zst`, and the signed repo DB (`hoy.db` / `hoy.files`).
 
-## To decide before this ships
+## CI
 
-1. **Host.** Any static host works: Cloudflare R2/Pages under `pkgs.hoy.chat`,
-   GitHub Releases, or S3. Cloudflare pairs naturally with the site (HOY-224).
-2. **Signing key.** Generate a dedicated package-signing GPG key (not a personal
-   key). Publish its fingerprint. Ship a `hoy-keyring` package so `SigLevel` can
-   stay strict without users hand-importing keys.
-3. **CI.** Add a release-job step that runs `build-repo.sh` with the freshly built
-   `.deb` and a key from CI secrets, then uploads `out/` to the host. Until then
-   this is a manual step from an Arch box.
+`.github/workflows/arch-repo.yml` does the above automatically when a GitHub
+release is **published** (also runnable via workflow_dispatch). It builds in an
+Arch container and needs these repo secrets:
+
+| Secret | What |
+| --- | --- |
+| `HOY_PACKAGES_GPG_KEY` | armored private signing key (`hoy-packages.key`) |
+| `R2_ENDPOINT` | `https://<accountid>.r2.cloudflarestorage.com` |
+| `R2_BUCKET` | bucket mapped to `pkgs.hoy.chat` |
+| `R2_ACCESS_KEY_ID` | R2 API token access key id |
+| `R2_SECRET_ACCESS_KEY` | R2 API token secret |
+
+## Cloudflare R2 setup (one time)
+
+1. Create an R2 bucket (e.g. `hoy-pkgs`).
+2. Connect a custom domain `pkgs.hoy.chat` to the bucket (R2 -> Settings -> Public
+   access -> Custom Domain). This serves objects over HTTPS at that host.
+3. Create an R2 API token (Object Read & Write) scoped to the bucket; put its
+   endpoint/keys in the CI secrets above.
+4. First publish seeds `hoy-packages.pub` at the root and the repo under
+   `arch/x86_64/`.
 
 ## Notes
 
 - `x86_64` only (no Linux aarch64 release build yet).
+- The signing key is passphraseless for unattended CI signing; its secrecy rests
+  on the private-key file and the CI secret. Rotate by generating a new key,
+  bumping `hoy-keyring`, and re-publishing.
 - The sidecar installs as `/usr/bin/pi`, a generic name that can file-conflict with
-  another package owning `/usr/bin/pi`. Worth namespacing the sidecar upstream
-  (e.g. `hoy-pi`) or relocating under `/usr/lib`. Tracked separately.
+  another package owning `/usr/bin/pi`. Worth namespacing upstream (e.g. `hoy-pi`)
+  or relocating under `/usr/lib`. Tracked separately.

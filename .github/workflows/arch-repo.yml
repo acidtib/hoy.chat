@@ -1,0 +1,69 @@
+name: Arch repo
+
+# Rebuild and publish the signed [hoy] pacman repo after a release is published.
+# Inert until these repo secrets exist:
+#   HOY_PACKAGES_GPG_KEY   armored private signing key (hoy-packages.key)
+#   R2_ENDPOINT            https://<accountid>.r2.cloudflarestorage.com
+#   R2_BUCKET              bucket mapped to pkgs.hoy.chat
+#   R2_ACCESS_KEY_ID       R2 token access key id
+#   R2_SECRET_ACCESS_KEY   R2 token secret
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. v0.1.2)'
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: install tooling
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git gnupg github-cli aws-cli-v2 sudo
+
+      - uses: actions/checkout@v7
+
+      # makepkg refuses to run as root; build under a dedicated user.
+      - name: create build user
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: resolve tag + fetch the release .deb
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          gh release download "$TAG" -R "${{ github.repository }}" \
+            -p 'Hoy.Desktop_*_amd64.deb' -D "$GITHUB_WORKSPACE"
+          chown builder:builder "$GITHUB_WORKSPACE"/*.deb
+
+      - name: import signing key
+        run: |
+          echo '${{ secrets.HOY_PACKAGES_GPG_KEY }}' | sudo -u builder gpg --batch --import
+          echo "KEYID=$(sudo -u builder gpg --list-keys --with-colons packages@hoy.chat | awk -F: '/^fpr:/{print $10; exit}')" >> "$GITHUB_ENV"
+
+      - name: build signed repo
+        run: |
+          DEB="$(ls "$GITHUB_WORKSPACE"/Hoy.Desktop_*_amd64.deb | head -1)"
+          sudo -u builder bash packaging/pacman-repo/build-repo.sh \
+            --version "$VERSION" --deb "$DEB" --key "$KEYID" \
+            --out "$GITHUB_WORKSPACE/repo-out"
+
+      - name: publish to R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          bash packaging/pacman-repo/publish-r2.sh \
+            --out "$GITHUB_WORKSPACE/repo-out" --arch x86_64 \
+            --pubkey packaging/pacman-repo/hoy-packages.pub

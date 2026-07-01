@@ -64,11 +64,21 @@ mkdir -p "$out"
 cp "$work"/hoy-desktop-*.pkg.tar.zst "$out"/
 [ -n "$key" ] && cp "$work"/hoy-desktop-*.pkg.tar.zst.sig "$out"/ 2>/dev/null || true
 
-# Build (or update) the repo DB in the output dir.
-( cd "$out" && repo-add "${repo_sign[@]}" "${REPO_NAME}.db.tar.gz" hoy-desktop-*.pkg.tar.zst )
+# Also build the keyring package (arch=any) so users can trust our key with a
+# `pacman -U` bootstrap and upgrade it from the repo afterwards. It rarely
+# changes; rebuilding each release is cheap and keeps the repo self-contained.
+here="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$here/keyring/PKGBUILD" ]; then
+  cp -r "$here/keyring" "$work/keyring"
+  ( cd "$work/keyring" && makepkg -f --noconfirm --nodeps "${sign_flags[@]}" )
+  cp "$work"/keyring/hoy-keyring-*.pkg.tar.zst "$out"/
+  [ -n "$key" ] && cp "$work"/keyring/hoy-keyring-*.pkg.tar.zst.sig "$out"/ 2>/dev/null || true
+fi
+
+# Build (or update) the repo DB in the output dir from every package present.
+( cd "$out" && repo-add "${repo_sign[@]}" "${REPO_NAME}.db.tar.gz" ./*.pkg.tar.zst )
 
 echo "Repo built in: $out"
 ls -1 "$out"
 echo
-echo "Upload the contents of '$out' to your host, e.g.:"
-echo "  https://pkgs.hoy.chat/arch/x86_64/"
+echo "Upload the contents of '$out' to https://pkgs.hoy.chat/arch/x86_64/"

@@ -1,0 +1,17 @@
+post_upgrade() {
+  if usr/bin/pacman-key -l >/dev/null 2>&1; then
+    usr/bin/pacman-key --populate hoy
+  fi
+}
+
+post_install() {
+  post_upgrade
+}
+
+post_remove() {
+  # Best-effort: forget our key when the keyring is removed.
+  local fpr="DC196437C706CF3B2FE583FBCEEBA907B734C05F"
+  if usr/bin/pacman-key -l >/dev/null 2>&1; then
+    usr/bin/pacman-key --delete "$fpr" 2>/dev/null || true
+  fi
+}
