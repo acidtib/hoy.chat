@@ -1,37 +1,86 @@
 // Coded simulations of the Hoy desktop UI, used as the site's product imagery.
 // Fully rendered in the browser (no screenshots), so they always look
-// intentional and stay in sync with the app's square, dark identity. Everything
-// here is decorative: the whole window carries a single role="img" + aria-label
+// intentional and track the real app's layout: a Zed-style split where the
+// sidebar owns the top-left corner, a title bar (project + branch) over the main
+// column, a per-thread header, the transcript, a composer whose pill row carries
+// the model selector, and a full-width context/cost status bar along the bottom.
+// Everything here is decorative: the window carries one role="img" + aria-label
 // and the internals are aria-hidden.
 
-function Check() {
+// Lucide-derived glyphs. Inner paths are static literals (no user input), kept as
+// strings so the icon set stays compact.
+const PATHS: Record<string, string> = {
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  chevronDown: '<path d="m6 9 6 6 6-6"/>',
+  gitBranch:
+    '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  settings:
+    '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  minus: '<path d="M5 12h14"/>',
+  square: '<rect width="16" height="16" x="4" y="4" rx="1.5"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  atSign:
+    '<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/>',
+  send:
+    '<path d="M3.7 3.05a.5.5 0 0 0-.68.63l2.84 7.62a2 2 0 0 1 0 1.4l-2.84 7.62a.5.5 0 0 0 .68.63l18-8.5a.5.5 0 0 0 0-.9z"/><path d="M6 12h16"/>',
+  panelLeft:
+    '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  folderPlus:
+    '<path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  filePen:
+    '<path d="M12.5 22H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10.42 12.61a2.1 2.1 0 1 1 2.97 2.97L7.95 21 4 22l.99-3.95z"/>',
+  maximize:
+    '<path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/>',
+  more:
+    '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  chevronRight: '<path d="m9 18 6-6-6-6"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+};
+
+// Sparkle is filled, so it lives apart from the stroked set.
+const SPARKLE =
+  "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.14 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z";
+
+function Ic({
+  name,
+  size = 14,
+  className,
+}: {
+  name: keyof typeof PATHS;
+  size?: number;
+  className?: string;
+}) {
   return (
     <svg
-      className="tick"
-      viewBox="0 0 16 16"
-      width="12"
-      height="12"
+      className={className}
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       aria-hidden="true"
-    >
-      <path
-        d="M3.5 8.5l3 3 6-7"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+      dangerouslySetInnerHTML={{ __html: PATHS[name] }}
+    />
   );
 }
 
-function Dots() {
+function Sparkle({ size = 14, className }: { size?: number; className?: string }) {
   return (
-    <div className="appwin-dots">
-      <i />
-      <i />
-      <i />
-    </div>
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d={SPARKLE} />
+    </svg>
   );
 }
 
@@ -44,31 +93,86 @@ const THREADS: { title: string; time: string; active?: boolean }[] = [
 
 function Sidebar() {
   return (
-    <aside className="ui-side">
-      <div className="ui-search">Search threads</div>
-      <div className="ui-proj">
-        <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-          <path
-            d="M4 6l4 4 4-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        hoy
+    <aside className="aw-side">
+      <div className="aw-search">
+        <Ic name="search" size={13} />
+        <span>Search threads...</span>
       </div>
-      {THREADS.map((t) => (
-        <div
-          key={t.title}
-          className={t.active ? "ui-thread ui-thread-active" : "ui-thread"}
-        >
-          <span className="ui-thread-title">{t.title}</span>
-          <span className="ui-thread-time">{t.time}</span>
-        </div>
-      ))}
+      <div className="aw-proj">
+        <Ic name="chevronDown" size={13} className="aw-proj-chev" />
+        <span>hoy</span>
+      </div>
+      <div className="aw-threads">
+        {THREADS.map((t) => (
+          <div
+            key={t.title}
+            className={t.active ? "aw-thread aw-thread-active" : "aw-thread"}
+          >
+            <Sparkle size={13} className="aw-thread-spark" />
+            <span className="aw-thread-body">
+              <span className="aw-thread-title">{t.title}</span>
+              <span className="aw-thread-time">{t.time}</span>
+            </span>
+          </div>
+        ))}
+      </div>
     </aside>
+  );
+}
+
+// The composer's bottom pill row, where the model selector actually lives.
+function Composer() {
+  return (
+    <div className="aw-composer">
+      <div className="aw-composer-input">
+        Message &nbsp;&middot;&nbsp; @ to include context, / for commands
+      </div>
+      <div className="aw-composer-bar">
+        <div className="aw-composer-left">
+          <span className="aw-iconbtn">
+            <Ic name="plus" />
+          </span>
+          <span className="aw-iconbtn">
+            <Ic name="atSign" />
+          </span>
+        </div>
+        <div className="aw-composer-right">
+          <span className="aw-pill aw-pill-opt">
+            Default
+            <Ic name="chevronDown" size={11} />
+          </span>
+          <span className="aw-pill aw-pill-model">
+            deepseek-v4
+            <Ic name="chevronDown" size={11} />
+          </span>
+          <span className="aw-pill aw-pill-opt">
+            High
+            <Ic name="chevronDown" size={11} />
+          </span>
+          <span className="aw-send">
+            <Ic name="send" />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditToolCard() {
+  return (
+    <div className="aw-tool">
+      <div className="aw-tool-head">
+        <Ic name="filePen" size={13} className="aw-tool-icon" />
+        <span className="aw-tool-title">Edit</span>
+        <span className="aw-tool-path">server.ts</span>
+        <span className="aw-tool-stat">+12 -0</span>
+      </div>
+      <pre className="aw-diff">
+        <span className="add">+ app.get(&quot;/healthz&quot;, (_req, res) =&gt; {"{"}</span>
+        <span className="add">+ &nbsp;&nbsp;res.status(200).json({"{"} ok: true {"}"});</span>
+        <span className="add">+ {"}"});</span>
+      </pre>
+    </div>
   );
 }
 
@@ -77,62 +181,100 @@ export function AppWindow() {
     <div
       className="appwin appwin-hero"
       role="img"
-      aria-label="The Hoy desktop app: a project sidebar with several coding sessions on the left, and an open thread where the user asks to add a health-check endpoint. The agent shows a live reasoning timer, streams a reply with a code block, and renders an inline Edit tool call on server.ts."
+      aria-label="The Hoy desktop app: a project sidebar of coding sessions on the left, a title bar showing the hoy project on the main branch, and an open thread where the user asks to add a health-check endpoint. The agent shows a collapsed reasoning line, streams a reply with an inline Edit tool call and diff on server.ts, and a composer at the bottom with the deepseek-v4 model selected. A status bar shows context usage and cost."
     >
-      <div className="appwin-bar" aria-hidden="true">
-        <Dots />
-        <span className="appwin-title">Hoy</span>
-        <span className="appwin-model">deepseek-v4</span>
-      </div>
-      <div className="appwin-body appwin-body-hero" aria-hidden="true">
+      <div className="aw-main" aria-hidden="true">
         <Sidebar />
-        <div className="ui-convo">
-          <div className="ui-transcript">
-            <div className="ui-turn ui-turn-user">
-              <div className="chat-user">
-                Add a health-check endpoint to the server.
-              </div>
-            </div>
-            <div className="ui-turn">
-              <div className="chat-role">Hoy</div>
-              <span className="think-pill">
-                <span className="pulse" />
-                Thought for 2s
+
+        <div className="aw-col">
+          <div className="aw-titlebar">
+            <div className="aw-tb-left">
+              <span className="aw-tb-project">hoy</span>
+              <span className="aw-branch">
+                <Ic name="gitBranch" size={12} />
+                main
               </span>
-              <p className="chat-asst">
+            </div>
+            <div className="aw-tb-right">
+              <span className="aw-winbtn">
+                <Ic name="settings" size={14} />
+              </span>
+              <span className="aw-winbtn">
+                <Ic name="minus" size={14} />
+              </span>
+              <span className="aw-winbtn">
+                <Ic name="square" size={12} />
+              </span>
+              <span className="aw-winbtn">
+                <Ic name="x" size={14} />
+              </span>
+            </div>
+          </div>
+
+          <div className="aw-threadbar">
+            <div className="aw-tb-left">
+              <Sparkle size={14} className="aw-threadbar-spark" />
+              <span className="aw-threadbar-title">Add /healthz endpoint</span>
+            </div>
+            <div className="aw-actions">
+              <span className="aw-winbtn">
+                <Ic name="plus" size={14} />
+              </span>
+              <span className="aw-winbtn">
+                <Ic name="maximize" size={13} />
+              </span>
+              <span className="aw-winbtn">
+                <Ic name="more" size={14} />
+              </span>
+              <span className="aw-winbtn">
+                <Ic name="x" size={14} />
+              </span>
+            </div>
+          </div>
+
+          <div className="aw-transcript">
+            <div className="aw-msg-user">
+              Add a health-check endpoint to the server.
+            </div>
+
+            <div className="aw-msg">
+              <div className="aw-reason">
+                <Ic name="chevronRight" size={13} />
+                Thought for 2s
+              </div>
+              <p className="aw-msg-text">
                 Adding a <code>GET /healthz</code> route that returns 200, then
                 wiring it into the router:
               </p>
-              <pre className="ui-code">
-                <code>{`app.get("/healthz", (_req, res) => {
-  res.status(200).json({ ok: true });
-});`}</code>
-              </pre>
-              <span className="tool-chip">
-                <Check /> Edit <span className="path">server.ts</span> +12 -0
-              </span>
-              <p className="chat-asst">
+              <EditToolCard />
+              <p className="aw-msg-text">
                 Done, the endpoint is live and returns{" "}
                 <code>{`{ ok: true }`}</code>
                 <span className="caret" />
               </p>
             </div>
           </div>
-          <div className="ui-composer">
-            <span className="ui-composer-input">Message Hoy</span>
-            <span className="ui-send" aria-hidden="true">
-              <svg viewBox="0 0 16 16" width="14" height="14">
-                <path
-                  d="M2.5 8h9M8 4.5l3.5 3.5L8 11.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-          </div>
+
+          <Composer />
+        </div>
+      </div>
+
+      <div className="aw-status" aria-hidden="true">
+        <div className="aw-status-side">
+          <span className="aw-statbtn">
+            <Ic name="panelLeft" size={14} />
+          </span>
+          <span className="aw-statbtn">
+            <Ic name="clock" size={14} />
+          </span>
+          <span className="aw-statbtn aw-statbtn-end">
+            <Ic name="folderPlus" size={14} />
+          </span>
+        </div>
+        <div className="aw-status-main">
+          <span>ctx 18.2k/200k &middot; 9%</span>
+          <span className="aw-status-div" />
+          <span>$0.0042</span>
         </div>
       </div>
     </div>
@@ -142,46 +284,47 @@ export function AppWindow() {
 export function SidebarBeat() {
   return (
     <div
-      className="appwin appwin-beat beat-side"
+      className="appwin appwin-beat"
       role="img"
-      aria-label="Hoy's sidebar listing coding sessions under the hoy project, with the active session highlighted."
+      aria-label="Hoy's sidebar listing coding sessions under the hoy project, each with a relative timestamp, with the active session highlighted."
     >
-      <div className="appwin-bar" aria-hidden="true">
-        <Dots />
-        <span className="appwin-title">Sessions</span>
+      <div className="aw-cap" aria-hidden="true">
+        Threads
       </div>
-      <div className="beat-body" aria-hidden="true">
+      <div className="aw-beat-body" aria-hidden="true">
         <Sidebar />
       </div>
     </div>
   );
 }
 
-const TOOLS: { verb: string; path: string; meta: string }[] = [
-  { verb: "Read", path: "src/server.ts", meta: "" },
-  { verb: "Edit", path: "src/server.ts", meta: "+12 -0" },
-  { verb: "Bash", path: "bun test", meta: "51 passed" },
-];
-
 export function ToolCallsBeat() {
   return (
     <div
       className="appwin appwin-beat"
       role="img"
-      aria-label="A Hoy thread showing three tool calls rendered inline: reading a file, editing it, and running the test suite, which passes."
+      aria-label="A Hoy thread showing tool calls rendered inline as bordered cards: an edit to server.ts with a diff, and a shell command running the test suite, which passes."
     >
-      <div className="appwin-bar" aria-hidden="true">
-        <Dots />
-        <span className="appwin-title">Add /healthz endpoint</span>
+      <div className="aw-cap aw-cap-thread" aria-hidden="true">
+        <Sparkle size={13} className="aw-threadbar-spark" />
+        Add /healthz endpoint
       </div>
-      <div className="beat-body beat-transcript" aria-hidden="true">
-        {TOOLS.map((t) => (
-          <span key={t.verb} className="tool-chip">
-            <Check /> {t.verb} <span className="path">{t.path}</span>
-            {t.meta && <span className="tool-meta">{t.meta}</span>}
-          </span>
-        ))}
-        <p className="chat-asst">
+      <div className="aw-beat-body aw-beat-pad" aria-hidden="true">
+        <EditToolCard />
+        <div className="aw-tool">
+          <div className="aw-tool-head">
+            <Ic name="clock" size={13} className="aw-tool-icon" />
+            <span className="aw-tool-title">Terminal</span>
+            <span className="aw-tool-path">bun test</span>
+          </div>
+          <pre className="aw-diff aw-term">
+            <span className="aw-term-cmd">
+              <span className="aw-term-dollar">$</span> bun test
+            </span>
+            <span>51 pass, 0 fail</span>
+          </pre>
+        </div>
+        <p className="aw-msg-text">
           All tests pass. The health check is wired in and covered.
           <span className="caret" />
         </p>
@@ -205,9 +348,8 @@ export function ModelBeat() {
       role="img"
       aria-label="Hoy's model selector open, listing models from Anthropic, OpenAI, DeepSeek, and Groq, with Claude Opus 4.8 selected."
     >
-      <div className="appwin-bar" aria-hidden="true">
-        <Dots />
-        <span className="appwin-title">Select model</span>
+      <div className="aw-cap" aria-hidden="true">
+        Select model
       </div>
       <ul className="mp-list" aria-hidden="true">
         {MODELS.map((m) => (
@@ -217,7 +359,7 @@ export function ModelBeat() {
           >
             <span className="mp-name">{m.name}</span>
             <span className="mp-prov">{m.prov}</span>
-            {m.active && <Check />}
+            {m.active && <Ic name="check" size={14} className="tick" />}
           </li>
         ))}
       </ul>
