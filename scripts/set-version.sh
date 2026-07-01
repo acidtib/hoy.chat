@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Single source for the app version. Writes the same x.y.z into the three files
-# that must agree for a release: package.json, src-tauri/tauri.conf.json (the
-# version the updater compares), and src-tauri/Cargo.toml.
+# Single source for the app version. Writes the same x.y.z into the files that
+# must agree for a release: the root workspace package.json, the desktop app's
+# package.json, apps/desktop/src-tauri/tauri.conf.json (the version the updater
+# compares), and apps/desktop/src-tauri/Cargo.toml.
 #
 # Usage: scripts/set-version.sh <x.y.z>
 # Release flow: scripts/set-version.sh x.y.z && git commit -am "vx.y.z" &&
@@ -27,14 +28,15 @@ VERSION="$VERSION" ROOT="$ROOT" bun --eval '
     fs.writeFileSync(p, s.replace(re, rep));
   };
   set("package.json", /"version": "[^"]*"/, `"version": "${v}"`);
-  set("src-tauri/tauri.conf.json", /"version": "[^"]*"/, `"version": "${v}"`);
-  set("src-tauri/Cargo.toml", /^version = "[^"]*"/m, `version = "${v}"`);
+  set("apps/desktop/package.json", /"version": "[^"]*"/, `"version": "${v}"`);
+  set("apps/desktop/src-tauri/tauri.conf.json", /"version": "[^"]*"/, `"version": "${v}"`);
+  set("apps/desktop/src-tauri/Cargo.toml", /^version = "[^"]*"/m, `version = "${v}"`);
   // Keep Cargo.lock in sync so the committed lockfile matches Cargo.toml.
   set(
-    "src-tauri/Cargo.lock",
+    "apps/desktop/src-tauri/Cargo.lock",
     /(name = "hoy-desktop"\nversion = )"[^"]*"/,
     `$1"${v}"`,
   );
 '
 
-echo "set version to $VERSION in package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml, src-tauri/Cargo.lock"
+echo "set version to $VERSION in package.json, apps/desktop/package.json, apps/desktop/src-tauri/tauri.conf.json, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock"

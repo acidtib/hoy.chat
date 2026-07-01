@@ -1,8 +1,8 @@
-# Pi sidecar build artifacts (regenerate with sidecar/build.sh)
-/sidecar/pi-*-unknown-*
-/sidecar/pi-*-apple-*
-/sidecar/pi-*-pc-windows-*
-/sidecar/pi-payload/
+# Pi sidecar build artifacts (regenerate with packages/sidecar/build.sh)
+/packages/sidecar/pi-*-unknown-*
+/packages/sidecar/pi-*-apple-*
+/packages/sidecar/pi-*-pc-windows-*
+/packages/sidecar/pi-payload/
 
 # Dependencies
 node_modules/

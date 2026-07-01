@@ -1,0 +1,6 @@
+{
+  "name": "@hoy/sidecar",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pi SDK entry (branded RPC sidecar). Built to a self-contained binary by build.sh; the pinned Pi install lives in pi-src (npm, not the bun workspace)."
+}

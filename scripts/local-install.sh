@@ -9,9 +9,9 @@
 #   ~/.local/share/applications/hoy-desktop.desktop
 #
 # The launcher exports PI_SIDECAR_BIN / PI_SIDECAR_PAYLOAD because
-# resolve_sidecar_paths (sidecar.rs) prefers the repo's sidecar/ dev artifacts
-# over next-to-exe whenever the repo exists; without the pin the installed
-# release would run whatever sidecar dev last built.
+# resolve_sidecar_paths (sidecar.rs) prefers the repo's packages/sidecar dev
+# artifacts over next-to-exe whenever the repo exists; without the pin the
+# installed release would run whatever sidecar dev last built.
 #
 # Usage: bun run local:install   (re-run to upgrade)
 set -euo pipefail
@@ -24,18 +24,18 @@ DESKTOP_DIR="$HOME/.local/share/applications"
 ICON_DIR="$HOME/.local/share/icons/hicolor/128x128/apps"
 
 echo "[1/4] sidecar build"
-"$ROOT/sidecar/build.sh" "$TRIPLE"
+"$ROOT/packages/sidecar/build.sh" "$TRIPLE"
 
 echo "[2/4] release build (no bundle; the final link sits quiet for a minute or two)"
-( cd "$ROOT" && bun run tauri build --no-bundle )
+( cd "$ROOT/apps/desktop" && bun run tauri build --no-bundle )
 
 echo "[3/4] install to $APP_DIR"
 mkdir -p "$APP_DIR" "$BIN_DIR" "$DESKTOP_DIR" "$ICON_DIR"
-install -m 755 "$ROOT/src-tauri/target/release/hoy-desktop" "$APP_DIR/hoy-desktop"
-install -m 755 "$ROOT/sidecar/pi-$TRIPLE" "$APP_DIR/pi-$TRIPLE"
+install -m 755 "$ROOT/apps/desktop/src-tauri/target/release/hoy-desktop" "$APP_DIR/hoy-desktop"
+install -m 755 "$ROOT/packages/sidecar/pi-$TRIPLE" "$APP_DIR/pi-$TRIPLE"
 rm -rf "$APP_DIR/pi-payload"
-cp -r "$ROOT/sidecar/pi-payload" "$APP_DIR/pi-payload"
-install -m 644 "$ROOT/src-tauri/icons/128x128.png" "$ICON_DIR/hoy-desktop.png"
+cp -r "$ROOT/packages/sidecar/pi-payload" "$APP_DIR/pi-payload"
+install -m 644 "$ROOT/apps/desktop/src-tauri/icons/128x128.png" "$ICON_DIR/hoy-desktop.png"
 
 echo "[4/4] launcher and desktop entry"
 cat > "$BIN_DIR/hoy" <<EOF

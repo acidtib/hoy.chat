@@ -64,5 +64,3 @@ echo
 echo "done:"
 echo "  binary:  $BIN"
 echo "  payload: $PAYLOAD"
-echo
-echo "verify the Rust round-trip:  ( cd sidecar/m0-harness && cargo run )"

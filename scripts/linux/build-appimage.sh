@@ -18,7 +18,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
-PRISTINE="$ROOT/sidecar/pi-$TRIPLE"
+PRISTINE="$ROOT/packages/sidecar/pi-$TRIPLE"
 APPIMAGETOOL_VERSION="1.9.1"
 CACHE="$HOME/.cache/tauri"
 
@@ -34,7 +34,7 @@ export LINUXDEPLOY_SHELTER_BINS="${LINUXDEPLOY_SHELTER_BINS:-pi}"
 bunx tauri "$@"
 
 # 3. Repack the AppImage with the pristine sidecar, then re-sign.
-BUNDLE_DIR="$ROOT/src-tauri/target/release/bundle/appimage"
+BUNDLE_DIR="$ROOT/apps/desktop/src-tauri/target/release/bundle/appimage"
 APPIMAGE="$(find "$BUNDLE_DIR" -maxdepth 1 -name '*.AppImage' | head -n1)"
 if [ -z "$APPIMAGE" ]; then
   echo "error: no AppImage produced in $BUNDLE_DIR" >&2

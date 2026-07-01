@@ -850,9 +850,13 @@ fn resolve_sidecar_paths(resource_payload: Option<PathBuf>) -> (PathBuf, PathBuf
     let env_bin = std::env::var_os("PI_SIDECAR_BIN").map(PathBuf::from);
     let env_payload = std::env::var_os("PI_SIDECAR_PAYLOAD").map(PathBuf::from);
 
+    // CARGO_MANIFEST_DIR is apps/desktop/src-tauri; the sidecar lives at
+    // packages/sidecar off the repo root, three levels up (src-tauri -> desktop
+    // -> apps -> root).
     let dev_sidecar = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(|root| root.join("sidecar"));
+        .ancestors()
+        .nth(3)
+        .map(|root| root.join("packages/sidecar"));
     let dev_bin = dev_sidecar
         .as_ref()
         .map(|d| d.join(format!("pi-{triple}")))

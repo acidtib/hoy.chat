@@ -12,8 +12,7 @@ asset payload answers `get_state` over JSONL when spawned from Rust.
 ## Recipe
 
 ```
-sidecar/build.sh            # builds pi-<host-triple> + pi-payload/
-( cd sidecar/m0-harness && cargo run )   # Rust round-trip of get_state -> PASS
+packages/sidecar/build.sh   # builds pi-<host-triple> + pi-payload/
 ```
 
 `build.sh` does three things:
@@ -73,6 +72,4 @@ Neither was required at 0.80.2.
 - `pi-src/` — pinned install workspace (`package.json` + lockfile tracked,
   `node_modules/` gitignored)
 - `build.sh` — produces `pi-<triple>` + `pi-payload/`
-- `m0-harness/` — throwaway Rust round-trip proof; deleted once M1 lands the real
-  `SidecarManager`/`reader`
 - `pi-<triple>`, `pi-payload/` — build artifacts, gitignored

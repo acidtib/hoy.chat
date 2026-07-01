@@ -33,7 +33,7 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: ./src-tauri -> target
+          workspaces: ./apps/desktop/src-tauri -> target
 
       - name: install frontend dependencies
         run: bun install
@@ -42,13 +42,13 @@ jobs:
       # tauri config resolves and the live-test fixtures exist. Hermetic tests do
       # not need the binary, but building keeps CI aligned with a real build.
       - name: build sidecar
-        run: bash sidecar/build.sh
+        run: bash packages/sidecar/build.sh
 
       - name: typecheck, rust check, clippy, fmt
         run: bun run check
 
       - name: frontend tests
-        run: bun test
+        run: bun run test
 
       - name: rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml

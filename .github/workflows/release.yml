@@ -31,7 +31,11 @@ jobs:
             rust_targets: ''
             # Linux builds through a wrapper that shelters + repacks the bun
             # sidecar so the AppImage's sidecar is not corrupted (HOY-217).
-            tauri_script: 'bash scripts/linux/build-appimage.sh'
+            # tauri-action runs tauriScript from projectPath (apps/desktop), so
+            # the wrapper is referenced by absolute workspace path. Release
+            # packaging on the new layout must be confirmed by a live CI run
+            # (deferred to HOY-207).
+            tauri_script: 'bash $GITHUB_WORKSPACE/scripts/linux/build-appimage.sh'
           - platform: windows-latest
             args: ''
             triple: x86_64-pc-windows-msvc
@@ -60,7 +64,7 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: ./src-tauri -> target
+          workspaces: ./apps/desktop/src-tauri -> target
 
       - name: install frontend dependencies
         run: bun install
@@ -70,7 +74,7 @@ jobs:
       # Bash on the Windows runner.
       - name: build sidecar
         shell: bash
-        run: bash sidecar/build.sh ${{ matrix.triple }}
+        run: bash packages/sidecar/build.sh ${{ matrix.triple }}
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -87,6 +91,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          # The Tauri app lives under apps/desktop in the monorepo layout; run
+          # tauri-action there so it finds src-tauri and the beforeBuildCommand.
+          projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
           releaseName: 'Hoy Desktop ${{ github.ref_name }}'
           releaseBody: 'See the assets to download and install this version.'
