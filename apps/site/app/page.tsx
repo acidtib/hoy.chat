@@ -3,7 +3,6 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { HeroStage } from "@/components/HeroStage";
 import { RevealOnScroll } from "@/components/RevealOnScroll";
-import { PlatformPicker } from "@/components/PlatformPicker";
 import { HeroDownload } from "@/components/HeroDownload";
 import { InstallPanel } from "@/components/InstallPanel";
 import {
@@ -34,8 +33,9 @@ export default async function Home() {
               </span>
               <h1>Hoy Chat</h1>
               <p className="tagline">
-                The Pi coding agent, in a real window. Streaming output, inline
-                tool calls, and every session kept.
+                The Pi coding agent lives in a terminal. Hoy gives it a window,
+                so you can see what it is doing instead of squinting at
+                scrollback.
               </p>
 
               <div className="cta-row cta-row-center">
@@ -44,7 +44,6 @@ export default async function Home() {
                   Changelog
                 </Link>
               </div>
-              <PlatformPicker />
             </div>
 
             <HeroStage>
@@ -59,8 +58,8 @@ export default async function Home() {
               <h2 className="heading">Get running</h2>
             </div>
             <p className="lead">
-              Pick your platform and the real installer downloads. A couple of
-              first-run clicks and you are in a running window.
+              Grab the build for your platform. Nothing is signed yet, so your OS
+              will warn you the first time. Click through once and you are in.
             </p>
 
             <InstallPanel version={version} />
@@ -74,9 +73,9 @@ export default async function Home() {
                 <h2 className="heading">See it work</h2>
               </div>
               <p className="lead">
-                Hoy runs on your machine and talks to the Pi coding agent as a
-                separate local process. Your API key stays local and never leaves
-                through Hoy.
+                It all runs on your machine. Hoy talks to Pi as a separate local
+                process, and your API key stays on your disk instead of passing
+                through a server we run.
               </p>
             </div>
 
@@ -84,8 +83,9 @@ export default async function Home() {
               <div className="beat-copy">
                 <h3 className="heading">Every session, kept</h3>
                 <p className="lead">
-                  Projects and threads live in a sidebar that survives restarts.
-                  Reopen any conversation exactly where you left it.
+                  Close Hoy, reopen it, and every thread is right where you left
+                  it. Nothing syncs to a cloud, so nothing vanishes when some
+                  service goes down.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">
@@ -97,8 +97,9 @@ export default async function Home() {
               <div className="beat-copy">
                 <h3 className="heading">Tool calls, rendered inline</h3>
                 <p className="lead">
-                  Reads, edits, and shell commands appear in the transcript as the
-                  agent runs them, with their results, not walls of raw output.
+                  When Pi reads a file, edits code, or runs a command, it lands in
+                  the thread as it happens with the result attached. You never dig
+                  through raw logs to work out what changed.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">
@@ -110,8 +111,9 @@ export default async function Home() {
               <div className="beat-copy">
                 <h3 className="heading">Any model you have a key for</h3>
                 <p className="lead">
-                  Bring your own key and switch between Anthropic, OpenAI,
-                  DeepSeek, Groq, and more from one picker.
+                  Paste in a key from Anthropic, OpenAI, DeepSeek, or Groq and
+                  switch between them from one menu. If Pi can talk to it, Hoy
+                  lists it.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">

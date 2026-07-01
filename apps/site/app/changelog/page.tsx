@@ -7,8 +7,8 @@ import { getReleases, getLatestVersion, formatDate } from "@/lib/releases";
 import { RELEASES_URL } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: "Changelog, Hoy",
-  description: "Released versions of Hoy Desktop, sourced from GitHub Releases.",
+  title: "Changelog, Hoy Chat",
+  description: "Every build of Hoy we have shipped, pulled from GitHub Releases.",
 };
 
 // Built statically from GitHub Releases. getReleases() swallows any fetch
@@ -26,7 +26,7 @@ export default async function Changelog() {
         <div className="wrap page-head">
           <h1>Changelog</h1>
           <p className="lead">
-            Released builds of Hoy, pulled from{" "}
+            Every build we have shipped, straight from{" "}
             <a href={RELEASES_URL} target="_blank" rel="noreferrer">
               GitHub Releases
             </a>

@@ -6,7 +6,7 @@ export function SiteFooter({ version }: { version: string }) {
     <footer className="site-footer">
       <div className="wrap">
         <span>
-          Hoy Chat v{version} &middot; {LICENSE} License
+          Hoy v{version} &middot; {LICENSE} License
         </span>
         <div className="footer-links">
           <Link href="/changelog">Changelog</Link>

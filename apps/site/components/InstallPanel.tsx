@@ -95,7 +95,7 @@ export function InstallPanel({ version }: { version: string }) {
       </div>
 
       <p className="dl-foot">
-        Every build is unsigned before 1.0, so your OS shows a first-run warning.{" "}
+        Nothing is signed until 1.0, so every OS shows a first-run warning.{" "}
         <a href={RELEASES_LIST_URL} target="_blank" rel="noreferrer">
           All releases and checksums
         </a>
