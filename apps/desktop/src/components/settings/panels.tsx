@@ -23,6 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import type { CategoryId } from "./categories";
 import { ProvidersPanel } from "./ProvidersPanel";
+import { useSessionStore } from "@/state/store";
 
 // Mock catalogs. No IPC: every control here is local state only.
 const PROVIDERS = [
@@ -408,6 +409,50 @@ function SafetyPanel() {
   );
 }
 
+// The Auto-compaction toggle is per-session (Pi's set_auto_compaction), so it
+// targets the active thread and reflects its get_state (HOY-229). Disabled until
+// a thread with a live session is open.
+function AutoCompactionRow() {
+  const activeThreadId = useSessionStore((s) => s.activeThreadId);
+  const enabled = useSessionStore((s) =>
+    activeThreadId ? s.autoCompaction[activeThreadId] : undefined,
+  );
+  const hasSession = useSessionStore((s) => {
+    if (!activeThreadId) return false;
+    for (const p of s.projects) {
+      const t = p.threads.find((th) => th.id === activeThreadId);
+      if (t) return Boolean(t.sessionId);
+    }
+    return false;
+  });
+  const setAutoCompaction = useSessionStore((s) => s.setAutoCompaction);
+  const refreshAutoCompaction = useSessionStore((s) => s.refreshAutoCompaction);
+
+  useEffect(() => {
+    if (activeThreadId && hasSession) void refreshAutoCompaction(activeThreadId);
+  }, [activeThreadId, hasSession, refreshAutoCompaction]);
+
+  return (
+    <div className="flex items-center justify-between gap-4 py-2">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">Auto-compaction</p>
+        <p className="text-xs text-muted-foreground">
+          {hasSession
+            ? "Compress context automatically as it fills."
+            : "Open a thread to configure auto-compaction."}
+        </p>
+      </div>
+      <Switch
+        checked={enabled ?? false}
+        disabled={!activeThreadId || !hasSession}
+        onCheckedChange={(v) =>
+          activeThreadId && setAutoCompaction(activeThreadId, v)
+        }
+      />
+    </div>
+  );
+}
+
 function MemoryPanel() {
   return (
     <div className="space-y-8">
@@ -422,11 +467,7 @@ function MemoryPanel() {
           defaultChecked
         />
         <Separator />
-        <ToggleRow
-          label="Auto-compaction"
-          description="Compress context as it fills."
-          defaultChecked
-        />
+        <AutoCompactionRow />
         <Separator />
         <div className="pt-2">
           <Field

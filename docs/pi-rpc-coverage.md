@@ -85,8 +85,8 @@ the installed source.
 | `set_thinking_level` | Set thinking: off, minimal, low, medium, high, xhigh | used (HOY-204) | `commands.rs:90`; composer dropdown drives it via `store.selectThinkingLevel`, re-synced from `get_state` (pi clamps per model) |
 | `cycle_thinking_level` | Step through thinking levels | unused | |
 | `cycle_model` | Step through scoped models | unused | Deferred with keyboard shortcuts |
-| `compact` | Manual compaction, optional custom instructions | unused | Hoy only renders the `compaction_start` status |
-| `set_auto_compaction` | Toggle auto-compaction | unused | |
+| `compact` | Manual compaction, optional custom instructions | used (HOY-229) | "Compact now" popover near the usage meter; reads the CompactionResult from the response (longer request timeout) |
+| `set_auto_compaction` | Toggle auto-compaction | used (HOY-229) | MemoryPanel toggle, per active session; synced from `get_state.autoCompactionEnabled` |
 | `set_auto_retry` | Toggle auto-retry on transient errors | unused | `auto_retry_start` status renders |
 | `abort_retry` | Cancel a pending retry | unused | |
 | `new_session` | Fresh session, optional `parentSession` | unused | Hoy respawns the sidecar per thread instead |
@@ -114,7 +114,8 @@ the installed source.
 | `agent_end` | used | Terminal `Done` unless `willRetry`, `sidecar.rs:336` |
 | `auto_retry_start` | used | `Status` "retrying" |
 | `compaction_start` | used | `Status` "compacting"; now also carries `reason` and `willRetry` (0.79.10) and a post-compaction token estimate (0.79.8), unused |
-| `compaction_end`, `auto_retry_end` | unused | `compaction_end` now includes the post-compaction token estimate (0.79.8) |
+| `compaction_end` | used (HOY-229) | Maps to `CompactionEnd` (reason, aborted, willRetry, token estimate); auto-path notice + usage refresh over the streaming sink |
+| `auto_retry_end` | unused | |
 | `agent_start`, `turn_start/end`, `message_start` | unused | |
 | `queue_update` | used (HOY-205) | Mapped to the `QueueUpdate` AgentEvent; the queued-message chips consume it (HOY-218) |
 | `extension_error` | unused | |

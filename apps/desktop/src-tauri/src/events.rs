@@ -99,6 +99,24 @@ pub enum AgentEvent {
         #[serde(rename = "followUp")]
         follow_up: Vec<String>,
     },
+    // Pi's compaction_end: a compaction finished (auto path, over the streaming
+    // sink). The manual path reads the CompactionResult from the compact command
+    // response instead, since no sink is attached when idle (HOY-229).
+    CompactionEnd {
+        reason: String,
+        aborted: bool,
+        #[serde(rename = "willRetry")]
+        will_retry: bool,
+        #[serde(rename = "errorMessage", skip_serializing_if = "Option::is_none")]
+        error_message: Option<String>,
+        #[serde(rename = "tokensBefore", skip_serializing_if = "Option::is_none")]
+        tokens_before: Option<u64>,
+        #[serde(
+            rename = "estimatedTokensAfter",
+            skip_serializing_if = "Option::is_none"
+        )]
+        estimated_tokens_after: Option<u64>,
+    },
     Error {
         message: String,
     },
@@ -209,4 +227,17 @@ pub struct ImageContent {
 
 fn image_content_type() -> String {
     "image".to_string()
+}
+
+// Pi's CompactionResult (core/compaction/compaction.d.ts), the `data` of a
+// successful compact command. Only the fields the UI surfaces; serde ignores the
+// rest (summary, firstKeptEntryId, details).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionResult {
+    pub tokens_before: u64,
+    #[serde(default)]
+    pub estimated_tokens_after: Option<u64>,
+    #[serde(default)]
+    pub summary: Option<String>,
 }

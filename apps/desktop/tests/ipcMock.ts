@@ -9,6 +9,8 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     abort: mock(),
     activeSessionId: mock(),
     closeSession: mock(),
+    compact: mock(),
+    setAutoCompaction: mock(),
     createSession: mock(),
     deleteSessionFile: mock(),
     enqueuePrompt: mock(),

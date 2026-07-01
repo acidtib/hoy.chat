@@ -5,6 +5,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AgentEvent,
+  CompactionResult,
   ImageContent,
   ModelInfo,
   PathEntry,
@@ -50,6 +51,23 @@ export function setThinkingLevel(
   level: ThinkingLevel,
 ): Promise<void> {
   return invoke<void>("set_thinking_level", { sessionId, level });
+}
+
+export function compact(
+  sessionId: string,
+  customInstructions?: string,
+): Promise<CompactionResult> {
+  return invoke<CompactionResult>("compact", {
+    sessionId,
+    customInstructions: customInstructions ?? null,
+  });
+}
+
+export function setAutoCompaction(
+  sessionId: string,
+  enabled: boolean,
+): Promise<void> {
+  return invoke<void>("set_auto_compaction", { sessionId, enabled });
 }
 
 // The key value is sent down once and never read back; status comes from

@@ -1,10 +1,13 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::events::{AgentEvent, ImageContent, ModelInfo, PiState, SessionStats};
+use crate::events::{
+    AgentEvent, CompactionResult, ImageContent, ModelInfo, PiState, SessionStats,
+};
 use crate::pi_config::{self, ProviderAuth, ProviderInfo};
 use crate::sidecar::SidecarManager;
 use crate::workspace::{self, Workspace};
@@ -100,6 +103,40 @@ pub async fn set_thinking_level(
         }))
         .await?;
     check_success(&response, "set_thinking_level")?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn compact(
+    session_id: String,
+    custom_instructions: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<CompactionResult, String> {
+    let process = manager.get(&session_id)?;
+    let mut body = json!({ "type": "compact" });
+    if let Some(ci) = custom_instructions.filter(|s| !s.trim().is_empty()) {
+        body["customInstructions"] = json!(ci);
+    }
+    // Compaction runs an LLM summarization that can exceed REQUEST_TIMEOUT before
+    // its response (the CompactionResult) lands, so use a longer budget (HOY-229).
+    let response = process
+        .request_with_timeout(body, Duration::from_secs(180))
+        .await?;
+    let data = unwrap_response(response, "compact")?;
+    serde_json::from_value(data).map_err(|e| format!("compact result: {e}"))
+}
+
+#[tauri::command]
+pub async fn set_auto_compaction(
+    session_id: String,
+    enabled: bool,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    let process = manager.get(&session_id)?;
+    let response = process
+        .request(json!({ "type": "set_auto_compaction", "enabled": enabled }))
+        .await?;
+    check_success(&response, "set_auto_compaction")?;
     Ok(())
 }
 

@@ -3,6 +3,8 @@ import {
   abort,
   Channel,
   closeSession,
+  compact as ipcCompact,
+  setAutoCompaction as ipcSetAutoCompaction,
   createSession,
   deleteSessionFile,
   enqueuePrompt,
@@ -33,6 +35,7 @@ import type {
   ModelInfo,
   ModelRef,
   Notice,
+  NotifyType,
   PermissionMode,
   PermissionRequest,
   Project,
@@ -264,6 +267,12 @@ interface SessionStore {
   streaming: Record<string, boolean>;
   stats: Record<string, SessionStats | null>;
   threadErrors: Record<string, string | null>;
+  // Manual compaction in flight, keyed by threadId; gates the Compact affordance
+  // and shows a compacting chip (HOY-229).
+  compacting: Record<string, boolean>;
+  // Per-session auto-compaction, mirrored from get_state and written via
+  // set_auto_compaction; read by the MemoryPanel toggle (HOY-229).
+  autoCompaction: Record<string, boolean>;
   // Approval cards awaiting an answer, keyed by threadId (HOY-186). Usually at
   // most one; pi preflights sibling tool calls sequentially, but a queue keeps
   // any overlap safe. Cleared on done and on panel close.
@@ -392,6 +401,13 @@ interface SessionStore {
   // arrive over the channel as usual; no state is flipped here.
   stopStreaming: (threadId: string) => Promise<void>;
   refreshStats: (threadId: string) => Promise<void>;
+  // Trigger a manual compaction on the thread's session, optionally with custom
+  // summarization instructions (HOY-229). Gated on an idle, live session.
+  compact: (threadId: string, customInstructions?: string) => Promise<void>;
+  // Toggle per-session auto-compaction and re-sync from get_state (HOY-229).
+  setAutoCompaction: (threadId: string, enabled: boolean) => Promise<void>;
+  // Pull the session's current autoCompactionEnabled into the store.
+  refreshAutoCompaction: (threadId: string) => Promise<void>;
   setThreadSessionIdInternal: (threadId: string, sessionId: string) => void;
 }
 
@@ -415,6 +431,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   streaming: {},
   stats: {},
   threadErrors: {},
+  compacting: {},
+  autoCompaction: {},
   pendingPermissions: {},
   notices: {},
   statuses: {},
@@ -1103,6 +1121,31 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           // Compaction rewrites context; refresh after it's done (the next
           // text/tool event will update the bar; this is a best-effort interim).
           void get().refreshStats(threadId);
+        } else if (event.kind === "compactionEnd") {
+          // Auto-path compaction finished (threshold/overflow). Clear the manual
+          // flag defensively, refresh the usage meter, and surface an honest
+          // notice; failures are shown, not swallowed (HOY-229).
+          set((s) => ({ compacting: { ...s.compacting, [threadId]: false } }));
+          if (event.aborted || event.errorMessage) {
+            pushNotice(
+              threadId,
+              `Compaction ${event.aborted ? "aborted" : "failed"}${
+                event.errorMessage ? `: ${event.errorMessage}` : ""
+              }`,
+              "error",
+            );
+          } else {
+            const after =
+              event.estimatedTokensAfter != null
+                ? ` -> ${event.estimatedTokensAfter.toLocaleString()}`
+                : "";
+            const before =
+              event.tokensBefore != null
+                ? `${event.tokensBefore.toLocaleString()}${after} tokens`
+                : "context";
+            pushNotice(threadId, `Compacted ${before}`, "info");
+          }
+          void get().refreshStats(threadId);
         }
       };
 
@@ -1169,6 +1212,70 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       }
     } catch {
       // Stats are best-effort; a failure leaves the bar on its last value.
+    }
+  },
+
+  compact: async (threadId, customInstructions) => {
+    const thread = findThread(get().projects, threadId)?.thread;
+    if (!thread?.sessionId) return;
+    // Pi rejects compaction mid-turn; gate on idle, and block a double trigger.
+    if (get().streaming[threadId] || get().compacting[threadId]) return;
+    set((s) => ({ compacting: { ...s.compacting, [threadId]: true } }));
+    try {
+      const result = await ipcCompact(thread.sessionId, customInstructions);
+      const after =
+        result.estimatedTokensAfter != null
+          ? ` -> ${result.estimatedTokensAfter.toLocaleString()}`
+          : "";
+      pushNotice(
+        threadId,
+        `Compacted context: ${result.tokensBefore.toLocaleString()}${after} tokens`,
+        "info",
+      );
+      await get().refreshStats(threadId);
+    } catch (e) {
+      pushNotice(threadId, `Compaction failed: ${String(e)}`, "error");
+    } finally {
+      set((s) => ({ compacting: { ...s.compacting, [threadId]: false } }));
+    }
+  },
+
+  setAutoCompaction: async (threadId, enabled) => {
+    const thread = findThread(get().projects, threadId)?.thread;
+    if (!thread?.sessionId) return;
+    const previous = get().autoCompaction[threadId];
+    set((s) => ({ autoCompaction: { ...s.autoCompaction, [threadId]: enabled } }));
+    try {
+      await ipcSetAutoCompaction(thread.sessionId, enabled);
+      // Re-sync in case Pi's effective state differs from the requested value.
+      const synced = await getState(thread.sessionId).catch(() => null);
+      if (synced) {
+        set((s) => ({
+          autoCompaction: {
+            ...s.autoCompaction,
+            [threadId]: synced.autoCompactionEnabled,
+          },
+        }));
+      }
+    } catch (e) {
+      set((s) => ({
+        autoCompaction: { ...s.autoCompaction, [threadId]: previous ?? !enabled },
+        threadErrors: { ...s.threadErrors, [threadId]: String(e) },
+      }));
+    }
+  },
+
+  refreshAutoCompaction: async (threadId) => {
+    const sessionId = findThread(get().projects, threadId)?.thread.sessionId;
+    if (!sessionId) return;
+    const synced = await getState(sessionId).catch(() => null);
+    if (synced) {
+      set((s) => ({
+        autoCompaction: {
+          ...s.autoCompaction,
+          [threadId]: synced.autoCompactionEnabled,
+        },
+      }));
     }
   },
 
@@ -1328,6 +1435,23 @@ const activeChannels = new Map<string, Channel<AgentEvent>>();
 // dismissed (by click or auto-expiry) without colliding.
 let noticeSeq = 0;
 const NOTICE_TTL_MS = 6000;
+
+// Push a transient, auto-expiring notice onto a thread (HOY-229 compaction
+// results reuse the same mechanism as extension `notify`).
+function pushNotice(threadId: string, message: string, type: NotifyType) {
+  const id = ++noticeSeq;
+  const { notices } = useSessionStore.getState();
+  useSessionStore.setState({
+    notices: {
+      ...notices,
+      [threadId]: [...(notices[threadId] ?? []), { id, message, type }],
+    },
+  });
+  setTimeout(
+    () => useSessionStore.getState().dismissNotice(threadId, id),
+    NOTICE_TTL_MS,
+  );
+}
 
 function acquireSession(
   threadId: string,

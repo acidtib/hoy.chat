@@ -242,6 +242,20 @@ impl PiProcess {
             .map_err(|e| self.map_request_error(&id, e))
     }
 
+    // Like request(), but with a caller-chosen dead-air budget. Used for the
+    // compact command (HOY-229), whose LLM summarization can run well past the
+    // flat REQUEST_TIMEOUT before its response lands.
+    pub async fn request_with_timeout(
+        &self,
+        command: Value,
+        budget: Duration,
+    ) -> Result<Value, String> {
+        let (id, rx) = self.send_command(command)?;
+        await_with_dialog_grace(rx, budget, Duration::from_secs(1), || false)
+            .await
+            .map_err(|e| self.map_request_error(&id, e))
+    }
+
     // HOY-215: a `prompt` can deliver a slash command whose handler blocks
     // synchronously on an extension UI dialog (ctx.ui.input/editor/...), which
     // delays the prompt's preflight response past REQUEST_TIMEOUT. Charge the
@@ -592,6 +606,34 @@ fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
         "compaction_start" => Some(AgentEvent::Status {
             label: "compacting".into(),
         }),
+        // Auto-path compaction finished (threshold/overflow during a streaming
+        // turn, so the sink is attached). The manual path reads the result from
+        // the compact command response instead (HOY-229).
+        "compaction_end" => {
+            let result = value.get("result");
+            Some(AgentEvent::CompactionEnd {
+                reason: value
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                aborted: value.get("aborted").and_then(Value::as_bool).unwrap_or(false),
+                will_retry: value
+                    .get("willRetry")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                error_message: value
+                    .get("errorMessage")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                tokens_before: result
+                    .and_then(|r| r.get("tokensBefore"))
+                    .and_then(Value::as_u64),
+                estimated_tokens_after: result
+                    .and_then(|r| r.get("estimatedTokensAfter"))
+                    .and_then(Value::as_u64),
+            })
+        }
         // The sink is per-active-prompt (set in send_prompt, taken on agent_end),
         // so a queue_update emitted with no active turn is dropped. In practice
         // every queue mutation we care about (enqueue on steer/followUp, dequeue
@@ -1206,6 +1248,51 @@ mod live_tests {
             map_pi_event(Some("message_update"), &v),
             Some(AgentEvent::Text { delta }) if delta == "hi"
         ));
+    }
+
+    #[test]
+    fn compaction_end_maps_result_and_flags() {
+        let v = json!({
+            "reason": "threshold",
+            "aborted": false,
+            "willRetry": false,
+            "result": { "tokensBefore": 1000, "estimatedTokensAfter": 200 }
+        });
+        match map_pi_event(Some("compaction_end"), &v) {
+            Some(AgentEvent::CompactionEnd {
+                reason,
+                tokens_before,
+                estimated_tokens_after,
+                aborted,
+                ..
+            }) => {
+                assert_eq!(reason, "threshold");
+                assert_eq!(tokens_before, Some(1000));
+                assert_eq!(estimated_tokens_after, Some(200));
+                assert!(!aborted);
+            }
+            other => panic!("expected CompactionEnd, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn compaction_end_error_variant() {
+        let v = json!({ "reason": "overflow", "aborted": true, "willRetry": true, "errorMessage": "boom" });
+        match map_pi_event(Some("compaction_end"), &v) {
+            Some(AgentEvent::CompactionEnd {
+                aborted,
+                will_retry,
+                error_message,
+                tokens_before,
+                ..
+            }) => {
+                assert!(aborted);
+                assert!(will_retry);
+                assert_eq!(error_message.as_deref(), Some("boom"));
+                assert_eq!(tokens_before, None);
+            }
+            other => panic!("expected CompactionEnd, got {other:?}"),
+        }
     }
 
     #[test]

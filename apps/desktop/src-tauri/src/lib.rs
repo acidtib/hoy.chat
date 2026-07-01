@@ -68,6 +68,8 @@ pub fn run() {
             commands::list_models,
             commands::set_model,
             commands::set_thinking_level,
+            commands::compact,
+            commands::set_auto_compaction,
             commands::save_provider_key,
             commands::remove_provider_key,
             commands::provider_statuses,

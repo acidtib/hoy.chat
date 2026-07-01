@@ -31,6 +31,15 @@ export type AgentEvent =
   // composer's queued-message chips (HOY-218). Session-level, not a turn block.
   | { kind: "queueUpdate"; steering: string[]; followUp: string[] }
   | { kind: "reasoning"; delta?: string; phase: "start" | "delta" | "end" }
+  | {
+      kind: "compactionEnd";
+      reason: string;
+      aborted: boolean;
+      willRetry: boolean;
+      errorMessage?: string;
+      tokensBefore?: number;
+      estimatedTokensAfter?: number;
+    }
   | { kind: "error"; message: string }
   | { kind: "aborted" }
   | { kind: "done" };
@@ -210,6 +219,13 @@ export type ThinkingLevel =
   | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export const THINKING_LEVELS: ThinkingLevel[] =
   ["off", "minimal", "low", "medium", "high", "xhigh"];
+
+// Pi's CompactionResult, returned by the compact command (HOY-229).
+export interface CompactionResult {
+  tokensBefore: number;
+  estimatedTokensAfter?: number;
+  summary?: string;
+}
 
 export interface PiState {
   model?: ModelInfo | null;
