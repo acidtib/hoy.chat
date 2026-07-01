@@ -49,6 +49,13 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
     resourceLoaderOptions: {
       noContextFiles: false,
       systemPromptOverride: () => HOY_SYSTEM_PROMPT,
+      // Disk discovery of <agentDir>/{extensions,skills,prompts,themes} needs no
+      // opt-in: DefaultResourceLoader.reload() auto-discovers user-scope resources
+      // from agentDir unconditionally, and agentDir here is the branded
+      // PI_CODING_AGENT_DIR Rust passes. Disk .ts extensions coexist with these
+      // in-process extensionFactories. Proven against the bun --compile binary in
+      // HOY-228 (jiti + typebox resolve via Pi's virtualModules; an extension's
+      // own node_modules deps resolve from disk). See docs/plans/HOY-228-*.
       extensionFactories: [createHoyPermissions(initialMode)],
     },
   });

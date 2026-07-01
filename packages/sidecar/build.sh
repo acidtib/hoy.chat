@@ -43,6 +43,11 @@ if [ ! -d "$DIST" ]; then
   exit 1
 fi
 
+# Plain --compile with NO --external: Pi statically imports jiti/static and
+# typebox so bun bundles them into the binary, then exposes them to disk .ts
+# extensions via virtualModules. Adding --external jiti/typebox would break disk
+# extension loading (HOY-228). An extension's OWN node_modules deps resolve from
+# disk at runtime, so nothing extra ships here for them.
 echo "[2/3] bun build --compile -> $(basename "$BIN")"
 if [ -n "$BUN_TARGET" ]; then
   bun build --compile --target="$BUN_TARGET" "$ENTRY" --outfile "$BIN"
