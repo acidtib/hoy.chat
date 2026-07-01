@@ -1,0 +1,74 @@
+# Flatpak manifest for Hoy. Repacks the release .deb (same bytes we ship) into a
+# Flatpak. See ./README.md for the coding-agent sandbox caveat before shipping.
+#
+# Local build/test:
+#   flatpak install flathub org.gnome.Platform//46 org.gnome.Sdk//46
+#   flatpak-builder --user --install --force-clean build-dir chat.hoy.desktop.yml
+#   flatpak run chat.hoy.desktop
+id: chat.hoy.desktop
+
+runtime: org.gnome.Platform
+runtime-version: '46'
+sdk: org.gnome.Sdk
+
+command: hoy-desktop
+
+finish-args:
+  # Display + GPU.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=ipc
+  # The agent talks to model APIs over the network. Mandatory.
+  - --share=network
+  # A coding agent edits the user's projects. Broad FS access is required for it to
+  # be useful; Flathub reviewers will scrutinize this. Narrow it if we can settle on
+  # a project-root portal instead of whole-host access.
+  - --filesystem=host
+  # Lets the app shell out to the host toolchain via `flatpak-spawn --host`. NOTE:
+  # this only helps if the sidecar actually routes command execution through
+  # flatpak-spawn; today it runs commands directly, which inside the sandbox sees
+  # only the GNOME runtime, not the user's git/node/cargo. That integration is the
+  # real work item before Flatpak is a good experience. See README.
+  - --talk-name=org.freedesktop.Flatpak
+  # Optional: tray icon support.
+  # - --talk-name=org.kde.StatusNotifierWatcher
+  # - --filesystem=xdg-run/tray-icon:create
+
+modules:
+  - name: hoy
+    buildsystem: simple
+    sources:
+      - type: file
+        path: chat.hoy.desktop.metainfo.xml
+      - type: file
+        url: https://github.com/acidtib/hoy.chat/releases/download/v0.1.1/Hoy.Desktop_0.1.1_amd64.deb
+        sha256: 44c8f595c1ce19112edd39b085ec2c372dffbd635d6dee95ccc3aacf1e6379d0
+        only-arches: [x86_64]
+    build-commands:
+      - set -e
+      - mkdir deb-extract
+      - ar -x *.deb --output deb-extract
+      - tar -C deb-extract -xf deb-extract/data.tar.gz
+
+      # Main app binary + the pi sidecar (both live in /usr/bin in the deb).
+      - install -Dm755 deb-extract/usr/bin/hoy-desktop /app/bin/hoy-desktop
+      - install -Dm755 deb-extract/usr/bin/pi /app/bin/pi
+
+      # Bundled resources (pi-payload). Preserve the "Hoy Desktop" dir the app
+      # resolves resources against.
+      - mkdir -p "/app/lib/Hoy Desktop"
+      - cp -r "deb-extract/usr/lib/Hoy Desktop/." "/app/lib/Hoy Desktop"
+      - find "/app/lib/Hoy Desktop" -type f -exec chmod 644 {} \;
+
+      # Desktop entry (renamed + re-iconed to the flatpak id).
+      - sed -i 's/^Icon=.*/Icon=chat.hoy.desktop/' "deb-extract/usr/share/applications/Hoy Desktop.desktop"
+      - install -Dm644 "deb-extract/usr/share/applications/Hoy Desktop.desktop" /app/share/applications/chat.hoy.desktop.desktop
+
+      # Icons.
+      - install -Dm644 deb-extract/usr/share/icons/hicolor/32x32/apps/hoy-desktop.png /app/share/icons/hicolor/32x32/apps/chat.hoy.desktop.png
+      - install -Dm644 deb-extract/usr/share/icons/hicolor/128x128/apps/hoy-desktop.png /app/share/icons/hicolor/128x128/apps/chat.hoy.desktop.png
+      - install -Dm644 deb-extract/usr/share/icons/hicolor/256x256@2/apps/hoy-desktop.png /app/share/icons/hicolor/256x256@2/apps/chat.hoy.desktop.png
+
+      # AppStream metainfo (required by Flathub).
+      - install -Dm644 chat.hoy.desktop.metainfo.xml /app/share/metainfo/chat.hoy.desktop.metainfo.xml
