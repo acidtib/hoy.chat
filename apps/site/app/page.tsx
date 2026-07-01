@@ -55,6 +55,21 @@ export default async function Home() {
           </div>
         </section>
 
+        <section id="install">
+          <div className="wrap">
+            <div className="section-head">
+              <span className="dot" aria-hidden="true" />
+              <h2 className="heading">Get running</h2>
+            </div>
+            <p className="lead">
+              One download, then a couple of first-run steps for your platform.
+              Current build is v{version}.
+            </p>
+
+            <InstallPanel version={version} />
+          </div>
+        </section>
+
         <section id="how" className="beats">
           <div className="wrap-wide">
             <div className="beats-head">
@@ -110,20 +125,6 @@ export default async function Home() {
           </div>
         </section>
 
-        <section id="install">
-          <div className="wrap">
-            <div className="section-head">
-              <span className="dot" aria-hidden="true" />
-              <h2 className="heading">Get running</h2>
-            </div>
-            <p className="lead">
-              One download, then a couple of first-run steps for your platform.
-              Current build is v{version}.
-            </p>
-
-            <InstallPanel version={version} />
-          </div>
-        </section>
       </main>
 
       <SiteFooter version={version} />
