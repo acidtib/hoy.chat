@@ -1,0 +1,11 @@
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+
+# dependencies (hoisted to the workspace root, but ignore any local installs)
+/node_modules/
+
+# misc
+*.tsbuildinfo
+.DS_Store
