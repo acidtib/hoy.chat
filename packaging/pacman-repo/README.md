@@ -60,5 +60,6 @@ hosting.
 ## Notes
 
 - `x86_64` only (no Linux aarch64 release build yet).
-- Same `/usr/bin/pi` generic-name caveat as the AUR package: worth namespacing the
-  sidecar upstream (e.g. `hoy-pi`) to avoid file conflicts. Tracked separately.
+- The sidecar installs as `/usr/bin/pi`, a generic name that can file-conflict with
+  another package owning `/usr/bin/pi`. Worth namespacing the sidecar upstream
+  (e.g. `hoy-pi`) or relocating under `/usr/lib`. Tracked separately.

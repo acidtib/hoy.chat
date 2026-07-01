@@ -10,14 +10,12 @@ The AUR is convenient but not a channel we control. In June 2026 the "Atomic Arc
 supply-chain attack hijacked ~1,500 orphaned AUR packages through the
 package-adoption mechanism and shipped credential-stealing malware; Arch locked
 down new AUR signups during the cleanup. The AUR still works, but a package there
-inherits that trust model. So we treat it as a nice-to-have, and lead with
-channels where **we sign the bytes**:
+inherits that trust model, so we do not ship through it. We use channels where
+**we sign the bytes**:
 
 1. **Our own signed pacman repo** (primary for Arch). One line in `pacman.conf`,
    packages signed with our key. Immune to the AUR takeover class of attack.
 2. **Flathub** (secondary, with real caveats, see below).
-3. **AUR `-bin`** (optional convenience) still lives in `aur/`, but it is no longer
-   the recommended path.
 
 ## Option 1: signed pacman repo  (recommended for Arch)
 
@@ -71,16 +69,11 @@ scaffold are checked in so we can pick it up when we decide it's worth it.
 
 See `flatpak/README.md`.
 
-## Option 3: AUR `-bin`  (kept, not led with)
-
-`aur/hoy-desktop-bin` still builds and installs correctly. Given the 2026 events we
-no longer recommend it as the main Arch path, but publishing it costs little and
-some users will look for it. See `aur/README.md`.
-
 ## Summary
 
 | Channel            | We control/sign | Fits a coding agent | Effort to ship |
 | ------------------ | --------------- | ------------------- | -------------- |
 | Signed pacman repo | yes             | yes                 | medium (host + key) |
 | Flathub            | partial         | poorly (sandbox)    | high (spawn work + review) |
-| AUR `-bin`         | no              | yes                 | low            |
+
+The AUR is deliberately not used, see the "Why not lead with the AUR" section.
