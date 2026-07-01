@@ -6,8 +6,7 @@ export function SiteHeader() {
     <header className="site-header">
       <div className="wrap">
         <Link href="/" className="wordmark">
-          <span className="dot" aria-hidden="true" />
-          Hoy
+          Hoy Chat
         </Link>
         <nav className="nav">
           <Link href="/changelog">Changelog</Link>

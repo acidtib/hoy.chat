@@ -78,13 +78,6 @@ a {
   align-items: center;
   gap: 8px;
 }
-.wordmark .dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--brand);
-  display: inline-block;
-}
 .nav {
   display: flex;
   gap: 22px;
@@ -169,7 +162,8 @@ a {
   max-width: 48ch;
   text-wrap: pretty;
 }
-.cta-row-center {
+/* Higher specificity than base .cta-row so hero CTAs actually center. */
+.cta-row.cta-row-center {
   justify-content: center;
 }
 .hero .cta-hint {
@@ -241,9 +235,6 @@ a {
   .cta-row {
     justify-content: center;
   }
-}
-.cta-row-loose {
-  margin-top: 22px;
 }
 /* OS-aware helper under the CTA; the detected platform is emphasized by the
    client PlatformPicker. Keeps the "Download" promise honest: assets live on
@@ -325,93 +316,158 @@ h3.heading {
   text-wrap: pretty;
 }
 
-/* Install cards */
-.grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+/* Install module: auto-detected download + an OS segmented control that swaps a
+   compact per-platform first-run panel, so each OS carries its own unsigned-build
+   note instead of one footnote wall. */
+.install {
+  max-width: 640px;
+  margin: 0 auto;
 }
-@media (max-width: 720px) {
-  .grid {
-    grid-template-columns: 1fr;
-  }
+.install-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  margin-bottom: 28px;
 }
-.card {
-  background: var(--panel);
+.btn-lg {
+  min-height: 52px;
+  padding: 0 28px;
+  font-size: 16px;
+}
+.install-meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.install-others {
+  color: var(--muted-2);
+}
+.install-panel {
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
+  overflow: hidden;
+  background: var(--panel);
 }
-.card ol {
-  margin: 12px 0 0;
-  padding-left: 18px;
+.seg {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.seg-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: transparent;
   color: var(--muted);
+  font: inherit;
   font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
 }
-.card ol li {
-  margin-bottom: 6px;
+.seg-btn:last-child {
+  border-right: none;
 }
-.card code {
-  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
-  font-size: 12.5px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 1px 6px;
+.seg-btn svg {
+  width: 15px;
+  height: 15px;
 }
-/* Per-platform card header: an OS glyph instead of the meaningless "Platform"
-   kicker, so the three cards read as distinct platforms, not a repeated grid. */
-.card-head {
+.seg-btn:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.seg-btn-active {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  box-shadow: inset 0 -2px 0 var(--brand);
+}
+.seg-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+.install-body {
+  padding: 20px 22px 22px;
+}
+.install-artifacts {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.install-artifacts a {
+  color: var(--brand);
+}
+.install-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 14px;
+  color: var(--fg);
+}
+.install-steps li {
+  line-height: 1.5;
+}
+.cmd {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-top: 8px;
+  padding: 7px 8px 7px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
-.card-head svg {
-  width: 20px;
-  height: 20px;
-  color: var(--muted);
-  flex: none;
-}
-.card h3 {
-  margin: 0;
-  font-size: 17px;
-}
-/* Client PlatformPicker flags the visitor's OS card. */
-.card[data-recommended="true"] {
-  border-color: var(--brand);
-  background: color-mix(in srgb, var(--brand) 7%, var(--panel));
-}
-.rec-badge {
-  display: none;
-  margin-left: auto;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--brand-fg);
-  background: var(--brand);
-  border-radius: 999px;
-  padding: 3px 9px;
-}
-.card[data-recommended="true"] .rec-badge {
-  display: inline-block;
-}
-
-.callout {
-  margin: 24px auto 0;
-  max-width: 68ch;
-  font-size: 14px;
-  line-height: 1.55;
+.cmd code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 12.5px;
   color: var(--fg);
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-border);
-  border-radius: var(--radius);
-  padding: 14px 18px;
-  text-wrap: pretty;
 }
-.callout strong {
+.cmd-copy {
+  flex: none;
+  min-height: 34px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.cmd-copy:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.cmd-copy:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.install-note {
+  margin: 18px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
   color: var(--warn);
+}
+.install-note a {
+  color: var(--muted);
+  text-decoration: underline;
 }
 
 /* Footer */

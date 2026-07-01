@@ -19,21 +19,14 @@ function detectOS(): OS | null {
   return null;
 }
 
-// Renders the honest download hint (assets live on the Releases page) and, when
-// the visitor's OS is recognizable, flags the matching install card. Progressive
-// enhancement: the server-rendered default lists all three platforms, so the
-// hint is meaningful with JS disabled.
+// Small OS-aware nudge under the hero CTA. Progressive enhancement: the
+// server-rendered default lists all three platforms, so it reads fine with JS
+// disabled. The detailed per-OS download lives in the InstallPanel below.
 export function PlatformPicker() {
   const [os, setOs] = useState<OS | null>(null);
 
   useEffect(() => {
-    const detected = detectOS();
-    setOs(detected);
-    if (detected) {
-      document
-        .getElementById(`dl-${detected}`)
-        ?.setAttribute("data-recommended", "true");
-    }
+    setOs(detectOS());
   }, []);
 
   return (
