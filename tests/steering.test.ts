@@ -13,9 +13,18 @@ const sendPrompt =
       behavior?: string,
     ) => Promise<void>
   >();
+const enqueuePrompt =
+  mock<
+    (
+      sessionId: string,
+      message: string,
+      images: unknown,
+      behavior: string,
+    ) => Promise<void>
+  >();
 const getState = mock<(sessionId: string) => Promise<unknown>>();
 
-mockIpcModule({ sendPrompt, getState });
+mockIpcModule({ sendPrompt, enqueuePrompt, getState });
 
 const { useSessionStore } = await import("@/state/store");
 
@@ -54,6 +63,8 @@ function turnCount(): number {
 beforeEach(() => {
   sendPrompt.mockReset();
   sendPrompt.mockResolvedValue(undefined);
+  enqueuePrompt.mockReset();
+  enqueuePrompt.mockResolvedValue(undefined);
   getState.mockReset();
   getState.mockResolvedValue({ model: { provider: "p", id: "m" } });
 });
@@ -73,31 +84,32 @@ describe("submitPrompt steering (HOY-218)", () => {
     expect(useSessionStore.getState().streaming["t1"]).toBe(true);
   });
 
-  test("streaming + Enter: steer on the same channel, no new turn", async () => {
+  test("streaming + Enter: enqueues a steer, no new channel, no new turn", async () => {
     seed();
     await useSessionStore.getState().submitPrompt("t1", "hello");
-    const idleChannel = sendPrompt.mock.calls[0][2];
     const before = turnCount();
 
     await useSessionStore.getState().submitPrompt("t1", "go left", undefined, "steer");
 
-    expect(sendPrompt).toHaveBeenCalledTimes(2);
-    const [, message, channel, , behavior] = sendPrompt.mock.calls[1];
+    // No second sendPrompt (no new channel / sink swap); the steer goes over the
+    // no-channel enqueue path, and no transcript turn is appended.
+    expect(sendPrompt).toHaveBeenCalledTimes(1);
+    expect(enqueuePrompt).toHaveBeenCalledTimes(1);
+    const [sessionId, message, , behavior] = enqueuePrompt.mock.calls[0];
+    expect(sessionId).toBe("sess_live");
     expect(message).toBe("go left");
     expect(behavior).toBe("steer");
-    expect(channel).toBe(idleChannel);
-    // Queued messages do not append a transcript turn.
     expect(turnCount()).toBe(before);
   });
 
-  test("streaming + Shift+Enter: followUp on the same channel", async () => {
+  test("streaming + Shift+Enter: enqueues a followUp", async () => {
     seed();
     await useSessionStore.getState().submitPrompt("t1", "hello");
     await useSessionStore
       .getState()
       .submitPrompt("t1", "then this", undefined, "followUp");
 
-    expect(sendPrompt.mock.calls[1][4]).toBe("followUp");
+    expect(enqueuePrompt.mock.calls[0][3]).toBe("followUp");
   });
 
   test("race: streaming flag already cleared falls back to the idle path", async () => {
@@ -109,24 +121,21 @@ describe("submitPrompt steering (HOY-218)", () => {
 
     await useSessionStore.getState().submitPrompt("t1", "new turn", undefined, "steer");
 
-    // Idle path: a fresh assistant turn is appended and no behavior is sent.
+    // Idle path: a fresh assistant turn + a new sendPrompt with no behavior; the
+    // enqueue path is not used.
     expect(turnCount()).toBe(before + 2);
+    expect(enqueuePrompt).not.toHaveBeenCalled();
+    expect(sendPrompt).toHaveBeenCalledTimes(2);
     expect(sendPrompt.mock.calls[1][4]).toBeUndefined();
   });
 
-  test("'already processing' rejection retries once as a follow-up", async () => {
+  test("a failed enqueue surfaces in threadErrors", async () => {
     seed();
     await useSessionStore.getState().submitPrompt("t1", "hello");
-    sendPrompt.mockReset();
-    sendPrompt
-      .mockRejectedValueOnce(new Error("Agent is already processing. Specify..."))
-      .mockResolvedValueOnce(undefined);
+    enqueuePrompt.mockRejectedValueOnce(new Error("sidecar gone"));
 
-    await useSessionStore.getState().submitPrompt("t1", "squeeze in", undefined, "steer");
+    await useSessionStore.getState().submitPrompt("t1", "steer me", undefined, "steer");
 
-    expect(sendPrompt).toHaveBeenCalledTimes(2);
-    expect(sendPrompt.mock.calls[0][4]).toBe("steer");
-    expect(sendPrompt.mock.calls[1][4]).toBe("followUp");
-    expect(useSessionStore.getState().threadErrors["t1"]).toBeFalsy();
+    expect(useSessionStore.getState().threadErrors["t1"]).toContain("sidecar gone");
   });
 });

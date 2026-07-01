@@ -302,6 +302,31 @@ pub async fn send_prompt(
     Ok(())
 }
 
+// Queue a steer/follow-up into the turn that is already streaming (HOY-218).
+// Deliberately takes NO Channel and does NOT touch the sink: the active turn's
+// sink stays attached so the queued message's delivery, and the run's single
+// terminal Done, keep flowing over the original channel. (Re-invoking send_prompt
+// with the same JS Channel silently orphans delivery: a second invoke rebinds the
+// channel and events after the swap never reach the original onmessage.)
+#[tauri::command]
+pub async fn enqueue_prompt(
+    session_id: String,
+    message: String,
+    images: Option<Vec<ImageContent>>,
+    streaming_behavior: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    let process = manager.get(&session_id)?;
+    let response = process
+        .request_with_dialog_grace(build_prompt_body(
+            &message,
+            images,
+            Some(streaming_behavior),
+        ))
+        .await?;
+    check_success(&response, "prompt")
+}
+
 #[tauri::command]
 pub async fn get_session_stats(
     session_id: String,

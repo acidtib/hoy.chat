@@ -122,6 +122,23 @@ export function sendPrompt(
   });
 }
 
+// Queue a steer/follow-up into the turn already streaming (HOY-218). No Channel:
+// events keep arriving on the turn's original channel. Reusing sendPrompt here
+// (a second invoke with the same Channel) orphans delivery and freezes the turn.
+export function enqueuePrompt(
+  sessionId: string,
+  message: string,
+  images: ImageContent[] | undefined,
+  streamingBehavior: StreamingBehavior,
+): Promise<void> {
+  return invoke<void>("enqueue_prompt", {
+    sessionId,
+    message,
+    images: images && images.length > 0 ? images : null,
+    streamingBehavior,
+  });
+}
+
 export function getSessionStats(sessionId: string): Promise<SessionStats> {
   return invoke<SessionStats>("get_session_stats", { sessionId });
 }

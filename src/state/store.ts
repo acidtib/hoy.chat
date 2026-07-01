@@ -5,6 +5,7 @@ import {
   closeSession,
   createSession,
   deleteSessionFile,
+  enqueuePrompt,
   getMessages,
   getSessionStats,
   getState,
@@ -751,28 +752,21 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // revoke their previews) so they cannot be sent twice (HOY-205).
     get().clearAttachments(threadId);
 
-    // Mid-turn send (HOY-218): a turn is streaming and its channel is live, so
-    // queue the message on that same channel rather than starting a new turn.
-    // The message shows as a queued chip (from queueUpdate) until Pi delivers it;
-    // it enters the transcript only on restore. Reusing the channel keeps a
-    // single Done for the whole run (steer and follow-up drain in the same run).
-    const liveChannel = activeChannels.get(threadId);
-    if ((get().streaming[threadId] ?? false) && liveChannel && thread.sessionId) {
-      const sessionId = thread.sessionId;
+    // Mid-turn send (HOY-218): a turn is streaming, so queue the message into that
+    // run via enqueue_prompt. It shows as a queued chip (from queueUpdate) until Pi
+    // delivers it, then enters the transcript only on restore. Crucially this does
+    // NOT open a new channel or re-set the sink: the queued message and the run's
+    // single terminal Done keep streaming over the turn's original channel. (A
+    // second sendPrompt with the same Channel orphans delivery and freezes the
+    // turn.) activeChannels having an entry means a sink is attached.
+    if (
+      (get().streaming[threadId] ?? false) &&
+      activeChannels.has(threadId) &&
+      thread.sessionId
+    ) {
       try {
-        await sendPrompt(sessionId, text, liveChannel, images, behavior ?? "steer");
+        await enqueuePrompt(thread.sessionId, text, images, behavior ?? "steer");
       } catch (e) {
-        // Race: Pi finished between our streaming-flag read and this send, and
-        // rejects a message it cannot place. Retry once as a follow-up, which
-        // queues cleanly regardless of run state.
-        if (String(e).includes("already processing")) {
-          try {
-            await sendPrompt(sessionId, text, liveChannel, images, "followUp");
-            return;
-          } catch {
-            // fall through to surface the original error
-          }
-        }
         set((s) => ({
           threadErrors: { ...s.threadErrors, [threadId]: String(e) },
         }));

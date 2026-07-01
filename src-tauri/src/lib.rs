@@ -74,6 +74,7 @@ pub fn run() {
             commands::supported_providers,
             commands::create_session,
             commands::send_prompt,
+            commands::enqueue_prompt,
             commands::get_session_stats,
             commands::abort,
             commands::respond_permission,
