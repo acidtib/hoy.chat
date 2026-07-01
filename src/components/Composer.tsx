@@ -346,7 +346,10 @@ export function Composer({
     range.deleteContents();
     const node = document.createTextNode(text);
     range.insertNode(node);
-    range.setStartAfter(node);
+    // Caret INSIDE the text node (not setStartAfter, which lands on the parent
+    // element): currentMention only detects an @ when the caret's anchor is a
+    // text node, so the @ button must leave the caret there for the menu to open.
+    range.setStart(node, node.data.length);
     range.collapse(true);
     sel.removeAllRanges();
     sel.addRange(range);
