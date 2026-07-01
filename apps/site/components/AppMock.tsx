@@ -82,7 +82,7 @@ export function AppWindow() {
       <div className="appwin-bar" aria-hidden="true">
         <Dots />
         <span className="appwin-title">Hoy</span>
-        <span className="appwin-model">claude-opus-4-8</span>
+        <span className="appwin-model">deepseek-v4</span>
       </div>
       <div className="appwin-body appwin-body-hero" aria-hidden="true">
         <Sidebar />
