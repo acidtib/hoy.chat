@@ -635,15 +635,12 @@ function QueuedMessages({
           <span
             key={i}
             className={cn(
-              "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
+              "inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-xs",
               chip.kind === "steer"
                 ? "border-brand/40 bg-brand/10 text-brand"
                 : "border-border/60 bg-muted/40 text-muted-foreground",
             )}
           >
-            <span className="shrink-0 font-medium">
-              {chip.kind === "steer" ? "Steer" : "Queued"}
-            </span>
             <span className="truncate">{chip.text}</span>
           </span>
         ))}
