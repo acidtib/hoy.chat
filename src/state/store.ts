@@ -134,6 +134,19 @@ function newId(prefix: string): string {
   return `${prefix}_${Math.floor(Math.random() * 1e9).toString(36)}`;
 }
 
+// Items present in `prev` but no longer in `next` (multiset-aware). Used to detect
+// which queued steer/follow-up messages Pi just delivered from a queueUpdate.
+function removedItems(prev: string[], next: string[]): string[] {
+  const remaining = [...next];
+  const removed: string[] = [];
+  for (const item of prev) {
+    const i = remaining.indexOf(item);
+    if (i >= 0) remaining.splice(i, 1);
+    else removed.push(item);
+  }
+  return removed;
+}
+
 // Session list is keyed by sessionId from the start so multi-session is a data
 // change, not a redesign. Models, supported providers, and provider auth status
 // are cached here so the top bar and settings page render from our state.
@@ -874,8 +887,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             const last = turns[turns.length - 1];
             if (last && last.role === "assistant") {
               const filtered = { ...last, blocks: last.blocks.filter((b) => b.kind !== "tool" || !b.tool.pending) };
+              // A delivered steer/follow-up opens a fresh assistant turn; if the
+              // run ended before it produced anything, drop the empty shell so no
+              // blank bubble is left behind.
+              const isEmpty =
+                filtered.blocks.length === 0 &&
+                !filtered.reasoning &&
+                !filtered.error &&
+                !filtered.aborted;
+              const nextTurns = isEmpty
+                ? turns.slice(0, -1)
+                : [...turns.slice(0, -1), filtered];
               return {
-                turns: { ...s.turns, [threadId]: [...turns.slice(0, -1), filtered] },
+                turns: { ...s.turns, [threadId]: nextTurns },
                 pendingPermissions: { ...s.pendingPermissions, [threadId]: [] },
               };
             }
@@ -883,17 +907,41 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           });
           void get().refreshStats(threadId);
         } else if (event.kind === "queueUpdate") {
-          // Pi sends the full queue arrays each time; replace, don't append
-          // (HOY-218). Drives the read-only queued-message chips.
-          set((s) => ({
-            queued: {
+          // Pi sends the full queue arrays each time; replace, don't append. The
+          // chips reflect what is still queued; anything that left the queue was
+          // delivered into the run, so render it as a user turn followed by a
+          // fresh assistant turn (HOY-218). This keeps the live transcript in
+          // order and identical to a reloaded thread.
+          set((s) => {
+            const prev = s.queued[threadId] ?? { steering: [], followUp: [] };
+            const delivered = [
+              ...removedItems(prev.steering, event.steering),
+              ...removedItems(prev.followUp, event.followUp),
+            ];
+            const queued = {
               ...s.queued,
               [threadId]: {
                 steering: event.steering,
                 followUp: event.followUp,
               },
-            },
-          }));
+            };
+            if (delivered.length === 0) return { queued };
+            const list = s.turns[threadId] ?? [];
+            const closed = list.map((t, i) =>
+              i === list.length - 1 && t.role === "assistant"
+                ? { ...t, streaming: false }
+                : t,
+            );
+            const appended: Turn[] = [
+              ...closed,
+              ...delivered.map((deliveredText) => ({
+                role: "user" as const,
+                text: deliveredText,
+              })),
+              { role: "assistant" as const, blocks: [], streaming: true },
+            ];
+            return { queued, turns: { ...s.turns, [threadId]: appended } };
+          });
         } else if (event.kind === "notify") {
           // Transient notice; auto-expire so it does not pile up (ext UI).
           const id = ++noticeSeq;
