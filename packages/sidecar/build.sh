@@ -59,6 +59,18 @@ chmod +x "$BIN"
 echo "[3/3] assembling pi-payload (PI_PACKAGE_DIR assets)"
 rm -rf "$PAYLOAD" && mkdir -p "$PAYLOAD"
 cp "$PKG_DIR/package.json" "$PAYLOAD/"
+# HOY-222: brand the project-level config dir .pi -> .hoy. Pi derives
+# CONFIG_DIR_NAME from pkg.piConfig.configDir (config.js) and reads this payload
+# copy at runtime via PI_PACKAGE_DIR, so rewriting the one field flips every
+# project-dir path (settings, packages, skills, prompts, trust, extensions). We
+# edit only the payload copy that ships, not node_modules (keeps npm ci clean).
+bun -e 'const f=process.argv[1]; const fs=require("fs"); const p=JSON.parse(fs.readFileSync(f)); p.piConfig={...p.piConfig,configDir:".hoy"}; fs.writeFileSync(f, JSON.stringify(p,null,2))' "$PAYLOAD/package.json"
+# Fail loud if a future Pi package.json shape change drops the override.
+CONFIG_DIR="$(bun -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1])).piConfig?.configDir))' "$PAYLOAD/package.json")"
+if [ "$CONFIG_DIR" != ".hoy" ]; then
+  echo "ERROR: payload piConfig.configDir is '$CONFIG_DIR', expected .hoy (HOY-222)" >&2
+  exit 1
+fi
 cp -r "$DIST/modes/interactive/theme" "$PAYLOAD/theme"
 cp -r "$DIST/core/export-html" "$PAYLOAD/export-html"
 [ -d "$DIST/modes/interactive/assets" ] && cp -r "$DIST/modes/interactive/assets" "$PAYLOAD/assets"
