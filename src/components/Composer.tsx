@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { detectMention } from "@/lib/mention";
+import { getCaretCoordinates } from "@/lib/caret";
 import type {
   ContextRef,
   ExtWidget,
@@ -152,6 +153,14 @@ export function Composer({
     null,
   );
   const [pathResults, setPathResults] = useState<PathEntry[]>([]);
+  // Fixed-viewport position for the picker menu, anchored at the @ caret
+  // (HOY-220). `bottom` opens the menu above the caret line, `top` below when
+  // there is not enough room above (the composer sits near the screen bottom).
+  const [menuPos, setMenuPos] = useState<{
+    left: number;
+    top?: number;
+    bottom?: number;
+  } | null>(null);
   const aboveWidgets = widgets.filter((w) => w.placement === "aboveEditor");
   const belowWidgets = widgets.filter((w) => w.placement === "belowEditor");
 
@@ -184,6 +193,33 @@ export function Composer({
       clearTimeout(timer);
     };
   }, [picker, searchPaths]);
+
+  // Anchor the menu at the @ caret (HOY-220). Measured after layout so the
+  // textarea value and caret are current; recomputed as the query grows.
+  useLayoutEffect(() => {
+    if (!picker) {
+      setMenuPos(null);
+      return;
+    }
+    const el = textareaRef.current;
+    if (!el) return;
+    const caret = getCaretCoordinates(el, picker.at);
+    const rect = el.getBoundingClientRect();
+    const caretTop = rect.top + caret.top;
+    const caretBottom = caretTop + caret.height;
+    const MENU_MAX = 300;
+    const GAP = 6;
+    const MENU_WIDTH = 352;
+    const left = Math.max(
+      8,
+      Math.min(rect.left + caret.left, window.innerWidth - MENU_WIDTH - 8),
+    );
+    if (caretTop >= MENU_MAX + GAP) {
+      setMenuPos({ left, bottom: window.innerHeight - caretTop + GAP });
+    } else {
+      setMenuPos({ left, top: caretBottom + GAP });
+    }
+  }, [picker]);
 
   const query = picker?.query.toLowerCase() ?? "";
   const shownPaths = pathResults.slice(0, 8);
@@ -438,11 +474,17 @@ export function Composer({
         <WidgetPanel key={`below-${i}`} lines={w.lines} />
       ))}
 
-      {picker && (
+      {picker && menuPos && (
         <div
           // Keep the textarea focused so typing keeps updating the @query.
           onMouseDown={(e) => e.preventDefault()}
-          className="scrollbar-thin absolute bottom-14 left-2 z-30 max-h-72 w-[22rem] max-w-[calc(100%-1rem)] overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+          style={{
+            position: "fixed",
+            left: menuPos.left,
+            top: menuPos.top,
+            bottom: menuPos.bottom,
+          }}
+          className="scrollbar-thin z-50 max-h-[300px] w-[22rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
           <PickerSection label="Files & Directories">
             {shownPaths.length === 0 ? (
