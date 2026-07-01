@@ -70,6 +70,7 @@ export function Composer({
   thinking,
   onSelectThinking,
   onStop,
+  streaming = false,
   fill = false,
   placeholder = "Message  ·  @ to include context, / for commands",
   autoFocus = false,
@@ -85,7 +86,9 @@ export function Composer({
 }: {
   value: string;
   onChange: (value: string) => void;
-  onSubmit?: () => void;
+  // "enter" is a normal send / steer; "shiftEnter" queues a follow-up mid-turn
+  // (HOY-218). When idle, both start a normal turn.
+  onSubmit?: (intent: "enter" | "shiftEnter") => void;
   models: ModelInfo[];
   currentModel?: ModelRef | null;
   selecting: boolean;
@@ -94,9 +97,11 @@ export function Composer({
   onSelectMode?: (mode: PermissionMode) => void;
   thinking: ThinkingLevel;
   onSelectThinking: (level: ThinkingLevel) => void;
-  // While streaming, the send button becomes Stop (HOY-195). `disabled` keeps
-  // gating the textarea and sending; onStop is the abort.
+  // While streaming, the Stop button appears alongside Send (HOY-195/HOY-218);
+  // onStop is the abort. The composer stays enabled during a turn so the user
+  // can steer (Enter) or queue a follow-up (Shift+Enter).
   onStop?: () => void;
+  streaming?: boolean;
   fill?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
@@ -149,9 +154,15 @@ export function Composer({
   }, [focusSignal]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key !== "Enter") return;
+    if (!e.shiftKey) {
       e.preventDefault();
-      if (canSend) onSubmit?.();
+      if (canSend) onSubmit?.("enter");
+    } else if (streaming) {
+      // Shift+Enter queues a follow-up mid-turn (HOY-218). When idle it keeps
+      // its normal newline behavior.
+      e.preventDefault();
+      if (canSend) onSubmit?.("shiftEnter");
     }
   }
 
@@ -244,7 +255,13 @@ export function Composer({
         }}
         autoFocus={autoFocus}
         disabled={disabled}
-        placeholder={disabled ? "Streaming response..." : placeholder}
+        placeholder={
+          streaming
+            ? "Enter to steer  ·  Shift+Enter to queue a follow-up"
+            : disabled
+              ? "Streaming response..."
+              : placeholder
+        }
         className={cn(
           "scrollbar-thin w-full resize-none bg-transparent pl-4 pt-3.5 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:outline-none",
           fill
@@ -321,7 +338,7 @@ export function Composer({
               if (level) onSelectThinking(level);
             }}
           />
-          {disabled && onStop ? (
+          {streaming && onStop && (
             <Button
               variant="outline"
               size="icon-sm"
@@ -331,23 +348,22 @@ export function Composer({
             >
               <Square className="size-4" />
             </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="icon-sm"
-              className={cn(
-                "ml-1 rounded-md",
-                canSend
-                  ? "border-brand/40 text-brand hover:text-brand"
-                  : "text-muted-foreground",
-              )}
-              disabled={!canSend}
-              onClick={() => canSend && onSubmit?.()}
-              aria-label="Send"
-            >
-              <SendHorizontal className="size-4" />
-            </Button>
           )}
+          <Button
+            variant="outline"
+            size="icon-sm"
+            className={cn(
+              "ml-1 rounded-md",
+              canSend
+                ? "border-brand/40 text-brand hover:text-brand"
+                : "text-muted-foreground",
+            )}
+            disabled={!canSend}
+            onClick={() => canSend && onSubmit?.("enter")}
+            aria-label="Send"
+          >
+            <SendHorizontal className="size-4" />
+          </Button>
         </div>
       </div>
     </div>

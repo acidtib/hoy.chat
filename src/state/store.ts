@@ -34,6 +34,7 @@ import type {
   ProviderAuth,
   ProviderInfo,
   SessionStats,
+  StreamingBehavior,
   ThinkingLevel,
   Thread,
   Turn,
@@ -185,6 +186,11 @@ interface SessionStore {
   // In-memory only (base64 never touches disk); cleared on submit and on panel
   // close, revoking each preview object URL.
   composerAttachments: Record<string, ImageAttachment[]>;
+  // Pi's per-session steering/follow-up queues, keyed by threadId (HOY-218). Fed
+  // by queueUpdate events (Pi sends full arrays, so we replace). Drives the
+  // read-only queued-message chips. Cleared on panel close; abort leaves it
+  // intact (Pi keeps the queue and delivers it on the next turn).
+  queued: Record<string, { steering: string[]; followUp: string[] }>;
   // Full screen within the panel strip: the one panel rendered while set.
   // Widths in panels stay untouched so exiting restores the exact layout.
   // Not persisted.
@@ -276,10 +282,14 @@ interface SessionStore {
   unarchiveThread: (threadId: string) => void;
   deleteThread: (threadId: string) => void;
 
+  // Send a prompt. When a turn is already streaming, `behavior` queues the
+  // message ("steer" delivers after the current tool calls, "followUp" after the
+  // turn drains); it is ignored when idle (HOY-218).
   submitPrompt: (
     threadId: string,
     message: string,
     images?: ImageContent[],
+    behavior?: StreamingBehavior,
   ) => Promise<void>;
   // Abort the thread's streaming turn (HOY-195). The turn's terminal events
   // arrive over the channel as usual; no state is flipped here.
@@ -314,6 +324,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   widgets: {},
   drafts: {},
   composerAttachments: {},
+  queued: {},
   expandedThreadId: null,
   focusRequest: null,
   pendingTeardown: null,
@@ -420,6 +431,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const { [id]: closedAttachments, ...composerAttachments } =
         s.composerAttachments;
       for (const a of closedAttachments ?? []) URL.revokeObjectURL(a.previewUrl);
+      // Queued messages die with the sidecar (HOY-218).
+      const { [id]: _q, ...queued } = s.queued;
       return {
         panels,
         activeThreadId,
@@ -433,6 +446,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         statuses,
         widgets,
         composerAttachments,
+        queued,
         drafts: discard ? remainingDrafts : s.drafts,
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
         focusRequest: s.focusRequest?.threadId === id ? null : s.focusRequest,
@@ -724,10 +738,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   // Send a prompt from a thread panel and stream the response into its turns.
   // Lazily spawns the thread's own sidecar (session per thread) in the project's
   // cwd on first send, then drives one Channel per turn.
-  submitPrompt: async (threadId, message, images) => {
+  submitPrompt: async (threadId, message, images, behavior) => {
     const text = message.trim();
     const hasImages = !!images && images.length > 0;
-    if ((!text && !hasImages) || get().streaming[threadId]) return;
+    if (!text && !hasImages) return;
 
     const found = findThread(get().projects, threadId);
     if (!found) return;
@@ -736,6 +750,35 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // The composer's attachments are consumed by this send; clear them (and
     // revoke their previews) so they cannot be sent twice (HOY-205).
     get().clearAttachments(threadId);
+
+    // Mid-turn send (HOY-218): a turn is streaming and its channel is live, so
+    // queue the message on that same channel rather than starting a new turn.
+    // The message shows as a queued chip (from queueUpdate) until Pi delivers it;
+    // it enters the transcript only on restore. Reusing the channel keeps a
+    // single Done for the whole run (steer and follow-up drain in the same run).
+    const liveChannel = activeChannels.get(threadId);
+    if ((get().streaming[threadId] ?? false) && liveChannel && thread.sessionId) {
+      const sessionId = thread.sessionId;
+      try {
+        await sendPrompt(sessionId, text, liveChannel, images, behavior ?? "steer");
+      } catch (e) {
+        // Race: Pi finished between our streaming-flag read and this send, and
+        // rejects a message it cannot place. Retry once as a follow-up, which
+        // queues cleanly regardless of run state.
+        if (String(e).includes("already processing")) {
+          try {
+            await sendPrompt(sessionId, text, liveChannel, images, "followUp");
+            return;
+          } catch {
+            // fall through to surface the original error
+          }
+        }
+        set((s) => ({
+          threadErrors: { ...s.threadErrors, [threadId]: String(e) },
+        }));
+      }
+      return;
+    }
 
     // Append the user turn plus an in-flight assistant turn the events fold into.
     // Title an untitled thread from its first message.
@@ -845,6 +888,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             return { pendingPermissions: { ...s.pendingPermissions, [threadId]: [] } };
           });
           void get().refreshStats(threadId);
+        } else if (event.kind === "queueUpdate") {
+          // Pi sends the full queue arrays each time; replace, don't append
+          // (HOY-218). Drives the read-only queued-message chips.
+          set((s) => ({
+            queued: {
+              ...s.queued,
+              [threadId]: {
+                steering: event.steering,
+                followUp: event.followUp,
+              },
+            },
+          }));
         } else if (event.kind === "notify") {
           // Transient notice; auto-expire so it does not pile up (ext UI).
           const id = ++noticeSeq;

@@ -70,6 +70,10 @@ const EMPTY_TURNS: Turn[] = [];
 const EMPTY_PERMISSIONS: PermissionRequest[] = [];
 const EMPTY_NOTICES: Notice[] = [];
 const EMPTY_ATTACHMENTS: ImageAttachment[] = [];
+const EMPTY_QUEUE: { steering: string[]; followUp: string[] } = {
+  steering: [],
+  followUp: [],
+};
 
 export function ThreadView({
   threadId,
@@ -122,6 +126,7 @@ export function ThreadView({
   );
   const addAttachments = useSessionStore((s) => s.addAttachments);
   const removeAttachment = useSessionStore((s) => s.removeAttachment);
+  const queued = useSessionStore((s) => s.queued[threadId] ?? EMPTY_QUEUE);
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -164,11 +169,18 @@ export function ThreadView({
     });
   }, [focusSignal]);
 
-  function handleSubmit() {
+  function handleSubmit(intent: "enter" | "shiftEnter") {
     const message = draft;
     const images = attachments.map((a) => a.content);
+    // Behavior only applies mid-turn; submitPrompt ignores it when idle.
+    const behavior = intent === "shiftEnter" ? "followUp" : "steer";
     setDraft(threadId, "");
-    void submitPrompt(threadId, message, images.length > 0 ? images : undefined);
+    void submitPrompt(
+      threadId,
+      message,
+      images.length > 0 ? images : undefined,
+      behavior,
+    );
   }
 
   const widgetList: ExtWidget[] = threadWidgets
@@ -190,9 +202,9 @@ export function ThreadView({
       thinking={thinkingLevel}
       onSelectThinking={(level) => void selectThinkingLevel(threadId, level)}
       onStop={streaming ? () => void stopStreaming(threadId) : undefined}
+      streaming={streaming}
       fill={!hasMessages || expanded}
       autoFocus={!hasMessages}
-      disabled={streaming}
       expanded={expanded}
       onToggleExpand={hasMessages ? () => setExpanded((v) => !v) : undefined}
       focusSignal={focusSignal}
@@ -438,6 +450,8 @@ export function ThreadView({
             />
           )}
 
+          <QueuedMessages queued={queued} streaming={streaming} />
+
           <div
             className={cn(
               "shrink-0 border-t border-border",
@@ -597,6 +611,52 @@ function TextDialog({
 }
 
 // A transient extension `notify` notice, styled by severity and dismissible.
+// Read-only chips for Pi's steering/follow-up queues (HOY-218). They clear when
+// Pi delivers the message (a queueUpdate drops it). Abort does not clear Pi's
+// queue, so when idle with messages still queued we note they will be delivered
+// on the next turn. There is no cancel affordance: Pi has no clear-queue RPC.
+function QueuedMessages({
+  queued,
+  streaming,
+}: {
+  queued: { steering: string[]; followUp: string[] };
+  streaming: boolean;
+}) {
+  const chips = [
+    ...queued.steering.map((text) => ({ kind: "steer" as const, text })),
+    ...queued.followUp.map((text) => ({ kind: "followUp" as const, text })),
+  ];
+  if (chips.length === 0) return null;
+
+  return (
+    <div className="mx-3 mb-2 space-y-1.5">
+      <div className="flex flex-wrap gap-1.5">
+        {chips.map((chip, i) => (
+          <span
+            key={i}
+            className={cn(
+              "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
+              chip.kind === "steer"
+                ? "border-brand/40 bg-brand/10 text-brand"
+                : "border-border/60 bg-muted/40 text-muted-foreground",
+            )}
+          >
+            <span className="shrink-0 font-medium">
+              {chip.kind === "steer" ? "Steer" : "Queued"}
+            </span>
+            <span className="truncate">{chip.text}</span>
+          </span>
+        ))}
+      </div>
+      {!streaming && (
+        <p className="text-xs text-muted-foreground">
+          Queued messages will be delivered on your next turn.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function NoticeRow({
   notice,
   onDismiss,

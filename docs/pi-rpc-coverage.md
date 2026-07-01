@@ -54,8 +54,8 @@ Status key: **used** (wired end to end), **partial** (some of the surface wired)
 | `get_session_stats` | Tokens, cost, contextUsage, sessionFile | used | `commands.rs:260`; contextUsage fetched, no context meter UI |
 | `set_model` | Switch active model | used | `commands.rs:70` |
 | `extension_ui_response` | Answer extension dialogs | used | `select`/`confirm`/`input`/`editor` all wired (approval + text cards); `input`/`editor` answer with `{value}` like select |
-| `steer` | Inject a message mid-turn, after current tool calls | unused | Biggest gap; pi's signature interruption feature |
-| `follow_up` | Queue a message for after the turn ends | unused | |
+| `steer` | Inject a message mid-turn, after current tool calls | covered (HOY-218) | Driven via `prompt` + `streamingBehavior:"steer"` (same `_queueSteer` path); the standalone command is not invoked to avoid a duplicate code path |
+| `follow_up` | Queue a message for after the turn ends | covered (HOY-218) | Driven via `prompt` + `streamingBehavior:"followUp"` (same `_queueFollowUp` path); standalone command not invoked |
 | `set_steering_mode` | Queue delivery: `all` or `one-at-a-time` | unused | |
 | `set_follow_up_mode` | Same for follow-ups | unused | |
 | `set_thinking_level` | Set thinking: off, minimal, low, medium, high, xhigh | used (HOY-204) | `commands.rs:90`; composer dropdown drives it via `store.selectThinkingLevel`, re-synced from `get_state` (pi clamps per model) |
