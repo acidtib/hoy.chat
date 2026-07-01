@@ -83,20 +83,25 @@ Report upstream (Groq needs `supportsDeveloperRole: false` or a compat
 carve-out) and re-verify after the pi bump that picks up a fix.
 
 ### Pi version bump checklist
-Pinned 0.80.2. On every bump: re-verify the tool promptGuidelines in
+Pinned 0.80.3. On every bump: re-verify the tool promptGuidelines in
 `hoy-system-prompt.ts` against pi source (the edit guidelines are load-bearing),
 repoint the docs-block GitHub tag, re-check the provider list and env-var
 mapping in `pi_config.rs`, and re-run the prompt assembly tests.
 
-### Bump to 0.80.3 + wire get_entries / get_tree (HOY-221)
-0.80.3 (2026-06-30) adds two RPC commands absent from pinned 0.80.2:
-`get_entries` (read session entries) and `get_tree` (read a tree snapshot), the
-read side of the fork/tree gap. Do the version bump (checklist above), confirm
-the exact request/response shapes against the installed 0.80.3
-`rpc-types.d.ts`, land typed `invoke` wrappers plus matching Rust commands
-(`events.rs`/`types.ts` in sync), and write a plan for the `/tree` navigator UI
-as a follow-up. Delta recorded in `docs/pi-rpc-coverage.md` ("Not yet pinned:
-0.80.3").
+### /tree navigator UI (follow-up to HOY-221)
+The read surface for the session tree is wired: `get_entries` and `get_tree` RPC
+commands land as Rust commands (`commands.rs`), typed `invoke` wrappers
+(`lib/ipc.ts`), and TS types (`lib/types.ts`) mirroring Pi's `SessionEntry` /
+`SessionTreeNode`. Still to build: the `/tree` navigator UI that consumes them,
+and the `fork` / `clone` / `get_fork_messages` write side for branching. Coverage
+recorded in `docs/pi-rpc-coverage.md` ("Bump review: 0.80.2 -> 0.80.3").
+
+### Pre-existing provider-list gaps (noted during HOY-221, not a 0.80.3 delta)
+Pi's `core/provider-display-names.js` lists `ant-ling`, `nvidia`, and
+`zai-coding-cn`, which are absent from `pi_config.rs` PROVIDERS, and Pi's `zai`
+label is now "ZAI Coding Plan (Global)" (pi_config has "ZAI"). These predate the
+0.80.3 bump (the CHANGELOG lists no provider additions). Reconcile `pi_config.rs`
+with Pi's built-in table, sourcing the correct env-var names, when convenient.
 
 ## Deferred by design (MVP scope cuts)
 

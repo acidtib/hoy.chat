@@ -444,7 +444,7 @@ enum ExtUiOutcome {
 // Map an extension_ui_request to a frontend event. Dialogs become
 // PermissionRequest (input/editor carry placeholder/prefill and answer with the
 // same {value} shape as select); fire-and-forget methods become their own
-// events. Mirrors Pi 0.80.2's RpcExtensionUIRequest union.
+// events. Mirrors Pi 0.80.3's RpcExtensionUIRequest union.
 fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome {
     let str_field = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
     let str_array = |key: &str| {

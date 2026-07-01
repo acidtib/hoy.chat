@@ -84,6 +84,8 @@ pub fn run() {
             commands::set_permission_mode,
             commands::close_session,
             commands::get_messages,
+            commands::get_entries,
+            commands::get_tree,
             commands::delete_session_file,
             commands::list_project_paths,
             commands::read_context_file,

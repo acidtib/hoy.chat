@@ -248,6 +248,77 @@ export interface SlashCommand {
   source: "extension" | "prompt" | "skill" | "hoy";
 }
 
+// Session tree read surface (0.80.3, HOY-221). The Rust get_entries / get_tree
+// commands pass Pi's response `data` through untyped (serde_json::Value), so these
+// mirror Pi's SessionEntry / SessionTreeNode shapes on the TS side for a future
+// /tree navigator. A "message" entry embeds Pi's AgentMessage, which Hoy treats
+// opaquely everywhere else (getMessages returns unknown[]), so it stays `unknown`.
+export interface SessionEntryBase {
+  type: string;
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+}
+
+export type SessionEntry =
+  | (SessionEntryBase & { type: "message"; message: unknown })
+  | (SessionEntryBase & { type: "thinking_level_change"; thinkingLevel: string })
+  | (SessionEntryBase & {
+      type: "model_change";
+      provider: string;
+      modelId: string;
+    })
+  | (SessionEntryBase & {
+      type: "compaction";
+      summary: string;
+      firstKeptEntryId: string;
+      tokensBefore: number;
+      details?: unknown;
+      fromHook?: boolean;
+    })
+  | (SessionEntryBase & {
+      type: "branch_summary";
+      fromId: string;
+      summary: string;
+      details?: unknown;
+      fromHook?: boolean;
+    })
+  | (SessionEntryBase & { type: "custom"; customType: string; data?: unknown })
+  | (SessionEntryBase & {
+      type: "custom_message";
+      customType: string;
+      content: unknown;
+      details?: unknown;
+      display: boolean;
+    })
+  | (SessionEntryBase & {
+      type: "label";
+      targetId: string;
+      label: string | undefined;
+    })
+  | (SessionEntryBase & { type: "session_info"; name?: string });
+
+export interface SessionTreeNode {
+  entry: SessionEntry;
+  children: SessionTreeNode[];
+  // Resolved label for this entry, if any.
+  label?: string;
+  labelTimestamp?: string;
+}
+
+// get_entries response `data`: the flat, id/parentId-linked entry list plus the
+// current leaf.
+export interface SessionEntries {
+  entries: SessionEntry[];
+  leafId: string | null;
+}
+
+// get_tree response `data`: the recursive node forest plus the current leaf.
+export interface SessionTree {
+  tree: SessionTreeNode[];
+  leafId: string | null;
+}
+
 // A provider/model pair as Pi's set_model takes it. Lighter than ModelInfo for
 // state that only needs identity, not capabilities.
 export interface ModelRef {

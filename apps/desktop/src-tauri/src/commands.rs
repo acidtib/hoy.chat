@@ -269,6 +269,45 @@ pub async fn get_messages(
     serde_json::from_value(messages).map_err(|e| format!("decode messages: {e}"))
 }
 
+// Read the session's tree entries (0.80.3, HOY-221): the flat, id/parentId-linked
+// SessionEntry list plus the current leafId. Read side of the fork/tree gap; a
+// future /tree navigator UI consumes it. `since` (optional) returns only entries
+// after that entry id for incremental reads.
+//
+// Returned as serde_json::Value, not a typed struct: SessionEntry is a nine-variant
+// union (message/thinking_level_change/model_change/compaction/branch_summary/
+// custom/custom_message/label/session_info) whose `message` variant embeds Pi's
+// AgentMessage, which get_messages already carries opaquely as Value. Mirroring
+// that union in Rust would duplicate a large, still-evolving surface for no gain
+// at a pure read passthrough. The renderer types the shape (lib/types.ts).
+#[tauri::command]
+pub async fn get_entries(
+    session_id: String,
+    since: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<Value, String> {
+    let process = manager.get(&session_id)?;
+    let mut body = json!({ "type": "get_entries" });
+    if let Some(since) = since.filter(|s| !s.trim().is_empty()) {
+        body["since"] = json!(since);
+    }
+    let response = process.request(body).await?;
+    unwrap_response(response, "get_entries")
+}
+
+// Read the session tree snapshot (0.80.3, HOY-221): a recursive SessionTreeNode
+// forest (each node = entry + children + resolved label) plus the current leafId.
+// Same passthrough rationale as get_entries; returned as Value.
+#[tauri::command]
+pub async fn get_tree(
+    session_id: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<Value, String> {
+    let process = manager.get(&session_id)?;
+    let response = process.request(json!({ "type": "get_tree" })).await?;
+    unwrap_response(response, "get_tree")
+}
+
 // Permanently delete a thread's transcript JSONL (thread delete). Guarded to the
 // branded sessions dir so a stray path can never remove arbitrary files. A
 // missing file is treated as success (already gone).
@@ -581,6 +620,37 @@ mod tests {
     fn build_prompt_body_with_streaming_behavior() {
         let body = build_prompt_body("more", None, Some("steer".into()));
         assert_eq!(body["streamingBehavior"], "steer");
+    }
+
+    // get_entries / get_tree return the whole response `data` object (both
+    // {..., leafId} shapes), unlike get_messages which pulls a single sub-field.
+    // Pin that passthrough and the error path here since the commands themselves
+    // need a live sidecar to exercise (HOY-221).
+    #[test]
+    fn unwrap_response_returns_full_data_object() {
+        let response = json!({
+            "type": "response",
+            "command": "get_tree",
+            "success": true,
+            "data": { "tree": [], "leafId": null },
+        });
+        let data = unwrap_response(response, "get_tree").unwrap();
+        assert!(data.get("tree").unwrap().as_array().unwrap().is_empty());
+        assert!(data.get("leafId").unwrap().is_null());
+    }
+
+    #[test]
+    fn unwrap_response_surfaces_error_string() {
+        let response = json!({
+            "type": "response",
+            "command": "get_entries",
+            "success": false,
+            "error": "no session",
+        });
+        assert_eq!(
+            unwrap_response(response, "get_entries"),
+            Err("no session".into())
+        );
     }
 
     use std::sync::atomic::{AtomicUsize, Ordering};

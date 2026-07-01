@@ -13,7 +13,9 @@ import type {
   PiState,
   ProviderAuth,
   ProviderInfo,
+  SessionEntries,
   SessionStats,
+  SessionTree,
   SlashCommand,
   StreamingBehavior,
   ThinkingLevel,
@@ -114,6 +116,25 @@ export function closeSession(sessionId: string): Promise<void> {
 // Full transcript as raw Pi AgentMessage objects; mapped to turns by the caller.
 export function getMessages(sessionId: string): Promise<unknown[]> {
   return invoke<unknown[]>("get_messages", { sessionId });
+}
+
+// Read the session's tree entries (0.80.3, HOY-221): the flat SessionEntry list
+// plus the current leafId. Read side of the fork/tree gap; backs a future /tree
+// navigator. `since` returns only entries after that entry id (incremental read).
+export function getEntries(
+  sessionId: string,
+  since?: string,
+): Promise<SessionEntries> {
+  return invoke<SessionEntries>("get_entries", {
+    sessionId,
+    since: since ?? null,
+  });
+}
+
+// Read the session tree snapshot (0.80.3, HOY-221): the recursive node forest plus
+// the current leafId. Pairs with getEntries for the future /tree navigator.
+export function getTree(sessionId: string): Promise<SessionTree> {
+  return invoke<SessionTree>("get_tree", { sessionId });
 }
 
 export function deleteSessionFile(sessionFile: string): Promise<void> {

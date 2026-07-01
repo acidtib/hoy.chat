@@ -1,22 +1,36 @@
 # Pi RPC coverage
 
-What Hoy uses of pi 0.80.2's RPC surface (`--mode rpc`, JSONL over stdio), against
+What Hoy uses of pi 0.80.3's RPC surface (`--mode rpc`, JSONL over stdio), against
 the full command and event set in
 `@earendil-works/pi-coding-agent/dist/modes/rpc/rpc-types.d.ts`. Snapshot from a
-docs-and-source review on 2026-06-30 (bumped 0.78.0 -> 0.80.2); re-check on every
+docs-and-source review on 2026-06-30 (bumped 0.80.2 -> 0.80.3); re-check on every
 pi version bump.
 
-## Not yet pinned: 0.80.3 (released 2026-06-30)
+## Bump review: 0.80.2 -> 0.80.3 (HOY-221)
 
-We run 0.80.2. 0.80.3 landed the same day as this review and adds RPC surface we
-do not have yet. Fold into the next version bump:
+No breaking changes for Hoy. Verified against the installed 0.80.3 source:
 
-- **Two new RPC commands: `get_entries` (read session entries) and `get_tree`
-  (read tree snapshots).** These are the read side of the session-tree/branching
-  feature gap: they would back a `/tree` navigator and the `fork`/`clone` UI that
-  the Commands table currently lists as unused. Not present in the installed
-  0.80.2 `rpc-types.d.ts`; verified absent from `dist/modes/rpc/`.
-- **New `./rpc-entry` package export** to launch Pi directly in RPC mode. Does not
+- **Two new RPC commands wired: `get_entries` (read session entries) and
+  `get_tree` (read a tree snapshot).** These are the read side of the
+  session-tree/branching feature gap. Confirmed present in 0.80.3
+  `rpc-types.d.ts` (absent from 0.80.2). Landed as a pure read surface this bump:
+  Rust commands (`commands.rs`), typed `invoke` wrappers (`lib/ipc.ts`), and TS
+  types (`lib/types.ts`) mirroring Pi's `SessionEntry` / `SessionTreeNode`. The
+  `/tree` navigator UI that consumes them is a follow-up; the `fork`/`clone`/
+  `get_fork_messages` write side stays unused.
+- **Edit-tool promptGuidelines byte-identical** to 0.80.2 (`core/tools/{read,
+  edit,write}.js`), so the verbatim block in `hoy-system-prompt.ts` is still
+  accurate. Docs-block GitHub tag repointed to `v0.80.3`.
+- **Provider list and env-var mapping unchanged.** The 0.80.3 CHANGELOG lists no
+  provider additions; `core/provider-display-names.js` matches the 0.80.2 set, so
+  `pi_config.rs` needs no change. (A pre-existing gap noted for later, not
+  introduced by this bump: `ant-ling`, `nvidia`, and `zai-coding-cn` are in Pi's
+  display-names table but not in `pi_config.rs`, and Pi's `zai` label is now
+  "ZAI Coding Plan (Global)".)
+- **Sidecar imports still resolve.** `createAgentSessionServices`,
+  `createAgentSessionFromServices`, `runRpcMode`, and the `resourceLoaderOptions`
+  we use still export from the package root; the sidecar build succeeds on 0.80.3.
+- **`./rpc-entry` package export** launches Pi directly in RPC mode. Does not
   replace our branded sidecar entry (we still need `systemPromptOverride` plus the
   resource loader via `createAgentSessionServices`), noted so we do not mistake it
   for a drop-in.
@@ -62,11 +76,12 @@ settlement are now dropped instead of emitting stale `tool_execution_update`
 Status key: **used** (wired end to end), **partial** (some of the surface wired),
 **planned** (Linear ticket filed), **unused** (never invoked or mapped).
 
-## Commands (10 of 30 used, on pinned 0.80.2)
+## Commands (10 of 32 used, on pinned 0.80.3)
 
-The 30 rows are the 0.80.2 surface. The last two rows (`get_entries`, `get_tree`)
-are 0.80.3 additions, listed here so the bump does not lose them; they are not in
-the installed source.
+The 32 rows are the 0.80.3 surface. The last two rows (`get_entries`, `get_tree`)
+are the 0.80.3 additions, now wired as a read surface (Rust command + typed IPC
+wrapper + types) with no UI yet; the `/tree` navigator that consumes them is a
+follow-up.
 
 | RPC command | What it does | Hoy status | Notes |
 |---|---|---|---|
@@ -100,8 +115,8 @@ the installed source.
 | `bash` | Run a command outside the agent loop (`!` mode) | unused | Output reaches the LLM on the next prompt |
 | `abort_bash` | Cancel that command | unused | |
 | `get_commands` | List extension/prompt/skill commands | used (HOY-223) | `commands.rs`; feeds the composer "/" autocomplete (cached per thread in the store), which inserts "/name " and lets the existing prompt path dispatch. A Hoy "/compact" built-in is added client-side |
-| `get_entries` | Read session entries | unused (0.80.3, not pinned) | Read side of the fork/tree gap; pairs with `get_tree` |
-| `get_tree` | Read session tree snapshot | unused (0.80.3, not pinned) | Would back a `/tree` navigator and branch UI |
+| `get_entries` | Read session entries | read surface (HOY-221) | `commands.rs`; typed `getEntries` wrapper; returns `{entries, leafId}`. No UI yet; backs the follow-up `/tree` navigator. Optional `since` for incremental reads |
+| `get_tree` | Read session tree snapshot | read surface (HOY-221) | `commands.rs`; typed `getTree` wrapper; returns `{tree, leafId}`. No UI yet; pairs with `get_entries` for the `/tree` navigator |
 
 ## Events (mapped in `map_pi_event`, `sidecar.rs:365`)
 
@@ -120,14 +135,14 @@ the installed source.
 | `queue_update` | used (HOY-205) | Mapped to the `QueueUpdate` AgentEvent; the queued-message chips consume it (HOY-218) |
 | `extension_error` | unused | |
 | `project_trust` | n/a | Extension event only (0.79.0), not in the RPC stream; trust defaults to trusted since the sidecar sets no `projectTrustContextFactory` |
-| `session_info_changed` | n/a | Extension event only (0.80.3, not pinned), not in the RPC stream; would fire on session name changes |
+| `session_info_changed` | n/a | Extension event only (0.80.3), not in the RPC stream; would fire on session name changes |
 | `extension_ui_request` | used | all methods routed in `classify_extension_ui` (`sidecar.rs`): `select`/`confirm`/`input`/`editor` -> `PermissionRequest`; `notify`/`setStatus`/`setWidget`/`setTitle`/`set_editor_text` -> their own events. Delivered through the per-turn sink, so events with no active prompt are not surfaced (between-turn delivery would need a persistent UI channel) |
 
 ## Not reachable over RPC
 
 Interactive-only surfaces that would need Hoy-side UI on top of other commands:
 model/login selectors, `/settings`, the `/tree` navigator, `/resume` picker,
-`/copy`, `/share` (gist), themes, keybindings. Note: 0.80.3's `get_entries` /
-`get_tree` give the `/tree` navigator RPC-readable backing once we bump. SDK-only
+`/copy`, `/share` (gist), themes, keybindings. Note: `get_entries` / `get_tree`
+(wired this bump, HOY-221) give the `/tree` navigator RPC-readable backing. SDK-only
 (our sidecar entry could expose them, stock RPC does not): `importFromJsonl`,
 session tree label APIs.
