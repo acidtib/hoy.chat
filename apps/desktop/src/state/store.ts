@@ -650,12 +650,29 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }),
   addProject: (path) => {
     const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+    // Seed a new project with one starter thread so it opens ready to use
+    // (HOY-226). On the dedup path (path already open) add nothing; just surface
+    // the existing project's most recent thread. openThread runs after set,
+    // mirroring addThread.
+    let openId: string | null = null;
     set((s) => {
-      if (s.projects.some((p) => p.path === path)) return s;
+      const existing = s.projects.find((p) => p.path === path);
+      if (existing) {
+        openId = existing.threads[0]?.id ?? null;
+        return s;
+      }
+      const thread: Thread = {
+        id: newId("t"),
+        title: "New thread",
+        updatedAt: Date.now(),
+        sessionId: null,
+      };
+      openId = thread.id;
       return {
-        projects: [...s.projects, { id: newId("p"), name, path, threads: [] }],
+        projects: [...s.projects, { id: newId("p"), name, path, threads: [thread] }],
       };
     });
+    if (openId) get().openThread(openId);
   },
   addThread: (projectId) => {
     const thread: Thread = {
