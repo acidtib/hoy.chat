@@ -130,9 +130,6 @@ function Composer() {
       <div className="aw-composer-bar">
         <div className="aw-composer-left">
           <span className="aw-iconbtn">
-            <Ic name="plus" />
-          </span>
-          <span className="aw-iconbtn">
             <Ic name="atSign" />
           </span>
         </div>
