@@ -320,6 +320,16 @@ h3.heading {
    three-row matrix of every OS/arch variant (real asset links, no releases-page
    detour), then a single honesty line. Deliberately card-free: rows are held by
    hairlines and rhythm, not boxes. */
+/* Center the section head + lead so they align with the centered download block
+   below instead of hanging off to the left. */
+#install .section-head {
+  justify-content: center;
+}
+#install .lead {
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
+}
 .dl {
   max-width: 680px;
   margin: 0 auto;
