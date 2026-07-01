@@ -23,7 +23,7 @@ import {
 } from "@/lib/ipc";
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { fileToImageAttachment } from "@/lib/images";
-import { contextKey } from "@/lib/types";
+import { draftContexts, draftToMessage } from "@/lib/mentions";
 import type {
   AgentEvent,
   ContextRef,
@@ -283,10 +283,6 @@ interface SessionStore {
   // In-memory only (base64 never touches disk); cleared on submit and on panel
   // close, revoking each preview object URL.
   composerAttachments: Record<string, ImageAttachment[]>;
-  // Pending @ context refs for the composer, keyed by threadId (HOY-220). Each is
-  // inlined into the message on submit (file/dir content or a thread transcript);
-  // cleared on submit and on panel close.
-  composerContexts: Record<string, ContextRef[]>;
   // Pi's per-session steering/follow-up queues, keyed by threadId (HOY-218). Fed
   // by queueUpdate events (Pi sends full arrays, so we replace). Drives the
   // read-only queued-message chips. Cleared on panel close; abort leaves it
@@ -328,11 +324,6 @@ interface SessionStore {
   addAttachments: (threadId: string, files: File[]) => Promise<void>;
   removeAttachment: (threadId: string, id: string) => void;
   clearAttachments: (threadId: string) => void;
-  // @ context management for the composer (HOY-220). addContext dedups by
-  // contextKey; clearContexts runs on submit and panel close.
-  addContext: (threadId: string, ref: ContextRef) => void;
-  removeContext: (threadId: string, key: string) => void;
-  clearContexts: (threadId: string) => void;
   toggleFullScreen: (threadId: string) => void;
   setBodyWidth: (width: number) => void;
   resizePanelEdge: (index: number, deltaPx: number) => void;
@@ -430,7 +421,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   widgets: {},
   drafts: {},
   composerAttachments: {},
-  composerContexts: {},
   queued: {},
   expandedThreadId: null,
   focusRequest: null,
@@ -538,8 +528,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const { [id]: closedAttachments, ...composerAttachments } =
         s.composerAttachments;
       for (const a of closedAttachments ?? []) URL.revokeObjectURL(a.previewUrl);
-      // Pending @ contexts die with the composer session (HOY-220).
-      const { [id]: _cx, ...composerContexts } = s.composerContexts;
       // Queued messages die with the sidecar (HOY-218).
       const { [id]: _q, ...queued } = s.queued;
       return {
@@ -555,7 +543,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         statuses,
         widgets,
         composerAttachments,
-        composerContexts,
         queued,
         drafts: discard ? remainingDrafts : s.drafts,
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
@@ -612,34 +599,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         URL.revokeObjectURL(a.previewUrl);
       const { [threadId]: _drop, ...rest } = s.composerAttachments;
       return { composerAttachments: rest };
-    }),
-
-  addContext: (threadId, ref) =>
-    set((s) => {
-      const list = s.composerContexts[threadId] ?? [];
-      if (list.some((r) => contextKey(r) === contextKey(ref))) return s;
-      return {
-        composerContexts: {
-          ...s.composerContexts,
-          [threadId]: [...list, ref],
-        },
-      };
-    }),
-
-  removeContext: (threadId, key) =>
-    set((s) => ({
-      composerContexts: {
-        ...s.composerContexts,
-        [threadId]: (s.composerContexts[threadId] ?? []).filter(
-          (r) => contextKey(r) !== key,
-        ),
-      },
-    })),
-
-  clearContexts: (threadId) =>
-    set((s) => {
-      const { [threadId]: _drop, ...rest } = s.composerContexts;
-      return { composerContexts: rest };
     }),
 
   toggleFullScreen: (threadId) =>
@@ -877,25 +836,23 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   // Lazily spawns the thread's own sidecar (session per thread) in the project's
   // cwd on first send, then drives one Channel per turn.
   submitPrompt: async (threadId, message, images, behavior) => {
-    const text = message.trim();
-    const hasImages = !!images && images.length > 0;
-
     const found = findThread(get().projects, threadId);
     if (!found) return;
     const { thread, project } = found;
 
-    // @ contexts (HOY-220) are inlined into the message on submit. Read the files
-    // and thread transcripts, build a delimited block, and prepend it to the text
-    // Pi receives; the transcript still shows the user's clean text. Cleared after
-    // building so they cannot be attached twice.
-    const contexts = get().composerContexts[threadId] ?? [];
+    // The message is the composer draft with @ mentions encoded inline (HOY-220).
+    // `text` is the human-readable message (markers -> labels); `contexts` are the
+    // referenced files/threads, inlined as a <context> block prepended to the text
+    // Pi receives. The draft is cleared by the composer (setDraft "") on submit.
+    const contexts = draftContexts(message);
+    const text = draftToMessage(message).trim();
+    const hasImages = !!images && images.length > 0;
     if (!text && !hasImages && contexts.length === 0) return;
 
     // The composer's attachments are consumed by this send; clear them (and
     // revoke their previews) so they cannot be sent twice (HOY-205).
     get().clearAttachments(threadId);
     const contextBlock = await buildContextBlock(contexts, project.path ?? "");
-    get().clearContexts(threadId);
     const outbound = contextBlock ? `${contextBlock}\n\n${text}` : text;
 
     // Mid-turn send (HOY-218): a turn is streaming, so queue the message into that

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AtSign,
   ChevronDown,
@@ -28,7 +28,12 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { detectMention } from "@/lib/mention";
-import { getCaretCoordinates } from "@/lib/caret";
+import {
+  draftIsEmpty,
+  draftToParts,
+  mentionLabel,
+  mentionMarker,
+} from "@/lib/mentions";
 import type {
   ContextRef,
   ExtWidget,
@@ -39,7 +44,7 @@ import type {
   PermissionMode,
   ThinkingLevel,
 } from "@/lib/types";
-import { contextKey, THINKING_LEVELS } from "@/lib/types";
+import { THINKING_LEVELS } from "@/lib/types";
 
 // The composer thread reference for the @ picker's Threads section (HOY-220).
 interface ContextThread {
@@ -67,10 +72,71 @@ const MODE_LABELS: Array<{ value: PermissionMode; label: string }> = [
   { value: "autonomous", label: "Autonomous" },
 ];
 
-// Zed-style agent composer. `fill` makes it expand to fill the panel (the empty
-// thread state); otherwise it auto-grows from one line up to a cap and docks at
-// the bottom of an active thread. CSS field-sizing isn't supported in the Tauri
-// WebKit webview, so the textarea is grown in JS.
+// --- @ mention chips (HOY-220): rendered inline in the contenteditable editor
+// as atomic, non-editable elements. Backspace deletes the whole chip. The chip's
+// DOM carries the ContextRef in data-* so the editor serializes back to a draft.
+
+const MENTION_CLASS =
+  "mention-chip mx-px inline-flex items-center gap-1 rounded border border-border/70 bg-muted/60 px-1 align-middle text-[0.9em] text-foreground";
+
+const ICON_SVG: Record<ContextRef["kind"], string> = {
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  directory:
+    '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  thread:
+    '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+};
+
+function svgFor(kind: ContextRef["kind"]): string {
+  return `<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;opacity:0.7">${ICON_SVG[kind]}</svg>`;
+}
+
+function createChip(ref: ContextRef): HTMLElement {
+  const span = document.createElement("span");
+  span.setAttribute("data-mention", "1");
+  span.setAttribute("contenteditable", "false");
+  span.dataset.kind = ref.kind;
+  if (ref.kind === "thread") {
+    span.dataset.threadId = ref.threadId;
+    span.dataset.title = ref.title;
+  } else {
+    span.dataset.path = ref.path;
+    span.dataset.name = ref.name;
+  }
+  span.className = MENTION_CLASS;
+  span.innerHTML = svgFor(ref.kind);
+  span.appendChild(document.createTextNode(mentionLabel(ref)));
+  return span;
+}
+
+function chipToRef(el: HTMLElement): ContextRef {
+  const kind = el.dataset.kind;
+  if (kind === "thread") {
+    return {
+      kind: "thread",
+      threadId: el.dataset.threadId ?? "",
+      title: el.dataset.title ?? "",
+    };
+  }
+  return {
+    kind: kind === "directory" ? "directory" : "file",
+    path: el.dataset.path ?? "",
+    name: el.dataset.name ?? "",
+  };
+}
+
+function pathToRef(entry: PathEntry): ContextRef {
+  return {
+    kind: entry.isDir ? "directory" : "file",
+    path: entry.path,
+    name: entry.name,
+  };
+}
+
+// Zed-style agent composer. The message editor is a contenteditable surface so @
+// mentions render as inline chips (HOY-220). `fill` makes it expand to fill the
+// panel (the empty thread state); otherwise it auto-grows up to a cap and docks
+// at the bottom of an active thread.
 export function Composer({
   value,
   onChange,
@@ -97,12 +163,10 @@ export function Composer({
   onAddFiles,
   onRemoveAttachment,
   canAttachImages = true,
-  contexts = [],
-  onAddContext,
-  onRemoveContext,
   searchPaths,
   threads = [],
 }: {
+  // The draft, with @ mentions encoded inline as markers (lib/mentions.ts).
   value: string;
   onChange: (value: string) => void;
   // "enter" is a normal send / steer; "shiftEnter" queues a follow-up mid-turn
@@ -136,26 +200,24 @@ export function Composer({
   onAddFiles?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
   canAttachImages?: boolean;
-  // @ context picker (HOY-220): current pills, add/remove, the gitignore-aware
-  // path search, and the thread list for the Threads section.
-  contexts?: ContextRef[];
-  onAddContext?: (ref: ContextRef) => void;
-  onRemoveContext?: (key: string) => void;
+  // @ context picker (HOY-220): the gitignore-aware path search and the thread
+  // list for the Threads section. Selected refs become inline chips in the draft.
   searchPaths?: (query: string) => Promise<PathEntry[]>;
   threads?: ContextThread[];
 }) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Last draft we emitted, so the value->DOM sync effect can tell our own edits
+  // (skip, keep the caret) from external ones (rebuild: clear-on-submit, restore,
+  // extension setEditorText).
+  const lastEmitted = useRef<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  // Active @-mention (HOY-220): the picker is open while this is set. `at` is the
-  // `@` index in the value; `query` is the text typed after it (the filter).
-  const [picker, setPicker] = useState<{ at: number; query: string } | null>(
-    null,
-  );
+  // Active @-mention (HOY-220): the picker is open while this is set; `query`
+  // filters the results. The exact @ position is recomputed from the live caret
+  // at insert time.
+  const [picker, setPicker] = useState<{ query: string } | null>(null);
   const [pathResults, setPathResults] = useState<PathEntry[]>([]);
-  // Fixed-viewport position for the picker menu, anchored at the @ caret
-  // (HOY-220). `bottom` opens the menu above the caret line, `top` below when
-  // there is not enough room above (the composer sits near the screen bottom).
+  // Fixed-viewport position for the picker menu, anchored at the @ caret.
   const [menuPos, setMenuPos] = useState<{
     left: number;
     top?: number;
@@ -170,9 +232,170 @@ export function Composer({
     if (images.length > 0) onAddFiles(images);
   }
 
-  // Live path search while the @ picker is open (HOY-220), debounced so each
-  // keystroke does not fire an ipc round trip. Empty query returns the first
-  // paths (Rust caps the count).
+  // Serialize the editor DOM back to a draft string (text + mention markers).
+  function serialize(): string {
+    const root = editorRef.current;
+    if (!root) return "";
+    let out = "";
+    root.childNodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        out += node.textContent ?? "";
+      } else if (node.nodeName === "BR") {
+        out += "\n";
+      } else if (node instanceof HTMLElement) {
+        out += node.dataset.mention
+          ? mentionMarker(chipToRef(node))
+          : (node.textContent ?? "");
+      }
+    });
+    return out;
+  }
+
+  function emit() {
+    const draft = serialize();
+    lastEmitted.current = draft;
+    onChange(draft);
+  }
+
+  // The active @-mention at the caret, or null. Reused by the picker open/update
+  // and by insertion/dismissal so all three agree on the token bounds.
+  function currentMention(): {
+    node: Text;
+    at: number;
+    offset: number;
+    query: string;
+  } | null {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null;
+    const node = sel.anchorNode;
+    const root = editorRef.current;
+    if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+    if (!root || !root.contains(node)) return null;
+    const offset = sel.anchorOffset;
+    const detected = detectMention(node.textContent ?? "", offset);
+    if (!detected) return null;
+    return { node: node as Text, at: detected.at, offset, query: detected.query };
+  }
+
+  function computeMenuPos(): {
+    left: number;
+    top?: number;
+    bottom?: number;
+  } | null {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0).cloneRange();
+    const rects = range.getClientRects();
+    let rect: DOMRect | undefined = rects[0] ?? range.getBoundingClientRect();
+    if (!rect || (rect.top === 0 && rect.left === 0 && rect.height === 0)) {
+      rect = editorRef.current?.getBoundingClientRect();
+    }
+    if (!rect) return null;
+    const MENU_MAX = 300;
+    const GAP = 6;
+    const MENU_WIDTH = 352;
+    const left = Math.max(
+      8,
+      Math.min(rect.left, window.innerWidth - MENU_WIDTH - 8),
+    );
+    if (rect.top >= MENU_MAX + GAP) {
+      return { left, bottom: window.innerHeight - rect.top + GAP };
+    }
+    return { left, top: rect.bottom + GAP };
+  }
+
+  // Reflect the caret's @-mention (open/update/close the picker) after any edit.
+  function updateMention() {
+    const mention = currentMention();
+    if (mention) {
+      setPicker({ query: mention.query });
+      setMenuPos(computeMenuPos());
+    } else {
+      setPicker(null);
+    }
+  }
+
+  function insertTextAtCaret(text: string) {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const node = document.createTextNode(text);
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    emit();
+    updateMention();
+  }
+
+  // Replace the @query at the caret with an inline chip, then a trailing space so
+  // the caret has a spot to keep typing after the chip.
+  function insertMention(ref: ContextRef) {
+    const root = editorRef.current;
+    const mention = currentMention();
+    if (!root || !mention) {
+      dismissPicker();
+      return;
+    }
+    const range = document.createRange();
+    range.setStart(mention.node, mention.at);
+    range.setEnd(mention.node, mention.offset);
+    range.deleteContents();
+    const frag = document.createDocumentFragment();
+    frag.appendChild(createChip(ref));
+    const space = document.createTextNode(" ");
+    frag.appendChild(space);
+    range.insertNode(frag);
+    const after = document.createRange();
+    after.setStartAfter(space);
+    after.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(after);
+    setPicker(null);
+    setPathResults([]);
+    emit();
+    root.focus();
+  }
+
+  // Close the menu, leaving the typed @query text in place (Escape / blur).
+  function dismissPicker() {
+    setPicker(null);
+    setPathResults([]);
+  }
+
+  function openPickerFromButton() {
+    const root = editorRef.current;
+    if (!root) return;
+    root.focus();
+    const sel = window.getSelection();
+    if (!sel) return;
+    if (sel.rangeCount === 0 || !root.contains(sel.anchorNode)) {
+      const range = document.createRange();
+      range.selectNodeContents(root);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    const node = sel.anchorNode;
+    const offset = sel.anchorOffset;
+    let insert = "@";
+    if (node && node.nodeType === Node.TEXT_NODE && offset > 0) {
+      const prev = (node.textContent ?? "")[offset - 1];
+      if (prev && !/\s/.test(prev)) insert = " @";
+    }
+    insertTextAtCaret(insert);
+  }
+
+  function pickImage() {
+    dismissPicker();
+    fileInputRef.current?.click();
+  }
+
+  // Live path search while the picker is open (debounced). Empty query returns
+  // the first paths (Rust caps the count).
   useEffect(() => {
     if (!picker || !searchPaths) {
       setPathResults([]);
@@ -194,32 +417,37 @@ export function Composer({
     };
   }, [picker, searchPaths]);
 
-  // Anchor the menu at the @ caret (HOY-220). Measured after layout so the
-  // textarea value and caret are current; recomputed as the query grows.
-  useLayoutEffect(() => {
-    if (!picker) {
-      setMenuPos(null);
-      return;
+  // Sync external draft changes into the editor DOM (init, clear-on-submit,
+  // restore, setEditorText). Our own edits set lastEmitted first, so they are
+  // skipped here and the caret is preserved.
+  useEffect(() => {
+    const root = editorRef.current;
+    if (!root) return;
+    if (value === lastEmitted.current) return;
+    root.textContent = "";
+    for (const part of draftToParts(value)) {
+      if (part.type === "text") {
+        root.appendChild(document.createTextNode(part.text));
+      } else {
+        root.appendChild(createChip(part.ref));
+      }
     }
-    const el = textareaRef.current;
-    if (!el) return;
-    const caret = getCaretCoordinates(el, picker.at);
-    const rect = el.getBoundingClientRect();
-    const caretTop = rect.top + caret.top;
-    const caretBottom = caretTop + caret.height;
-    const MENU_MAX = 300;
-    const GAP = 6;
-    const MENU_WIDTH = 352;
-    const left = Math.max(
-      8,
-      Math.min(rect.left + caret.left, window.innerWidth - MENU_WIDTH - 8),
-    );
-    if (caretTop >= MENU_MAX + GAP) {
-      setMenuPos({ left, bottom: window.innerHeight - caretTop + GAP });
-    } else {
-      setMenuPos({ left, top: caretBottom + GAP });
+    lastEmitted.current = value;
+    if (document.activeElement === root) {
+      const range = document.createRange();
+      range.selectNodeContents(root);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
     }
-  }, [picker]);
+  }, [value]);
+
+  // Click-driven focus: a non-zero signal focuses, including on mount. preventScroll
+  // so it does not fight ThreadView's smooth scrollIntoView.
+  useEffect(() => {
+    if (focusSignal) editorRef.current?.focus({ preventScroll: true });
+  }, [focusSignal]);
 
   const query = picker?.query.toLowerCase() ?? "";
   const shownPaths = pathResults.slice(0, 8);
@@ -229,108 +457,22 @@ export function Composer({
       : threads
   ).slice(0, 6);
 
-  // Reflect the textarea's current @-mention (or clear it) after every edit.
-  function handleChange(value: string, cursor: number) {
-    onChange(value);
-    const mention = detectMention(value, cursor);
-    setPicker(mention ? { at: mention.at, query: mention.query } : null);
-  }
-
-  // The @ button opens the picker by inserting an `@` at the cursor (on a word
-  // boundary), which the mention detector then picks up.
-  function openPickerFromButton() {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.focus();
-    const pos = el.selectionStart ?? value.length;
-    const needsSpace = pos > 0 && !/\s/.test(value[pos - 1] ?? "");
-    const insert = `${needsSpace ? " " : ""}@`;
-    const next = value.slice(0, pos) + insert + value.slice(pos);
-    const at = pos + insert.length - 1;
-    onChange(next);
-    setPicker({ at, query: "" });
-    requestAnimationFrame(() => {
-      el.selectionStart = el.selectionEnd = at + 1;
-    });
-  }
-
-  // Remove the `@query` token from the textarea and close the picker, restoring
-  // the caret to where the `@` was.
-  function closePicker() {
-    if (picker) {
-      const end = picker.at + 1 + picker.query.length;
-      onChange(value.slice(0, picker.at) + value.slice(end));
-      const el = textareaRef.current;
-      if (el)
-        requestAnimationFrame(() => {
-          el.focus();
-          el.selectionStart = el.selectionEnd = picker.at;
-        });
-    }
-    setPicker(null);
-    setPathResults([]);
-  }
-
-  function pickPath(entry: PathEntry) {
-    onAddContext?.({
-      kind: entry.isDir ? "directory" : "file",
-      path: entry.path,
-      name: entry.name,
-    });
-    closePicker();
-  }
-
-  function pickThread(thread: ContextThread) {
-    onAddContext?.({
-      kind: "thread",
-      threadId: thread.threadId,
-      title: thread.title,
-    });
-    closePicker();
-  }
-
-  function pickImage() {
-    closePicker();
-    fileInputRef.current?.click();
-  }
-
-  useLayoutEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    // In fill mode the textarea is sized by flex; a stale inline height from
-    // docked mode would fight it.
-    if (fill) {
-      el.style.height = "";
-      return;
-    }
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, [value, fill]);
-
-  // Click-driven focus: a non-zero signal focuses, including on mount (the
-  // fresh-open path mounts with its own brand-new request). Re-renders with an
-  // unchanged signal never re-fire. Remounts cannot replay a stale request;
-  // the store clears it on closePanel/toggleFullScreen. preventScroll: the
-  // focus must not fight ThreadView's smooth scrollIntoView, which owns
-  // bringing the panel into view (the race leaves the strip parked short).
-  useEffect(() => {
-    if (focusSignal) textareaRef.current?.focus({ preventScroll: true });
-  }, [focusSignal]);
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     // The @ picker takes keys first (HOY-220): Escape closes it, Enter selects
-    // the top match instead of sending the message.
+    // the top match instead of sending.
     if (picker) {
       if (e.key === "Escape") {
         e.preventDefault();
-        closePicker();
+        dismissPicker();
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        if (shownPaths.length > 0) pickPath(shownPaths[0]);
-        else if (shownThreads.length > 0) pickThread(shownThreads[0]);
-        else closePicker();
+        if (shownPaths.length > 0) insertMention(pathToRef(shownPaths[0]));
+        else if (shownThreads.length > 0) {
+          const t = shownThreads[0];
+          insertMention({ kind: "thread", threadId: t.threadId, title: t.title });
+        } else dismissPicker();
         return;
       }
     }
@@ -339,18 +481,25 @@ export function Composer({
       e.preventDefault();
       if (canSend) onSubmit?.("enter");
     } else if (streaming) {
-      // Shift+Enter queues a follow-up mid-turn (HOY-218). When idle it keeps
-      // its normal newline behavior.
+      // Shift+Enter queues a follow-up mid-turn (HOY-218).
       e.preventDefault();
       if (canSend) onSubmit?.("shiftEnter");
+    } else {
+      // Idle Shift+Enter: a controlled newline (keeps the editor free of stray
+      // block wrappers so serialization stays clean).
+      e.preventDefault();
+      insertTextAtCaret("\n");
     }
   }
 
   const canSend =
-    !disabled &&
-    (value.trim().length > 0 ||
-      attachments.length > 0 ||
-      contexts.length > 0);
+    !disabled && (!draftIsEmpty(value) || attachments.length > 0);
+  const showPlaceholder = draftIsEmpty(value);
+  const placeholderText = streaming
+    ? "Enter to steer  ·  Shift+Enter to queue a follow-up"
+    : disabled
+      ? "Streaming response..."
+      : placeholder;
 
   return (
     <div
@@ -425,50 +574,49 @@ export function Composer({
         </div>
       )}
 
-      {contexts.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 px-3 pt-3">
-          {contexts.map((ref) => (
-            <ContextPill
-              key={contextKey(ref)}
-              contextRef={ref}
-              onRemove={() => onRemoveContext?.(contextKey(ref))}
-            />
-          ))}
-        </div>
-      )}
-
-      <textarea
-        ref={textareaRef}
-        rows={fill ? undefined : 1}
-        value={value}
-        onChange={(e) =>
-          handleChange(e.target.value, e.target.selectionStart ?? e.target.value.length)
-        }
-        onKeyDown={handleKeyDown}
-        onPaste={(e) => {
-          if (!canAttachImages || !onAddFiles) return;
-          const files = Array.from(e.clipboardData.files);
-          if (files.some((f) => f.type.startsWith("image/"))) addImageFiles(files);
-        }}
-        autoFocus={autoFocus}
-        disabled={disabled}
-        placeholder={
-          streaming
-            ? "Enter to steer  ·  Shift+Enter to queue a follow-up"
-            : disabled
-              ? "Streaming response..."
-              : placeholder
-        }
-        className={cn(
-          "scrollbar-thin w-full resize-none bg-transparent pl-4 pt-3.5 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:outline-none",
-          fill
-            ? cn(
-                "min-h-0 flex-1 overflow-y-auto",
-                onToggleExpand ? "pr-10" : "pr-4",
-              )
-            : "max-h-[240px] min-h-[80px] overflow-y-auto pr-10",
+      <div className={cn("relative", fill && "min-h-0 flex-1")}>
+        <div
+          ref={editorRef}
+          role="textbox"
+          aria-multiline="true"
+          contentEditable={!disabled}
+          suppressContentEditableWarning
+          autoFocus={autoFocus}
+          onInput={() => {
+            emit();
+            updateMention();
+          }}
+          onKeyDown={handleKeyDown}
+          onBlur={dismissPicker}
+          onPaste={(e) => {
+            const files = Array.from(e.clipboardData.files);
+            if (
+              canAttachImages &&
+              onAddFiles &&
+              files.some((f) => f.type.startsWith("image/"))
+            ) {
+              e.preventDefault();
+              addImageFiles(files);
+              return;
+            }
+            // Insert clipboard text as plain text so pasted HTML never pollutes
+            // the editor (which would break serialization).
+            e.preventDefault();
+            insertTextAtCaret(e.clipboardData.getData("text/plain"));
+          }}
+          className={cn(
+            "scrollbar-thin w-full whitespace-pre-wrap break-words bg-transparent pl-4 pt-3.5 text-sm leading-6 text-foreground focus:outline-none",
+            fill
+              ? cn("h-full overflow-y-auto", onToggleExpand ? "pr-10" : "pr-4")
+              : "max-h-[240px] min-h-[80px] overflow-y-auto pr-10",
+          )}
+        />
+        {showPlaceholder && (
+          <div className="pointer-events-none absolute left-4 top-3.5 text-sm leading-6 text-muted-foreground/70">
+            {placeholderText}
+          </div>
         )}
-      />
+      </div>
 
       {belowWidgets.map((w, i) => (
         <WidgetPanel key={`below-${i}`} lines={w.lines} />
@@ -476,7 +624,7 @@ export function Composer({
 
       {picker && menuPos && (
         <div
-          // Keep the textarea focused so typing keeps updating the @query.
+          // Keep the editor focused so typing keeps updating the @query.
           onMouseDown={(e) => e.preventDefault()}
           style={{
             position: "fixed",
@@ -491,7 +639,10 @@ export function Composer({
               <PickerEmpty>No matching files</PickerEmpty>
             ) : (
               shownPaths.map((entry) => (
-                <PickerRow key={entry.path} onSelect={() => pickPath(entry)}>
+                <PickerRow
+                  key={entry.path}
+                  onSelect={() => insertMention(pathToRef(entry))}
+                >
                   {entry.isDir ? (
                     <Folder className="size-4 shrink-0 text-muted-foreground" />
                   ) : (
@@ -511,7 +662,13 @@ export function Composer({
               {shownThreads.map((thread) => (
                 <PickerRow
                   key={thread.threadId}
-                  onSelect={() => pickThread(thread)}
+                  onSelect={() =>
+                    insertMention({
+                      kind: "thread",
+                      threadId: thread.threadId,
+                      title: thread.title,
+                    })
+                  }
                 >
                   <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
                   <span className="truncate">{thread.title}</span>
@@ -622,38 +779,6 @@ export function Composer({
         </div>
       </div>
     </div>
-  );
-}
-
-// A removable @ context pill above the editor (HOY-220). Files/dirs show the
-// leaf name, threads show the title.
-function ContextPill({
-  contextRef,
-  onRemove,
-}: {
-  contextRef: ContextRef;
-  onRemove: () => void;
-}) {
-  const Icon =
-    contextRef.kind === "thread"
-      ? MessageSquare
-      : contextRef.kind === "directory"
-        ? Folder
-        : FileIcon;
-  const label = contextRef.kind === "thread" ? contextRef.title : contextRef.name;
-  return (
-    <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/60 bg-muted/40 py-0.5 pl-1.5 pr-1 text-xs text-muted-foreground">
-      <Icon className="size-3 shrink-0" />
-      <span className="truncate">{label}</span>
-      <button
-        type="button"
-        aria-label={`Remove ${label}`}
-        onClick={onRemove}
-        className="shrink-0 rounded-full p-0.5 hover:text-foreground"
-      >
-        <X className="size-3" />
-      </button>
-    </span>
   );
 }
 

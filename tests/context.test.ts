@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { contextKey } from "@/lib/types";
+import { mentionMarker } from "@/lib/mentions";
 import type { Thread } from "@/lib/types";
 
 import { mockIpcModule } from "./ipcMock";
@@ -43,7 +43,6 @@ function seed(thread: Partial<Thread> = {}) {
     threadErrors: {},
     queued: {},
     composerAttachments: {},
-    composerContexts: {},
     pendingPermissions: {},
     notices: {},
     statuses: {},
@@ -66,46 +65,30 @@ beforeEach(() => {
 const fileRef = { kind: "file" as const, path: "src/foo.ts", name: "foo.ts" };
 const threadRef = { kind: "thread" as const, threadId: "t2", title: "Other" };
 
-describe("composerContexts (HOY-220)", () => {
-  test("add dedups by key; remove and clear drop entries", () => {
+describe("submitPrompt @ contexts (HOY-220)", () => {
+  test("inlines file content and keeps the transcript text clean", async () => {
     seed();
-    const store = useSessionStore.getState();
-    store.addContext("t1", fileRef);
-    store.addContext("t1", fileRef);
-    expect(useSessionStore.getState().composerContexts["t1"]).toHaveLength(1);
+    const draft = `explain ${mentionMarker(fileRef)} to me`;
 
-    store.addContext("t1", threadRef);
-    expect(useSessionStore.getState().composerContexts["t1"]).toHaveLength(2);
-
-    store.removeContext("t1", contextKey(fileRef));
-    expect(useSessionStore.getState().composerContexts["t1"]).toEqual([
-      threadRef,
-    ]);
-
-    store.clearContexts("t1");
-    expect(useSessionStore.getState().composerContexts["t1"]).toBeUndefined();
-  });
-
-  test("submit inlines file content and clears the contexts", async () => {
-    seed();
-    useSessionStore.getState().addContext("t1", fileRef);
-
-    await useSessionStore.getState().submitPrompt("t1", "explain this");
+    await useSessionStore.getState().submitPrompt("t1", draft);
 
     expect(readContextFile).toHaveBeenCalledWith("/tmp/proj", "src/foo.ts");
     const message = sendPrompt.mock.calls[0][1];
     expect(message).toContain("<context>");
     expect(message).toContain('<file path="src/foo.ts">');
     expect(message).toContain("FILE CONTENTS");
-    expect(message).toContain("explain this");
-    // Cleared so it cannot be attached twice.
-    expect(useSessionStore.getState().composerContexts["t1"]).toBeUndefined();
-    // The transcript keeps the user's clean text, not the inlined block.
+    // The mention marker is replaced by the label in the human-readable text.
+    expect(message).toContain("explain foo.ts to me");
+    // The transcript keeps the clean text (not the inlined block) plus the ref.
     const userTurn = useSessionStore.getState().turns["t1"][0];
-    expect(userTurn).toMatchObject({ role: "user", text: "explain this" });
+    expect(userTurn).toMatchObject({
+      role: "user",
+      text: "explain foo.ts to me",
+      contexts: [fileRef],
+    });
   });
 
-  test("submit inlines a referenced thread's transcript from the store", async () => {
+  test("inlines a referenced thread's transcript from the store", async () => {
     seed();
     useSessionStore.setState((s) => ({
       turns: {
@@ -120,9 +103,10 @@ describe("composerContexts (HOY-220)", () => {
         ],
       },
     }));
-    useSessionStore.getState().addContext("t1", threadRef);
 
-    await useSessionStore.getState().submitPrompt("t1", "summarize");
+    await useSessionStore
+      .getState()
+      .submitPrompt("t1", `summarize ${mentionMarker(threadRef)}`);
 
     const message = sendPrompt.mock.calls[0][1];
     expect(message).toContain('<thread title="Other">');
@@ -130,7 +114,7 @@ describe("composerContexts (HOY-220)", () => {
     expect(message).toContain("assistant: hello there");
   });
 
-  test("no contexts sends the plain message (no block)", async () => {
+  test("a plain message sends verbatim with no context block", async () => {
     seed();
     await useSessionStore.getState().submitPrompt("t1", "just text");
     expect(sendPrompt.mock.calls[0][1]).toBe("just text");

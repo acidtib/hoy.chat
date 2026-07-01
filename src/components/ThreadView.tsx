@@ -75,7 +75,6 @@ const EMPTY_TURNS: Turn[] = [];
 const EMPTY_PERMISSIONS: PermissionRequest[] = [];
 const EMPTY_NOTICES: Notice[] = [];
 const EMPTY_ATTACHMENTS: ImageAttachment[] = [];
-const EMPTY_CONTEXTS: ContextRef[] = [];
 const EMPTY_QUEUE: { steering: string[]; followUp: string[] } = {
   steering: [],
   followUp: [],
@@ -132,11 +131,6 @@ export function ThreadView({
   );
   const addAttachments = useSessionStore((s) => s.addAttachments);
   const removeAttachment = useSessionStore((s) => s.removeAttachment);
-  const contexts = useSessionStore(
-    (s) => s.composerContexts[threadId] ?? EMPTY_CONTEXTS,
-  );
-  const addContext = useSessionStore((s) => s.addContext);
-  const removeContext = useSessionStore((s) => s.removeContext);
   const queued = useSessionStore((s) => s.queued[threadId] ?? EMPTY_QUEUE);
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -242,9 +236,6 @@ export function ThreadView({
       onAddFiles={(files) => void addAttachments(threadId, files)}
       onRemoveAttachment={(id) => removeAttachment(threadId, id)}
       canAttachImages={canAttachImages}
-      contexts={contexts}
-      onAddContext={(ref) => addContext(threadId, ref)}
-      onRemoveContext={(key) => removeContext(threadId, key)}
       searchPaths={searchPaths}
       threads={contextThreads}
     />
