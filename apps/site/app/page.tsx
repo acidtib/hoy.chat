@@ -33,8 +33,8 @@ export default async function Home() {
               </span>
               <h1>Simple. Fast. Yours.</h1>
               <p className="tagline">
-                Hoy gives your coding agent a real desktop window, so you can
-                watch it work, keep every session, and switch models without ever
+                Hoy gives your coding agent a real window, so you can
+                watch it work, keep every thread, and switch models without ever
                 opening a terminal.
               </p>
 
@@ -58,8 +58,9 @@ export default async function Home() {
               <h2 className="heading">Get running</h2>
             </div>
             <p className="lead">
-              Grab the build for your platform. Nothing is signed yet, so your OS
-              will warn you the first time. Click through once and you are in.
+              Grab the build for your platform. The direct downloads aren&apos;t
+              signed yet, so your OS warns you the first time; click through once
+              and you are in. On Arch, the pacman repo is signed end to end.
             </p>
 
             <InstallPanel version={version} />
