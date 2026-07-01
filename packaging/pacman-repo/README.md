@@ -76,14 +76,22 @@ Arch container and needs these repo secrets:
 | `R2_ACCESS_KEY_ID` | R2 API token access key id |
 | `R2_SECRET_ACCESS_KEY` | R2 API token secret |
 
-## Cloudflare R2 setup (one time)
+## Cloudflare R2 setup (done, recorded for reference)
 
-1. Create an R2 bucket (e.g. `hoy-pkgs`).
+The repo is live at `pkgs.hoy.chat`. For a rebuild-from-scratch:
+
+1. Create an R2 bucket (`hoy-pkgs`).
 2. Connect a custom domain `pkgs.hoy.chat` to the bucket (R2 -> Settings -> Public
    access -> Custom Domain). This serves objects over HTTPS at that host.
 3. Create an R2 API token (Object Read & Write) scoped to the bucket; put its
    endpoint/keys in the CI secrets above.
-4. First publish seeds `hoy-packages.pub` at the root and the repo under
+4. **Disable Browser Integrity Check for the hostname.** Cloudflare's BIC returns
+   HTTP 403 / error 1010 to some CLI user agents. Add a Configuration Rule
+   (`hoy.chat` zone -> Rules -> Configuration Rules) matching
+   `(http.host eq "pkgs.hoy.chat")` that turns **Browser Integrity Check** off, so
+   `pacman` / `curl` / `wget` are never challenged. Also confirm Bot Fight Mode
+   isn't blocking them.
+5. First publish seeds `hoy-packages.pub` at the root and the repo under
    `arch/x86_64/`.
 
 ## Notes
@@ -93,5 +101,5 @@ Arch container and needs these repo secrets:
   on the private-key file and the CI secret. Rotate by generating a new key,
   bumping `hoy-keyring`, and re-publishing.
 - The sidecar installs as `/usr/bin/pi`, a generic name that can file-conflict with
-  another package owning `/usr/bin/pi`. Worth namespacing upstream (e.g. `hoy-pi`)
-  or relocating under `/usr/lib`. Tracked separately.
+  another package owning `/usr/bin/pi`. Namespacing it upstream (e.g. `hoy-pi`) or
+  relocating under `/usr/lib` is tracked in HOY-230.
