@@ -62,7 +62,7 @@ settlement are now dropped instead of emitting stale `tool_execution_update`
 Status key: **used** (wired end to end), **partial** (some of the surface wired),
 **planned** (Linear ticket filed), **unused** (never invoked or mapped).
 
-## Commands (9 of 30 used, on pinned 0.80.2)
+## Commands (10 of 30 used, on pinned 0.80.2)
 
 The 30 rows are the 0.80.2 surface. The last two rows (`get_entries`, `get_tree`)
 are 0.80.3 additions, listed here so the bump does not lose them; they are not in
@@ -99,7 +99,7 @@ the installed source.
 | `export_html` | Export session to static HTML | unused | Cheap win: one call plus a save dialog |
 | `bash` | Run a command outside the agent loop (`!` mode) | unused | Output reaches the LLM on the next prompt |
 | `abort_bash` | Cancel that command | unused | |
-| `get_commands` | List extension/prompt/skill commands | unused | Natural backend for `/` autocomplete in the composer |
+| `get_commands` | List extension/prompt/skill commands | used (HOY-223) | `commands.rs`; feeds the composer "/" autocomplete (cached per thread in the store), which inserts "/name " and lets the existing prompt path dispatch. A Hoy "/compact" built-in is added client-side |
 | `get_entries` | Read session entries | unused (0.80.3, not pinned) | Read side of the fork/tree gap; pairs with `get_tree` |
 | `get_tree` | Read session tree snapshot | unused (0.80.3, not pinned) | Would back a `/tree` navigator and branch UI |
 

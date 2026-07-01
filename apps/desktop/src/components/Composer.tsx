@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { detectMention } from "@/lib/mention";
+import { detectSlash } from "@/lib/slash";
 import {
   draftIsEmpty,
   draftToParts,
@@ -49,9 +50,21 @@ import type {
   ModelRef,
   PathEntry,
   PermissionMode,
+  SlashCommand,
   ThinkingLevel,
 } from "@/lib/types";
 import { contextKey, THINKING_LEVELS } from "@/lib/types";
+
+// Hoy built-in slash commands (HOY-223), shown in the "/" autocomplete alongside
+// Pi's get_commands. /compact is intercepted on submit (store.submitPrompt) and
+// never reaches Pi; its "source" renders as a "hoy" badge.
+const SLASH_BUILTINS: SlashCommand[] = [
+  {
+    name: "compact",
+    description: "Compact the conversation to free up context",
+    source: "hoy",
+  },
+];
 
 // The composer thread reference for the @ picker's Threads section (HOY-220).
 interface ContextThread {
@@ -196,6 +209,7 @@ export function Composer({
   canAttachImages = true,
   searchPaths,
   threads = [],
+  slashCommands = [],
   projectPath,
 }: {
   // The draft, with @ mentions encoded inline as markers (lib/mentions.ts).
@@ -237,6 +251,9 @@ export function Composer({
   // Selected refs become inline chips in the draft.
   searchPaths?: (query: string) => Promise<PathEntry[]>;
   threads?: ContextThread[];
+  // Pi's slash commands for the "/" autocomplete (HOY-223); the /compact built-in
+  // is prepended here, so an empty list still offers it.
+  slashCommands?: SlashCommand[];
   projectPath?: string | null;
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -253,6 +270,12 @@ export function Composer({
   // category rewrites the token to its "@type:" prefix (Zed-style). The exact @
   // position is recomputed from the live caret at insert time.
   const [picker, setPicker] = useState<{ token: string | null } | null>(null);
+  // The "/" command autocomplete (HOY-223), parallel to the @ picker. Open only
+  // when "/" starts the message and the caret is within that first token; `query`
+  // filters the command list, `index` is the keyboard-highlighted row.
+  const [slash, setSlash] = useState<{ query: string; index: number } | null>(
+    null,
+  );
   const [pathResults, setPathResults] = useState<PathEntry[]>([]);
   const [recents, setRecents] = useState<ContextRef[]>([]);
   // Fixed-viewport position for the picker menu, anchored at the @ caret.
@@ -315,6 +338,32 @@ export function Composer({
     return { node: node as Text, at: detected.at, offset, query: detected.query };
   }
 
+  // The active "/" command at the caret, or null (HOY-223). Only fires when "/"
+  // leads the whole message: the caret's text node must start with "/", the caret
+  // must sit within that first token, and nothing (a chip or non-blank text) may
+  // precede the node. This keeps the popup off for a mid-text or post-mention "/".
+  function currentSlash(): {
+    node: Text;
+    offset: number;
+    query: string;
+  } | null {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null;
+    const node = sel.anchorNode;
+    const root = editorRef.current;
+    if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+    if (!root || !root.contains(node)) return null;
+    const offset = sel.anchorOffset;
+    const detected = detectSlash(node.textContent ?? "", offset);
+    if (!detected) return null;
+    for (let prev = node.previousSibling; prev; prev = prev.previousSibling) {
+      if (prev instanceof HTMLElement && prev.dataset.mention) return null;
+      if (prev.nodeName === "BR") return null;
+      if ((prev.textContent ?? "").trim() !== "") return null;
+    }
+    return { node: node as Text, offset, query: detected.query };
+  }
+
   function computeMenuPos(): {
     left: number;
     top?: number;
@@ -346,15 +395,25 @@ export function Composer({
     return { left, top: rect.bottom + GAP };
   }
 
-  // Reflect the caret's @-mention after any edit. Typing a non-@ character closes
-  // a menu (including a button-opened one, which has no @ to anchor it).
-  function updateMention() {
+  // Reflect the caret's @-mention or leading "/" after any edit (HOY-220/HOY-223).
+  // The two are mutually exclusive at the caret; the @ picker takes priority.
+  // Typing away from either closes the menu (including a button-opened @ picker,
+  // which has no @ to anchor it). A new "/" query resets the highlight to the top.
+  function updateMenus() {
     const mention = currentMention();
     if (mention) {
       setPicker({ token: mention.query });
+      setSlash(null);
+      setMenuPos(computeMenuPos());
+      return;
+    }
+    setPicker(null);
+    const slashHit = currentSlash();
+    if (slashHit) {
+      setSlash({ query: slashHit.query, index: 0 });
       setMenuPos(computeMenuPos());
     } else {
-      setPicker(null);
+      setSlash(null);
     }
   }
 
@@ -373,7 +432,7 @@ export function Composer({
     sel.removeAllRanges();
     sel.addRange(range);
     emit();
-    updateMention();
+    updateMenus();
   }
 
   // A collapsed range at the caret, or over the current @token when one exists.
@@ -438,14 +497,41 @@ export function Composer({
     sel?.removeAllRanges();
     sel?.addRange(range);
     emit();
-    updateMention();
+    updateMenus();
     root.focus();
   }
 
-  // Close the menu, leaving any typed @token text in place (Escape / blur).
+  // Replace the leading "/query" with "/name " as plain text (not an @-style
+  // chip) and leave the caret after the trailing space (HOY-223). The existing
+  // send path dispatches the command when the message is submitted.
+  function insertSlash(command: SlashCommand) {
+    const root = editorRef.current;
+    const hit = currentSlash();
+    if (!root || !hit) {
+      setSlash(null);
+      return;
+    }
+    const range = document.createRange();
+    range.setStart(hit.node, 0);
+    range.setEnd(hit.node, hit.offset);
+    range.deleteContents();
+    const node = document.createTextNode(`/${command.name} `);
+    range.insertNode(node);
+    range.setStart(node, node.data.length);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    setSlash(null);
+    emit();
+    root.focus();
+  }
+
+  // Close the menu, leaving any typed @token or "/" text in place (Escape / blur).
   function dismissPicker() {
     setPicker(null);
     setPathResults([]);
+    setSlash(null);
   }
 
   // The @ button opens the menu at the caret without typing anything; the token
@@ -555,6 +641,20 @@ export function Composer({
       : threads
   ).slice(0, 8);
 
+  // The "/" command list (HOY-223): built-ins plus Pi's commands, deduped by name
+  // (a built-in wins), filtered by the typed query. Skills carry a "skill:" name
+  // prefix; the query matches the full name so "/skill:x" still filters.
+  const builtinNames = new Set(SLASH_BUILTINS.map((c) => c.name));
+  const slashQuery = slash?.query.toLowerCase() ?? "";
+  const slashItems = slash
+    ? [
+        ...SLASH_BUILTINS,
+        ...slashCommands.filter((c) => !builtinNames.has(c.name)),
+      ].filter((c) => c.name.toLowerCase().includes(slashQuery))
+    : [];
+  const slashOpen = slash !== null && slashItems.length > 0;
+  const slashIndex = Math.min(slash?.index ?? 0, Math.max(0, slashItems.length - 1));
+
   const renderFileRows = () =>
     shownPaths.length === 0 ? (
       <PickerEmpty>No matching files</PickerEmpty>
@@ -599,7 +699,42 @@ export function Composer({
     );
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    // The @ picker takes keys first (HOY-220): Escape closes it, Enter selects
+    // The "/" command popup takes keys first (HOY-223): arrows move the highlight,
+    // Enter/Tab accept it (never sending), Escape dismisses. Only when it has
+    // matches, so a "/" with no match still submits as a normal (Pi) command.
+    if (slashOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlash(null);
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlash((s) =>
+          s ? { ...s, index: (slashIndex + 1) % slashItems.length } : s,
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlash((s) =>
+          s
+            ? {
+                ...s,
+                index: (slashIndex - 1 + slashItems.length) % slashItems.length,
+              }
+            : s,
+        );
+        return;
+      }
+      if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+        e.preventDefault();
+        const command = slashItems[slashIndex];
+        if (command) insertSlash(command);
+        return;
+      }
+    }
+    // The @ picker takes keys next (HOY-220): Escape closes it, Enter selects
     // the top match instead of sending. In the root view Enter just closes (there
     // is no single obvious pick).
     if (picker) {
@@ -734,7 +869,7 @@ export function Composer({
           autoFocus={autoFocus}
           onInput={() => {
             emit();
-            updateMention();
+            updateMenus();
           }}
           onKeyDown={handleKeyDown}
           onBlur={dismissPicker}
@@ -866,6 +1001,31 @@ export function Composer({
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {slashOpen && menuPos && (
+        <div
+          // Keep the editor focused so typing keeps filtering the command list.
+          onMouseDown={(e) => e.preventDefault()}
+          style={{
+            position: "fixed",
+            left: menuPos.left,
+            top: menuPos.top,
+            bottom: menuPos.bottom,
+          }}
+          className="scrollbar-thin z-50 max-h-[320px] w-[32rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+        >
+          <PickerSection label="Commands">
+            {slashItems.map((command, i) => (
+              <SlashRow
+                key={command.name}
+                command={command}
+                active={i === slashIndex}
+                onSelect={() => insertSlash(command)}
+              />
+            ))}
+          </PickerSection>
         </div>
       )}
 
@@ -1001,6 +1161,45 @@ function PickerRow({
 function PickerEmpty({ children }: { children: React.ReactNode }) {
   return (
     <div className="px-2 py-1.5 text-sm text-muted-foreground/70">{children}</div>
+  );
+}
+
+// A "/" command row (HOY-223): name, optional description, and a source badge
+// (extension / prompt / skill, or "hoy" for a built-in). `active` mirrors the
+// keyboard highlight. Skills carry a "skill:" name prefix, stripped for display
+// only; insertSlash still writes the full "/skill:<name>".
+function SlashRow({
+  command,
+  active,
+  onSelect,
+}: {
+  command: SlashCommand;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const display =
+    command.source === "skill"
+      ? command.name.replace(/^skill:/, "")
+      : command.name;
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent",
+        active && "bg-accent",
+      )}
+    >
+      <span className="shrink-0 font-medium">/{display}</span>
+      {command.description && (
+        <span className="truncate text-xs text-muted-foreground/70">
+          {command.description}
+        </span>
+      )}
+      <span className="ml-auto shrink-0 rounded border border-border/60 px-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+        {command.source}
+      </span>
+    </button>
   );
 }
 

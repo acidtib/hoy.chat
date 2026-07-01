@@ -6,7 +6,7 @@ use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::events::{
-    AgentEvent, CompactionResult, ImageContent, ModelInfo, PiState, SessionStats,
+    AgentEvent, CompactionResult, ImageContent, ModelInfo, PiState, SessionStats, SlashCommand,
 };
 use crate::pi_config::{self, ProviderAuth, ProviderInfo};
 use crate::sidecar::SidecarManager;
@@ -68,6 +68,25 @@ pub async fn list_models(manager: State<'_, SidecarManager>) -> Result<Vec<Model
         .cloned()
         .ok_or("get_available_models response missing models")?;
     serde_json::from_value(models).map_err(|e| format!("decode models: {e}"))
+}
+
+// List the session's available slash commands for the composer "/" autocomplete
+// (HOY-223): extension commands, prompt templates, and skills. Execution reuses
+// the existing prompt path (a message starting with "/name" dispatches), so this
+// only feeds the picker.
+#[tauri::command]
+pub async fn get_commands(
+    session_id: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<Vec<SlashCommand>, String> {
+    let process = manager.get(&session_id)?;
+    let response = process.request(json!({ "type": "get_commands" })).await?;
+    let data = unwrap_response(response, "get_commands")?;
+    let commands = data
+        .get("commands")
+        .cloned()
+        .ok_or("get_commands response missing commands")?;
+    serde_json::from_value(commands).map_err(|e| format!("decode commands: {e}"))
 }
 
 #[tauri::command]

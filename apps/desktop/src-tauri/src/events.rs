@@ -191,6 +191,18 @@ pub struct TokenUsage {
     pub total: u64,
 }
 
+// Pi's RpcSlashCommand (dist/modes/rpc/rpc-types.d.ts) from get_commands, driving
+// the composer's "/" autocomplete (HOY-223). `name` has no leading slash; skills
+// are "skill:<name>". `source` is "extension" | "prompt" | "skill". sourceInfo is
+// not surfaced, so it is dropped rather than modeled.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SlashCommand {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub source: String,
+}
+
 // Pi's Model object. Extra fields are ignored; these are the ones the UI needs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

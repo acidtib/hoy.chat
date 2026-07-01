@@ -66,6 +66,7 @@ pub fn run() {
             commands::get_state,
             commands::active_session_id,
             commands::list_models,
+            commands::get_commands,
             commands::set_model,
             commands::set_thinking_level,
             commands::compact,

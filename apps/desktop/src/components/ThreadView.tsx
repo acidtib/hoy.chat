@@ -65,6 +65,7 @@ import type {
   Notice,
   PermissionRequest,
   PiState,
+  SlashCommand,
   ToolUI,
   Turn,
 } from "@/lib/types";
@@ -79,6 +80,7 @@ const EMPTY_QUEUE: { steering: string[]; followUp: string[] } = {
   steering: [],
   followUp: [],
 };
+const EMPTY_SLASH: SlashCommand[] = [];
 
 export function ThreadView({
   threadId,
@@ -132,6 +134,9 @@ export function ThreadView({
   const addAttachments = useSessionStore((s) => s.addAttachments);
   const removeAttachment = useSessionStore((s) => s.removeAttachment);
   const queued = useSessionStore((s) => s.queued[threadId] ?? EMPTY_QUEUE);
+  const slashCommands = useSessionStore(
+    (s) => s.slashCommands[threadId] ?? EMPTY_SLASH,
+  );
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -238,6 +243,7 @@ export function ThreadView({
       canAttachImages={canAttachImages}
       searchPaths={searchPaths}
       threads={contextThreads}
+      slashCommands={slashCommands}
       projectPath={projectPath}
     />
   );

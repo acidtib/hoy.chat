@@ -1,8 +1,5 @@
-import { useState } from "react";
-import { Popover } from "radix-ui";
 import { Clock, FolderPlus, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -151,9 +148,6 @@ function PanelStats({
 
       <span>{costLabel}</span>
 
-      <Divider />
-      <CompactControl threadId={threadId} />
-
       {statusEntries.map(([key, text]) => (
         <span key={key} className="contents">
           <Divider />
@@ -161,82 +155,6 @@ function PanelStats({
         </span>
       ))}
     </div>
-  );
-}
-
-// Manual compaction affordance next to the usage meter (HOY-229): a small
-// trigger opening a popover with an optional custom-instructions field. Gated on
-// an idle, live session; shows "compacting..." while a compaction runs.
-function CompactControl({ threadId }: { threadId: string }) {
-  const compacting = useSessionStore((s) => s.compacting[threadId] ?? false);
-  const streaming = useSessionStore((s) => s.streaming[threadId] ?? false);
-  const runCompact = useSessionStore((s) => s.compact);
-  const hasSession = useSessionStore((s) => {
-    for (const p of s.projects) {
-      const t = p.threads.find((th) => th.id === threadId);
-      if (t) return Boolean(t.sessionId);
-    }
-    return false;
-  });
-  const [open, setOpen] = useState(false);
-  const [instructions, setInstructions] = useState("");
-
-  if (!hasSession) {
-    return <span className="text-muted-foreground/50">compact</span>;
-  }
-
-  return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "rounded transition-colors hover:text-foreground",
-            compacting ? "text-brand" : "text-muted-foreground",
-          )}
-          aria-label="Compact context"
-        >
-          {compacting ? "compacting..." : "compact"}
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          side="top"
-          align="end"
-          sideOffset={8}
-          className="z-50 w-72 rounded-lg bg-popover p-3 font-sans text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none"
-        >
-          <p className="text-sm font-medium">Compact context</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Summarize the conversation to free up the context window.
-          </p>
-          <Textarea
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            placeholder="Optional: summarize with focus on..."
-            className="mt-2 h-20 resize-none text-sm"
-          />
-          {streaming && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Finish the current turn before compacting.
-            </p>
-          )}
-          <div className="mt-2 flex justify-end">
-            <Button
-              size="sm"
-              disabled={streaming || compacting}
-              onClick={() => {
-                void runCompact(threadId, instructions.trim() || undefined);
-                setInstructions("");
-                setOpen(false);
-              }}
-            >
-              {compacting ? "Compacting..." : "Compact now"}
-            </Button>
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
   );
 }
 

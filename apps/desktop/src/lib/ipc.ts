@@ -14,6 +14,7 @@ import type {
   ProviderAuth,
   ProviderInfo,
   SessionStats,
+  SlashCommand,
   StreamingBehavior,
   ThinkingLevel,
   Workspace,
@@ -36,6 +37,12 @@ export function getState(sessionId: string): Promise<PiState> {
 
 export function listModels(): Promise<ModelInfo[]> {
   return invoke<ModelInfo[]>("list_models");
+}
+
+// The session's slash commands (extensions, prompt templates, skills) for the
+// composer "/" autocomplete (HOY-223).
+export function getCommands(sessionId: string): Promise<SlashCommand[]> {
+  return invoke<SlashCommand[]>("get_commands", { sessionId });
 }
 
 export function setModel(

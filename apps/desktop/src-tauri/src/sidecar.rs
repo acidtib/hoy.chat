@@ -617,7 +617,10 @@ fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
                     .and_then(Value::as_str)
                     .unwrap_or("")
                     .to_string(),
-                aborted: value.get("aborted").and_then(Value::as_bool).unwrap_or(false),
+                aborted: value
+                    .get("aborted")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
                 will_retry: value
                     .get("willRetry")
                     .and_then(Value::as_bool)
@@ -1229,7 +1232,8 @@ mod live_tests {
             map_pi_event(Some("message_update"), &start),
             Some(AgentEvent::Reasoning { delta: None, phase }) if phase == "start"
         ));
-        let delta = json!({ "assistantMessageEvent": { "type": "thinking_delta", "delta": "hmm" } });
+        let delta =
+            json!({ "assistantMessageEvent": { "type": "thinking_delta", "delta": "hmm" } });
         assert!(matches!(
             map_pi_event(Some("message_update"), &delta),
             Some(AgentEvent::Reasoning { delta: Some(d), phase }) if d == "hmm" && phase == "delta"

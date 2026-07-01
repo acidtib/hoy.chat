@@ -8,6 +8,7 @@ import {
   createSession,
   deleteSessionFile,
   enqueuePrompt,
+  getCommands,
   getMessages,
   getSessionStats,
   getState,
@@ -42,6 +43,7 @@ import type {
   ProviderAuth,
   ProviderInfo,
   SessionStats,
+  SlashCommand,
   StreamingBehavior,
   ThinkingLevel,
   Thread,
@@ -284,6 +286,10 @@ interface SessionStore {
   notices: Record<string, Notice[]>;
   statuses: Record<string, Record<string, string>>;
   widgets: Record<string, Record<string, ExtWidget>>;
+  // Slash commands available to each thread's session (HOY-223), keyed by
+  // threadId. Fetched once the session is acquired and cached; the composer "/"
+  // autocomplete reads it. Empty until a session exists (degrades to built-ins).
+  slashCommands: Record<string, SlashCommand[]>;
   // Composer drafts keyed by threadId. Store-held so hidden panels and app
   // restarts keep unsent text; persisted via the workspace autosave as each
   // thread's draft field. Never cleared on panel close.
@@ -401,6 +407,9 @@ interface SessionStore {
   // arrive over the channel as usual; no state is flipped here.
   stopStreaming: (threadId: string) => Promise<void>;
   refreshStats: (threadId: string) => Promise<void>;
+  // Pull the session's slash commands into the store (HOY-223). No-op without a
+  // live session; a failure degrades quietly to the built-ins.
+  refreshSlashCommands: (threadId: string) => Promise<void>;
   // Trigger a manual compaction on the thread's session, optionally with custom
   // summarization instructions (HOY-229). Gated on an idle, live session.
   compact: (threadId: string, customInstructions?: string) => Promise<void>;
@@ -437,6 +446,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   notices: {},
   statuses: {},
   widgets: {},
+  slashCommands: {},
   drafts: {},
   composerAttachments: {},
   queued: {},
@@ -548,6 +558,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       for (const a of closedAttachments ?? []) URL.revokeObjectURL(a.previewUrl);
       // Queued messages die with the sidecar (HOY-218).
       const { [id]: _q, ...queued } = s.queued;
+      // Slash commands are session-scoped; drop them so a reopen re-fetches.
+      const { [id]: _slc, ...slashCommands } = s.slashCommands;
       return {
         panels,
         activeThreadId,
@@ -562,6 +574,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         widgets,
         composerAttachments,
         queued,
+        slashCommands,
         drafts: discard ? remainingDrafts : s.drafts,
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
         focusRequest: s.focusRequest?.threadId === id ? null : s.focusRequest,
@@ -881,6 +894,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // Pi receives. The draft is cleared by the composer (setDraft "") on submit.
     const contexts = draftContexts(message);
     const text = draftToMessage(message).trim();
+
+    // Hoy built-in /compact (HOY-223): intercept before the prompt path so it
+    // never reaches Pi and never appends turns. Trailing text becomes the custom
+    // summarization instructions; "/compact" alone compacts with the default.
+    // Every other "/" message is a Pi command and flows through unchanged.
+    const compactMatch = /^\/compact(?:\s+([\s\S]+))?$/.exec(text);
+    if (compactMatch) {
+      void get().compact(threadId, compactMatch[1]?.trim() || undefined);
+      return;
+    }
+
     const hasImages = !!images && images.length > 0;
     if (!text && !hasImages && contexts.length === 0) return;
 
@@ -957,6 +981,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         // spawn two sidecars for the same thread.
         sessionId = await acquireSession(threadId, project.path ?? "", thread.sessionFile);
         get().setThreadSessionIdInternal(threadId, sessionId);
+        // Populate the composer "/" autocomplete now the session exists (HOY-223).
+        void get().refreshSlashCommands(threadId);
       }
 
       // Apply a deferred pick (or adopt the session's model) before the prompt;
@@ -1215,6 +1241,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
 
+  refreshSlashCommands: async (threadId) => {
+    const sessionId = findThread(get().projects, threadId)?.thread.sessionId;
+    if (!sessionId) return;
+    try {
+      const commands = await getCommands(sessionId);
+      set((s) => ({
+        slashCommands: { ...s.slashCommands, [threadId]: commands },
+      }));
+    } catch {
+      // Best-effort: the composer still offers the /compact built-in.
+    }
+  },
+
   compact: async (threadId, customInstructions) => {
     const thread = findThread(get().projects, threadId)?.thread;
     if (!thread?.sessionId) return;
@@ -1334,6 +1373,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         thread.sessionFile,
       );
       get().setThreadSessionIdInternal(threadId, sessionId);
+      // Populate the composer "/" autocomplete for the restored session (HOY-223).
+      void get().refreshSlashCommands(threadId);
       // Reconcile the thread's model and permission mode with the restored
       // session off the critical path; hydration must not block the
       // transcript restore.

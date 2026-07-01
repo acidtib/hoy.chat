@@ -239,6 +239,15 @@ export interface PiState {
   autoCompactionEnabled: boolean;
 }
 
+// Mirror of events.rs SlashCommand: a command for the composer "/" autocomplete
+// (HOY-223). `name` has no leading slash; skills are "skill:<name>". "hoy" is a
+// Hoy built-in (e.g. /compact) added client-side, not returned by get_commands.
+export interface SlashCommand {
+  name: string;
+  description?: string;
+  source: "extension" | "prompt" | "skill" | "hoy";
+}
+
 // A provider/model pair as Pi's set_model takes it. Lighter than ModelInfo for
 // state that only needs identity, not capabilities.
 export interface ModelRef {
