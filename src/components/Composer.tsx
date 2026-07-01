@@ -775,15 +775,19 @@ export function Composer({
                   label="Skills"
                   disabled
                 />
-                {canAttachImages && (
-                  <CategoryRow
-                    icon={
-                      <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
-                    }
-                    label="Image"
-                    onSelect={pickImage}
-                  />
-                )}
+                <CategoryRow
+                  icon={
+                    <ImageIcon
+                      className={cn(
+                        "size-4 shrink-0",
+                        canAttachImages && "text-muted-foreground",
+                      )}
+                    />
+                  }
+                  label="Image"
+                  disabled={!canAttachImages}
+                  onSelect={pickImage}
+                />
                 <CategoryRow
                   icon={<TextCursor className="size-4 shrink-0" />}
                   label="Selection"
