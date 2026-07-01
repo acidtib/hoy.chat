@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "geist",
+        "reason": "Geist is the intentional shared brand font across the desktop app and site (identity preservation)",
+        "createdAt": "2026-07-01T17:55:53.954Z"
+      }
+    ]
+  }
+}

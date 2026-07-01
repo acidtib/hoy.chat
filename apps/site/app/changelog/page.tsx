@@ -34,7 +34,7 @@ export default async function Changelog() {
           </p>
         </div>
 
-        <section style={{ paddingTop: 8 }}>
+        <section className="changelog-list">
           <div className="wrap">
             {releases.length === 0 ? (
               <div className="empty-state">

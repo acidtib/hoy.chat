@@ -9,7 +9,9 @@
   --border-strong: rgba(255, 255, 255, 0.14);
   --fg: #f4f4f6;
   --muted: #a2a2ad;
-  --muted-2: #7c7c86;
+  /* muted-2 clears WCAG AA (>=4.5:1) on --bg, --panel, and --panel-2 for the
+     small 11-13px text it carries (dates, captions). */
+  --muted-2: #8b8b95;
   --brand: #7c74ff;
   --brand-fg: #f3f2ff;
   --warn: #f0b429;
@@ -43,6 +45,11 @@ a {
 
 .wrap {
   max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.wrap-wide {
+  max-width: 1120px;
   margin: 0 auto;
   padding: 0 24px;
 }
@@ -92,23 +99,47 @@ a {
   color: var(--fg);
 }
 
-/* Hero */
+/* Hero: asymmetric two-column on desktop (pitch left, live product window
+   right), stacking to a single centered column below 900px. */
 .hero {
-  padding: 72px 0 48px;
-  text-align: center;
+  padding: clamp(40px, 7vw, 84px) 0 clamp(36px, 6vw, 60px);
+}
+.hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr);
+  gap: clamp(28px, 5vw, 60px);
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .hero-grid {
+    grid-template-columns: 1fr;
+    gap: 36px;
+    text-align: center;
+  }
+}
+.hero-copy {
+  min-width: 0;
 }
 .hero h1 {
-  font-size: clamp(40px, 8vw, 68px);
-  line-height: 1.02;
-  letter-spacing: -0.03em;
-  margin: 18px 0 14px;
+  font-size: clamp(44px, 7vw, 76px);
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+  margin: 20px 0 14px;
   font-weight: 700;
+  text-wrap: balance;
 }
 .tagline {
-  font-size: clamp(17px, 3vw, 20px);
-  color: var(--muted);
-  margin: 0 auto 26px;
-  max-width: 560px;
+  font-size: clamp(17px, 2.4vw, 21px);
+  color: var(--fg);
+  margin: 0 0 22px;
+  max-width: 46ch;
+  text-wrap: pretty;
+}
+@media (max-width: 900px) {
+  .tagline {
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
 .badge {
@@ -134,15 +165,23 @@ a {
 }
 
 .beta-note {
-  max-width: 620px;
-  margin: 22px auto 0;
+  max-width: 52ch;
+  margin: 0 0 24px;
   font-size: 14px;
+  line-height: 1.55;
   color: var(--muted);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px 18px;
   text-align: left;
+  text-wrap: pretty;
+}
+@media (max-width: 900px) {
+  .beta-note {
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 .beta-note strong {
   color: var(--fg);
@@ -151,9 +190,35 @@ a {
 .cta-row {
   display: flex;
   gap: 12px;
-  justify-content: center;
+  justify-content: flex-start;
   flex-wrap: wrap;
-  margin-top: 30px;
+  align-items: center;
+  margin-top: 6px;
+}
+@media (max-width: 900px) {
+  .cta-row {
+    justify-content: center;
+  }
+}
+.cta-row-loose {
+  margin-top: 22px;
+}
+/* OS-aware helper under the CTA; the detected platform is emphasized by the
+   client PlatformPicker. Keeps the "Download" promise honest: assets live on
+   the Releases page. */
+.cta-hint {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.cta-hint .os {
+  color: var(--fg);
+  font-weight: 600;
+}
+@media (max-width: 900px) {
+  .cta-hint {
+    text-align: center;
+  }
 }
 .btn {
   display: inline-flex;
@@ -184,25 +249,33 @@ a {
 
 /* Sections */
 section {
-  padding: 44px 0;
+  padding: 56px 0;
 }
-.section-title {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted-2);
-  margin: 0 0 20px;
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 8px;
+}
+.section-head .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--brand);
+  flex: none;
+  transform: translateY(-2px);
 }
 h2.heading {
   font-size: clamp(24px, 5vw, 32px);
   letter-spacing: -0.02em;
-  margin: 0 0 8px;
+  margin: 0;
+  text-wrap: balance;
 }
 .lead {
   color: var(--muted);
   margin: 0 0 28px;
-  max-width: 640px;
+  max-width: 60ch;
+  text-wrap: pretty;
 }
 
 /* Install cards */
@@ -243,53 +316,93 @@ h2.heading {
   border-radius: 6px;
   padding: 1px 6px;
 }
-.platform-tag {
-  font-size: 12px;
-  color: var(--muted-2);
+/* Per-platform card header: an OS glyph instead of the meaningless "Platform"
+   kicker, so the three cards read as distinct platforms, not a repeated grid. */
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.card-head svg {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+  flex: none;
+}
+.card h3 {
+  margin: 0;
+  font-size: 17px;
+}
+/* Client PlatformPicker flags the visitor's OS card. */
+.card[data-recommended="true"] {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 7%, var(--panel));
+}
+.rec-badge {
+  display: none;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--brand-fg);
+  background: var(--brand);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+.card[data-recommended="true"] .rec-badge {
+  display: inline-block;
 }
 
 .callout {
-  margin-top: 20px;
+  margin: 24px auto 0;
+  max-width: 68ch;
   font-size: 14px;
+  line-height: 1.55;
   color: var(--fg);
   background: var(--warn-bg);
   border: 1px solid var(--warn-border);
   border-radius: var(--radius);
   padding: 14px 18px;
+  text-wrap: pretty;
 }
 .callout strong {
   color: var(--warn);
 }
 
-/* Screenshot placeholders */
-.shots {
+/* Real product screenshots (rendered only when the files exist at build time;
+   see lib/screenshots.ts). No placeholder boxes ship. */
+.gallery {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+  gap: 18px;
 }
 @media (max-width: 720px) {
-  .shots {
+  .gallery {
     grid-template-columns: 1fr;
   }
 }
-.shot {
-  aspect-ratio: 16 / 10;
-  border: 1px dashed var(--border-strong);
+.gallery figure {
+  margin: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--panel),
-    var(--panel) 12px,
-    var(--panel-2) 12px,
-    var(--panel-2) 24px
-  );
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  color: var(--muted-2);
+  overflow: hidden;
+  background: var(--panel);
+}
+.gallery img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  object-position: top left;
+  border-bottom: 1px solid var(--border);
+}
+.gallery figcaption {
+  padding: 10px 14px;
   font-size: 13px;
-  padding: 16px;
+  color: var(--muted);
 }
 
 /* Footer */
@@ -321,6 +434,9 @@ h2.heading {
 }
 
 /* Changelog */
+.changelog-list {
+  padding: 8px 0 56px;
+}
 .changelog-entry {
   border-top: 1px solid var(--border);
   padding: 28px 0;
@@ -416,7 +532,218 @@ h2.heading {
   padding: 56px 0 8px;
 }
 .page-head h1 {
-  font-size: clamp(30px, 6vw, 42px);
+  font-size: clamp(28px, 5vw, 36px);
   letter-spacing: -0.02em;
   margin: 0 0 8px;
+  text-wrap: balance;
+}
+
+/* Product window: a coded depiction of a live Hoy session. It shows the one
+   thing a static screenshot can't, streaming output with inline tool calls and
+   a live reasoning timer. It mirrors the desktop app's SQUARE theme (radius 0)
+   to read as "the product," distinct from the site's 10px chrome. */
+.appwin {
+  position: relative;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: #141417;
+  overflow: hidden;
+  box-shadow:
+    0 30px 70px -28px rgba(0, 0, 0, 0.8),
+    0 0 60px -30px color-mix(in srgb, var(--brand) 60%, transparent);
+  animation: appwin-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes appwin-rise {
+  from {
+    transform: translateY(14px);
+  }
+  to {
+    transform: none;
+  }
+}
+.appwin-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  border-bottom: 1px solid var(--border);
+  background: #17171b;
+}
+.appwin-dots {
+  display: flex;
+  gap: 6px;
+}
+.appwin-dots i {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+.appwin-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.appwin-model {
+  margin-left: auto;
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+}
+.appwin-body {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+}
+.appwin-side {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 10px;
+  border-right: 1px solid var(--border);
+  background: #151519;
+}
+.appwin-side span {
+  display: block;
+  height: 9px;
+  background: var(--border-strong);
+  opacity: 0.7;
+}
+.appwin-side span.active {
+  background: var(--brand);
+  opacity: 1;
+}
+.appwin-main {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 16px 18px 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  min-width: 0;
+}
+.chat-role {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  margin-bottom: 5px;
+}
+.chat-user {
+  align-self: flex-end;
+  max-width: 84%;
+  padding: 8px 12px;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--brand) 16%, #1b1b20);
+  border: 1px solid color-mix(in srgb, var(--brand) 34%, transparent);
+}
+.chat-asst {
+  color: #d9d9de;
+}
+.chat-asst code {
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 12px;
+  color: var(--fg);
+  background: #1f1f25;
+  padding: 1px 5px;
+}
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--brand);
+  animation: caret-blink 1.05s steps(1) infinite;
+}
+@keyframes caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+.tool-chip {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 8px;
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 12px;
+  color: var(--muted);
+  background: #1b1b20;
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+}
+.tool-chip .tick {
+  color: #3fb950;
+  font-weight: 700;
+}
+.tool-chip .path {
+  color: var(--fg);
+}
+.think-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
+  padding: 3px 9px;
+}
+.think-pill .pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--brand);
+  animation: think-pulse 1.4s ease-in-out infinite;
+}
+@keyframes think-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.appwin-caption {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+@media (max-width: 900px) {
+  .appwin-caption {
+    text-align: center;
+  }
+}
+
+/* Accessibility: visible keyboard focus on all interactive elements. */
+a:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .caret {
+    opacity: 1;
+  }
+  .think-pill .pulse {
+    opacity: 1;
+  }
 }
