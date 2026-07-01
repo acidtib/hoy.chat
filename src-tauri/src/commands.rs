@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::events::{AgentEvent, ModelInfo, PiState, SessionStats};
+use crate::events::{AgentEvent, ImageContent, ModelInfo, PiState, SessionStats};
 use crate::pi_config::{self, ProviderAuth, ProviderInfo};
 use crate::sidecar::SidecarManager;
 use crate::workspace::{self, Workspace};
@@ -249,10 +249,33 @@ pub fn save_workspace(workspace: Workspace) -> Result<(), String> {
 // Attach the prompt's Channel to the session, send Pi a `prompt`, and return once
 // preflight is accepted. Tokens, tool calls, and the terminal `done` then stream
 // over the Channel from the reader thread; the renderer drives the UI from those.
+// Assemble the prompt RPC body. images[] and streamingBehavior are omitted when
+// absent so an idle text-only turn sends exactly {type:"prompt",message}.
+// streamingBehavior ("steer" | "followUp") only has meaning while a turn streams;
+// Pi ignores it when idle (HOY-205 / HOY-218).
+fn build_prompt_body(
+    message: &str,
+    images: Option<Vec<ImageContent>>,
+    streaming_behavior: Option<String>,
+) -> Value {
+    let mut body = json!({ "type": "prompt", "message": message });
+    if let Some(images) = images {
+        if !images.is_empty() {
+            body["images"] = json!(images);
+        }
+    }
+    if let Some(behavior) = streaming_behavior {
+        body["streamingBehavior"] = json!(behavior);
+    }
+    body
+}
+
 #[tauri::command]
 pub async fn send_prompt(
     session_id: String,
     message: String,
+    images: Option<Vec<ImageContent>>,
+    streaming_behavior: Option<String>,
     on_event: Channel<AgentEvent>,
     manager: State<'_, SidecarManager>,
 ) -> Result<(), String> {
@@ -261,7 +284,7 @@ pub async fn send_prompt(
     // request_with_dialog_grace, not request: a slash command in this prompt may
     // block its preflight on an extension UI dialog past REQUEST_TIMEOUT (HOY-215).
     let response = match process
-        .request_with_dialog_grace(json!({ "type": "prompt", "message": message }))
+        .request_with_dialog_grace(build_prompt_body(&message, images, streaming_behavior))
         .await
     {
         Ok(response) => response,
@@ -339,4 +362,44 @@ pub async fn set_permission_mode(
     check_success(&response, "set_permission_mode")?;
     manager.set_mode(&session_id, &mode);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_prompt_body_message_only() {
+        let body = build_prompt_body("hi", None, None);
+        assert_eq!(body, json!({ "type": "prompt", "message": "hi" }));
+        assert!(body.get("images").is_none());
+        assert!(body.get("streamingBehavior").is_none());
+    }
+
+    #[test]
+    fn build_prompt_body_with_images() {
+        let images = vec![ImageContent {
+            kind: "image".into(),
+            data: "AAAA".into(),
+            mime_type: "image/png".into(),
+        }];
+        let body = build_prompt_body("look", Some(images), None);
+        let arr = body.get("images").and_then(Value::as_array).unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["type"], "image");
+        assert_eq!(arr[0]["data"], "AAAA");
+        assert_eq!(arr[0]["mimeType"], "image/png");
+    }
+
+    #[test]
+    fn build_prompt_body_empty_images_omitted() {
+        let body = build_prompt_body("hi", Some(vec![]), None);
+        assert!(body.get("images").is_none());
+    }
+
+    #[test]
+    fn build_prompt_body_with_streaming_behavior() {
+        let body = build_prompt_body("more", None, Some("steer".into()));
+        assert_eq!(body["streamingBehavior"], "steer");
+    }
 }

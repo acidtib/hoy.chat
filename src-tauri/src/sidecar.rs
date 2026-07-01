@@ -581,8 +581,29 @@ fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
         "compaction_start" => Some(AgentEvent::Status {
             label: "compacting".into(),
         }),
+        // The sink is per-active-prompt (set in send_prompt, taken on agent_end),
+        // so a queue_update emitted with no active turn is dropped. In practice
+        // every queue mutation we care about (enqueue on steer/followUp, dequeue
+        // on delivery) happens while a turn is streaming, so the sink is attached.
+        "queue_update" => Some(AgentEvent::QueueUpdate {
+            steering: string_array(value.get("steering")),
+            follow_up: string_array(value.get("followUp")),
+        }),
         _ => None,
     }
+}
+
+fn string_array(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn tool_call_id(value: &Value) -> Option<String> {
@@ -1142,6 +1163,43 @@ mod live_tests {
             Some(AgentEvent::Error { message }) => assert_eq!(message, "boom"),
             other => panic!("expected Error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn queue_update_maps_steering_and_follow_up() {
+        let value = json!({ "steering": ["a"], "followUp": ["b", "c"] });
+        match map_pi_event(Some("queue_update"), &value) {
+            Some(AgentEvent::QueueUpdate {
+                steering,
+                follow_up,
+            }) => {
+                assert_eq!(steering, vec!["a"]);
+                assert_eq!(follow_up, vec!["b", "c"]);
+            }
+            other => panic!("expected QueueUpdate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn queue_update_missing_arrays_default_empty() {
+        match map_pi_event(Some("queue_update"), &json!({})) {
+            Some(AgentEvent::QueueUpdate {
+                steering,
+                follow_up,
+            }) => {
+                assert!(steering.is_empty());
+                assert!(follow_up.is_empty());
+            }
+            other => panic!("expected QueueUpdate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn string_array_filters_non_strings_and_handles_missing() {
+        let v = json!({ "xs": ["a", 1, "b", null] });
+        assert_eq!(string_array(v.get("xs")), vec!["a", "b"]);
+        assert!(string_array(v.get("missing")).is_empty());
+        assert!(string_array(Some(&json!("not an array"))).is_empty());
     }
 
     // Extension UI coverage: input/editor become text dialogs carrying

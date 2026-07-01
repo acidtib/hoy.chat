@@ -5,12 +5,14 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AgentEvent,
+  ImageContent,
   ModelInfo,
   PermissionMode,
   PiState,
   ProviderAuth,
   ProviderInfo,
   SessionStats,
+  StreamingBehavior,
   ThinkingLevel,
   Workspace,
 } from "./types";
@@ -102,12 +104,22 @@ export function saveWorkspace(workspace: Workspace): Promise<void> {
 
 // Send a prompt and stream the turn. Resolves once Pi accepts the prompt; tokens,
 // tool calls, and the terminal `done` arrive on `onEvent`, never via the return.
+// `images` attaches vision content; `streamingBehavior` ("steer"|"followUp")
+// queues the message when a turn is already streaming (HOY-205 / HOY-218).
 export function sendPrompt(
   sessionId: string,
   message: string,
   onEvent: Channel<AgentEvent>,
+  images?: ImageContent[],
+  streamingBehavior?: StreamingBehavior,
 ): Promise<void> {
-  return invoke<void>("send_prompt", { sessionId, message, onEvent });
+  return invoke<void>("send_prompt", {
+    sessionId,
+    message,
+    images: images && images.length > 0 ? images : null,
+    streamingBehavior: streamingBehavior ?? null,
+    onEvent,
+  });
 }
 
 export function getSessionStats(sessionId: string): Promise<SessionStats> {

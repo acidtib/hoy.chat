@@ -46,7 +46,7 @@ Status key: **used** (wired end to end), **partial** (some of the surface wired)
 
 | RPC command | What it does | Hoy status | Notes |
 |---|---|---|---|
-| `prompt` | Send a user message, start a turn | used, gaps planned (HOY-205) | `commands.rs:235`; `images[]` and `streamingBehavior` unused |
+| `prompt` | Send a user message, start a turn | used | `commands.rs`; `images[]` sent from the composer (HOY-205); `streamingBehavior` plumbed, exercised by the steering UI (HOY-218) |
 | `abort` | Stop the streaming turn | used | `commands.rs:272` |
 | `get_state` | Current model, thinking level, streaming flags | used | `commands.rs:42`; `thinking_level` read but never written |
 | `get_messages` | Full transcript as AgentMessage objects | used | `commands.rs:183`, restore on thread open |
@@ -90,7 +90,7 @@ Status key: **used** (wired end to end), **partial** (some of the surface wired)
 | `compaction_start` | used | `Status` "compacting"; now also carries `reason` and `willRetry` (0.79.10) and a post-compaction token estimate (0.79.8), unused |
 | `compaction_end`, `auto_retry_end` | unused | `compaction_end` now includes the post-compaction token estimate (0.79.8) |
 | `agent_start`, `turn_start/end`, `message_start` | unused | |
-| `queue_update` | planned (HOY-205) | Backs the queued-message UI for mid-turn sends |
+| `queue_update` | used (HOY-205) | Mapped to the `QueueUpdate` AgentEvent; the queued-message chips consume it (HOY-218) |
 | `extension_error` | unused | |
 | `project_trust` | n/a | Extension event only (0.79.0), not in the RPC stream; trust defaults to trusted since the sidecar sets no `projectTrustContextFactory` |
 | `extension_ui_request` | used | all methods routed in `classify_extension_ui` (`sidecar.rs`): `select`/`confirm`/`input`/`editor` -> `PermissionRequest`; `notify`/`setStatus`/`setWidget`/`setTitle`/`set_editor_text` -> their own events. Delivered through the per-turn sink, so events with no active prompt are not surfaced (between-turn delivery would need a persistent UI channel) |

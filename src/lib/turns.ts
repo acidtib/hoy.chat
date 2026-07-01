@@ -2,7 +2,7 @@
 // submit appends a user turn followed by an in-flight assistant turn (the last
 // element); every event folds into that assistant turn. Pure: returns a new list.
 
-import type { AgentEvent, ToolUI, Turn } from "./types";
+import type { AgentEvent, ImageContent, ToolUI, Turn } from "./types";
 
 export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
   const last = turns[turns.length - 1];
@@ -105,6 +105,9 @@ type RawContentPart = {
   id?: string;
   name?: string;
   arguments?: unknown;
+  // Image parts on a restored user message (Pi's ImageContent).
+  data?: string;
+  mimeType?: string;
 };
 type RawMessage = {
   role?: string;
@@ -131,7 +134,11 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
   for (const raw of messages) {
     const m = raw as RawMessage;
     if (m.role === "user") {
-      turns.push({ role: "user", text: contentText(m.content) });
+      turns.push({
+        role: "user",
+        text: contentText(m.content),
+        images: contentImages(m.content),
+      });
     } else if (m.role === "assistant") {
       const a = currentAssistantTurn(turns);
       if (m.stopReason === "aborted") a.aborted = true;
@@ -208,6 +215,23 @@ function contentText(content: string | RawContentPart[] | undefined): string {
     .filter((p) => p.type === "text" && typeof p.text === "string")
     .map((p) => p.text)
     .join("");
+}
+
+// Image parts of a restored user message, so reopened threads keep the images the
+// user sent. Returns undefined when there are none (keeps existing snapshots
+// stable and avoids an empty array on text-only turns).
+function contentImages(
+  content: string | RawContentPart[] | undefined,
+): ImageContent[] | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const images = content
+    .filter((p) => p.type === "image" && typeof p.data === "string")
+    .map((p) => ({
+      type: "image" as const,
+      data: p.data as string,
+      mimeType: p.mimeType ?? "image/png",
+    }));
+  return images.length > 0 ? images : undefined;
 }
 
 // A readable one-line title from the tool's name and arguments. Bash shows its

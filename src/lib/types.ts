@@ -27,6 +27,9 @@ export type AgentEvent =
     }
   | { kind: "setTitle"; title: string }
   | { kind: "setEditorText"; text: string }
+  // Pi's queue_update: the current steering/follow-up queues, driving the
+  // composer's queued-message chips (HOY-218). Session-level, not a turn block.
+  | { kind: "queueUpdate"; steering: string[]; followUp: string[] }
   | { kind: "error"; message: string }
   | { kind: "aborted" }
   | { kind: "done" };
@@ -118,8 +121,30 @@ export type AssistantBlock =
 
 // The per-thread transcript model, keyed by threadId in the store. Replaces the
 // built live from streaming AgentEvents and restored transcripts (lib/turns.ts).
+// Wire shape Pi's prompt.images[] expects. `data` is raw base64, no data: URI
+// prefix. Mirror of events.rs ImageContent.
+export interface ImageContent {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
+// A composer-local image before send: carries a preview URL for the thumbnail
+// and the encoded payload. Only `content` crosses the IPC boundary.
+export interface ImageAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  // Object URL for the <img> preview; revoked on remove and after send.
+  previewUrl: string;
+  content: ImageContent;
+}
+
+// How a mid-turn prompt is delivered while a turn already streams (HOY-218).
+export type StreamingBehavior = "steer" | "followUp";
+
 export type Turn =
-  | { role: "user"; text: string }
+  | { role: "user"; text: string; images?: ImageContent[] }
   | {
       role: "assistant";
       reasoning?: { text: string; seconds?: number };
@@ -141,6 +166,15 @@ export interface ModelInfo {
   contextWindow?: number | null;
   maxTokens?: number | null;
   reasoning?: boolean | null;
+  // Pi's Model.input: ["text","image",...]. Gates the image attachment UI.
+  input?: string[] | null;
+}
+
+// Whether a model accepts image input. Fail soft: only block attachments when we
+// positively know `input` exists and lacks "image" (older payloads omit it).
+export function modelSupportsImages(model?: ModelInfo | null): boolean {
+  if (!model?.input) return true;
+  return model.input.includes("image");
 }
 
 export type ThinkingLevel =

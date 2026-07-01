@@ -83,6 +83,14 @@ pub enum AgentEvent {
     SetEditorText {
         text: String,
     },
+    // Pi's queue_update: the current steering and follow-up queues for this
+    // session, emitted on every enqueue/dequeue while a turn streams. Drives the
+    // composer's queued-message chips (HOY-218). Session-level, not a turn block.
+    QueueUpdate {
+        steering: Vec<String>,
+        #[serde(rename = "followUp")]
+        follow_up: Vec<String>,
+    },
     Error {
         message: String,
     },
@@ -172,4 +180,25 @@ pub struct ModelInfo {
     pub max_tokens: Option<u64>,
     #[serde(default)]
     pub reasoning: Option<bool>,
+    // Pi's Model.input: ["text","image",...]. Gates the composer's image
+    // attachment affordance (HOY-205). Absent on older payloads; treated as
+    // vision-capable when unknown (fail soft).
+    #[serde(default)]
+    pub input: Option<Vec<String>>,
+}
+
+// Mirror of Pi's ImageContent (pi-ai). Sent on the prompt command's images[].
+// `data` is raw base64 with NO data: URI prefix; the renderer strips it before
+// invoke.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageContent {
+    #[serde(rename = "type", default = "image_content_type")]
+    pub kind: String,
+    pub data: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+}
+
+fn image_content_type() -> String {
+    "image".to_string()
 }

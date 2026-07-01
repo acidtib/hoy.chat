@@ -53,8 +53,10 @@ import { Composer } from "@/components/Composer";
 import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
 import { findThread, useSessionStore } from "@/state/store";
+import { modelSupportsImages } from "@/lib/types";
 import type {
   ExtWidget,
+  ImageAttachment,
   Notice,
   PermissionRequest,
   PiState,
@@ -67,6 +69,7 @@ import type {
 const EMPTY_TURNS: Turn[] = [];
 const EMPTY_PERMISSIONS: PermissionRequest[] = [];
 const EMPTY_NOTICES: Notice[] = [];
+const EMPTY_ATTACHMENTS: ImageAttachment[] = [];
 
 export function ThreadView({
   threadId,
@@ -114,6 +117,11 @@ export function ThreadView({
   );
   const draft = useSessionStore((s) => s.drafts[threadId] ?? "");
   const setDraft = useSessionStore((s) => s.setDraft);
+  const attachments = useSessionStore(
+    (s) => s.composerAttachments[threadId] ?? EMPTY_ATTACHMENTS,
+  );
+  const addAttachments = useSessionStore((s) => s.addAttachments);
+  const removeAttachment = useSessionStore((s) => s.removeAttachment);
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -132,6 +140,17 @@ export function ThreadView({
   const hasMessages = turns.length > 0;
   const shownError = threadError ?? error;
 
+  // Vision gating for the attachment UI (HOY-205). Resolve the active ModelRef to
+  // its full ModelInfo (which carries `input`); fail soft when unknown.
+  const activeModelRef = threadModel ?? defaultModel;
+  const activeModel = activeModelRef
+    ? models.find(
+        (m) =>
+          m.provider === activeModelRef.provider && m.id === activeModelRef.id,
+      ) ?? null
+    : null;
+  const canAttachImages = modelSupportsImages(activeModel);
+
   // Scroll the panel into view when this thread is the focus request target
   // (sidebar/history click or fresh open). Composer handles the focus itself
   // via the same signal.
@@ -147,8 +166,9 @@ export function ThreadView({
 
   function handleSubmit() {
     const message = draft;
+    const images = attachments.map((a) => a.content);
     setDraft(threadId, "");
-    void submitPrompt(threadId, message);
+    void submitPrompt(threadId, message, images.length > 0 ? images : undefined);
   }
 
   const widgetList: ExtWidget[] = threadWidgets
@@ -177,6 +197,10 @@ export function ThreadView({
       onToggleExpand={hasMessages ? () => setExpanded((v) => !v) : undefined}
       focusSignal={focusSignal}
       widgets={widgetList}
+      attachments={attachments}
+      onAddFiles={(files) => void addAttachments(threadId, files)}
+      onRemoveAttachment={(id) => removeAttachment(threadId, id)}
+      canAttachImages={canAttachImages}
     />
   );
 
@@ -321,9 +345,23 @@ export function ThreadView({
                 turn.role === "user" ? (
                   <div
                     key={i}
-                    className="whitespace-pre-wrap rounded-md border border-border/60 bg-card/40 px-3 py-2 text-sm leading-relaxed text-foreground"
+                    className="rounded-md border border-border/60 bg-card/40 px-3 py-2 text-sm leading-relaxed text-foreground"
                   >
-                    {turn.text}
+                    {turn.images && turn.images.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {turn.images.map((img, ii) => (
+                          <img
+                            key={ii}
+                            src={`data:${img.mimeType};base64,${img.data}`}
+                            alt="attachment"
+                            className="size-20 rounded-md border border-border/60 object-cover"
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {turn.text && (
+                      <div className="whitespace-pre-wrap">{turn.text}</div>
+                    )}
                   </div>
                 ) : (
                   <Message from="assistant" key={i} className="max-w-full">

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AtSign,
   ChevronDown,
@@ -7,6 +7,7 @@ import {
   Plus,
   SendHorizontal,
   Square,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModelSelect } from "@/components/ModelSelect";
@@ -24,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import type {
   ExtWidget,
+  ImageAttachment,
   ModelInfo,
   ModelRef,
   PermissionMode,
@@ -76,6 +78,10 @@ export function Composer({
   onToggleExpand,
   focusSignal = 0,
   widgets = [],
+  attachments = [],
+  onAddFiles,
+  onRemoveAttachment,
+  canAttachImages = true,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -100,10 +106,24 @@ export function Composer({
   focusSignal?: number;
   // Extension setWidget panels, rendered above or below the editor (ext UI).
   widgets?: ExtWidget[];
+  // Image attachments (HOY-205): pending thumbnails + add/remove. Gated by the
+  // active model's vision capability.
+  attachments?: ImageAttachment[];
+  onAddFiles?: (files: File[]) => void;
+  onRemoveAttachment?: (id: string) => void;
+  canAttachImages?: boolean;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
   const aboveWidgets = widgets.filter((w) => w.placement === "aboveEditor");
   const belowWidgets = widgets.filter((w) => w.placement === "belowEditor");
+
+  function addImageFiles(files: FileList | File[] | null) {
+    if (!files || !onAddFiles || !canAttachImages) return;
+    const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (images.length > 0) onAddFiles(images);
+  }
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -131,14 +151,32 @@ export function Composer({
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!disabled && value.trim()) onSubmit?.();
+      if (canSend) onSubmit?.();
     }
   }
 
-  const canSend = !disabled && value.trim().length > 0;
+  const canSend =
+    !disabled && (value.trim().length > 0 || attachments.length > 0);
 
   return (
-    <div className={cn("relative flex min-h-0 flex-col", fill && "h-full")}>
+    <div
+      className={cn("relative flex min-h-0 flex-col", fill && "h-full")}
+      onDragOver={(e) => {
+        if (!canAttachImages || !onAddFiles) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        if (!canAttachImages || !onAddFiles) return;
+        e.preventDefault();
+        setDragging(false);
+        addImageFiles(e.dataTransfer.files);
+      }}
+    >
+      {dragging && (
+        <div className="pointer-events-none absolute inset-0 z-10 rounded-md border-2 border-dashed border-brand/50 bg-brand/5" />
+      )}
       {onToggleExpand && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -168,12 +206,42 @@ export function Composer({
         <WidgetPanel key={`above-${i}`} lines={w.lines} />
       ))}
 
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-3 pt-3">
+          {attachments.map((a) => (
+            <div
+              key={a.id}
+              className="group relative size-16 overflow-hidden rounded-md border border-border/60"
+            >
+              <img
+                src={a.previewUrl}
+                alt={a.name}
+                className="size-full object-cover"
+              />
+              <button
+                type="button"
+                aria-label={`Remove ${a.name}`}
+                onClick={() => onRemoveAttachment?.(a.id)}
+                className="absolute right-0.5 top-0.5 rounded-full bg-background/80 p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <textarea
         ref={textareaRef}
         rows={fill ? undefined : 1}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
+        onPaste={(e) => {
+          if (!canAttachImages || !onAddFiles) return;
+          const files = Array.from(e.clipboardData.files);
+          if (files.some((f) => f.type.startsWith("image/"))) addImageFiles(files);
+        }}
         autoFocus={autoFocus}
         disabled={disabled}
         placeholder={disabled ? "Streaming response..." : placeholder}
@@ -194,14 +262,28 @@ export function Composer({
 
       <div className="flex items-center justify-between gap-2 px-2 py-1.5">
         <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground"
-            aria-label="Add context"
-          >
-            <Plus className="size-4" />
-          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              addImageFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          {canAttachImages && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground"
+              aria-label="Attach image"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Plus className="size-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon-sm"

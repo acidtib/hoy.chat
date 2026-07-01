@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { messagesToTurns } from "@/lib/turns";
+import { applyEvent, messagesToTurns } from "@/lib/turns";
 import type { Turn } from "@/lib/types";
 
 function assistantTurn(turns: Turn[], index = 0) {
@@ -53,5 +53,57 @@ describe("messagesToTurns reasoning", () => {
     ]);
 
     expect(assistantTurn(turns).reasoning?.text).toBe("ab");
+  });
+});
+
+describe("messagesToTurns images (HOY-205)", () => {
+  test("collects image parts on a restored user message", () => {
+    const turns = messagesToTurns([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "describe" },
+          { type: "image", data: "AAAA", mimeType: "image/png" },
+        ],
+      },
+    ]);
+
+    const turn = turns[0];
+    if (turn.role !== "user") throw new Error("expected user turn");
+    expect(turn.text).toBe("describe");
+    expect(turn.images).toEqual([
+      { type: "image", data: "AAAA", mimeType: "image/png" },
+    ]);
+  });
+
+  test("string content yields no images", () => {
+    const turns = messagesToTurns([{ role: "user", content: "hi" }]);
+    const turn = turns[0];
+    if (turn.role !== "user") throw new Error("expected user turn");
+    expect(turn.images).toBeUndefined();
+  });
+
+  test("image part without data mimeType defaults to image/png", () => {
+    const turns = messagesToTurns([
+      { role: "user", content: [{ type: "image", data: "BBBB" }] },
+    ]);
+    const turn = turns[0];
+    if (turn.role !== "user") throw new Error("expected user turn");
+    expect(turn.images?.[0].mimeType).toBe("image/png");
+  });
+});
+
+describe("applyEvent queueUpdate (HOY-218)", () => {
+  test("queueUpdate is session-level and leaves the transcript unchanged", () => {
+    const turns: Turn[] = [
+      { role: "user", text: "hi" },
+      { role: "assistant", blocks: [], streaming: true },
+    ];
+    const next = applyEvent(turns, {
+      kind: "queueUpdate",
+      steering: ["later"],
+      followUp: [],
+    });
+    expect(next).toEqual(turns);
   });
 });

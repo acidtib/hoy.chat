@@ -19,9 +19,12 @@ import {
   setThinkingLevel,
 } from "@/lib/ipc";
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
+import { fileToImageAttachment } from "@/lib/images";
 import type {
   AgentEvent,
   ExtWidget,
+  ImageAttachment,
+  ImageContent,
   ModelInfo,
   ModelRef,
   Notice,
@@ -178,6 +181,10 @@ interface SessionStore {
   // restarts keep unsent text; persisted via the workspace autosave as each
   // thread's draft field. Never cleared on panel close.
   drafts: Record<string, string>;
+  // Pending image attachments for the composer, keyed by threadId (HOY-205).
+  // In-memory only (base64 never touches disk); cleared on submit and on panel
+  // close, revoking each preview object URL.
+  composerAttachments: Record<string, ImageAttachment[]>;
   // Full screen within the panel strip: the one panel rendered while set.
   // Widths in panels stay untouched so exiting restores the exact layout.
   // Not persisted.
@@ -208,6 +215,12 @@ interface SessionStore {
   closePanel: (id: string) => void;
   dismissNotice: (threadId: string, id: number) => void;
   setDraft: (threadId: string, value: string) => void;
+  // Image attachment management for the composer (HOY-205). addAttachments
+  // encodes files to base64 in the renderer; removeAttachment/clearAttachments
+  // revoke the preview object URLs they drop.
+  addAttachments: (threadId: string, files: File[]) => Promise<void>;
+  removeAttachment: (threadId: string, id: string) => void;
+  clearAttachments: (threadId: string) => void;
   toggleFullScreen: (threadId: string) => void;
   setBodyWidth: (width: number) => void;
   resizePanelEdge: (index: number, deltaPx: number) => void;
@@ -263,7 +276,11 @@ interface SessionStore {
   unarchiveThread: (threadId: string) => void;
   deleteThread: (threadId: string) => void;
 
-  submitPrompt: (threadId: string, message: string) => Promise<void>;
+  submitPrompt: (
+    threadId: string,
+    message: string,
+    images?: ImageContent[],
+  ) => Promise<void>;
   // Abort the thread's streaming turn (HOY-195). The turn's terminal events
   // arrive over the channel as usual; no state is flipped here.
   stopStreaming: (threadId: string) => Promise<void>;
@@ -296,6 +313,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   statuses: {},
   widgets: {},
   drafts: {},
+  composerAttachments: {},
   expandedThreadId: null,
   focusRequest: null,
   pendingTeardown: null,
@@ -397,6 +415,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // The draft survives the close (it is user work, like thread.model);
       // only a discarded thread takes its (whitespace-only) entry with it.
       const { [id]: _dr, ...remainingDrafts } = s.drafts;
+      // Attachments are tied to the live composer session; drop them and revoke
+      // their preview URLs (HOY-205).
+      const { [id]: closedAttachments, ...composerAttachments } =
+        s.composerAttachments;
+      for (const a of closedAttachments ?? []) URL.revokeObjectURL(a.previewUrl);
       return {
         panels,
         activeThreadId,
@@ -409,6 +432,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         notices,
         statuses,
         widgets,
+        composerAttachments,
         drafts: discard ? remainingDrafts : s.drafts,
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
         focusRequest: s.focusRequest?.threadId === id ? null : s.focusRequest,
@@ -432,6 +456,39 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   setDraft: (threadId, value) =>
     set((s) => ({ drafts: { ...s.drafts, [threadId]: value } })),
+
+  addAttachments: async (threadId, files) => {
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0) return;
+    const encoded = await Promise.all(images.map(fileToImageAttachment));
+    set((s) => ({
+      composerAttachments: {
+        ...s.composerAttachments,
+        [threadId]: [...(s.composerAttachments[threadId] ?? []), ...encoded],
+      },
+    }));
+  },
+
+  removeAttachment: (threadId, id) =>
+    set((s) => {
+      const list = s.composerAttachments[threadId] ?? [];
+      const removed = list.find((a) => a.id === id);
+      if (removed) URL.revokeObjectURL(removed.previewUrl);
+      return {
+        composerAttachments: {
+          ...s.composerAttachments,
+          [threadId]: list.filter((a) => a.id !== id),
+        },
+      };
+    }),
+
+  clearAttachments: (threadId) =>
+    set((s) => {
+      for (const a of s.composerAttachments[threadId] ?? [])
+        URL.revokeObjectURL(a.previewUrl);
+      const { [threadId]: _drop, ...rest } = s.composerAttachments;
+      return { composerAttachments: rest };
+    }),
 
   toggleFullScreen: (threadId) =>
     set((s) => ({
@@ -667,13 +724,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   // Send a prompt from a thread panel and stream the response into its turns.
   // Lazily spawns the thread's own sidecar (session per thread) in the project's
   // cwd on first send, then drives one Channel per turn.
-  submitPrompt: async (threadId, message) => {
+  submitPrompt: async (threadId, message, images) => {
     const text = message.trim();
-    if (!text || get().streaming[threadId]) return;
+    const hasImages = !!images && images.length > 0;
+    if ((!text && !hasImages) || get().streaming[threadId]) return;
 
     const found = findThread(get().projects, threadId);
     if (!found) return;
     const { thread, project } = found;
+
+    // The composer's attachments are consumed by this send; clear them (and
+    // revoke their previews) so they cannot be sent twice (HOY-205).
+    get().clearAttachments(threadId);
 
     // Append the user turn plus an in-flight assistant turn the events fold into.
     // Title an untitled thread from its first message.
@@ -682,7 +744,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         ...s.turns,
         [threadId]: [
           ...(s.turns[threadId] ?? []),
-          { role: "user", text },
+          { role: "user", text, ...(hasImages ? { images } : {}) },
           { role: "assistant", blocks: [], streaming: true },
         ],
       },
@@ -691,7 +753,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       projects: patchThread(s.projects, threadId, (th) => ({
         ...th,
         updatedAt: Date.now(),
-        title: th.title === "New thread" ? truncateTitle(text) : th.title,
+        title:
+          th.title === "New thread"
+            ? truncateTitle(text || "Image")
+            : th.title,
       })),
     }));
 
@@ -827,7 +892,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         }
       };
 
-      await sendPrompt(sessionId, text, channel);
+      await sendPrompt(sessionId, text, channel, images);
     } catch (e) {
       activeChannels.delete(threadId);
       stopStreaming();
