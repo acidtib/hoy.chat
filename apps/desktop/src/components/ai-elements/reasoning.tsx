@@ -18,6 +18,8 @@ type ReasoningContextValue = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   duration: number | undefined;
+  // Live seconds since thinking began, ticking while isStreaming (HOY-211).
+  elapsed: number | undefined;
 };
 
 const ReasoningContext = createContext<ReasoningContextValue | null>(null);
@@ -64,6 +66,7 @@ export const Reasoning = memo(
 
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
     const [startTime, setStartTime] = useState<number | null>(null);
+    const [elapsed, setElapsed] = useState<number | undefined>(undefined);
 
     // Track duration when streaming starts and ends
     useEffect(() => {
@@ -76,6 +79,19 @@ export const Reasoning = memo(
         setStartTime(null);
       }
     }, [isStreaming, startTime, setDuration]);
+
+    // Tick a live elapsed count while thinking (HOY-211); clear when it stops.
+    useEffect(() => {
+      if (!isStreaming || startTime === null) {
+        setElapsed(undefined);
+        return;
+      }
+      const tick = () =>
+        setElapsed(Math.max(0, Math.floor((Date.now() - startTime) / MS_IN_S)));
+      tick();
+      const timer = setInterval(tick, MS_IN_S);
+      return () => clearInterval(timer);
+    }, [isStreaming, startTime]);
 
     // Auto-open when streaming starts, auto-close when streaming ends (once only)
     useEffect(() => {
@@ -96,7 +112,7 @@ export const Reasoning = memo(
 
     return (
       <ReasoningContext.Provider
-        value={{ isStreaming, isOpen, setIsOpen, duration }}
+        value={{ isStreaming, isOpen, setIsOpen, duration, elapsed }}
       >
         <Collapsible
           className={cn("not-prose mb-4", className)}
@@ -112,15 +128,26 @@ export const Reasoning = memo(
 );
 
 export type ReasoningTriggerProps = ComponentProps<typeof CollapsibleTrigger> & {
-  getThinkingMessage?: (isStreaming: boolean, duration?: number) => ReactNode;
+  getThinkingMessage?: (
+    isStreaming: boolean,
+    duration?: number,
+    elapsed?: number,
+  ) => ReactNode;
 };
 
 // Local change from the registry copy: only an actively streaming block
 // shimmers. The upstream `duration === 0` branch conflated a falsy-zero
 // duration with streaming state and shimmered forever on finished blocks.
-const defaultGetThinkingMessage = (isStreaming: boolean, duration?: number) => {
+// While streaming, show a live elapsed count (HOY-211); on restore there is no
+// timing so we keep the honest "a few seconds" fallback.
+const defaultGetThinkingMessage = (
+  isStreaming: boolean,
+  duration?: number,
+  elapsed?: number,
+) => {
   if (isStreaming) {
-    return <Shimmer duration={1}>Thinking...</Shimmer>;
+    const label = elapsed ? `Thinking for ${elapsed}s` : "Thinking...";
+    return <Shimmer duration={1}>{label}</Shimmer>;
   }
   if (!duration) {
     return <p>Thought for a few seconds</p>;
@@ -130,7 +157,7 @@ const defaultGetThinkingMessage = (isStreaming: boolean, duration?: number) => {
 
 export const ReasoningTrigger = memo(
   ({ className, children, getThinkingMessage = defaultGetThinkingMessage, ...props }: ReasoningTriggerProps) => {
-    const { isStreaming, isOpen, duration } = useReasoning();
+    const { isStreaming, isOpen, duration, elapsed } = useReasoning();
 
     return (
       <CollapsibleTrigger
@@ -143,7 +170,7 @@ export const ReasoningTrigger = memo(
         {children ?? (
           <>
             <BrainIcon className="size-4" />
-            {getThinkingMessage(isStreaming, duration)}
+            {getThinkingMessage(isStreaming, duration, elapsed)}
             <ChevronDownIcon
               className={cn(
                 "size-4 transition-transform",

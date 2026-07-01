@@ -30,6 +30,7 @@ export type AgentEvent =
   // Pi's queue_update: the current steering/follow-up queues, driving the
   // composer's queued-message chips (HOY-218). Session-level, not a turn block.
   | { kind: "queueUpdate"; steering: string[]; followUp: string[] }
+  | { kind: "reasoning"; delta?: string; phase: "start" | "delta" | "end" }
   | { kind: "error"; message: string }
   | { kind: "aborted" }
   | { kind: "done" };
@@ -175,7 +176,7 @@ export type Turn =
     }
   | {
       role: "assistant";
-      reasoning?: { text: string; seconds?: number };
+      reasoning?: { text: string; seconds?: number; active?: boolean };
       blocks: AssistantBlock[];
       streaming: boolean;
       // The user stopped this turn (HOY-197). Renders a subtle inline marker

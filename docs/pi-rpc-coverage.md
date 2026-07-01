@@ -108,7 +108,7 @@ the installed source.
 | RPC event | Hoy status | Notes |
 |---|---|---|
 | `message_update` (text_delta) | used | Streams as `Text`, `sidecar.rs:367` |
-| `message_update` (thinking_delta) | unused | Explicitly skipped; no reasoning event kind yet (TODO.md) |
+| `message_update` (thinking_start/delta/end) | used (HOY-211) | Maps to `Reasoning` (`sidecar.rs`); folds into the turn's reasoning block, drives the live "Thinking for Ns" timer |
 | `message_end` | partial | Only `error`/`aborted` stop reasons surface, `sidecar.rs:379` |
 | `tool_execution_start/update/end` | used | `Tool` events with phase, `sidecar.rs:393` |
 | `agent_end` | used | Terminal `Done` unless `willRetry`, `sidecar.rs:336` |

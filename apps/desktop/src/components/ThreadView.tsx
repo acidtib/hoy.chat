@@ -414,6 +414,7 @@ export function ThreadView({
                       {turn.reasoning && (
                         <Reasoning
                           defaultOpen={false}
+                          isStreaming={turn.reasoning.active ?? false}
                           duration={turn.reasoning.seconds}
                         >
                           <ReasoningTrigger />

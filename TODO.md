@@ -20,13 +20,6 @@ any Windows distribution; not before.
 
 ## Visible gaps
 
-### Reasoning / thinking deltas in the transcript
-`AgentEvent` has no reasoning kind, so `map_pi_event` drops Pi's
-`thinking_start/delta/end` and thinking models stream nothing visible during a
-turn. The `Reasoning` block is already vendored and renders for restored
-transcripts; needed: a `reasoning` event kind in events.rs + types.ts together,
-mapping in `map_pi_event`, accumulation in `lib/turns.ts`.
-
 ### Real git status in the title bar
 The branch chip in `TitleBar.tsx` is a static mock ("main"). Needed: a Rust
 command (`git -C <project.path>`) returning branch, dirty flag, stash count;
@@ -53,7 +46,7 @@ importing a session JSONL (`AgentSessionRuntime.importFromJsonl`), so only the
 `ThreadHistory` UI action and a Rust command to adopt a file into a project are
 missing.
 
-### Disk extension / skill discovery from the branded agent dir
+### Disk extension / skill discovery from the branded agent dir (HOY-228)
 `DefaultResourceLoader` can auto-discover extensions/skills from `~/.hoy/agent`,
 but disk `.ts` extensions need `jiti` + `typebox` resolvable at runtime inside
 the bun-compiled sidecar (zosma-cowork shipped this broken, their #151/#152).

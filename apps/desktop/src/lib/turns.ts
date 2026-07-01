@@ -82,6 +82,18 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
       // subtle inline marker; Done follows to clear the streaming state.
       assistant.aborted = true;
       break;
+    case "reasoning": {
+      // Fold Pi's thinking stream into a single reasoning block across the
+      // turn's tool loop (HOY-211). Create it lazily so a delta with no prior
+      // start (redacted thinking) still opens the block. active drives the live
+      // "Thinking for Ns" timer; end stops it.
+      const current = assistant.reasoning ?? { text: "", active: true };
+      assistant.reasoning =
+        event.phase === "end"
+          ? { ...current, active: false }
+          : { ...current, text: current.text + (event.delta ?? ""), active: true };
+      break;
+    }
     case "status":
       // Retry/compaction notices: not rendered inline for now.
       break;

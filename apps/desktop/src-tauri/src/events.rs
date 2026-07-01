@@ -11,6 +11,14 @@ pub enum AgentEvent {
     Text {
         delta: String,
     },
+    // Live thinking/reasoning stream (Pi's message_update thinking_* events).
+    // phase is "start" | "delta" | "end"; delta carries text only on "delta".
+    // Folds into the assistant turn's collapsible reasoning block (HOY-211).
+    Reasoning {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        delta: Option<String>,
+        phase: String,
+    },
     Tool {
         phase: ToolPhase,
         #[serde(rename = "toolCallId")]

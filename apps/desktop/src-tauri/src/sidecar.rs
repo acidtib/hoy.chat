@@ -524,14 +524,25 @@ fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
     match ty? {
         "message_update" => {
             let inner = value.get("assistantMessageEvent")?;
-            // Token deltas live in assistantMessageEvent.delta, NOT .text.
-            // Thinking deltas are skipped: AgentEvent has no reasoning kind yet.
-            if inner.get("type").and_then(Value::as_str) == Some("text_delta") {
-                Some(AgentEvent::Text {
+            // Token deltas live in assistantMessageEvent.delta, NOT .text. Thinking
+            // phases map to Reasoning (HOY-211); start/end carry no text.
+            match inner.get("type").and_then(Value::as_str) {
+                Some("text_delta") => Some(AgentEvent::Text {
                     delta: inner.get("delta").and_then(Value::as_str)?.to_string(),
-                })
-            } else {
-                None
+                }),
+                Some("thinking_start") => Some(AgentEvent::Reasoning {
+                    delta: None,
+                    phase: "start".into(),
+                }),
+                Some("thinking_delta") => Some(AgentEvent::Reasoning {
+                    delta: Some(inner.get("delta").and_then(Value::as_str)?.to_string()),
+                    phase: "delta".into(),
+                }),
+                Some("thinking_end") => Some(AgentEvent::Reasoning {
+                    delta: None,
+                    phase: "end".into(),
+                }),
+                _ => None,
             }
         }
         "message_end" => {
@@ -1167,6 +1178,34 @@ mod live_tests {
             Some(AgentEvent::Error { message }) => assert_eq!(message, "boom"),
             other => panic!("expected Error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn message_update_maps_thinking_phases() {
+        let start = json!({ "assistantMessageEvent": { "type": "thinking_start" } });
+        assert!(matches!(
+            map_pi_event(Some("message_update"), &start),
+            Some(AgentEvent::Reasoning { delta: None, phase }) if phase == "start"
+        ));
+        let delta = json!({ "assistantMessageEvent": { "type": "thinking_delta", "delta": "hmm" } });
+        assert!(matches!(
+            map_pi_event(Some("message_update"), &delta),
+            Some(AgentEvent::Reasoning { delta: Some(d), phase }) if d == "hmm" && phase == "delta"
+        ));
+        let end = json!({ "assistantMessageEvent": { "type": "thinking_end" } });
+        assert!(matches!(
+            map_pi_event(Some("message_update"), &end),
+            Some(AgentEvent::Reasoning { delta: None, phase }) if phase == "end"
+        ));
+    }
+
+    #[test]
+    fn message_update_maps_text_delta() {
+        let v = json!({ "assistantMessageEvent": { "type": "text_delta", "delta": "hi" } });
+        assert!(matches!(
+            map_pi_event(Some("message_update"), &v),
+            Some(AgentEvent::Text { delta }) if delta == "hi"
+        ));
     }
 
     #[test]
