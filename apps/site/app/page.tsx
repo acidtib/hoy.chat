@@ -81,7 +81,7 @@ export default async function Home() {
 
             <div className="beat">
               <div className="beat-copy">
-                <h3 className="heading">Every session, kept</h3>
+                <h3 className="heading">Never lose a thread</h3>
                 <p className="lead">
                   Close Hoy, reopen it, and every thread is right where you left
                   it. Nothing syncs to a cloud, so nothing vanishes when some
@@ -95,7 +95,7 @@ export default async function Home() {
 
             <div className="beat beat-reverse">
               <div className="beat-copy">
-                <h3 className="heading">Tool calls, rendered inline</h3>
+                <h3 className="heading">Watch every move</h3>
                 <p className="lead">
                   When the agent reads a file, edits code, or runs a command, it
                   lands in the thread as it happens with the result attached. You
@@ -109,7 +109,7 @@ export default async function Home() {
 
             <div className="beat">
               <div className="beat-copy">
-                <h3 className="heading">Any model you have a key for</h3>
+                <h3 className="heading">Bring any model</h3>
                 <p className="lead">
                   Paste in a key from Anthropic, OpenAI, DeepSeek, or Groq and
                   switch between them from one menu. Every model your agent
