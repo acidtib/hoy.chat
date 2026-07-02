@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ChevronDown,
+  ChevronRight,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -67,14 +68,20 @@ export function Sidebar() {
       threads: p.threads.filter((t) => !t.archived),
     }));
     if (!normalized) return active;
+    const matches = (t: Thread) => t.title.toLowerCase().includes(normalized);
     return active
       .map((p) => {
         const nameMatch = p.name.toLowerCase().includes(normalized);
-        const threads = nameMatch
-          ? p.threads
-          : p.threads.filter((t) =>
-              t.title.toLowerCase().includes(normalized),
-            );
+        // A child matches if it or its parent matches; a parent matches if it
+        // or any child matches, so nesting stays intact under a title search.
+        const keepThread = (t: Thread) =>
+          matches(t) ||
+          (t.parentThreadId
+            ? p.threads.some(
+                (pt) => pt.id === t.parentThreadId && matches(pt),
+              )
+            : p.threads.some((c) => c.parentThreadId === t.id && matches(c)));
+        const threads = nameMatch ? p.threads : p.threads.filter(keepThread);
         return { project: p, threads, keep: nameMatch || threads.length > 0 };
       })
       .filter((x) => x.keep)
@@ -232,6 +239,18 @@ function ProjectGroup({
   // Removing a project is destructive (drops the project and all its threads
   // from the workspace); gate it behind a confirm (HOY-225).
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Spawned child threads nest under their parent, collapsed by default.
+  const [openChildren, setOpenChildren] = useState<Set<string>>(new Set());
+  const toggleChildren = (id: string) =>
+    setOpenChildren((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
 
   return (
     <li>
@@ -315,20 +334,44 @@ function ProjectGroup({
 
       {expanded && (
         <div className="mt-0.5 flex flex-col gap-0.5 pb-1">
-          {project.threads.length === 0 ? (
+          {project.threads.filter((t) => !t.parentThreadId).length === 0 ? (
             <p className="px-2.5 py-1 pl-7 text-xs text-muted-foreground">
               No threads yet
             </p>
           ) : (
-            project.threads.map((thread) => (
-              <ThreadRow
-                key={thread.id}
-                thread={thread}
-                active={thread.id === activeThreadId}
-                open={openIds.has(thread.id)}
-                onSelect={() => onSelectThread(thread.id)}
-              />
-            ))
+            project.threads
+              .filter((t) => !t.parentThreadId)
+              .map((thread) => {
+                const children = project.threads.filter(
+                  (c) => c.parentThreadId === thread.id,
+                );
+                const childrenOpen = openChildren.has(thread.id);
+                return (
+                  <div key={thread.id}>
+                    <ThreadRow
+                      thread={thread}
+                      depth={0}
+                      active={thread.id === activeThreadId}
+                      open={openIds.has(thread.id)}
+                      onSelect={() => onSelectThread(thread.id)}
+                      childCount={children.length}
+                      childrenOpen={childrenOpen}
+                      onToggleChildren={() => toggleChildren(thread.id)}
+                    />
+                    {childrenOpen &&
+                      children.map((child) => (
+                        <ThreadRow
+                          key={child.id}
+                          thread={child}
+                          depth={1}
+                          active={child.id === activeThreadId}
+                          open={openIds.has(child.id)}
+                          onSelect={() => onSelectThread(child.id)}
+                        />
+                      ))}
+                  </div>
+                );
+              })
           )}
         </div>
       )}
@@ -338,14 +381,22 @@ function ProjectGroup({
 
 function ThreadRow({
   thread,
+  depth,
   active,
   open,
   onSelect,
+  childCount,
+  childrenOpen,
+  onToggleChildren,
 }: {
   thread: Thread;
+  depth: number;
   active: boolean;
   open: boolean;
   onSelect: () => void;
+  childCount?: number;
+  childrenOpen?: boolean;
+  onToggleChildren?: () => void;
 }) {
   const renameThread = useSessionStore((s) => s.renameThread);
   const requestTeardown = useSessionStore((s) => s.requestTeardown);
@@ -368,7 +419,8 @@ function ThreadRow({
         }
       }}
       className={cn(
-        "group flex w-full cursor-pointer items-start gap-2 rounded-md py-1.5 pl-3 pr-2 text-left transition-colors",
+        "group flex w-full cursor-pointer items-start gap-2 rounded-md py-1.5 pr-2 text-left transition-colors",
+        depth > 0 ? "pl-9" : "pl-3",
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground"
           : open
@@ -376,6 +428,24 @@ function ThreadRow({
             : "text-sidebar-foreground hover:bg-sidebar-accent/50",
       )}
     >
+      {childCount !== undefined && childCount > 0 && (
+        <button
+          type="button"
+          aria-label={childrenOpen ? "Collapse subagents" : "Expand subagents"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleChildren?.();
+          }}
+          className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+        >
+          <ChevronRight
+            className={cn(
+              "size-3.5 transition-transform",
+              childrenOpen && "rotate-90",
+            )}
+          />
+        </button>
+      )}
       <Sparkle
         className={cn(
           "mt-0.5 size-3.5 shrink-0",
