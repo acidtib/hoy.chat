@@ -1,7 +1,8 @@
 // HOY-231 Phase 1: subagent support. The `agent` tool takes consent then fires a
 // fire-and-forget sentinel notify; Rust turns it into AgentEvent::SubagentSpawned
-// and the renderer spawns the child as its own thread. Fire-and-forget: no result
-// returns to the parent in this phase. See docs/plans/HOY-231-*.
+// and the renderer spawns the child as its own thread. Fire-and-forget: the call
+// returns a handle; the subagent's result is delivered back to the parent when it
+// finishes (HOY-233). See docs/plans/HOY-231-*.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -76,7 +77,7 @@ export function createHoyAgents() {
       content: [
         {
           type: "text" as const,
-          text: `Spawned ${type.name} subagent (${agentId}). It runs in its own thread; its result does not return to you in this phase.`,
+          text: `Spawned ${type.name} subagent (${agentId}). It runs in its own thread; its result will be delivered back into this conversation when it finishes.`,
         },
       ],
       details: { agentId },

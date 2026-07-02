@@ -92,11 +92,12 @@ export const MCP_TOOLS_PROMPT = `MCP tools:
 
 // Appended to the base prompt only when the agent tool is available (parent
 // sessions; a spawned child never has it, depth cap). Advertises the tool's
-// unusual contract so the model reaches for it deliberately: fire-and-forget,
-// no result returns.
+// contract so the model reaches for it deliberately: the call returns a handle
+// immediately (fire-and-forget), and the subagent's result is delivered back
+// into the conversation when it finishes (HOY-233).
 export const AGENT_TOOLS_PROMPT = `Subagents:
 - The agent tool spawns a specialized child agent that runs in its own thread. Two types: general-purpose (full tool access) and Explore (read-only: read, grep, find, ls). Call agent({subagentType, task}) with a complete, self-contained task; the subagent does not see this conversation.
-- Fire-and-forget: the call returns a handle immediately and the subagent runs independently. Its result does NOT come back to you. Use it to hand off self-contained work the user will follow in the child thread, not to get an answer back into this conversation.
+- Fire-and-forget: the call returns a handle immediately and the subagent runs independently. When it finishes, its result is delivered back into this conversation as a new message, so you may keep working; you will be resumed with the subagent's result when it arrives.
 - Spawning asks for user approval. A subagent cannot spawn further subagents.`;
 
 // The full override. The MCP block is included only when servers are configured;

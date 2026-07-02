@@ -200,5 +200,7 @@ describe("mcp proxy tool (real stdio server)", () => {
     const enabled = buildHoySystemPrompt(false, true);
     expect(enabled).toContain("Subagents:");
     expect(enabled).toContain("Fire-and-forget");
+    expect(enabled).toContain("delivered back");
+    expect(enabled).not.toContain("does NOT come back");
   });
 });
