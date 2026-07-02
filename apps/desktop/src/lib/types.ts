@@ -185,6 +185,11 @@ export type Turn =
       // @ context attached to this send (HOY-220), for display pills. Not
       // restored from disk (the content is inlined into the message text).
       contexts?: ContextRef[];
+      // HOY-233: a turn injected by a finished subagent, not typed by the user.
+      // Rendered as a marked result note. Not persisted: on reload pi records it
+      // as a plain user message, so the framed text keeps it legible.
+      origin?: "subagentResult";
+      subagent?: { type: string; agentId: string };
     }
   | {
       role: "assistant";

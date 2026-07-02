@@ -389,33 +389,45 @@ export function ThreadView({
 
               {turns.map((turn, i) =>
                 turn.role === "user" ? (
-                  <div
-                    key={i}
-                    className="rounded-md border border-border/60 bg-card/40 px-3 py-2 text-sm leading-relaxed text-foreground"
-                  >
-                    {turn.images && turn.images.length > 0 && (
-                      <div className="mb-2 flex flex-wrap gap-2">
-                        {turn.images.map((img, ii) => (
-                          <img
-                            key={ii}
-                            src={`data:${img.mimeType};base64,${img.data}`}
-                            alt="attachment"
-                            className="size-20 rounded-md border border-border/60 object-cover"
-                          />
-                        ))}
+                  turn.origin === "subagentResult" ? (
+                    <div
+                      key={i}
+                      className="rounded-md border border-brand/40 bg-brand/5 px-3 py-2 text-sm leading-relaxed text-muted-foreground"
+                    >
+                      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-brand">
+                        Subagent result{turn.subagent ? ` -- ${turn.subagent.type}` : ""}
                       </div>
-                    )}
-                    {turn.contexts && turn.contexts.length > 0 && (
-                      <div className="mb-2 flex flex-wrap gap-1.5">
-                        {turn.contexts.map((ref) => (
-                          <TurnContextPill key={contextKey(ref)} contextRef={ref} />
-                        ))}
-                      </div>
-                    )}
-                    {turn.text && (
                       <div className="whitespace-pre-wrap">{turn.text}</div>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <div
+                      key={i}
+                      className="rounded-md border border-border/60 bg-card/40 px-3 py-2 text-sm leading-relaxed text-foreground"
+                    >
+                      {turn.images && turn.images.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          {turn.images.map((img, ii) => (
+                            <img
+                              key={ii}
+                              src={`data:${img.mimeType};base64,${img.data}`}
+                              alt="attachment"
+                              className="size-20 rounded-md border border-border/60 object-cover"
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {turn.contexts && turn.contexts.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                          {turn.contexts.map((ref) => (
+                            <TurnContextPill key={contextKey(ref)} contextRef={ref} />
+                          ))}
+                        </div>
+                      )}
+                      {turn.text && (
+                        <div className="whitespace-pre-wrap">{turn.text}</div>
+                      )}
+                    </div>
+                  )
                 ) : (
                   <Message from="assistant" key={i} className="max-w-full">
                     <MessageContent className="w-full">

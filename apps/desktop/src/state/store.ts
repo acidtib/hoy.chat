@@ -30,6 +30,12 @@ import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
 import { usePrefsStore } from "@/state/prefs";
+import {
+  buildDelivery,
+  queueDelivery,
+  takeNextDelivery,
+  type Delivery,
+} from "./delivery";
 import type {
   AgentEvent,
   ContextRef,
@@ -1509,6 +1515,9 @@ async function streamPromptOnThread(
         return { pendingPermissions: { ...s.pendingPermissions, [threadId]: [] } };
       });
       void useSessionStore.getState().refreshStats(threadId);
+      // HOY-233: push this child's result up to its parent, and drain any
+      // deliveries queued for this thread while it streamed.
+      void deliverAndDrain(threadId);
     } else if (event.kind === "queueUpdate") {
       // Pi sends the full queue arrays each time; replace, don't append. The
       // chips reflect what is still queued; anything that left the queue was
@@ -1618,6 +1627,80 @@ async function streamPromptOnThread(
   };
 
   await sendPrompt(sessionId, message, channel, images);
+}
+
+// HOY-233: on a thread's `done`, push a finished child's result up to its parent
+// and drain any deliveries that queued for this thread while it was streaming.
+async function deliverAndDrain(finishedThreadId: string): Promise<void> {
+  const state = useSessionStore.getState();
+  const found = findThread(state.projects, finishedThreadId);
+  if (!found) return;
+  const { thread } = found;
+  if (thread.parentThreadId) {
+    const childTurns = state.turns[finishedThreadId] ?? [];
+    const delivery = buildDelivery(
+      thread.spawnedBy?.type ?? "subagent",
+      thread.spawnedBy?.agentId ?? "",
+      childTurns,
+    );
+    await deliverToParent(thread.parentThreadId, delivery);
+  }
+  // This thread may itself be a parent with a queued delivery: it just went idle,
+  // so deliver the next one now (deliverToParent handles the not-busy path).
+  const next = takeNextDelivery(finishedThreadId);
+  if (next) await deliverToParent(finishedThreadId, next);
+}
+
+// Inject `delivery` into `parentThreadId` as a marked subagent-result turn and
+// stream the parent's continuation. If the parent is mid-turn, queue instead and
+// let its next `done` drain it. Resumes the parent sidecar from its transcript
+// when the panel was closed.
+async function deliverToParent(parentThreadId: string, delivery: Delivery): Promise<void> {
+  if (activeChannels.has(parentThreadId)) {
+    queueDelivery(parentThreadId, delivery);
+    return;
+  }
+  const found = findThread(useSessionStore.getState().projects, parentThreadId);
+  if (!found) return;
+  const { project, thread: parent } = found;
+  try {
+    let sessionId = parent.sessionId ?? null;
+    if (!sessionId) {
+      if (!parent.sessionFile) return; // unreachable: a parent has run a turn
+      sessionId = await acquireSession(parentThreadId, project.path ?? "", parent.sessionFile);
+      useSessionStore.getState().setThreadSessionIdInternal(parentThreadId, sessionId);
+    }
+    useSessionStore.setState((s) => ({
+      turns: {
+        ...s.turns,
+        [parentThreadId]: [
+          ...(s.turns[parentThreadId] ?? []),
+          {
+            role: "user" as const,
+            text: delivery.message,
+            origin: "subagentResult" as const,
+            subagent: { type: delivery.subagentType, agentId: delivery.agentId },
+          },
+          { role: "assistant" as const, blocks: [], streaming: true },
+        ],
+      },
+      streaming: { ...s.streaming, [parentThreadId]: true },
+      threadErrors: { ...s.threadErrors, [parentThreadId]: null },
+      projects: patchThread(s.projects, parentThreadId, (th) => ({
+        ...th,
+        updatedAt: Date.now(),
+      })),
+    }));
+    await streamPromptOnThread(parentThreadId, sessionId, delivery.message);
+  } catch (e) {
+    useSessionStore.setState((s) => ({
+      streaming: { ...s.streaming, [parentThreadId]: false },
+      threadErrors: {
+        ...s.threadErrors,
+        [parentThreadId]: String(e instanceof Error ? e.message : e),
+      },
+    }));
+  }
 }
 
 // Monotonic id for transient extension `notify` notices, so each can be
