@@ -170,12 +170,34 @@ a {
   text-align: center;
 }
 
-/* The stage owns perspective (for the child tilt) and JS scroll parallax. */
+/* The stage carries the JS scroll parallax (the window drifts up on scroll). */
 .hero-stage {
   margin: clamp(40px, 6vw, 68px) auto 0;
   max-width: 940px;
-  perspective: 1600px;
   transform: translateY(var(--py, 0));
+}
+
+/* Phone fallback: the live two-pane mock reflows badly under the hero
+   breakpoint, so we hide it and show a proportionally-correct capture instead. */
+.hero-shot {
+  display: none;
+}
+@media (max-width: 720px) {
+  .hero-stage {
+    display: none;
+  }
+  .hero-shot {
+    display: block;
+    width: 100%;
+    max-width: 460px;
+    height: auto;
+    margin: clamp(32px, 9vw, 48px) auto 0;
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    box-shadow:
+      0 30px 60px -30px rgba(0, 0, 0, 0.9),
+      0 0 70px -34px color-mix(in srgb, var(--brand) 45%, transparent);
+  }
 }
 
 .badge {
@@ -359,17 +381,6 @@ h3.heading {
   padding: 18px 4px;
   border-bottom: 1px solid var(--border);
 }
-.dl-os-active {
-  padding-left: 16px;
-  padding-right: 16px;
-  margin: 0 -16px;
-  border-radius: 10px;
-  border-bottom-color: transparent;
-  background: color-mix(in srgb, var(--brand) 8%, transparent);
-}
-.dl-os-active + .dl-os {
-  border-top: 1px solid var(--border);
-}
 .dl-os-name {
   grid-area: name;
   display: inline-flex;
@@ -394,9 +405,6 @@ h3.heading {
   width: 17px;
   height: 17px;
   color: var(--muted);
-}
-.dl-os-active .dl-os-name svg {
-  color: var(--brand);
 }
 .dl-os-links {
   grid-area: links;
@@ -691,16 +699,12 @@ h3.heading {
   box-shadow: 0 24px 60px -26px rgba(0, 0, 0, 0.85);
 }
 
-/* Hero window: bigger, glowing, tilts to the pointer, drifts on scroll. Tilt
-   reads --rx/--ry from the .hero-stage ancestor (set by HeroStage). */
+/* Hero window: bigger, glowing, drifts up on scroll (parallax lives on the
+   .hero-stage ancestor). */
 .appwin-hero {
   box-shadow:
     0 50px 90px -40px rgba(0, 0, 0, 0.9),
     0 0 90px -30px color-mix(in srgb, var(--brand) 55%, transparent);
-  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
-  transform-style: preserve-3d;
-  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
 }
 /* Entrance gated behind .js so a no-JS or headless render is never blank. */
 .js .appwin-hero {

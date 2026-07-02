@@ -106,10 +106,7 @@ export function InstallPanel({ version }: { version: string }) {
         {OS_ORDER.map((os) => {
           const d = OS_DOWNLOADS[os];
           return (
-            <div
-              key={os}
-              className={os === detected ? "dl-os dl-os-active" : "dl-os"}
-            >
+            <div key={os} className="dl-os">
               <span className="dl-os-name">
                 <OSIcon os={os} />
                 {d.name}

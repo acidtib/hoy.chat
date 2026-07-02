@@ -8,7 +8,7 @@ import "./globals.css";
 import { SITE_URL, IS_PRODUCTION, canonical, PRODUCTION_URL } from "@/lib/site";
 
 const DESCRIPTION =
-  "A real desktop app for your coding agent. It runs on your machine and uses your own API keys. Beta, expect rough edges.";
+  "Get your coding agent out of the terminal. Hoy is a desktop app that runs it on your machine, on your own keys. Beta, expect rough edges.";
 
 export const metadata: Metadata = {
   title: "Hoy Chat, a desktop app for coding agents",
@@ -58,8 +58,12 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body>
+    // suppressHydrationWarning: the beforeInteractive js-flag script adds the
+    // `js` class to <html> before hydration (intentionally not server-rendered,
+    // so no-JS never hides reveal content); body suppression absorbs attributes
+    // injected by browser extensions (e.g. cz-shortcut-listen).
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning>
         {/* Set .js before paint so scroll-reveal pre-states apply only when JS
             can undo them; no-JS and headless renders stay fully visible. */}
         <Script id="js-flag" strategy="beforeInteractive">

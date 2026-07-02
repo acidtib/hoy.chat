@@ -1,4 +1,6 @@
 import Link from "next/link";
+import Image from "next/image";
+import appMock from "@/public/app-mock.png";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { HeroStage } from "@/components/HeroStage";
@@ -29,7 +31,7 @@ export default async function Home() {
     url: PRODUCTION_URL,
     downloadUrl: RELEASES_URL,
     description:
-      "A desktop app for your coding agent. It runs on your machine and uses your own API keys.",
+      "A desktop app for your coding agent. Runs on your machine, on your own keys.",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
   };
 
@@ -50,11 +52,11 @@ export default async function Home() {
                 <span className="pulse" aria-hidden="true" />
                 Beta / Experimental
               </span>
-              <h1>Simple. Fast. Yours.</h1>
+              <h1>Get your agent out of the terminal.</h1>
               <p className="tagline">
-                Hoy gives your coding agent a real window, so you can
-                watch it work, keep every thread, and switch models without ever
-                opening a terminal.
+                Hoy gives it a real desktop app, so you can watch it work, keep
+                every thread, and switch models on the fly, all on your machine,
+                on your own keys.
               </p>
 
               <div className="cta-row cta-row-center">
@@ -68,6 +70,16 @@ export default async function Home() {
             <HeroStage>
               <AppWindow />
             </HeroStage>
+            {/* On phones the two-pane window reflows into a cramped, clipped
+                mess, so below the hero breakpoint we swap the live mock for a
+                proportionally-correct capture of it. Regenerate this PNG from
+                the desktop-rendered .appwin-hero if the mock changes. */}
+            <Image
+              className="hero-shot"
+              src={appMock}
+              alt="The Hoy desktop app: a sidebar of threads on the left, an open thread adding a health-check endpoint, an inline Edit diff on server.ts, and a composer at the bottom with the deepseek-v4 model selected."
+              sizes="(max-width: 720px) 92vw, 940px"
+            />
           </div>
         </section>
 
@@ -93,19 +105,18 @@ export default async function Home() {
                 <h2 className="heading">See it work</h2>
               </div>
               <p className="lead">
-                Everything runs on your machine. Under the hood Hoy drives the Pi
-                agent, and your API key stays on your
-                disk instead of passing through a server we run.
+                No cloud account, no sign-up. Hoy drives the Pi agent under the
+                hood, and your API key never leaves your disk. Nothing routes
+                through a server we run.
               </p>
             </div>
 
             <div className="beat">
               <div className="beat-copy">
-                <h3 className="heading">Never lose a thread</h3>
+                <h3 className="heading">Close it. It&apos;s all still there.</h3>
                 <p className="lead">
-                  Close Hoy, reopen it, and every thread is right where you left
-                  it. Nothing syncs to a cloud, so nothing vanishes when some
-                  service goes down.
+                  Quit Hoy, come back tomorrow, every thread exactly where you
+                  left it. On your disk, not a server we run.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">
@@ -115,11 +126,11 @@ export default async function Home() {
 
             <div className="beat beat-reverse">
               <div className="beat-copy">
-                <h3 className="heading">Watch every move</h3>
+                <h3 className="heading">It shows its work.</h3>
                 <p className="lead">
-                  When the agent reads a file, edits code, or runs a command, it
-                  lands in the thread as it happens with the result attached. You
-                  never dig through raw logs to work out what changed.
+                  Every file it reads, every edit, every command lands in the
+                  thread the moment it happens, result attached. No log
+                  spelunking to find out what changed.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">
@@ -129,11 +140,11 @@ export default async function Home() {
 
             <div className="beat">
               <div className="beat-copy">
-                <h3 className="heading">Bring any model</h3>
+                <h3 className="heading">Your keys, your models.</h3>
                 <p className="lead">
-                  Paste in a key from Anthropic, OpenAI, DeepSeek, or Groq and
-                  switch between them from one menu. Every model your agent
-                  supports shows up in the picker.
+                  Drop in a key from Anthropic, OpenAI, DeepSeek, or Groq and
+                  switch between them from one menu. Whatever your agent supports
+                  shows up in the picker. No markup, no middleman.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">
