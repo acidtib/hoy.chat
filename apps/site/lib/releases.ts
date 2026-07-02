@@ -27,11 +27,17 @@ export function normalizeVersion(tag: string): string {
 
 // Fetched once at build time (static export). Any failure, including no network
 // or GitHub rate limiting, resolves to an empty list so the build never breaks;
-// callers render an empty state instead.
+// callers render an empty state instead. A GITHUB_TOKEN in the build env (CI)
+// authenticates the request so shared runners are not rate-limited; local builds
+// run unauthenticated and fall back to FALLBACK_VERSION if throttled.
 export async function getReleases(): Promise<Release[]> {
   try {
+    const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
     const res = await fetch(RELEASES_API, {
-      headers: { Accept: "application/vnd.github+json" },
+      headers: {
+        Accept: "application/vnd.github+json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     });
     if (!res.ok) return [];
     const data: unknown = await res.json();
