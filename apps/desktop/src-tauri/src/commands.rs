@@ -263,11 +263,15 @@ pub fn active_session_id(manager: State<'_, SidecarManager>) -> Option<String> {
 // Spawn a thread's own sidecar in its project directory. An empty cwd falls back
 // to the manager's default (temp) dir so threads without a project path still
 // run. `session_file` (M4) reopens a thread's existing transcript; None starts
-// fresh. Returns the new sessionId the thread stores and drives.
+// fresh. `subagent_type` (HOY-231) brands a spawned child session's system
+// prompt; `permission_mode` seeds it with the parent's mode. Returns the new
+// sessionId the thread stores and drives.
 #[tauri::command]
 pub async fn create_session(
     cwd: String,
     session_file: Option<String>,
+    subagent_type: Option<String>,
+    permission_mode: Option<String>,
     manager: State<'_, SidecarManager>,
 ) -> Result<String, String> {
     let path = if cwd.trim().is_empty() {
@@ -275,7 +279,12 @@ pub async fn create_session(
     } else {
         PathBuf::from(cwd)
     };
-    manager.spawn_session_in(&path, session_file.as_deref())
+    manager.spawn_session_in(
+        &path,
+        session_file.as_deref(),
+        permission_mode.as_deref(),
+        subagent_type.as_deref(),
+    )
 }
 
 // Tear down a thread's sidecar (panel close / thread delete). The control session
