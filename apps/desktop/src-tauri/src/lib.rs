@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+mod mcp_config;
 mod oauth;
 mod pi_config;
 mod reader;
@@ -77,6 +78,9 @@ pub fn run() {
             commands::remove_provider_key,
             commands::provider_statuses,
             commands::supported_providers,
+            commands::list_mcp_servers,
+            commands::save_mcp_server,
+            commands::remove_mcp_server,
             oauth::oauth_login_start,
             oauth::oauth_login_submit,
             oauth::oauth_login_cancel,

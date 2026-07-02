@@ -72,6 +72,21 @@ the bun-compiled sidecar (zosma-cowork shipped this broken, their #151/#152).
 Confirm bundling, add an end-to-end disk-extension test, decide install UX.
 Until then do not claim extension support.
 
+### MCP support v2 (deferred from HOY-232)
+HOY-232 ships MCP as an in-process `createHoyMcp` extension (single `mcp` proxy
+tool, branded config, React settings UI, per-server consent). These were
+explicitly deferred to a v2 pass and should get their own tickets when picked up:
+- Direct-tool promotion: expose selected MCP tools as real named tools (not only
+  via the `mcp` proxy), so the model can call them directly and the permission
+  gate sees per-tool names instead of the single `mcp` name.
+- OAuth flows for HTTP MCP servers (v1 handles stdio/http with `${ENV}` secrets
+  only).
+- Elicitation rendering (server-driven prompts back to the user).
+- MCP-UI windows (server-provided UI surfaces).
+- Sampling (server requests a model completion through us).
+- Cross-session server sharing (v1 keeps servers per-session; share/keep-alive a
+  connected server across sessions).
+
 ### In-process custom tools
 We own the sidecar entry, so Hoy-specific tools can register via
 `extensionFactories` with no RPC marshaling (zosma's office-docs pattern).

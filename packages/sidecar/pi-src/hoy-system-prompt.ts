@@ -80,6 +80,20 @@ Pi documentation (consult only when the user asks about pi itself, its SDK, exte
 - When working on pi topics, read the docs and examples, and follow .md cross-references before implementing
 - Always read pi .md files completely and follow links to related docs`;
 
+// Appended to the base prompt only when at least one MCP server is configured,
+// so the agent is told about the `mcp` tool exactly when it can actually use one
+// (avoids advertising a tool that would report "no servers"). The tool is always
+// registered, but the model should reach for it only when servers exist.
+export const MCP_TOOLS_PROMPT = `MCP tools:
+- The mcp tool bridges to configured Model Context Protocol servers. Discover before calling: mcp({action:"search"}) lists available tools as server/tool with descriptions; mcp({action:"describe", server, tool}) returns a tool's input schema; mcp({action:"call", server, tool, args}) invokes it.
+- Search or describe before calling an unfamiliar tool so you pass the right arguments. Starting a server and each tool call may require user approval.`;
+
+// The full override. The MCP block is included only when servers are configured;
+// callers pass whether loadMcpConfig found any.
+export function buildHoySystemPrompt(mcpConfigured: boolean): string {
+  return mcpConfigured ? `${HOY_SYSTEM_PROMPT}\n\n${MCP_TOOLS_PROMPT}` : HOY_SYSTEM_PROMPT;
+}
+
 // Per-turn suffixes appended to the assembled system prompt by the permission
 // extension (before_agent_start) for the two modes that change model behavior.
 // Plan blocks mutation and asks for a plan; Autonomous overrides the static
@@ -100,7 +114,7 @@ export const PLAN_MODE_PROMPT = [
   "",
   "You MAY use write to create new plan markdown files ONLY in docs/plans/. All other write uses are prohibited.",
   "",
-  "Available tools: read, grep, find, ls, bash (exploration only), write (plan files only), and mcp (Linear, docs, etc.). Your job is EXCLUSIVELY to explore and plan.",
+  "Available tools: read, grep, find, ls, bash (exploration only), write (plan files only), and any configured MCP tools. Your job is EXCLUSIVELY to explore and plan.",
   "",
   "## Your Process",
   "",

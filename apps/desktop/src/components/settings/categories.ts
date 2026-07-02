@@ -50,6 +50,7 @@ export const CATEGORIES: Category[] = [
   { id: "workspace", label: "Workspace", icon: LayoutGrid, group: 0 },
   { id: "memory", label: "Memory & Context", icon: Brain, group: 0 },
   { id: "providers", label: "Providers", icon: Plug, group: 1 },
+  { id: "mcp", label: "MCP", icon: Cable, group: 1 },
   { id: "about", label: "About", icon: Info, group: 1 },
   { id: "appearance", label: "Appearance", icon: Palette, group: 2, placeholder: true },
   { id: "safety", label: "Safety", icon: ShieldCheck, group: 2, placeholder: true },
@@ -57,6 +58,5 @@ export const CATEGORIES: Category[] = [
   { id: "advanced", label: "Advanced", icon: SlidersHorizontal, group: 2, placeholder: true },
   { id: "gateway", label: "Gateway", icon: Network, group: 2, placeholder: true },
   { id: "tools", label: "Tools & Keys", icon: Wrench, group: 2, placeholder: true },
-  { id: "mcp", label: "MCP", icon: Cable, group: 2, placeholder: true },
   { id: "archived", label: "Archived Chats", icon: Archive, group: 2, placeholder: true },
 ];

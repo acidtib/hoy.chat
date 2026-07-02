@@ -20,7 +20,8 @@ import {
   type CreateAgentSessionRuntimeFactory,
 } from "@earendil-works/pi-coding-agent";
 import { createHoyPermissions, isPermissionMode, type PermissionMode } from "./hoy-permissions";
-import { HOY_SYSTEM_PROMPT } from "./hoy-system-prompt";
+import { createHoyMcp, loadMcpConfig } from "./hoy-mcp";
+import { buildHoySystemPrompt } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
 
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
@@ -52,12 +53,17 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   sessionManager,
   sessionStartEvent,
 }) => {
+  // MCP servers from the branded global + project mcp.json, merged per session
+  // (project cwd wins). createHoyMcp registers the `mcp` proxy tool; with no
+  // servers configured it simply reports none available (HOY-232).
+  const mcpConfig = loadMcpConfig(agentDir, cwd);
+
   const services = await createAgentSessionServices({
     cwd,
     agentDir,
     resourceLoaderOptions: {
       noContextFiles: false,
-      systemPromptOverride: () => HOY_SYSTEM_PROMPT,
+      systemPromptOverride: () => buildHoySystemPrompt(mcpConfig.servers.length > 0),
       // Disk discovery of <agentDir>/{extensions,skills,prompts,themes} needs no
       // opt-in: DefaultResourceLoader.reload() auto-discovers user-scope resources
       // from agentDir unconditionally, and agentDir here is the branded
@@ -65,7 +71,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       // in-process extensionFactories. Proven against the bun --compile binary in
       // HOY-228 (jiti + typebox resolve via Pi's virtualModules; an extension's
       // own node_modules deps resolve from disk). See docs/plans/HOY-228-*.
-      extensionFactories: [createHoyPermissions(initialMode)],
+      extensionFactories: [createHoyPermissions(initialMode), createHoyMcp(mcpConfig)],
     },
   });
   const result = await createAgentSessionFromServices({

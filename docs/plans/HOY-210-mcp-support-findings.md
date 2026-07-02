@@ -163,20 +163,47 @@ brick the file on malformed JSON):
 - Secrets via `${ENV}` interpolation or a Rust-owned store, never plaintext in a
   committed `.hoy/mcp.json`.
 
-## To verify during implementation (not blockers)
+## Validated by the HOY-232 spike (2026-07-02)
 
-- **Allowlist vs. registered tools.** `createAgentSessionFromServices` takes
-  `tools` / `excludeTools` / `noTools` / `customTools`
-  (`agent-session-services.js:112-115`). Confirm whether an extension-registered
-  `mcp` tool is auto-active once registered or must also appear in our `tools`
-  allowlist (`HOY_TOOLS` already lists it, so either way v1 works; direct-tools
-  with dynamic names would need the answer). This is the reason v1 stays
-  proxy-only.
+A throwaway spike branch built a minimal `createHoyMcp` (proxy `mcp` tool, lazy
+stdio connect, per-server consent, shutdown teardown) against the real
+`@modelcontextprotocol/sdk` and proved the sidecar seam three ways: `bun test`
+contract vs. a real stdio MCP server, the real entry over RPC, and the
+`bun --compile` binary over RPC (`/mcp_selftest`: search returned the server's
+tools, call returned its result). Full suite stayed green (33/33). Confirmed:
+
+- **Registered-tool activation.** An extension-registered `mcp` tool is active
+  and callable; no separate allowlist step needed beyond `HOY_TOOLS` already
+  listing it. v1 stays proxy-only for the direct-tools reason above, not because
+  registration is uncertain.
+- **`ToolDefinition` shape** is exactly as documented;
+  `execute(id, params, signal, onUpdate, ctx)` with `ctx: ExtensionContext`.
+- **Consent works.** `ExtensionContext.ui.select` is real and usable inside
+  `execute` (the load-bearing security unknown, since the proxy tool defeats the
+  name-based gate). Deny blocks the connect; consent caches per session.
+- **Bundling works.** `@modelcontextprotocol/sdk` + `typebox` + `zod` compile
+  into the single `--compile` binary and run; no provisioning step.
+
+Two refinements to the checklist below came out of the spike:
+
+- **Pin `typebox` as an explicit sidecar dep at `1.1.38`.** Pi imports `Type`
+  from `"typebox"` (a renamed fork, not `@sinclair/typebox`) and does NOT
+  re-export it; its copy is nested under Pi's own `node_modules`, so our entry
+  cannot resolve it without declaring the dep. Step 1 adds `typebox` alongside
+  the MCP SDK, both pinned. (Matching Pi's exact version keeps the `TSchema`
+  types identical.)
+- **Gate project-scope servers with `ctx.isProjectTrusted()`**, which exists
+  synchronously on the `ExtensionContext` passed to `execute` (cleaner than
+  subscribing to the `project_trust` event).
+
+## Still to verify during implementation (not blockers)
+
 - Confirm `promptSnippet`/`promptGuidelines` on the registered tool render into
   our overridden system prompt (we use `systemPromptOverride`); if not, keep the
-  prompt mention but make it conditional on MCP being configured.
-- Smoke-test a real stdio server end-to-end through the compiled sidecar over RPC
-  before claiming support (extends HOY-228's reproduction).
+  prompt mention but make it conditional on MCP being configured. (The spike did
+  not exercise the prompt path; the tool worked without it.)
+- Re-run the real-server smoke test against a production MCP server (filesystem
+  or Linear), not just the spike's local test server, before claiming support.
 
 ## Phasing
 

@@ -8,6 +8,7 @@ use tauri::State;
 use crate::events::{
     AgentEvent, CompactionResult, ImageContent, ModelInfo, PiState, SessionStats, SlashCommand,
 };
+use crate::mcp_config::{self, McpScope, McpServerList};
 use crate::pi_config::{self, ProviderAuth, ProviderInfo};
 use crate::sidecar::SidecarManager;
 use crate::workspace::{self, Workspace};
@@ -217,6 +218,41 @@ pub fn provider_statuses(providers: Vec<String>) -> Result<Vec<ProviderAuth>, St
 #[tauri::command]
 pub fn supported_providers() -> Vec<ProviderInfo> {
     pi_config::supported_providers()
+}
+
+// MCP server config (HOY-232). Global lives in the branded agent dir; project
+// lives in <project>/.hoy/mcp.json. `project_path` is the active project's dir,
+// needed only for project-scope reads/writes; the renderer already knows it.
+// Writes respawn idle sidecars so each reloads the merged config, same path as
+// a credential change.
+#[tauri::command]
+pub fn list_mcp_servers(project_path: Option<String>) -> Result<McpServerList, String> {
+    mcp_config::list(project_path.as_deref())
+}
+
+#[tauri::command]
+pub async fn save_mcp_server(
+    scope: McpScope,
+    name: String,
+    spec: Value,
+    project_path: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    mcp_config::save(scope, project_path.as_deref(), &name, spec)?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_mcp_server(
+    scope: McpScope,
+    name: String,
+    project_path: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    mcp_config::remove(scope, project_path.as_deref(), &name)?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
 }
 
 #[tauri::command]

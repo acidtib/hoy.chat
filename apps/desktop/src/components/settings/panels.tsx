@@ -9,7 +9,6 @@ import {
   Archive,
   Boxes,
   Brain,
-  Cable,
   Download,
   Layers,
   Mic,
@@ -41,6 +40,7 @@ import { pickDirectory } from "@/lib/ipc";
 import type { ModelInfo, ModelRef } from "@/lib/types";
 import type { CategoryId } from "./categories";
 import { ProvidersPanel } from "./ProvidersPanel";
+import { McpPanel } from "./McpPanel";
 import { useSessionStore } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 
@@ -770,18 +770,7 @@ export function SettingsPanel({ id }: { id: CategoryId }) {
         />
       );
     case "mcp":
-      return (
-        <Placeholder
-          title="MCP"
-          description="Model Context Protocol servers and their tools."
-          icon={Cable}
-          blurb="Managing MCP servers from the app is planned. Pi supports MCP via configuration; a management UI is not built yet."
-          points={[
-            "Add and remove MCP servers",
-            "See each server's status and tools",
-          ]}
-        />
-      );
+      return <McpPanel />;
     case "archived":
       return (
         <Placeholder

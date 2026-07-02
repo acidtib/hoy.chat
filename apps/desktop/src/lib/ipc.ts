@@ -7,6 +7,8 @@ import type {
   AgentEvent,
   CompactionResult,
   ImageContent,
+  McpScope,
+  McpServerList,
   ModelInfo,
   OAuthEvent,
   PathEntry,
@@ -102,6 +104,31 @@ export function providerStatuses(providers: string[]): Promise<ProviderAuth[]> {
 
 export function supportedProviders(): Promise<ProviderInfo[]> {
   return invoke<ProviderInfo[]>("supported_providers");
+}
+
+// MCP server config (HOY-232). `projectPath` is the active project's dir, needed
+// for project-scope entries; omit for global-only. save/remove respawn idle
+// sidecars in Rust so they reload the merged config, so callers should clear the
+// per-session reconcile guards after (see the store actions).
+export function listMcpServers(projectPath?: string | null): Promise<McpServerList> {
+  return invoke<McpServerList>("list_mcp_servers", { projectPath: projectPath ?? null });
+}
+
+export function saveMcpServer(
+  scope: McpScope,
+  name: string,
+  spec: Record<string, unknown>,
+  projectPath?: string | null,
+): Promise<void> {
+  return invoke<void>("save_mcp_server", { scope, name, spec, projectPath: projectPath ?? null });
+}
+
+export function removeMcpServer(
+  scope: McpScope,
+  name: string,
+  projectPath?: string | null,
+): Promise<void> {
+  return invoke<void>("remove_mcp_server", { scope, name, projectPath: projectPath ?? null });
 }
 
 // Spawn a thread's own sidecar in its project dir, returning the sessionId the

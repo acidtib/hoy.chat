@@ -396,6 +396,31 @@ export interface ProviderAuth {
   removable: boolean;
 }
 
+// Mirror of mcp_config. Which file a server lives in: the global agent dir or
+// the active project's .hoy/mcp.json.
+export type McpScope = "global" | "project";
+
+// Mirror of mcp_config::McpServerEntry. `spec` is the raw JSON object under
+// mcpServers[name] (command/args/env/cwd for stdio, url/headers for http,
+// optional disabled). Secrets belong in ${ENV} references, not inline.
+export interface McpServerEntry {
+  name: string;
+  scope: McpScope;
+  transport: "stdio" | "http" | "unknown";
+  disabled: boolean;
+  spec: Record<string, unknown>;
+}
+
+// Mirror of mcp_config::McpServerList. `global` and `project` (<project>/.hoy/
+// mcp.json) are editable here; `projectShared` (<project>/.mcp.json, the
+// standard cross-tool file) is read-only, shown so the user sees what the agent
+// will use.
+export interface McpServerList {
+  global: McpServerEntry[];
+  project: McpServerEntry[];
+  projectShared: McpServerEntry[];
+}
+
 // Mirror of events::OAuthSelectOption.
 export interface OAuthSelectOption {
   id: string;

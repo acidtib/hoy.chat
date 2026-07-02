@@ -15,8 +15,10 @@ import {
   listProjectPaths,
   loadWorkspace,
   readContextFile,
+  removeMcpServer as ipcRemoveMcpServer,
   removeProviderKey as ipcRemoveProviderKey,
   respondPermission as ipcRespondPermission,
+  saveMcpServer as ipcSaveMcpServer,
   saveProviderKey as ipcSaveProviderKey,
   saveWorkspace,
   sendPrompt,
@@ -34,6 +36,7 @@ import type {
   ExtWidget,
   ImageAttachment,
   ImageContent,
+  McpScope,
   ModelInfo,
   ModelRef,
   Notice,
@@ -363,6 +366,19 @@ interface SessionStore {
   // thread's model pick and permission mode.
   saveProviderKey: (provider: string, key: string) => Promise<void>;
   removeProviderKey: (provider: string) => Promise<void>;
+  // MCP config writes respawn idle sidecars too (they reload the merged config),
+  // so the same reconcile guards must be cleared.
+  saveMcpServer: (
+    scope: McpScope,
+    name: string,
+    spec: Record<string, unknown>,
+    projectPath?: string | null,
+  ) => Promise<void>;
+  removeMcpServer: (
+    scope: McpScope,
+    name: string,
+    projectPath?: string | null,
+  ) => Promise<void>;
 
   setActiveSessionId: (id: string | null) => void;
   setModels: (models: ModelInfo[]) => void;
@@ -777,6 +793,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   removeProviderKey: async (provider) => {
     await ipcRemoveProviderKey(provider);
+    modelApplied.clear();
+    permissionModeApplied.clear();
+  },
+
+  saveMcpServer: async (scope, name, spec, projectPath) => {
+    await ipcSaveMcpServer(scope, name, spec, projectPath ?? null);
+    modelApplied.clear();
+    permissionModeApplied.clear();
+  },
+
+  removeMcpServer: async (scope, name, projectPath) => {
+    await ipcRemoveMcpServer(scope, name, projectPath ?? null);
     modelApplied.clear();
     permissionModeApplied.clear();
   },
