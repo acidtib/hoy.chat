@@ -36,6 +36,7 @@ export function decide(mode: PermissionMode, toolName: string): GateDecision {
     if (toolName === "write" || toolName === "mcp" || toolName === "bash") return "allow";
     return "block";
   }
+  if (toolName === "agent") return "allow"; // consent lives in the agent tool (names type + task)
   if (MUTATING_TOOLS.has(toolName)) return mode === "acceptEdits" ? "allow" : "ask";
   return "ask"; // bash and unknown/custom tools in default and acceptEdits
 }

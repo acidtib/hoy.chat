@@ -42,6 +42,19 @@ describe("gate policy table", () => {
   }
 });
 
+describe("agent tool gating (HOY-231)", () => {
+  test("allowed in default/acceptEdits (tool does its own consent)", () => {
+    expect(decide("default", "agent")).toBe("allow");
+    expect(decide("acceptEdits", "agent")).toBe("allow");
+  });
+  test("blocked in plan mode", () => {
+    expect(decide("plan", "agent")).toBe("block");
+  });
+  test("allowed in autonomous", () => {
+    expect(decide("autonomous", "agent")).toBe("allow");
+  });
+});
+
 // Spike: drive the real entry over stdio. Collect every JSONL record on
 // stdout; helpers wait for a record matching a predicate.
 describe("/hoy_mode over RPC", () => {

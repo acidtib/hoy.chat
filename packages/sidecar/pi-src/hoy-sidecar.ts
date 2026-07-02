@@ -21,13 +21,14 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createHoyPermissions, isPermissionMode, type PermissionMode } from "./hoy-permissions";
 import { createHoyMcp, loadMcpConfig } from "./hoy-mcp";
+import { createHoyAgents, resolveSubagentType } from "./hoy-agents";
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
 
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
 // with grep/find/ls while bash is blocked; the prompt's tools list matches.
-const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"];
+const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "agent"];
 const envMode = process.env.HOY_PERMISSION_MODE ?? "default";
 const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "default";
 
@@ -38,6 +39,11 @@ if (!agentDir) {
   console.error("hoy-sidecar: PI_CODING_AGENT_DIR is required");
   process.exit(1);
 }
+
+// Set by Rust (create_session) only for spawned child sessions. Selects the
+// child's built-in type; absent for user threads. Depth cap: a child never gets
+// the agent tool, so it cannot spawn (HOY-231).
+const subagentType = process.env.HOY_SUBAGENT_TYPE;
 
 // OAuth login runs as its own short-lived invocation of this binary (Rust sets
 // HOY_OAUTH_LOGIN=<providerId>). It speaks a different, one-shot JSONL protocol
@@ -57,13 +63,16 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   // (project cwd wins). createHoyMcp registers the `mcp` proxy tool; with no
   // servers configured it simply reports none available (HOY-232).
   const mcpConfig = loadMcpConfig(agentDir, cwd);
+  const childType = subagentType ? resolveSubagentType(subagentType) : null;
+  const tools = childType ? childType.tools : HOY_TOOLS;
 
   const services = await createAgentSessionServices({
     cwd,
     agentDir,
     resourceLoaderOptions: {
       noContextFiles: false,
-      systemPromptOverride: () => buildHoySystemPrompt(mcpConfig.servers.length > 0),
+      systemPromptOverride: () =>
+        childType?.systemPromptOverride ?? buildHoySystemPrompt(mcpConfig.servers.length > 0),
       // Disk discovery of <agentDir>/{extensions,skills,prompts,themes} needs no
       // opt-in: DefaultResourceLoader.reload() auto-discovers user-scope resources
       // from agentDir unconditionally, and agentDir here is the branded
@@ -71,14 +80,17 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       // in-process extensionFactories. Proven against the bun --compile binary in
       // HOY-228 (jiti + typebox resolve via Pi's virtualModules; an extension's
       // own node_modules deps resolve from disk). See docs/plans/HOY-228-*.
-      extensionFactories: [createHoyPermissions(initialMode), createHoyMcp(mcpConfig)],
+      // A child never gets createHoyAgents, so it cannot spawn (depth cap).
+      extensionFactories: childType
+        ? [createHoyPermissions(initialMode), createHoyMcp(mcpConfig)]
+        : [createHoyPermissions(initialMode), createHoyMcp(mcpConfig), createHoyAgents()],
     },
   });
   const result = await createAgentSessionFromServices({
     services,
     sessionManager,
     sessionStartEvent,
-    tools: HOY_TOOLS,
+    tools,
   });
   return { ...result, services, diagnostics: services.diagnostics };
 };
