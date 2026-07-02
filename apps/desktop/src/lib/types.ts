@@ -434,6 +434,27 @@ export interface McpServerList {
   projectShared: McpServerEntry[];
 }
 
+// Mirror of subagents_config::SubagentScope. Which file a subagent type lives
+// in: builtin (Pi's own, read-only), the global agent dir, or the active
+// project's .hoy/subagents dir.
+export type SubagentScope = "builtin" | "global" | "project";
+
+// Mirror of subagents_config's registry entry (list_subagents). `enabled`
+// reflects the per-scope on/off toggle (set_subagent_enabled); `model`/
+// `thinking` are fuzzy picks resolved against the live model list when a
+// child thread spawns (see resolveModelRef in store.ts), not identities.
+export interface SubagentDef {
+  name: string;
+  scope: SubagentScope;
+  description: string | null;
+  tools: string[];
+  promptMode: "replace" | "append";
+  model: string | null;
+  thinking: string | null;
+  source: string | null;
+  enabled: boolean;
+}
+
 // Mirror of events::OAuthSelectOption.
 export interface OAuthSelectOption {
   id: string;

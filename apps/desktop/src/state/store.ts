@@ -13,6 +13,7 @@ import {
   getSessionStats,
   getState,
   listProjectPaths,
+  listSubagents,
   loadWorkspace,
   readContextFile,
   removeMcpServer as ipcRemoveMcpServer,
@@ -24,6 +25,7 @@ import {
   sendPrompt,
   setModel,
   setPermissionMode as ipcSetPermissionMode,
+  setSubagentEnabled as ipcSetSubagentEnabled,
   setThinkingLevel,
 } from "@/lib/ipc";
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
@@ -55,6 +57,7 @@ import type {
   SessionStats,
   SlashCommand,
   StreamingBehavior,
+  SubagentDef,
   ThinkingLevel,
   Thread,
   Turn,
@@ -269,6 +272,11 @@ interface SessionStore {
   settingsOpen: boolean;
   activeSessionId: string | null;
   models: ModelInfo[];
+  // Subagent type registry (HOY-234): builtin + global + project types merged
+  // with their enabled/disabled overrides. Cached like models/providerAuth;
+  // refreshSubagents repopulates it, spawnChildThread reads it to resolve a
+  // child's model/thinking, the settings panel reads it to render the toggle.
+  subagents: SubagentDef[];
   supportedProviders: ProviderInfo[];
   providerAuth: ProviderAuth[];
   // Pi's global defaultModel (boot-hydrated from the control session's state);
@@ -373,6 +381,19 @@ interface SessionStore {
   ) => Promise<void>;
   removeProject: (projectId: string) => void;
 
+  // Pull the subagent registry into the store (HOY-234). No-op cache miss on
+  // failure (leaves the prior cache), mirroring refreshSlashCommands.
+  refreshSubagents: (cwd: string) => Promise<void>;
+  // Toggle a subagent type on/off in a scope. Writes through set_subagent_enabled
+  // (Rust respawns idle sidecars to reload it), so the model/permission-mode
+  // reconcile guards must clear like the other config-writing actions above.
+  setSubagentEnabled: (
+    scope: SubagentDef["scope"],
+    name: string,
+    enabled: boolean,
+    projectPath?: string | null,
+  ) => Promise<void>;
+
   // Credential changes go through the store (HOY-196): the backend respawns
   // idle sidecars under their existing sessionIds, so the per-session
   // reconcile guards must be cleared for the next prompt to re-apply each
@@ -469,6 +490,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   activeSessionId: null,
   models: [],
+  subagents: [],
   supportedProviders: [],
   providerAuth: [],
   defaultModel: null,
@@ -776,6 +798,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (!found) return;
     const { project, thread: parent } = found;
     const childId = newId("t");
+    const def = get().subagents.find((d) => d.name === payload.subagentType);
+    // A type with no model inherits the parent's (closes HOY-237); thinking
+    // likewise. A type with a model that fails to resolve also falls back to
+    // the parent's rather than spawning on an arbitrary default.
+    const childModel = def?.model
+      ? (resolveModelRef(get(), def.model) ?? parent.model ?? null)
+      : (parent.model ?? null);
+    const childThinking =
+      (def?.thinking as ThinkingLevel | undefined) ?? parent.thinkingLevel ?? null;
     const shortTask =
       payload.task.length > 40 ? `${payload.task.slice(0, 40)}...` : payload.task;
     const child: Thread = {
@@ -785,6 +816,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       sessionId: null,
       parentThreadId,
       spawnedBy: { type: payload.subagentType, agentId: payload.agentId },
+      ...(childModel ? { model: childModel } : {}),
+      ...(childThinking ? { thinkingLevel: childThinking } : {}),
     };
     set((s) => ({
       projects: s.projects.map((p) =>
@@ -814,6 +847,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       set((s) => ({
         projects: patchThread(s.projects, childId, (t) => ({ ...t, sessionId })),
       }));
+      // Same reconcile as submitPrompt: apply the (possibly inherited) model
+      // and permission mode before the prompt streams.
+      await applyThreadModel(childId, sessionId);
+      await applyThreadPermissionMode(childId, sessionId);
       await streamPromptOnThread(childId, sessionId, payload.task);
     } catch (e) {
       set((s) => ({
@@ -872,6 +909,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   removeMcpServer: async (scope, name, projectPath) => {
     await ipcRemoveMcpServer(scope, name, projectPath ?? null);
+    modelApplied.clear();
+    permissionModeApplied.clear();
+  },
+
+  refreshSubagents: async (cwd) => {
+    try {
+      set({ subagents: await listSubagents(cwd) });
+    } catch {
+      // Leave the prior cache; a stale registry beats an empty one.
+    }
+  },
+  setSubagentEnabled: async (scope, name, enabled, projectPath) => {
+    await ipcSetSubagentEnabled(scope, name, enabled, projectPath ?? null);
     modelApplied.clear();
     permissionModeApplied.clear();
   },
@@ -1806,6 +1856,24 @@ async function applyThreadPermissionMode(
     permissionModeApplied.delete(sessionId);
     throw e;
   }
+}
+
+// Resolve a subagent def's fuzzy `model` string (a free-text name in the
+// registry file, not a validated ModelRef) against the loaded model list
+// (HOY-234). Exact id match first, else a case-insensitive substring match on
+// id or name; null when nothing matches, so the caller falls back to the
+// parent thread's model rather than spawning on a bogus pick.
+function resolveModelRef(
+  state: SessionStore,
+  fuzzy: string,
+): ModelRef | null {
+  const exact = state.models.find((m) => m.id === fuzzy);
+  if (exact) return { provider: exact.provider, id: exact.id };
+  const needle = fuzzy.toLowerCase();
+  const fuzzyMatch = state.models.find(
+    (m) => m.id.toLowerCase().includes(needle) || m.name.toLowerCase().includes(needle),
+  );
+  return fuzzyMatch ? { provider: fuzzyMatch.provider, id: fuzzyMatch.id } : null;
 }
 
 // Reconcile the thread's pending model pick with a freshly available session.

@@ -21,6 +21,8 @@ import type {
   SessionTree,
   SlashCommand,
   StreamingBehavior,
+  SubagentDef,
+  SubagentScope,
   ThinkingLevel,
   Workspace,
 } from "./types";
@@ -129,6 +131,28 @@ export function removeMcpServer(
   projectPath?: string | null,
 ): Promise<void> {
   return invoke<void>("remove_mcp_server", { scope, name, projectPath: projectPath ?? null });
+}
+
+// Subagent registry (HOY-234): builtin/global/project subagent types, merged
+// with each scope's enabled/disabled overrides. `cwd` resolves the project
+// scope; an empty cwd falls back to the backend's default dir like other
+// per-project commands.
+export function listSubagents(cwd: string): Promise<SubagentDef[]> {
+  return invoke<SubagentDef[]>("list_subagents", { cwd });
+}
+
+export function setSubagentEnabled(
+  scope: SubagentScope,
+  name: string,
+  enabled: boolean,
+  projectPath?: string | null,
+): Promise<void> {
+  return invoke<void>("set_subagent_enabled", {
+    scope,
+    name,
+    enabled,
+    projectPath: projectPath ?? null,
+  });
 }
 
 // Spawn a thread's own sidecar in its project dir, returning the sessionId the
