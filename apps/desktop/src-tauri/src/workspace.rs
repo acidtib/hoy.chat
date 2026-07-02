@@ -57,6 +57,21 @@ pub struct WsThread {
     // it to the thread's sidecar after spawn.
     #[serde(default)]
     pub permission_mode: Option<String>,
+    // HOY-231: subagent orchestration. A spawned child thread's parent, so the
+    // tree survives restart; absent for top-level threads and pre-HOY-231 files.
+    #[serde(default)]
+    pub parent_thread_id: Option<String>,
+    #[serde(default)]
+    pub spawned_by: Option<SpawnedBy>,
+}
+
+// Which agent spawned this thread and under what role, for child threads
+// created via subagent orchestration (HOY-231).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpawnedBy {
+    pub r#type: String,
+    pub agent_id: String,
 }
 
 fn workspace_path() -> Result<PathBuf, String> {
@@ -132,6 +147,8 @@ mod tests {
                     renamed: true,
                     draft: Some("unsent composer text".into()),
                     permission_mode: Some("acceptEdits".into()),
+                    parent_thread_id: None,
+                    spawned_by: None,
                 }],
             }],
         }
@@ -206,5 +223,42 @@ mod tests {
         assert!(!raw.contains("updated_at"));
         assert!(!raw.contains("active_project_id"));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn child_thread_fields_round_trip_camel_case() {
+        let ws = Workspace {
+            projects: vec![WsProject {
+                id: "p1".into(),
+                name: "P".into(),
+                path: None,
+                threads: vec![WsThread {
+                    id: "t2".into(),
+                    title: "child".into(),
+                    updated_at: 1,
+                    session_file: Some("f".into()),
+                    archived: false,
+                    renamed: false,
+                    draft: None,
+                    permission_mode: None,
+                    parent_thread_id: Some("t1".into()),
+                    spawned_by: Some(SpawnedBy {
+                        r#type: "Explore".into(),
+                        agent_id: "a1".into(),
+                    }),
+                }],
+            }],
+            active_project_id: None,
+        };
+        let json = serde_json::to_string(&ws).unwrap();
+        assert!(json.contains("\"parentThreadId\":\"t1\""));
+        assert!(json.contains("\"spawnedBy\""));
+        assert!(json.contains("\"type\":\"Explore\""));
+        assert!(json.contains("\"agentId\":\"a1\""));
+        let back: Workspace = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back.projects[0].threads[0].parent_thread_id.as_deref(),
+            Some("t1")
+        );
     }
 }
