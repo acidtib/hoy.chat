@@ -82,6 +82,8 @@ pub fn run() {
             commands::list_mcp_servers,
             commands::save_mcp_server,
             commands::remove_mcp_server,
+            commands::list_subagents,
+            commands::set_subagent_enabled,
             oauth::oauth_login_start,
             oauth::oauth_login_submit,
             oauth::oauth_login_cancel,

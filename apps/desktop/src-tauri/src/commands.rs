@@ -11,6 +11,7 @@ use crate::events::{
 use crate::mcp_config::{self, McpScope, McpServerList};
 use crate::pi_config::{self, ProviderAuth, ProviderInfo};
 use crate::sidecar::SidecarManager;
+use crate::subagents_config::{self, SubagentScope};
 use crate::workspace::{self, Workspace};
 
 // Pull `data` out of an RPC response envelope, surfacing Pi's error string on
@@ -251,6 +252,25 @@ pub async fn remove_mcp_server(
     manager: State<'_, SidecarManager>,
 ) -> Result<(), String> {
     mcp_config::remove(scope, project_path.as_deref(), &name)?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_subagents(cwd: String, manager: State<'_, SidecarManager>) -> Result<serde_json::Value, String> {
+    let path = if cwd.trim().is_empty() { std::env::temp_dir() } else { PathBuf::from(cwd) };
+    manager.list_subagents(&path)
+}
+
+#[tauri::command]
+pub async fn set_subagent_enabled(
+    scope: SubagentScope,
+    name: String,
+    enabled: bool,
+    project_path: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    subagents_config::set_enabled(scope, project_path.as_deref(), &name, enabled)?;
     respawn_idle_sessions(&manager).await;
     Ok(())
 }

@@ -891,6 +891,27 @@ impl SidecarManager {
         Ok(command)
     }
 
+    // HOY-234: dump the resolved subagent registry via a one-shot sidecar run. Mirrors
+    // the OAuth one-shot (a spawn of self.bin with a mode env), but non-interactive:
+    // spawn with HOY_LIST_SUBAGENTS=1, capture stdout JSON, exit. cwd selects the
+    // project's .hoy/agents.
+    pub fn list_subagents(&self, cwd: &Path) -> Result<serde_json::Value, String> {
+        if !self.bin.exists() {
+            return Err(format!("sidecar binary not found at {}. Run sidecar/build.sh.", self.bin.display()));
+        }
+        let out = std::process::Command::new(&self.bin)
+            .env("PI_PACKAGE_DIR", &self.payload)
+            .env("PI_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_LIST_SUBAGENTS", "1")
+            .current_dir(cwd)
+            .output()
+            .map_err(|e| format!("spawn sidecar for list_subagents: {e}"))?;
+        if !out.status.success() {
+            return Err(format!("list_subagents exited {}: {}", out.status, String::from_utf8_lossy(&out.stderr)));
+        }
+        serde_json::from_slice(&out.stdout).map_err(|e| format!("parse list_subagents output: {e}"))
+    }
+
     // Tear down a session's sidecar (panel close / thread delete). Dropping the
     // Arc runs PiProcess::drop, which kills and reaps the child. The Arc is
     // dropped outside the lock so Drop does not hold it.
