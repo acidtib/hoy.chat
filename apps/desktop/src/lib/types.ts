@@ -393,3 +393,31 @@ export interface ProviderAuth {
   source?: "authFile" | "environment" | null;
   removable: boolean;
 }
+
+// Mirror of events::OAuthSelectOption.
+export interface OAuthSelectOption {
+  id: string;
+  label: string;
+}
+
+// Mirror of events::OAuthEvent. Streamed over a Channel during a subscription
+// login (oauth_login_start). Keep in sync with src-tauri/src/events.rs.
+export type OAuthEvent =
+  | { kind: "authUrl"; url: string; instructions?: string }
+  | {
+      kind: "deviceCode";
+      userCode: string;
+      verificationUri: string;
+      intervalSeconds?: number;
+      expiresInSeconds?: number;
+    }
+  | { kind: "progress"; message: string }
+  | {
+      kind: "prompt";
+      promptType: "text" | "manual_code";
+      message: string;
+      placeholder?: string;
+    }
+  | { kind: "select"; message: string; options: OAuthSelectOption[] }
+  | { kind: "done" }
+  | { kind: "error"; message: string };

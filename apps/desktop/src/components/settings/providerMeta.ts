@@ -77,6 +77,17 @@ export function metaFor(id: string, label: string): ProviderMeta {
   );
 }
 
+// Two-letter monogram for a provider mark. Splits on spaces and separators so
+// multi-word labels read as initials ("Google Gemini" -> "GG"), single words
+// fall back to their first two letters ("DeepSeek" -> "DE").
+export function initialsFor(label: string): string {
+  const words = label.replace(/[/&·]+/g, " ").split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return label.replace(/[^a-z0-9]/gi, "").slice(0, 2).toUpperCase() || "?";
+}
+
 // List partition for the panel: configured pinned on top, then the featured
 // set, then everything else alphabetically. Within each group, featured ids
 // keep FEATURED order and the rest sort by label.
@@ -109,9 +120,38 @@ export function partitionProviders(
   return { configured, featured, rest };
 }
 
-// Non-functional OAuth rows shown above the API-key list. Mock only; the
-// Connect buttons are disabled with a "Coming soon" badge.
-export const OAUTH_PROVIDERS: { id: string; label: string; description: string }[] = [
-  { id: "claude-oauth", label: "Claude Pro/Max", description: "Anthropic subscription" },
-  { id: "chatgpt-oauth", label: "ChatGPT", description: "OpenAI subscription" },
+// Subscription sign-in options, one per Pi OAuth provider (pi-ai/oauth). `id`
+// is Pi's OAuth provider id, which is also the auth.json key written on login,
+// so a configured status can be matched back to a row by provider id. The
+// Connect flow (manual paste of the redirect code) is wired in a follow-up; the
+// backend command does not exist yet.
+export interface SubscriptionProvider {
+  id: string;
+  label: string;
+  subtitle: string;
+  // Brand glyph slug (providerIcons). The subscription mark differs from the
+  // api-key row: "anthropic" login is the Claude subscription, so it wears the
+  // Claude mark, not the Anthropic corporate mark.
+  glyph: string;
+}
+
+export const SUBSCRIPTION_PROVIDERS: SubscriptionProvider[] = [
+  {
+    id: "anthropic",
+    label: "Claude Pro / Max",
+    subtitle: "Use your Anthropic subscription, no API key needed",
+    glyph: "claude",
+  },
+  {
+    id: "openai-codex",
+    label: "ChatGPT",
+    subtitle: "Sign in with your OpenAI plan",
+    glyph: "openai",
+  },
+  {
+    id: "github-copilot",
+    label: "GitHub Copilot",
+    subtitle: "Bring your Copilot subscription",
+    glyph: "copilot",
+  },
 ];

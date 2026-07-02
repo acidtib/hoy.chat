@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   FEATURED,
-  OAUTH_PROVIDERS,
+  SUBSCRIPTION_PROVIDERS,
   PROVIDER_META,
+  initialsFor,
   metaFor,
   partitionProviders,
 } from "@/components/settings/providerMeta";
@@ -98,14 +99,32 @@ describe("partitionProviders", () => {
   });
 });
 
-describe("OAUTH_PROVIDERS", () => {
-  test("two mock rows: Claude Pro/Max and ChatGPT", () => {
-    expect(OAUTH_PROVIDERS.map((p) => p.label)).toEqual([
-      "Claude Pro/Max",
-      "ChatGPT",
+describe("SUBSCRIPTION_PROVIDERS", () => {
+  test("ids are Pi's OAuth provider ids (also the auth.json keys)", () => {
+    expect(SUBSCRIPTION_PROVIDERS.map((p) => p.id)).toEqual([
+      "anthropic",
+      "openai-codex",
+      "github-copilot",
     ]);
-    for (const p of OAUTH_PROVIDERS) {
-      expect(p.description.length).toBeGreaterThan(0);
+  });
+
+  test("each row carries a label, subtitle, and glyph", () => {
+    for (const p of SUBSCRIPTION_PROVIDERS) {
+      expect(p.label.length).toBeGreaterThan(0);
+      expect(p.subtitle.length).toBeGreaterThan(0);
+      expect(p.glyph.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("initialsFor", () => {
+  test("multi-word labels take the first letter of the first two words", () => {
+    expect(initialsFor("Google Gemini")).toBe("GG");
+    expect(initialsFor("Claude Pro / Max")).toBe("CP");
+  });
+
+  test("single-word labels take the first two letters", () => {
+    expect(initialsFor("DeepSeek")).toBe("DE");
+    expect(initialsFor("xAI")).toBe("XA");
   });
 });

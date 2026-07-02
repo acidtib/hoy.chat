@@ -166,7 +166,7 @@ pub async fn set_auto_compaction(
 // context survives; cwd and permission mode come from the manager mirrors.
 // Streaming sessions are skipped: killing a turn mid-flight is worse than
 // stale auth, and the close/reopen path still refreshes them later.
-async fn respawn_idle_sessions(manager: &SidecarManager) {
+pub(crate) async fn respawn_idle_sessions(manager: &SidecarManager) {
     for (id, process) in manager.snapshot() {
         if process.is_streaming() {
             continue;

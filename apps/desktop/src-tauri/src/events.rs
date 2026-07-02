@@ -241,6 +241,59 @@ fn image_content_type() -> String {
     "image".to_string()
 }
 
+// OAuth login (subscription sign-in) events streamed to the renderer over a
+// Tauri Channel while the one-shot login sidecar runs (HOY_OAUTH_LOGIN). Built
+// in oauth.rs from the login process's JSONL; mirrored in lib/types.ts. This is
+// a separate channel from AgentEvent: login is not part of the RPC/agent stream.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum OAuthEvent {
+    // Open this URL in a browser to authorize (PKCE flow).
+    AuthUrl {
+        url: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        instructions: Option<String>,
+    },
+    // Device-code flow (GitHub Copilot): show the code, open the verification URI.
+    DeviceCode {
+        #[serde(rename = "userCode")]
+        user_code: String,
+        #[serde(rename = "verificationUri")]
+        verification_uri: String,
+        #[serde(rename = "intervalSeconds", skip_serializing_if = "Option::is_none")]
+        interval_seconds: Option<u64>,
+        #[serde(rename = "expiresInSeconds", skip_serializing_if = "Option::is_none")]
+        expires_in_seconds: Option<u64>,
+    },
+    Progress {
+        message: String,
+    },
+    // A line of input the flow needs back (submit via oauth_login_submit).
+    // promptType is "text" | "manual_code".
+    Prompt {
+        #[serde(rename = "promptType")]
+        prompt_type: String,
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
+    },
+    // A choice the flow needs (e.g. login method); submit the chosen id.
+    Select {
+        message: String,
+        options: Vec<OAuthSelectOption>,
+    },
+    Done,
+    Error {
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OAuthSelectOption {
+    pub id: String,
+    pub label: String,
+}
+
 // Pi's CompactionResult (core/compaction/compaction.d.ts), the `data` of a
 // successful compact command. Only the fields the UI surfaces; serde ignores the
 // rest (summary, firstKeptEntryId, details).

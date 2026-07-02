@@ -26,12 +26,18 @@ reopen on demand. Decide whether the panel strip should persist.
 
 ## Features not built yet
 
-### OAuth login (Claude Pro/Max, Copilot)
-The SDK exposes login flows the old binary did not; the providers panel shows
-"Coming soon". The OAuth identity edge is resolved (pi-ai injects the Claude
-Code identity as system[0] for OAuth tokens itself, verified by source
-inspection in HOY-185), but no live OAuth round-trip has been done; re-verify
-when the first real OAuth credential is configured.
+### OAuth login (Claude Pro/Max, ChatGPT, Copilot) - implemented
+Pi's RPC has no auth command, so login runs as a one-shot invocation of the
+sidecar binary (HOY_OAUTH_LOGIN) driving AuthStorage.login over a small
+manual-paste JSONL protocol; Rust bridges it to the renderer over an OAuthEvent
+Channel (oauth.rs, events::OAuthEvent, OAuthLoginDialog). On desktop the flow's
+local callback server catches the browser redirect automatically, so the common
+path needs NO paste; manual code entry is a tucked-away fallback for a browser
+on another machine. Anthropic (Claude Pro/Max) verified end-to-end live (zero
+paste, auth.json flips to type:"oauth", idle sidecars respawn). Still to
+live-verify against real accounts: openai-codex (the login-method select renders)
+and github-copilot (device-code). The OAuth identity edge is resolved (pi-ai
+injects the Claude Code identity as system[0] for OAuth tokens itself, HOY-185).
 
 ### Session import (history view)
 Zed's history view has an import action; ours shipped without it. Pi supports

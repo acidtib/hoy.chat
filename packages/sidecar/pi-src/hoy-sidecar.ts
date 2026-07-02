@@ -21,6 +21,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createHoyPermissions, isPermissionMode, type PermissionMode } from "./hoy-permissions";
 import { HOY_SYSTEM_PROMPT } from "./hoy-system-prompt";
+import { runOAuthLogin } from "./hoy-oauth";
 
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
@@ -35,6 +36,14 @@ const agentDir = process.env.PI_CODING_AGENT_DIR;
 if (!agentDir) {
   console.error("hoy-sidecar: PI_CODING_AGENT_DIR is required");
   process.exit(1);
+}
+
+// OAuth login runs as its own short-lived invocation of this binary (Rust sets
+// HOY_OAUTH_LOGIN=<providerId>). It speaks a different, one-shot JSONL protocol
+// over stdio and exits; it never reaches runRpcMode below.
+const oauthProvider = process.env.HOY_OAUTH_LOGIN;
+if (oauthProvider) {
+  await runOAuthLogin(agentDir, oauthProvider);
 }
 
 const factory: CreateAgentSessionRuntimeFactory = async ({

@@ -8,6 +8,7 @@ import type {
   CompactionResult,
   ImageContent,
   ModelInfo,
+  OAuthEvent,
   PathEntry,
   PermissionMode,
   PiState,
@@ -233,6 +234,27 @@ export function respondPermission(
     confirmed: answer.confirmed ?? null,
     cancelled: answer.cancelled ?? null,
   });
+}
+
+// Start a subscription OAuth login. Resolves once the login child is spawned;
+// the flow (auth URL, prompts, done/error) streams on `onEvent`. Only one login
+// runs at a time. The renderer opens the auth URL and submits pasted codes via
+// oauthLoginSubmit.
+export function oauthLoginStart(
+  provider: string,
+  onEvent: Channel<OAuthEvent>,
+): Promise<void> {
+  return invoke<void>("oauth_login_start", { provider, onEvent });
+}
+
+// Feed back a line the login flow requested (pasted code / redirect URL, or a
+// selected option id).
+export function oauthLoginSubmit(text: string): Promise<void> {
+  return invoke<void>("oauth_login_submit", { text });
+}
+
+export function oauthLoginCancel(): Promise<void> {
+  return invoke<void>("oauth_login_cancel", {});
 }
 
 export { Channel };

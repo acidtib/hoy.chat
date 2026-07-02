@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+mod oauth;
 mod pi_config;
 mod reader;
 mod sidecar;
@@ -52,6 +53,7 @@ pub fn run() {
                 app,
                 SidecarManager::new_with_resolver(tauri::Manager::path(app)),
             );
+            tauri::Manager::manage(app, oauth::OAuthLogin::default());
 
             // Spawn one sidecar on startup. MVP has a single session; the manager
             // is keyed by SessionId so adding more is a data change, not a rewrite.
@@ -75,6 +77,9 @@ pub fn run() {
             commands::remove_provider_key,
             commands::provider_statuses,
             commands::supported_providers,
+            oauth::oauth_login_start,
+            oauth::oauth_login_submit,
+            oauth::oauth_login_cancel,
             commands::create_session,
             commands::send_prompt,
             commands::enqueue_prompt,

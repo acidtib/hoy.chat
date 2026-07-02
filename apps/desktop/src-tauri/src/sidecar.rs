@@ -812,6 +812,29 @@ impl SidecarManager {
         Ok(id)
     }
 
+    // Build the command for a one-shot OAuth login (HOY_OAUTH_LOGIN). Same
+    // binary and branded dir as an RPC sidecar, so login writes the oauth entry
+    // into the same auth.json; the entry runs hoy-oauth instead of runRpcMode.
+    // stdio is left for the caller to wire (piped in oauth.rs).
+    pub fn oauth_login_command(&self, provider: &str) -> Result<Command, String> {
+        if !self.bin.exists() {
+            return Err(format!(
+                "sidecar binary not found at {}. Run sidecar/build.sh.",
+                self.bin.display()
+            ));
+        }
+        if self.agent_dir.as_os_str().is_empty() {
+            return Err("agent dir not resolved (set HOME or HOY_AGENT_DIR)".into());
+        }
+        let mut command = Command::new(&self.bin);
+        command
+            .env("PI_PACKAGE_DIR", &self.payload)
+            .env("PI_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_OAUTH_LOGIN", provider)
+            .current_dir(&self.cwd);
+        Ok(command)
+    }
+
     // Tear down a session's sidecar (panel close / thread delete). Dropping the
     // Arc runs PiProcess::drop, which kills and reaps the child. The Arc is
     // dropped outside the lock so Drop does not hold it.

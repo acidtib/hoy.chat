@@ -75,7 +75,7 @@ export function SettingsModal() {
         </nav>
 
         <div className="scrollbar-thin min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-2xl px-8 py-8">
+          <div className="w-full max-w-4xl px-8 py-8">
             <SettingsPanel id={active} />
           </div>
         </div>
