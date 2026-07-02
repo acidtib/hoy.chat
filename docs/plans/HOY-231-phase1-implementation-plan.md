@@ -425,8 +425,13 @@ Expected: FAIL to compile — `AgentEvent::SubagentSpawned` and `SPAWN_NOTIFY_PR
 ```rust
     /// A subagent spawn request surfaced from the parent's agent tool (HOY-231).
     /// The renderer creates a child thread and drives it; not a transcript event.
+    /// Per-field renames: the enum's rename_all renames variant tags, not
+    /// struct-variant fields, so camelCase fields need explicit renames (matches
+    /// the toolCallId/isError/notifyType pattern already in this enum).
     SubagentSpawned {
+        #[serde(rename = "agentId")]
         agent_id: String,
+        #[serde(rename = "subagentType")]
         subagent_type: String,
         task: String,
     },
