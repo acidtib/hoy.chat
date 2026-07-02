@@ -21,7 +21,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createHoyPermissions, isPermissionMode, type PermissionMode } from "./hoy-permissions";
 import { createHoyMcp, loadMcpConfig } from "./hoy-mcp";
-import { createHoyAgents, resolveSubagentType } from "./hoy-agents";
+import { createHoyAgents } from "./hoy-agents";
+import { loadSubagentRegistry, enabledTypes, effectiveChildPrompt } from "./hoy-agents-registry";
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
 
@@ -53,6 +54,26 @@ if (oauthProvider) {
   await runOAuthLogin(agentDir, oauthProvider);
 }
 
+// One-shot registry dump for the settings UI (Rust spawns us with this env,
+// captures stdout, and exits us). Prints the resolved registry as JSON. Uses the
+// same loader as runtime, so the UI never drifts from what actually runs.
+if (process.env.HOY_LIST_SUBAGENTS) {
+  const reg = loadSubagentRegistry(agentDir, process.cwd());
+  const defs = Object.values(reg).map((t) => ({
+    name: t.name,
+    scope: t.scope,
+    description: t.description ?? null,
+    tools: t.tools,
+    promptMode: t.promptMode,
+    model: t.model ?? null,
+    thinking: t.thinking ?? null,
+    source: t.source ?? null,
+    enabled: t.enabled,
+  }));
+  process.stdout.write(JSON.stringify(defs));
+  process.exit(0);
+}
+
 const factory: CreateAgentSessionRuntimeFactory = async ({
   cwd,
   agentDir,
@@ -63,16 +84,20 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   // (project cwd wins). createHoyMcp registers the `mcp` proxy tool; with no
   // servers configured it simply reports none available (HOY-232).
   const mcpConfig = loadMcpConfig(agentDir, cwd);
-  const childType = subagentType ? resolveSubagentType(subagentType) : null;
+  const registry = loadSubagentRegistry(agentDir, cwd);
+  const childType = subagentType ? registry[subagentType] : null;
   const tools = childType ? childType.tools : HOY_TOOLS;
+  const advertised = enabledTypes(registry).map((t) => ({ name: t.name, description: t.description }));
 
   const services = await createAgentSessionServices({
     cwd,
     agentDir,
     resourceLoaderOptions: {
       noContextFiles: false,
-      systemPromptOverride: () =>
-        childType?.systemPromptOverride ?? buildHoySystemPrompt(mcpConfig.servers.length > 0, !childType),
+      systemPromptOverride: () => {
+        const base = buildHoySystemPrompt(mcpConfig.servers.length > 0, !childType, advertised);
+        return childType ? effectiveChildPrompt(childType, buildHoySystemPrompt(mcpConfig.servers.length > 0, false)) : base;
+      },
       // Disk discovery of <agentDir>/{extensions,skills,prompts,themes} needs no
       // opt-in: DefaultResourceLoader.reload() auto-discovers user-scope resources
       // from agentDir unconditionally, and agentDir here is the branded
@@ -83,7 +108,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       // A child never gets createHoyAgents, so it cannot spawn (depth cap).
       extensionFactories: childType
         ? [createHoyPermissions(initialMode), createHoyMcp(mcpConfig)]
-        : [createHoyPermissions(initialMode), createHoyMcp(mcpConfig), createHoyAgents()],
+        : [createHoyPermissions(initialMode), createHoyMcp(mcpConfig), createHoyAgents(registry)],
     },
   });
   const result = await createAgentSessionFromServices({

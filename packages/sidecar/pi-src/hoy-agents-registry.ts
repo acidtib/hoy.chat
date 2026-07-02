@@ -143,3 +143,11 @@ export function loadSubagentRegistry(agentDir: string, cwd: string): SubagentReg
 export function enabledTypes(reg: SubagentRegistry): SubagentType[] {
   return Object.values(reg).filter((t) => t.enabled);
 }
+
+// The child's system prompt given its type and the base Hoy prompt: replace uses
+// the body verbatim, append concatenates onto the base, and no body inherits the
+// base (general-purpose).
+export function effectiveChildPrompt(type: SubagentType, basePrompt: string): string {
+  if (!type.body) return basePrompt;
+  return type.promptMode === "append" ? `${basePrompt}\n\n${type.body}` : type.body;
+}

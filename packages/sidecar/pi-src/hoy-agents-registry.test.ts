@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSubagentRegistry, enabledTypes } from "./hoy-agents-registry";
+import { loadSubagentRegistry, enabledTypes, effectiveChildPrompt } from "./hoy-agents-registry";
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), "hoy-agents-"));
@@ -76,4 +76,11 @@ test("malformed frontmatter is skipped, others still load", () => {
   expect(reg["Good"]).toBeDefined();
   expect(reg["Broken"]).toBeUndefined();
   expect(reg["general-purpose"]).toBeDefined();
+});
+
+test("effectiveChildPrompt: replace uses the body, append concatenates, none uses base", () => {
+  const base = "BASE";
+  expect(effectiveChildPrompt({ name: "a", scope: "builtin", tools: [], promptMode: "replace", body: "BODY", enabled: true }, base)).toBe("BODY");
+  expect(effectiveChildPrompt({ name: "b", scope: "builtin", tools: [], promptMode: "append", body: "BODY", enabled: true }, base)).toBe("BASE\n\nBODY");
+  expect(effectiveChildPrompt({ name: "c", scope: "builtin", tools: [], promptMode: "replace", enabled: true }, base)).toBe("BASE");
 });
