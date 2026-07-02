@@ -1674,6 +1674,7 @@ async function deliverToParent(parentThreadId: string, delivery: Delivery): Prom
   // to activeChannels (set synchronously inside streamPromptOnThread) for the
   // rest of the turn; released in finally.
   deliveringParents.add(parentThreadId);
+  let seeded = false;
   try {
     let sessionId = parent.sessionId ?? null;
     if (!sessionId) {
@@ -1702,17 +1703,20 @@ async function deliverToParent(parentThreadId: string, delivery: Delivery): Prom
         updatedAt: Date.now(),
       })),
     }));
+    seeded = true;
     await streamPromptOnThread(parentThreadId, sessionId, delivery.message);
   } catch (e) {
     // Mirror submitPrompt's catch: drop the channel so a failed delivery does
-    // not block every future one behind a stale busy-guard, and render the
-    // failure inline on the seeded assistant turn.
+    // not block every future one behind a stale busy-guard. Only rewrite the
+    // trailing turn when this call actually seeded the assistant shell; if
+    // acquireSession threw before seeding, the last turn is the parent's prior
+    // completed turn, so fall to the thread banner instead of corrupting it.
     activeChannels.delete(parentThreadId);
     useSessionStore.setState((s) => {
       const list = s.turns[parentThreadId] ?? [];
       const last = list[list.length - 1];
       const streaming = { ...s.streaming, [parentThreadId]: false };
-      if (last && last.role === "assistant") {
+      if (seeded && last && last.role === "assistant") {
         return {
           streaming,
           turns: {
