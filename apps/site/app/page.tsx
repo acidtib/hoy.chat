@@ -52,11 +52,12 @@ export default async function Home() {
                 <span className="pulse" aria-hidden="true" />
                 Beta / Experimental
               </span>
-              <h1>Get your agent out of the terminal.</h1>
+              <h1>Local. Fast. Yours.</h1>
               <p className="tagline">
-                Hoy gives it a real desktop app, so you can watch it work, keep
-                every thread, and switch models on the fly, all on your machine,
-                on your own keys.
+                Hoy puts your coding agent in a real desktop app, wired to the
+                models and tools you already use, so you can prompt, watch,
+                steer, and ship without friction, all on your machine, on your
+                keys.
               </p>
 
               <div className="cta-row cta-row-center">
@@ -102,12 +103,14 @@ export default async function Home() {
           <div className="wrap-wide">
             <div className="beats-head">
               <div className="section-head">
-                <h2 className="heading">See it work</h2>
+                <h2 className="heading">See everything. Send nothing.</h2>
               </div>
               <p className="lead">
-                No cloud account, no sign-up. Hoy drives the Pi agent under the
-                hood, and your API key never leaves your disk. Nothing routes
-                through a server we run.
+                No cloud account, no sign-up, no middleman. Hoy drives the Pi
+                agent right on your machine, your API key never leaves your disk,
+                and nothing routes through a server we run. And it is built to go
+                further: hand off long-running goals, steer from anywhere, run
+                more than one agent at once.
               </p>
             </div>
 
@@ -115,8 +118,9 @@ export default async function Home() {
               <div className="beat-copy">
                 <h3 className="heading">Close it. It&apos;s all still there.</h3>
                 <p className="lead">
-                  Quit Hoy, come back tomorrow, every thread exactly where you
-                  left it. On your disk, not a server we run.
+                  Quit Hoy, come back tomorrow, and every thread is exactly where
+                  you left it, on your disk, not a server we run. Pick up
+                  mid-thought and keep going.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">
@@ -142,9 +146,10 @@ export default async function Home() {
               <div className="beat-copy">
                 <h3 className="heading">Your keys, your models.</h3>
                 <p className="lead">
-                  Drop in a key from Anthropic, OpenAI, DeepSeek, or Groq and
-                  switch between them from one menu. Whatever your agent supports
-                  shows up in the picker. No markup, no middleman.
+                  Drop in a key for any provider your agent supports, Anthropic,
+                  OpenAI, Google, Groq, Mistral, xAI, OpenRouter, Ollama, and
+                  more, and switch between them from one menu, mid-conversation,
+                  without losing the thread. No markup, no middleman.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">

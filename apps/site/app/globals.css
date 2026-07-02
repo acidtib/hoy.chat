@@ -148,12 +148,15 @@ a {
   text-align: center;
 }
 .hero h1 {
-  font-size: clamp(56px, 12vw, 96px);
-  line-height: 0.9;
+  /* Sized so the "Local. Fast. Yours." triad holds one line from 320px phones
+     up: single-line width is ~8x the font-size, the parent caps at 720px, so
+     the clamp keeps 8*font under min(720, viewport-48). nowrap enforces it. */
+  font-size: clamp(32px, 10.5vw, 84px);
+  line-height: 0.95;
   letter-spacing: -0.04em;
   margin: 20px 0 16px;
   font-weight: 700;
-  text-wrap: balance;
+  white-space: nowrap;
 }
 .tagline {
   font-size: clamp(18px, 2.6vw, 22px);
@@ -203,23 +206,51 @@ a {
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--warn);
   background: var(--warn-bg);
   border: 1px solid var(--warn-border);
   border-radius: 999px;
-  padding: 6px 14px;
+  padding: 6px 15px 6px 13px;
 }
 .badge .pulse {
+  position: relative;
   width: 7px;
   height: 7px;
   border-radius: 999px;
   background: var(--warn);
   display: inline-block;
+  box-shadow: 0 0 6px 0 var(--warn);
+}
+/* Ping ring: the dot names itself pulse, so make it live. A single expanding
+   ring reads as "active beta" without pulling focus from the headline. */
+.badge .pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--warn);
+  animation: badge-ping 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes badge-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .badge .pulse::after {
+    animation: none;
+  }
 }
 
 .beta-note {

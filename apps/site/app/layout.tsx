@@ -8,7 +8,7 @@ import "./globals.css";
 import { SITE_URL, IS_PRODUCTION, canonical, PRODUCTION_URL } from "@/lib/site";
 
 const DESCRIPTION =
-  "Get your coding agent out of the terminal. Hoy is a desktop app that runs it on your machine, on your own keys. Beta, expect rough edges.";
+  "Local. Fast. Yours. Hoy puts your coding agent in a real desktop app, wired to the models and tools you already use, on your machine, on your keys. Beta, expect rough edges.";
 
 export const metadata: Metadata = {
   title: "Hoy Chat, a desktop app for coding agents",

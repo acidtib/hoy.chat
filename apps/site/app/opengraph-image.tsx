@@ -55,10 +55,10 @@ export default function OpengraphImage() {
               marginBottom: "28px",
             }}
           >
-            Get your agent out of the terminal.
+            Local. Fast. Yours.
           </div>
           <div style={{ display: "flex", fontSize: "32px", color: "#a2a2ad" }}>
-            A real desktop app. Your machine, your keys, any model.
+            A real desktop app for your coding agent. Your machine, your keys, any model.
           </div>
         </div>
 
