@@ -1,0 +1,79 @@
+import { test, expect } from "bun:test";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadSubagentRegistry, enabledTypes, BUILTIN_SUBAGENTS } from "./hoy-agents-registry";
+
+function tmp(): string {
+  return mkdtempSync(join(tmpdir(), "hoy-agents-"));
+}
+function writeAgent(dir: string, name: string, frontmatter: string, body: string) {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${name}.md`), `---\n${frontmatter}\n---\n${body}`);
+}
+
+test("built-ins are always present with Phase-1 tool sets", () => {
+  const reg = loadSubagentRegistry(tmp(), tmp());
+  expect(reg["general-purpose"].tools).toEqual(["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"]);
+  expect(reg["general-purpose"].body).toBeUndefined();
+  expect(reg["Explore"].tools).toEqual(["read", "grep", "find", "ls"]);
+  expect(reg["Explore"].body).toContain("read-only");
+  expect(reg["Explore"].promptMode).toBe("replace");
+});
+
+test("project overrides global overrides built-in by name; scope reflects the winner", () => {
+  const agentDir = tmp();
+  const cwd = tmp();
+  writeAgent(join(agentDir, "agents"), "Explore", "description: global explore", "global body");
+  writeAgent(join(cwd, ".hoy", "agents"), "Explore", "description: project explore", "project body");
+  const reg = loadSubagentRegistry(agentDir, cwd);
+  expect(reg["Explore"].scope).toBe("project");
+  expect(reg["Explore"].description).toBe("project explore");
+  expect(reg["Explore"].body).toBe("project body");
+});
+
+test("agent is stripped from a type's tools (depth cap) and unknown tools dropped", () => {
+  const cwd = tmp();
+  writeAgent(join(cwd, ".hoy", "agents"), "Bad", "tools: [read, agent, bogus, bash]", "b");
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  expect(reg["Bad"].tools).toEqual(["read", "bash"]);
+});
+
+test("prompt_mode defaults to replace and parses append", () => {
+  const cwd = tmp();
+  writeAgent(join(cwd, ".hoy", "agents"), "App", "prompt_mode: append", "x");
+  writeAgent(join(cwd, ".hoy", "agents"), "Def", "description: d", "y");
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  expect(reg["App"].promptMode).toBe("append");
+  expect(reg["Def"].promptMode).toBe("replace");
+});
+
+test("model and thinking are parsed; tools omitted defaults to the general set", () => {
+  const cwd = tmp();
+  writeAgent(join(cwd, ".hoy", "agents"), "M", "model: sonnet\nthinking: high", "p");
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  expect(reg["M"].model).toBe("sonnet");
+  expect(reg["M"].thinking).toBe("high");
+  expect(reg["M"].tools).toEqual(["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"]);
+});
+
+test("disabled names in subagents.json set enabled=false; enabledTypes filters them", () => {
+  const cwd = tmp();
+  writeAgent(join(cwd, ".hoy", "agents"), "Off", "description: d", "p");
+  writeFileSync(join(cwd, ".hoy", "subagents.json"), JSON.stringify({ disabled: ["Off"] }));
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  expect(reg["Off"].enabled).toBe(false);
+  expect(enabledTypes(reg).find((t) => t.name === "Off")).toBeUndefined();
+  expect(enabledTypes(reg).find((t) => t.name === "Explore")).toBeDefined();
+});
+
+test("malformed frontmatter is skipped, others still load", () => {
+  const cwd = tmp();
+  mkdirSync(join(cwd, ".hoy", "agents"), { recursive: true });
+  writeFileSync(join(cwd, ".hoy", "agents", "Broken.md"), "---\n: : bad yaml : :\n---\nbody");
+  writeAgent(join(cwd, ".hoy", "agents"), "Good", "description: ok", "p");
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  expect(reg["Good"]).toBeDefined();
+  expect(reg["Broken"]).toBeUndefined();
+  expect(reg["general-purpose"]).toBeDefined();
+});
