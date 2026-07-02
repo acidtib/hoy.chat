@@ -5,7 +5,8 @@ export function SiteFooter({ version }: { version: string }) {
   return (
     <footer className="site-footer">
       <div className="wrap">
-        <span>
+        <span className="footer-brand">
+          <span className="mark mark-sm" aria-hidden="true" />
           Hoy v{version} &middot; {LICENSE} License
         </span>
         <div className="footer-links">

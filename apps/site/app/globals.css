@@ -78,6 +78,31 @@ a {
   align-items: center;
   gap: 8px;
 }
+/* Brand mark: the mountain/speech-bubble glyph from the hoy.chat kit,
+   recolored via a luminance mask to the reserved brand accent (source SVG is
+   a flat #343943 raster on transparent, which has ~no contrast on --bg).
+   If mask-image renders inconsistently across engines, fall back to an
+   <img src="/brand/monochrome.svg" alt=""> with
+   `filter: brightness(0) invert(1)` (solid white, broader support, no tint). */
+.mark {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  background-color: var(--brand);
+  -webkit-mask-image: url("/brand/monochrome.svg");
+  mask-image: url("/brand/monochrome.svg");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.mark-sm {
+  width: 14px;
+  height: 14px;
+}
 .nav {
   display: flex;
   gap: 22px;
@@ -593,6 +618,11 @@ h3.heading {
 }
 .site-footer a:hover {
   color: var(--fg);
+}
+.footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .footer-links {
   display: flex;
