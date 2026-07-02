@@ -98,8 +98,12 @@ ended in error or was aborted (the child's transcript carries an error turn / th
 4. Otherwise deliver now:
    `streamPromptOnThread(parentThreadId, parentSessionId, delivery, { seedRole: "subagentResult", meta: { subagentType, agentId } })`.
 
-If the parent thread has no live `sessionId` (e.g. never opened this runtime), the
-delivery is dropped with a console warning; cross-restart delivery is out of scope
+If the parent has no live `sessionId` (its panel was closed, killing the sidecar),
+`deliverToParent` resumes it from its durable `sessionFile` via
+`acquireSession(parentThreadId, path, sessionFile)` (the same path `submitPrompt`
+uses), then delivers. A parent that spawned a child has necessarily run a turn, so
+it always has a `sessionFile`; the delivery is dropped only in the unreachable case
+where both are absent. Cross-restart delivery (both sidecars gone) is out of scope
 (see Edge cases).
 
 ### 3. Drain on parent idle
@@ -157,12 +161,14 @@ parent turn `done`
   turn each.
 - **Parent auto-wake:** an idle parent receiving a delivery starts a new turn on
   its own; the marked rendering makes the origin unmistakable.
-- **Cross-restart:** delivery happens only within a live runtime (parent sidecar
-  alive). If the app restarts mid-child, both sidecars are gone and the user
-  reopens threads manually, exactly as in Phase 1. No cross-restart delivery is
+- **Parent panel closed (sidecar killed):** `deliverToParent` resumes the parent
+  from its `sessionFile` via `acquireSession` and delivers into it; the marked turn
+  appears when the parent panel is next opened (live if already visible). The
+  resumed parent runs headlessly until then, consistent with the auto-wake model.
+- **Cross-restart:** delivery happens only within a live runtime. If the app
+  restarts mid-child, both sidecars are gone and the child does not auto-resume; the
+  user reopens threads manually, exactly as in Phase 1. No cross-restart delivery is
   built. Documented only.
-- **Parent thread archived/closed but session alive:** delivery still resumes the
-  session; the marked turn appears when the parent is next viewed. Acceptable.
 - **Grandchild depth:** children have no `agent` tool (Phase 1 depth cap), so a
   delivered result cannot chain into deeper spawns beyond the existing cap. A
   parent acting on a delivered result may spawn new children (allowed, still
