@@ -18,6 +18,11 @@ use crate::pi_config::agent_dir;
 pub struct Workspace {
     #[serde(default)]
     pub projects: Vec<WsProject>,
+    // The last project the user worked in, restored so the home launcher can
+    // default a new thread to it across restarts. camelCase to match the
+    // frontend Workspace shape; absent in pre-flag files.
+    #[serde(rename = "activeProjectId", default)]
+    pub active_project_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,6 +118,7 @@ mod tests {
 
     fn sample() -> Workspace {
         Workspace {
+            active_project_id: Some("p1".into()),
             projects: vec![WsProject {
                 id: "p1".into(),
                 name: "hoy".into(),
@@ -143,6 +149,7 @@ mod tests {
         save_at(&path, &sample()).unwrap();
         let loaded = load_at(&path).unwrap();
         assert_eq!(loaded.projects.len(), 1);
+        assert_eq!(loaded.active_project_id.as_deref(), Some("p1"));
         let p = &loaded.projects[0];
         assert_eq!(p.name, "hoy");
         assert_eq!(p.path.as_deref(), Some("/home/u/code/hoy"));
@@ -195,7 +202,9 @@ mod tests {
         let raw = std::fs::read_to_string(&path).unwrap();
         assert!(raw.contains("\"updatedAt\""));
         assert!(raw.contains("\"sessionFile\""));
+        assert!(raw.contains("\"activeProjectId\""));
         assert!(!raw.contains("updated_at"));
+        assert!(!raw.contains("active_project_id"));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

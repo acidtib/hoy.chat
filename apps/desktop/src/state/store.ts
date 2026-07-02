@@ -1372,7 +1372,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             : rest;
         }),
       }));
-      set({ projects, drafts });
+      // Restore the last worked-in project only if it still exists.
+      const activeProjectId = projects.some((p) => p.id === ws.activeProjectId)
+        ? (ws.activeProjectId ?? null)
+        : null;
+      set({ projects, drafts, activeProjectId });
     } catch {
       // Corrupt/unreadable workspace: start empty rather than block the app.
     } finally {
@@ -1663,8 +1667,10 @@ function persistProjects(
   projects: Project[],
   turns: Record<string, Turn[]>,
   drafts: Record<string, string>,
+  activeProjectId: string | null,
 ): void {
   const payload = {
+    activeProjectId: activeProjectId ?? null,
     projects: projects.map((p) => ({
       id: p.id,
       name: p.name,
@@ -1699,14 +1705,19 @@ function persistProjects(
 }
 
 useSessionStore.subscribe((state, prev) => {
-  if (state.projects === prev.projects && state.drafts === prev.drafts) return;
+  if (
+    state.projects === prev.projects &&
+    state.drafts === prev.drafts &&
+    state.activeProjectId === prev.activeProjectId
+  )
+    return;
   if (!hydrated) return;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     // Read at fire time: the debounce window may batch several changes, and
     // the untouched filter needs the turns that exist when the write happens.
     const s = useSessionStore.getState();
-    persistProjects(s.projects, s.turns, s.drafts);
+    persistProjects(s.projects, s.turns, s.drafts, s.activeProjectId);
   }, 300);
 });
 

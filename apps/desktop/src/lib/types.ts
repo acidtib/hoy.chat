@@ -366,6 +366,8 @@ export interface Thread {
 // Mirror of workspace.rs Workspace: the persisted projects -> threads tree.
 export interface Workspace {
   projects: Project[];
+  // Last project worked in, restored across restarts (HOY-236).
+  activeProjectId?: string | null;
 }
 
 export interface Project {
