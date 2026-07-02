@@ -94,7 +94,7 @@ export default async function Home() {
               </div>
               <p className="lead">
                 Everything runs on your machine. Under the hood Hoy drives the Pi
-                agent as a separate local process, and your API key stays on your
+                agent, and your API key stays on your
                 disk instead of passing through a server we run.
               </p>
             </div>
