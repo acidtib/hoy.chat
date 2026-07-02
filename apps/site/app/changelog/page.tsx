@@ -47,24 +47,49 @@ export default async function Changelog() {
                 for the latest builds.
               </div>
             ) : (
-              releases.map((r) => (
-                <article key={r.version} className="changelog-entry">
-                  <div className="changelog-head">
-                    <h2>{r.name || r.version}</h2>
-                    {r.prerelease && <span className="tag-pre">Pre-release</span>}
-                    {r.date && (
-                      <span className="changelog-date">{formatDate(r.date)}</span>
+              releases.map((r, i) => (
+                <article key={r.version} id={r.version} className="changelog-entry">
+                  <div className="changelog-rail">
+                    <div className="changelog-meta">
+                      <h2>
+                        <a className="changelog-anchor" href={`#${r.version}`}>
+                          {r.name || r.version}
+                        </a>
+                      </h2>
+                      {(i === 0 || r.prerelease) && (
+                        <div className="changelog-tags">
+                          {i === 0 && <span className="tag-latest">Latest</span>}
+                          {r.prerelease && (
+                            <span className="tag-pre">Pre-release</span>
+                          )}
+                        </div>
+                      )}
+                      {r.date && (
+                        <span className="changelog-date">{formatDate(r.date)}</span>
+                      )}
+                      {r.url && (
+                        <a
+                          className="changelog-source"
+                          href={r.url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          View on GitHub
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <div className="changelog-body">
+                    {r.notes ? (
+                      <div className="markdown">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {r.notes}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <p className="markdown">No notes for this release.</p>
                     )}
                   </div>
-                  {r.notes ? (
-                    <div className="markdown">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {r.notes}
-                      </ReactMarkdown>
-                    </div>
-                  ) : (
-                    <p className="markdown">No notes for this release.</p>
-                  )}
                 </article>
               ))
             )}
