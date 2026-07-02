@@ -7,13 +7,6 @@ tracked there; the rest get a ticket when picked up.
 
 ## Release blockers
 
-### Sidecar release packaging
-The sidecar binary resolves env-override -> dev `sidecar/` path -> next-to-exe;
-`bundle.externalBin` is not wired, so a release build will not find the binary
-in Tauri's resource dir. TODO marker at `src-tauri/src/sidecar.rs:647`
-(`resolve_sidecar_paths`). Also decide per-platform payload placement
-(`pi-payload` next to the binary today).
-
 ### Windows code signing
 Unsigned installers trip SmartScreen (Hermes desktop hit this). Needed before
 any Windows distribution; not before.
