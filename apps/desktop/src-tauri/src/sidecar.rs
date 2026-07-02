@@ -746,6 +746,12 @@ pub struct SidecarManager {
     // not mirrored here: only pi knows it once a fresh session first writes,
     // so respawn callers capture it live via get_session_stats.
     cwds: Mutex<HashMap<SessionId, PathBuf>>,
+    // Per-session subagent type (HOY-231), e.g. "Explore" for a read-only
+    // child. Mirrors modes/cwds: without this, respawn (credential/MCP-config
+    // changes respawn all idle sessions) would drop HOY_SUBAGENT_TYPE and a
+    // restricted child would come back as a full parent session. Only entries
+    // for restricted sessions are present; a normal session has none.
+    subagent_types: Mutex<HashMap<SessionId, String>>,
     handle_counter: AtomicUsize,
     bin: PathBuf,
     payload: PathBuf,
@@ -783,6 +789,7 @@ impl SidecarManager {
             active: Mutex::new(None),
             modes: Mutex::new(HashMap::new()),
             cwds: Mutex::new(HashMap::new()),
+            subagent_types: Mutex::new(HashMap::new()),
             handle_counter: AtomicUsize::new(1),
             bin,
             payload,
@@ -802,6 +809,10 @@ impl SidecarManager {
 
     fn mode_of(&self, id: &str) -> Option<String> {
         self.modes.lock().unwrap().get(id).cloned()
+    }
+
+    fn subagent_type_of(&self, id: &str) -> Option<String> {
+        self.subagent_types.lock().unwrap().get(id).cloned()
     }
 
     // Spawn the boot control session in the manager's default cwd. The first
@@ -848,6 +859,12 @@ impl SidecarManager {
             .lock()
             .unwrap()
             .insert(id.clone(), cwd.to_path_buf());
+        if let Some(t) = subagent_type {
+            self.subagent_types
+                .lock()
+                .unwrap()
+                .insert(id.clone(), t.to_string());
+        }
         Ok(id)
     }
 
@@ -881,6 +898,7 @@ impl SidecarManager {
         let old = self.sessions.lock().unwrap().remove(id);
         self.modes.lock().unwrap().remove(id);
         self.cwds.lock().unwrap().remove(id);
+        self.subagent_types.lock().unwrap().remove(id);
         drop(old);
     }
 
@@ -910,6 +928,7 @@ impl SidecarManager {
             ));
         }
         let mode = self.mode_of(id);
+        let subagent_type = self.subagent_type_of(id);
         let cwd = self
             .cwds
             .lock()
@@ -924,7 +943,7 @@ impl SidecarManager {
             &cwd,
             session_file,
             mode.as_deref(),
-            None,
+            subagent_type.as_deref(),
         )?;
         let old = {
             let mut sessions = self.sessions.lock().unwrap();
