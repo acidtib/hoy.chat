@@ -28,7 +28,7 @@ values by eye):
 | `--border-strong` | `rgba(255,255,255,0.14)` | ghost-button/placeholder borders |
 | `--fg` | `#f4f4f6` | primary text |
 | `--muted` | `#a2a2ad` | body/secondary text |
-| `--muted-2` | `#7c7c86` | tertiary text, dates, tags |
+| `--muted-2` | `#9a9aa4` | tertiary text, dates, tags |
 | `--brand` | `#7c74ff` | violet accent (CTA, links, dot) |
 | `--brand-fg` | `#f3f2ff` | text on brand |
 | `--warn` | `#f0b429` | amber, beta/caution |
@@ -45,10 +45,13 @@ color, not decoration.
 
 ### Contrast
 
-Target WCAG AA. `--muted` (`#a2a2ad`) on `--bg`/`--panel` clears body text;
-`--muted-2` (`#7c7c86`) is the borderline case, keep it to non-essential small
-text (dates, tags), not primary reading copy. The amber-on-amber-tint pairings
-carry an icon and text, so they do not rely on color alone.
+Target WCAG AA, with margin above the bare minimum on small text. `--muted`
+(`#a2a2ad`) on `--bg`/`--panel` clears body text (~7:1). `--muted-2` (`#9a9aa4`)
+is the tertiary tier for small 11-13px text (dates, download notes, captions):
+held at ~6.4:1 on `--panel` and ~6.9:1 on `--bg` so it reads comfortably at those
+sizes rather than only technically passing (a review flagged the earlier darker
+value as thin). Still keep it off primary reading copy. The amber-on-amber-tint
+pairings carry an icon and text, so they do not rely on color alone.
 
 ## Typography
 
@@ -96,8 +99,9 @@ Hand-written CSS classes (no component library):
 
 - **Header** (`SiteHeader`): sticky, backdrop-blurred, hairline bottom border;
   wordmark (with brand dot) left, nav right (Changelog, GitHub, etc.).
-- **Hero**: centered, beta badge, `h1`, tagline, boxed beta note, CTA row
-  (Download vN + Changelog).
+- **Hero**: centered, beta badge, `h1`, tagline (what Hoy is, Pi named as the
+  engine, with the local/on-your-keys hook), CTA row (Download vN + Changelog),
+  and the floating product-window mock.
 - **Sections**: Install (3 platform cards + unsigned-build callout), How it works
   (copy + screenshot grid). Consistent `44px 0` section padding, `--maxw`
   centered wrap.

@@ -54,10 +54,10 @@ export default async function Home() {
               </span>
               <h1>Local. Fast. Yours.</h1>
               <p className="tagline">
-                Hoy puts your coding agent in a real desktop app, wired to the
-                models and tools you already use, so you can prompt, watch,
-                steer, and ship without friction, all on your machine, on your
-                keys.
+                Hoy is a desktop app for your coding agent, built on Pi and
+                wired to the models and tools you already use, so you can prompt,
+                watch, steer, and ship without friction, all on your machine, on
+                your keys.
               </p>
 
               <div className="cta-row cta-row-center">

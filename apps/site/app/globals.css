@@ -9,9 +9,10 @@
   --border-strong: rgba(255, 255, 255, 0.14);
   --fg: #f4f4f6;
   --muted: #a2a2ad;
-  /* muted-2 clears WCAG AA (>=4.5:1) on --bg, --panel, and --panel-2 for the
-     small 11-13px text it carries (dates, captions). */
-  --muted-2: #8b8b95;
+  /* muted-2 carries the small 11-13px tertiary text (dates, notes, captions).
+     Held lighter than a bare AA pass so it reads comfortably at those sizes:
+     ~6.4:1 on --panel, ~6.9:1 on --bg. Was #8b8b95 (borderline-thin on review). */
+  --muted-2: #9a9aa4;
   --brand: #7c74ff;
   --brand-fg: #f3f2ff;
   --warn: #f0b429;
