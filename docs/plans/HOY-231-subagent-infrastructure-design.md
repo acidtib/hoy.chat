@@ -65,66 +65,85 @@ Follow-on tickets get filed once Phase 1 lands; this doc specs Phase 1 only.
 Parent agent calls `agent({ subagentType, task })` in a thread, a first-time
 consent prompt appears, and on Allow a new child thread appears nested and
 collapsed under the parent, runs the task to completion in its own visible
-streaming transcript, and persists across an app restart. Verified live over raw
-RPC and in the running app via the Tauri bridge. No result flows back to the
-parent yet (Phase 2), the child is useful to the human watching it.
+streaming transcript, and persists across an app restart. The spawn is
+renderer-orchestrated, so end-to-end verification is in the running app via the
+Tauri bridge (unit tests cover the sidecar tool + the Rust classifier). No result
+flows back to the parent yet (Phase 2), the child is useful to the human watching
+it.
 
-### 1. The spawn control path (sidecar to Rust)
+### 1. The spawn trigger (constrained by what the sidecar can push)
 
-Today the sidecar to Rust channel is mostly Rust-drives-sidecar, with one
-exception that is the exact precedent we need: the extension UI protocol. The
-permission extension emits `extension_ui_request` on stdout and blocks until Rust
-writes the matching `extension_ui_response` (`hoy-permissions.ts:4-5`,
-`sidecar.rs:365`). That is a sidecar to Rust to renderer and back request/response
-already in production. `spawn_subagent` follows the same shape.
+Two constraints from the code decide this (both verified against the tree):
 
-Flow:
+- An extension tool **cannot** write a custom frame to stdout during
+  `runRpcMode`; Pi owns stdio and a raw `process.stdout.write` corrupts the RPC
+  framing. The only sanctioned sidecar to Rust push is `ctx.ui.*`, whose methods
+  are a fixed set: `select`/`confirm`/`input`/`editor` (blocking, emit
+  `extension_ui_request`, await `extension_ui_response`) and
+  `notify`/`setStatus`/`setWidget`/`setTitle`/`set_editor_text` (fire-and-forget).
+  There is no public method for an arbitrary custom-named frame.
+- The tool result's structured `details` does **not** reach the renderer;
+  `tool_execution_end` flattens the result to an `output` string via
+  `tool_output(result)` (`sidecar.rs`). So the spawn payload cannot ride the tool
+  result either.
 
-1. The parent's `agent` tool `execute()` emits a control frame on stdout:
-   `{ type: "spawn_subagent", id, parentSessionId, subagentType, task }`.
-2. `sidecar.rs`'s reader classifies `spawn_subagent` as a control frame (like it
-   classifies `extension_ui_request`), NOT a renderer `AgentEvent` to forward
-   verbatim. It hands it to the session manager.
-3. Rust allocates a child `threadId` + `sessionId`, resolves a fresh child session
-   JSONL path under the branded agent dir, and spawns a child sidecar via the
-   existing `spawn_session_in` machinery (`sidecar.rs:787`), inheriting the
-   parent's `cwd`/project, setting `PI_CODING_AGENT_DIR`, `HOY_SESSION_FILE`
-   (child JSONL), `HOY_PERMISSION_MODE` (inherit parent's mode for Phase 1), and a
-   new `HOY_SUBAGENT_TYPE` so the child entry selects the right built-in.
-4. Rust replies to the parent frame with `{ type: "spawn_subagent_result", id,
-   agentId, childSessionId }`. The parent tool `execute()` unblocks and returns
-   `{ agentId }` as its tool result (fire-and-forget: it returns a handle, not the
-   child's output).
-5. Rust immediately sends the `task` to the child sidecar as its first prompt and
-   drives it over normal RPC.
+So the trigger uses the two sanctioned mechanisms for their natural purposes:
 
-The parent tool call is non-blocking in the fire-and-forget sense: it awaits only
-the fast `spawn_subagent_result` ack (a handle), not the child's run.
+1. The parent's `agent` tool `execute()` takes consent with
+   `ctx.ui.select("Spawn <type> subagent to: <task>?", [Allow, Allow for this
+   session, Deny])` (a clean, human-readable consent card on the parent thread;
+   cached per session in the tool). Deny returns a declined tool result.
+2. On Allow it mints an `agentId`, then fires a fire-and-forget
+   `ctx.ui.notify(SPAWN_SENTINEL + JSON.stringify({ agentId, subagentType,
+   task }))`, and returns immediately with a short text result naming the
+   spawned agent (fire-and-forget: no wait for the child).
+3. In Rust, `classify_extension_ui`'s `notify` branch detects the
+   `SPAWN_SENTINEL` prefix and, instead of forwarding a `Notify`, parses the JSON
+   and emits a new `AgentEvent::SubagentSpawned { agentId, subagentType, task }`
+   on the parent's sink. The notify is fully consumed by Rust and never rendered.
+   No manager handle in the reader thread, no new Rust spawn path here.
 
-### 2. Child session as a first-class thread
+Double consent is avoided by giving `decide()` (`hoy-permissions.ts:32-41`) an
+`agent` branch that returns `allow` (and `block` in plan mode for Phase 1), so the
+generic `tool_call` gate does not prompt on top of the tool's own richer consent.
 
-Rust streams the child sidecar's `AgentEvent`s to the renderer tagged with the
-child `sessionId`, over the existing Channel. Every `AgentEvent` already carries
-`session_id` (`events.rs:147`); the renderer routes child events to the child
-thread by that id, exactly as it routes a user thread's events today. No new event
-transport.
+### 2. Child session as a first-class thread (renderer-orchestrated)
 
-Renderer `Thread` gains two fields (`lib/types.ts` + `workspace.rs` mirror):
+`AgentEvent` is **not** session-tagged; the renderer routes events per thread over
+a `Channel` it creates and hands to `send_prompt` (verified: the `AgentEvent`
+union has no `session_id`; `events.rs:147`'s `session_id` is on `PiState`, not on
+events). So a child is cleanest as a real thread with its own id, its own sidecar,
+and its own channel, driven through the machinery we already have.
+
+On the `subagentSpawned` event the renderer:
+
+1. Creates a child `Thread` kept **flat** in `project.threads` with a
+   `parentThreadId` link (so the one-level `findThread`/`patchThread` traversals
+   in `store.ts` stay unchanged; the sidebar derives nesting from the link).
+2. Calls `create_session(cwd, childSessionFile, subagentType, parentMode)`, which
+   spawns a child sidecar via the existing `spawn_session_in`/`spawn` path with a
+   new `HOY_SUBAGENT_TYPE` env (and the parent's permission mode for Phase 1).
+3. Calls `send_prompt(childSessionId, task, childChannel)` with a fresh channel
+   registered under the child `threadId`. The child streams into
+   `turns[childThreadId]` exactly like a user thread.
+
+Renderer `Thread` gains two fields (`lib/types.ts` + `workspace.rs` `WsThread`
+mirror + both persistence allowlists, `persistProjects` and `WsThread`):
 
 - `parentThreadId?: string | null` — set on a spawned child, null on user threads.
 - `spawnedBy?: { type: string; agentId: string } | null` — the agent type that
   produced it and the parent's handle.
 
-The child thread renders nested and collapsed under its parent in the sidebar
-(the two picks from brainstorming). It persists to `workspace.json` under the
-existing touched/auto-collapse rules: it survives restart, reopens from the same
-child JSONL, and stays collapsed so runs do not clutter. Reopening a child thread
-after restart spawns a sidecar that opens its JSONL, identical to reopening a user
-thread.
+The sidebar renders top-level threads and, beneath each, its children (threads
+whose `parentThreadId` matches) nested and collapsed (the two brainstorming
+picks). A child persists to `workspace.json` and survives restart; it has a
+`sessionFile` once `create_session` runs, so the untouched-thread pruning
+(`isUntouched`) never drops it. Reopening a child after restart spawns a sidecar
+that opens its JSONL, identical to reopening a user thread.
 
 From the human side the child is an ordinary thread: open it, read the live
-transcript. Because it is a real Rust-driven sidecar session, the plumbing to
-steer it (Phase 2) and to surface it in a panel (Phase 4) is already present.
+transcript. Because it is a real sidecar-driven session, the plumbing to steer it
+(Phase 2) and to surface it in a panel (Phase 4) is already present.
 
 ### 3. What the child runs in Phase 1 (two hardcoded built-ins)
 
@@ -169,33 +188,43 @@ forget in Phase 1 means the parent gets only a handle; a human watches the child
 ### 6. File-level checklist (for writing-plans to expand)
 
 Sidecar (TypeScript):
-1. `hoy-agents.ts`: `createHoyAgents()` registering the `agent` tool; its
-   `execute()` emits the `spawn_subagent` control frame and awaits the ack.
-   Built-in type table (`general-purpose`, `Explore`) with tools + prompt.
+1. `hoy-agents.ts`: exported `SUBAGENT_TYPES` built-in table (`general-purpose`:
+   parent model + `HOY_TOOLS` minus `agent`; `Explore`: `read`/`grep`/`find`/`ls`,
+   read-only prompt) and `createHoyAgents()` registering the `agent` tool. Its
+   `execute()` validates `subagentType`, takes `ctx.ui.select` consent (cached per
+   session), then fires `ctx.ui.notify(SPAWN_SENTINEL + JSON)` and returns.
 2. `hoy-sidecar.ts`: wire `createHoyAgents` into `extensionFactories`; add `agent`
-   to `HOY_TOOLS`; read `HOY_SUBAGENT_TYPE` and apply the built-in's tools +
-   `systemPromptOverride` when the entry is a spawned child.
-3. `hoy-permissions.ts`: `agent` branch in `decide()` for the spawn consent.
-4. Unit tests mirroring `hoy-permissions.test.ts` / `hoy-mcp.test.ts` (control
-   frame emitted, ack awaited, built-in type resolution, depth cap withholds
-   `agent`, consent paths).
+   to `HOY_TOOLS`; read `HOY_SUBAGENT_TYPE` and, when set, apply that built-in's
+   tools + `systemPromptOverride` for the child entry.
+3. `hoy-permissions.ts`: `agent` branch in `decide()` (`allow`, `block` in plan).
+4. Unit tests (`hoy-agents.test.ts`) mirroring `hoy-mcp.test.ts`: built-in type
+   resolution, unknown type errors, `general-purpose` withholds `agent` (depth
+   cap), consent Allow/Deny/Allow-for-session, the notify payload shape.
 
 Rust:
-5. `sidecar.rs`: classify `spawn_subagent` as a control frame; spawn the child via
-   `spawn_session_in` with the inherited env + `HOY_SUBAGENT_TYPE`; reply with
-   `spawn_subagent_result`; drive the child and stream its events tagged by child
-   `sessionId`.
-6. Thread model: `parentThreadId` + `spawnedBy` in `workspace.rs` (+ persistence
-   allowlist) and the child-session bookkeeping in the session manager.
+5. `sidecar.rs`: `classify_extension_ui` detects `SPAWN_SENTINEL` on a `notify`
+   and returns a new `ExtUiOutcome` that `route_message` maps to
+   `AgentEvent::SubagentSpawned`; unit-test the classifier.
+6. `events.rs`: `AgentEvent::SubagentSpawned { agent_id, subagent_type, task }`
+   (mirror in `types.ts`).
+7. `commands.rs` + `sidecar.rs`: `create_session` gains `subagent_type` +
+   `permission_mode`; `spawn`/`spawn_session_in` set `HOY_SUBAGENT_TYPE`.
+8. `workspace.rs`: `WsThread` gains `parent_thread_id` + `spawned_by`
+   (`#[serde(default)]`, camelCase); camelCase round-trip test.
 
 Renderer:
-7. `lib/types.ts`: `parentThreadId` + `spawnedBy` on `Thread`.
-8. `state/store.ts`: create/route the child thread on the first child event;
-   nest + collapse under the parent; persist per existing rules.
-9. Sidebar: render nested collapsed child rows under a parent.
+9. `lib/types.ts`: `parentThreadId` + `spawnedBy` on `Thread`; `subagentSpawned`
+   in the `AgentEvent` union.
+10. `state/store.ts`: on `subagentSpawned`, `spawnChildThread(parentThreadId,
+    payload)` creating the flat child thread + `create_session` + `send_prompt`
+    with a child channel; add the two fields to the `persistProjects` allowlist.
+11. `Sidebar.tsx`: group children under their parent (by `parentThreadId`), nested
+    + collapsed with an indent/chevron; include children in the archived filter +
+    search projections.
 
 Verification:
-10. `packages/sidecar/build.sh` rebuild; live-verify over RPC (dispatch `agent`,
-    watch the child session run) and in the running app via the Tauri bridge
-    (child thread appears nested, runs, survives restart). Commit `HOY-231:` with
-    evidence.
+12. `packages/sidecar/build.sh` rebuild; unit tests (sidecar + cargo) green;
+    live-verify in the running app via the Tauri bridge: prompt the parent to
+    spawn an `Explore` subagent, approve the consent, watch the child thread
+    appear nested, run to completion in its own transcript, and survive restart.
+    Commit `HOY-231:` with evidence.
