@@ -194,4 +194,11 @@ describe("mcp proxy tool (real stdio server)", () => {
     expect(res.content[0].text).toContain("not trusted");
     await shutdown();
   });
+
+  test("system prompt advertises the agent tool only when agent is enabled", () => {
+    expect(buildHoySystemPrompt(false, false)).not.toContain("Subagents:");
+    const enabled = buildHoySystemPrompt(false, true);
+    expect(enabled).toContain("Subagents:");
+    expect(enabled).toContain("Fire-and-forget");
+  });
 });

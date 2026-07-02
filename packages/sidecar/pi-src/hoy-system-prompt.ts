@@ -15,8 +15,10 @@
 // - The docs block pins the GitHub tag matching the pinned pi version. Bump it
 //   with the dependency.
 //
-// The tools list must match what the session actually registers: the full
-// built-in set, passed as the tools allowlist in hoy-sidecar.ts (HOY-186).
+// The core "Available tools" list is the built-in set that every session
+// registers, passed as the tools allowlist in hoy-sidecar.ts (HOY-186). The
+// mcp and agent tools are not in that list; each is advertised via its own
+// block, appended only when the tool is actually available in the session.
 // Pi appends skills, current date, and cwd after a custom prompt, so they are
 // not restated here.
 
@@ -88,10 +90,23 @@ export const MCP_TOOLS_PROMPT = `MCP tools:
 - The mcp tool bridges to configured Model Context Protocol servers. Discover before calling: mcp({action:"search"}) lists available tools as server/tool with descriptions; mcp({action:"describe", server, tool}) returns a tool's input schema; mcp({action:"call", server, tool, args}) invokes it.
 - Search or describe before calling an unfamiliar tool so you pass the right arguments. Starting a server and each tool call may require user approval.`;
 
+// Appended to the base prompt only when the agent tool is available (parent
+// sessions; a spawned child never has it, depth cap). Advertises the tool's
+// unusual contract so the model reaches for it deliberately: fire-and-forget,
+// no result returns.
+export const AGENT_TOOLS_PROMPT = `Subagents:
+- The agent tool spawns a specialized child agent that runs in its own thread. Two types: general-purpose (full tool access) and Explore (read-only: read, grep, find, ls). Call agent({subagentType, task}) with a complete, self-contained task; the subagent does not see this conversation.
+- Fire-and-forget: the call returns a handle immediately and the subagent runs independently. Its result does NOT come back to you. Use it to hand off self-contained work the user will follow in the child thread, not to get an answer back into this conversation.
+- Spawning asks for user approval. A subagent cannot spawn further subagents.`;
+
 // The full override. The MCP block is included only when servers are configured;
-// callers pass whether loadMcpConfig found any.
-export function buildHoySystemPrompt(mcpConfigured: boolean): string {
-  return mcpConfigured ? `${HOY_SYSTEM_PROMPT}\n\n${MCP_TOOLS_PROMPT}` : HOY_SYSTEM_PROMPT;
+// the agent block only when the tool is available. Callers pass whether
+// loadMcpConfig found any servers, and whether this is a parent session.
+export function buildHoySystemPrompt(mcpConfigured: boolean, agentEnabled = false): string {
+  let prompt = HOY_SYSTEM_PROMPT;
+  if (mcpConfigured) prompt += `\n\n${MCP_TOOLS_PROMPT}`;
+  if (agentEnabled) prompt += `\n\n${AGENT_TOOLS_PROMPT}`;
+  return prompt;
 }
 
 // Per-turn suffixes appended to the assembled system prompt by the permission

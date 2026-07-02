@@ -72,7 +72,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
     resourceLoaderOptions: {
       noContextFiles: false,
       systemPromptOverride: () =>
-        childType?.systemPromptOverride ?? buildHoySystemPrompt(mcpConfig.servers.length > 0),
+        childType?.systemPromptOverride ?? buildHoySystemPrompt(mcpConfig.servers.length > 0, !childType),
       // Disk discovery of <agentDir>/{extensions,skills,prompts,themes} needs no
       // opt-in: DefaultResourceLoader.reload() auto-discovers user-scope resources
       // from agentDir unconditionally, and agentDir here is the branded
