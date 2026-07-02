@@ -42,6 +42,7 @@ import {
   mentionMarker,
 } from "@/lib/mentions";
 import { addRecentContext, getRecentContexts } from "@/lib/recentContexts";
+import { usePrefsStore } from "@/state/prefs";
 import type {
   ContextRef,
   ExtWidget,
@@ -258,6 +259,7 @@ export function Composer({
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sendOnEnter = usePrefsStore((s) => s.sendOnEnter);
   // Last draft we emitted, so the value->DOM sync effect can tell our own edits
   // (skip, keep the caret) from external ones (rebuild: clear-on-submit, restore,
   // extension setEditorText).
@@ -762,17 +764,32 @@ export function Composer({
       }
     }
     if (e.key !== "Enter") return;
-    if (!e.shiftKey) {
+
+    // Cmd/Ctrl+Enter always sends, and is the primary send affordance when
+    // Enter-to-send is turned off in preferences.
+    if (e.metaKey || e.ctrlKey) {
       e.preventDefault();
       if (canSend) onSubmit?.("enter");
-    } else if (streaming) {
-      // Shift+Enter queues a follow-up mid-turn (HOY-218).
-      e.preventDefault();
-      if (canSend) onSubmit?.("shiftEnter");
+      return;
+    }
+    if (e.shiftKey) {
+      if (streaming) {
+        // Shift+Enter queues a follow-up mid-turn (HOY-218).
+        e.preventDefault();
+        if (canSend) onSubmit?.("shiftEnter");
+      } else {
+        // A controlled newline (keeps the editor free of stray block wrappers so
+        // serialization stays clean).
+        e.preventDefault();
+        insertTextAtCaret("\n");
+      }
+      return;
+    }
+    // Plain Enter: send, unless the user prefers Enter-inserts-a-newline.
+    e.preventDefault();
+    if (sendOnEnter) {
+      if (canSend) onSubmit?.("enter");
     } else {
-      // Idle Shift+Enter: a controlled newline (keeps the editor free of stray
-      // block wrappers so serialization stays clean).
-      e.preventDefault();
       insertTextAtCaret("\n");
     }
   }
@@ -784,7 +801,9 @@ export function Composer({
     ? "Enter to steer  ·  Shift+Enter to queue a follow-up"
     : disabled
       ? "Streaming response..."
-      : placeholder;
+      : sendOnEnter
+        ? placeholder
+        : `${placeholder}  ·  Cmd/Ctrl+Enter to send`;
 
   return (
     <div

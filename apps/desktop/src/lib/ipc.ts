@@ -25,8 +25,14 @@ import type {
 
 // Native directory picker for adding a project. Returns the chosen absolute path,
 // or null if the user cancels.
-export async function pickDirectory(): Promise<string | null> {
-  const selected = await open({ directory: true, multiple: false });
+export async function pickDirectory(
+  defaultPath?: string,
+): Promise<string | null> {
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    ...(defaultPath ? { defaultPath } : null),
+  });
   return typeof selected === "string" ? selected : null;
 }
 

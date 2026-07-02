@@ -27,6 +27,7 @@ import {
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
+import { usePrefsStore } from "@/state/prefs";
 import type {
   AgentEvent,
   ContextRef,
@@ -485,7 +486,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   focusPanel: (id) => set({ activeThreadId: id }),
 
   requestTeardown: (action, threadId) => {
-    if (!get().streaming[threadId]) {
+    // The confirm dialog only guards a live stream; when the user has turned that
+    // guard off, or nothing is streaming, tear down immediately.
+    const confirmStreaming = usePrefsStore.getState().confirmCloseStreaming;
+    if (!get().streaming[threadId] || !confirmStreaming) {
       runTeardown(get(), action, threadId);
       return;
     }

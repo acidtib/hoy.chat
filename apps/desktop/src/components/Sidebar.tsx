@@ -36,6 +36,7 @@ import { cn, formatRelativeTime } from "@/lib/utils";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
 import { pickDirectory } from "@/lib/ipc";
 import { useSessionStore } from "@/state/store";
+import { usePrefsStore } from "@/state/prefs";
 import type { Project, Thread } from "@/lib/types";
 
 export function Sidebar() {
@@ -50,7 +51,9 @@ export function Sidebar() {
   const openIds = useMemo(() => new Set(panels.map((p) => p.id)), [panels]);
 
   async function handleOpenProject() {
-    const dir = await pickDirectory();
+    const dir = await pickDirectory(
+      usePrefsStore.getState().defaultProjectDir || undefined,
+    );
     if (dir) addProject(dir);
   }
 

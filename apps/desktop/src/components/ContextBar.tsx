@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn, formatTokens } from "@/lib/utils";
 import { pickDirectory } from "@/lib/ipc";
+import { usePrefsStore } from "@/state/prefs";
 import { useSessionStore } from "@/state/store";
 
 // Single full-width status bar (Zed-style): the sidebar controls live in the
@@ -33,7 +34,9 @@ export function ContextBar({
   const expandedPanel = panels.find((p) => p.id === expandedThreadId) ?? null;
 
   async function handleAddProject() {
-    const dir = await pickDirectory();
+    const dir = await pickDirectory(
+      usePrefsStore.getState().defaultProjectDir || undefined,
+    );
     if (dir) addProject(dir);
   }
 

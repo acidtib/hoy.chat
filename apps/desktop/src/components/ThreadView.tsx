@@ -56,6 +56,7 @@ import { Composer } from "@/components/Composer";
 import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
 import { findThread, useSessionStore } from "@/state/store";
+import { usePrefsStore } from "@/state/prefs";
 import { listProjectPaths } from "@/lib/ipc";
 import { contextKey, modelSupportsImages } from "@/lib/types";
 import type {
@@ -121,6 +122,7 @@ export function ThreadView({
   const answerPermission = useSessionStore((s) => s.answerPermission);
   const notices = useSessionStore((s) => s.notices[threadId] ?? EMPTY_NOTICES);
   const dismissNotice = useSessionStore((s) => s.dismissNotice);
+  const expandReasoning = usePrefsStore((s) => s.expandReasoning);
   const threadWidgets = useSessionStore((s) => s.widgets[threadId]);
   const stopStreaming = useSessionStore((s) => s.stopStreaming);
   const focusSignal = useSessionStore((s) =>
@@ -419,7 +421,8 @@ export function ThreadView({
                     <MessageContent className="w-full">
                       {turn.reasoning && (
                         <Reasoning
-                          defaultOpen={false}
+                          defaultOpen={expandReasoning}
+                          autoCloseOnStreamEnd={!expandReasoning}
                           isStreaming={turn.reasoning.active ?? false}
                           duration={turn.reasoning.seconds}
                         >

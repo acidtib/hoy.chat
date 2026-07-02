@@ -1,8 +1,6 @@
 import { useState } from "react";
-import { Download, RefreshCw, Upload } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/state/store";
@@ -45,32 +43,6 @@ export function SettingsModal() {
                 </div>
               );
             })}
-          </div>
-          <div className="flex items-center gap-1 border-t border-border p-2">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground"
-              aria-label="Import settings"
-            >
-              <Download className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground"
-              aria-label="Export settings"
-            >
-              <Upload className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground"
-              aria-label="Reload settings"
-            >
-              <RefreshCw className="size-4" />
-            </Button>
           </div>
         </nav>
 
