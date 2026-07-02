@@ -26,6 +26,10 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 type EventSink = Arc<Mutex<Option<Channel<AgentEvent>>>>;
 
+// Byte-identical to SPAWN_NOTIFY_PREFIX in hoy-agents.ts. A notify with this
+// prefix is a spawn request, consumed here and never shown to the user (HOY-231).
+const SPAWN_NOTIFY_PREFIX: &str = "@hoy/spawn-subagent:";
+
 // Outcome of awaiting a correlated response, before it is mapped to the public
 // String error in request()/request_with_dialog_grace().
 enum RequestError {
@@ -432,6 +436,7 @@ fn route_message(
 // AgentSessionEvent + AssistantMessageEvent shapes.
 // Outcome of classifying an extension_ui_request. Kept pure (no stdin/sink I/O)
 // so route_message stays a thin dispatcher and this is unit-testable.
+#[derive(Debug)]
 enum ExtUiOutcome {
     // select/confirm/input/editor: awaits an extension_ui_response.
     Dialog(AgentEvent),
@@ -511,10 +516,35 @@ fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome 
             tool_name: None,
             tool_args: None,
         }),
-        "notify" => ExtUiOutcome::Notify(AgentEvent::Notify {
-            message: str_field("message").unwrap_or_default(),
-            notify_type: str_field("notifyType"),
-        }),
+        "notify" => {
+            let message = str_field("message").unwrap_or_default();
+            match message
+                .strip_prefix(SPAWN_NOTIFY_PREFIX)
+                .and_then(|j| serde_json::from_str::<Value>(j).ok())
+            {
+                Some(p) => ExtUiOutcome::Notify(AgentEvent::SubagentSpawned {
+                    agent_id: p
+                        .get("agentId")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    subagent_type: p
+                        .get("subagentType")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    task: p
+                        .get("task")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                }),
+                None => ExtUiOutcome::Notify(AgentEvent::Notify {
+                    message,
+                    notify_type: str_field("notifyType"),
+                }),
+            }
+        }
         "setStatus" => ExtUiOutcome::Notify(AgentEvent::SetStatus {
             status_key: str_field("statusKey").unwrap_or_default(),
             status_text: str_field("statusText"),
@@ -1439,6 +1469,42 @@ mod live_tests {
             classify_extension_ui("r", "somethingNew", &json!({ "method": "somethingNew" })),
             ExtUiOutcome::Ignore
         ));
+    }
+
+    #[test]
+    fn spawn_sentinel_notify_maps_to_subagent_spawned() {
+        let payload = r#"{"agentId":"a1","subagentType":"Explore","task":"read the README"}"#;
+        let value = serde_json::json!({
+            "type": "extension_ui_request",
+            "id": "u1",
+            "method": "notify",
+            "message": format!("{SPAWN_NOTIFY_PREFIX}{payload}"),
+        });
+        match classify_extension_ui("u1", "notify", &value) {
+            ExtUiOutcome::Notify(AgentEvent::SubagentSpawned {
+                agent_id,
+                subagent_type,
+                task,
+            }) => {
+                assert_eq!(agent_id, "a1");
+                assert_eq!(subagent_type, "Explore");
+                assert_eq!(task, "read the README");
+            }
+            other => panic!("expected SubagentSpawned, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plain_notify_is_unchanged() {
+        let value = serde_json::json!({
+            "type": "extension_ui_request", "id": "u2", "method": "notify", "message": "hello",
+        });
+        match classify_extension_ui("u2", "notify", &value) {
+            ExtUiOutcome::Notify(AgentEvent::Notify { message, .. }) => {
+                assert_eq!(message, "hello")
+            }
+            other => panic!("expected Notify, got {other:?}"),
+        }
     }
 
     // HOY-215: await_with_dialog_grace charges its budget only against dead air

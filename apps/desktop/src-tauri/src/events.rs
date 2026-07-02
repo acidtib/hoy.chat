@@ -91,6 +91,13 @@ pub enum AgentEvent {
     SetEditorText {
         text: String,
     },
+    // A subagent spawn request surfaced from the parent's agent tool (HOY-231).
+    // The renderer creates a child thread and drives it; not a transcript event.
+    SubagentSpawned {
+        agent_id: String,
+        subagent_type: String,
+        task: String,
+    },
     // Pi's queue_update: the current steering and follow-up queues for this
     // session, emitted on every enqueue/dequeue while a turn streams. Drives the
     // composer's queued-message chips (HOY-218). Session-level, not a turn block.
