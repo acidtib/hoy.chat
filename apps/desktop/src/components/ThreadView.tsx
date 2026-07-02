@@ -377,7 +377,7 @@ export function ThreadView({
                       />
                       get_state round-trip
                     </span>
-                    <span className="text-[11px] tabular-nums text-muted-foreground/70">
+                    <span className="text-[11px] tabular-nums text-muted-foreground">
                       session {debug.sessionId.slice(0, 8)}
                     </span>
                   </div>

@@ -111,7 +111,7 @@ export function ThreadHistory() {
         </Tooltip>
       </div>
 
-      <div className="px-3 pb-1 text-[11px] uppercase tracking-wider text-muted-foreground/70">
+      <div className="px-3 pb-1 text-[11px] uppercase tracking-wider text-muted-foreground">
         {groups.count} {showArchived ? "archived" : ""}{" "}
         {groups.count === 1 ? "thread" : "threads"}
       </div>
@@ -124,7 +124,7 @@ export function ThreadHistory() {
         ) : (
           groups.sections.map((section) => (
             <div key={section.bucket} className="mb-2">
-              <div className="px-2.5 py-1 text-[11px] text-muted-foreground/70">
+              <div className="px-2.5 py-1 text-[11px] text-muted-foreground">
                 {section.bucket}
               </div>
               <ul className="flex flex-col gap-0.5">

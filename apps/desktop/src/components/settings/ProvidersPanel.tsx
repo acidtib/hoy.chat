@@ -158,13 +158,13 @@ function ProviderRow({
         {configured && auth ? (
           <StatusPill auth={auth} />
         ) : (
-          <span className="shrink-0 text-xs text-muted-foreground/60 transition-colors group-hover/row:text-muted-foreground">
+          <span className="shrink-0 text-xs text-muted-foreground transition-colors group-hover/row:text-foreground">
             Add key
           </span>
         )}
         <ChevronRight
           className={cn(
-            "size-4 shrink-0 text-muted-foreground/60 transition-transform",
+            "size-4 shrink-0 text-muted-foreground transition-transform",
             expanded && "rotate-90",
           )}
         />
@@ -389,7 +389,7 @@ export function ProvidersPanel() {
               : "API keys"}
           </p>
           <div className="relative w-56">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}

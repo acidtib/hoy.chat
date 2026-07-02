@@ -22,10 +22,19 @@ export function SettingsModal() {
             {CATEGORIES.map((cat, i) => {
               const prev = CATEGORIES[i - 1];
               const Icon = cat.icon;
+              // First placeholder in the run gets a "Coming soon" heading instead
+              // of a bare divider, so the deferred categories read as subordinate.
+              const startsComingSoon = cat.placeholder && !prev?.placeholder;
               return (
                 <div key={cat.id}>
-                  {prev && prev.group !== cat.group && (
-                    <Separator className="my-2" />
+                  {startsComingSoon ? (
+                    <p className="px-2.5 pb-1 pt-3 text-[11px] font-medium text-muted-foreground">
+                      Coming soon
+                    </p>
+                  ) : (
+                    prev && prev.group !== cat.group && (
+                      <Separator className="my-2" />
+                    )
                   )}
                   <button
                     type="button"

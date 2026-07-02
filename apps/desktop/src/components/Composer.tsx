@@ -672,7 +672,7 @@ export function Composer({
             <FileIcon className="size-4 shrink-0 text-muted-foreground" />
           )}
           <span className="truncate">{entry.name}</span>
-          <span className="ml-auto truncate pl-2 text-xs text-muted-foreground/70">
+          <span className="ml-auto truncate pl-2 text-xs text-muted-foreground">
             {entry.path}
           </span>
         </PickerRow>
@@ -916,7 +916,7 @@ export function Composer({
           )}
         />
         {showPlaceholder && (
-          <div className="pointer-events-none absolute left-4 top-3.5 text-sm leading-6 text-muted-foreground/70">
+          <div className="pointer-events-none absolute left-4 top-3.5 text-sm leading-6 text-muted-foreground">
             {placeholderText}
           </div>
         )}
@@ -1151,7 +1151,7 @@ function PickerSection({
 }) {
   return (
     <div className="py-0.5">
-      <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+      <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
       {children}
@@ -1179,7 +1179,7 @@ function PickerRow({
 
 function PickerEmpty({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-2 py-1.5 text-sm text-muted-foreground/70">{children}</div>
+    <div className="px-2 py-1.5 text-sm text-muted-foreground">{children}</div>
   );
 }
 
@@ -1211,11 +1211,11 @@ function SlashRow({
     >
       <span className="shrink-0 font-medium">/{display}</span>
       {command.description && (
-        <span className="truncate text-xs text-muted-foreground/70">
+        <span className="truncate text-xs text-muted-foreground">
           {command.description}
         </span>
       )}
-      <span className="ml-auto shrink-0 rounded border border-border/60 px-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+      <span className="ml-auto shrink-0 rounded border border-border/60 px-1 text-[10px] uppercase tracking-wide text-muted-foreground">
         {command.source}
       </span>
     </button>
@@ -1236,7 +1236,7 @@ function RecentRow({
     <PickerRow onSelect={onSelect}>
       <Clock className="size-4 shrink-0 text-muted-foreground" />
       <span className="truncate">{mentionLabel(contextRef)}</span>
-      <span className="ml-auto truncate pl-2 text-xs text-muted-foreground/70">
+      <span className="ml-auto truncate pl-2 text-xs text-muted-foreground">
         {secondary}
       </span>
     </PickerRow>
@@ -1244,7 +1244,8 @@ function RecentRow({
 }
 
 // A category row in the picker's root view. Supported categories drill in (chevron)
-// or act; deferred ones render dimmed and inert to match Zed's menu (HOY-220).
+// or act; deferred ones are hidden entirely rather than shown dimmed and inert,
+// so the root menu lists only what actually works (HOY-220).
 function CategoryRow({
   icon,
   label,
@@ -1258,14 +1259,7 @@ function CategoryRow({
   disabled?: boolean;
   onSelect?: () => void;
 }) {
-  if (disabled) {
-    return (
-      <div className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-muted-foreground/40">
-        {icon}
-        <span>{label}</span>
-      </div>
-    );
-  }
+  if (disabled) return null;
   return (
     <button
       type="button"

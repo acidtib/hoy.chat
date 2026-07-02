@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GitBranch, Minus, Settings, Square, X } from "lucide-react";
+import { Minus, Settings, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -46,15 +46,9 @@ export function TitleBar() {
             >
               {projectName}
             </span>
-            {/* Mocked branch chip: real git status (branch/dirty/stash) is a
-                follow-up; see FOLLOWUPS.md. */}
-            <span
-              data-tauri-drag-region
-              className="flex items-center gap-1 rounded px-1 py-0.5"
-            >
-              <GitBranch className="size-3.5" data-tauri-drag-region />
-              main
-            </span>
+            {/* The branch chip is intentionally omitted until real git status
+                (branch/dirty/stash) is wired; a hard-coded "main" is a false
+                signal for a git-native audience. Tracked in TODO.md. */}
           </>
         )}
       </div>

@@ -316,7 +316,7 @@ function ProjectGroup({
       {expanded && (
         <div className="mt-0.5 flex flex-col gap-0.5 pb-1">
           {project.threads.length === 0 ? (
-            <p className="px-2.5 py-1 pl-7 text-xs text-muted-foreground/70">
+            <p className="px-2.5 py-1 pl-7 text-xs text-muted-foreground">
               No threads yet
             </p>
           ) : (
