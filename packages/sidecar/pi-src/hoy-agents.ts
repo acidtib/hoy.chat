@@ -89,7 +89,7 @@ export function createHoyAgents() {
       name: "agent",
       label: "Agent",
       description:
-        "Spawn a specialized child agent to work on a task in its own thread. subagentType: general-purpose (full tools) or Explore (read-only). Fire-and-forget: returns a handle; the subagent runs independently.",
+        "Spawn a specialized child agent to work on a task in its own thread. subagentType: general-purpose (full tools) or Explore (read-only). Fire-and-forget: returns a handle immediately; the subagent runs independently and its result is delivered back to you when it finishes.",
       promptSnippet: "agent (spawn a child agent, general-purpose or Explore, that runs in its own thread)",
       parameters: agentParams,
       execute: async (_id, params, _signal, _onUpdate, ctx) => run(params, ctx),

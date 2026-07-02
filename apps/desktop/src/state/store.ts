@@ -1651,18 +1651,29 @@ async function deliverAndDrain(finishedThreadId: string): Promise<void> {
   if (next) await deliverToParent(finishedThreadId, next);
 }
 
+// Parents with a delivery in flight but whose activeChannels slot is not yet
+// set (the acquireSession await window when the panel was closed). Guards the
+// check-then-act race so two children finishing back-to-back cannot both resume
+// a session-less parent and clobber each other's turn.
+const deliveringParents = new Set<string>();
+
 // Inject `delivery` into `parentThreadId` as a marked subagent-result turn and
 // stream the parent's continuation. If the parent is mid-turn, queue instead and
 // let its next `done` drain it. Resumes the parent sidecar from its transcript
 // when the panel was closed.
 async function deliverToParent(parentThreadId: string, delivery: Delivery): Promise<void> {
-  if (activeChannels.has(parentThreadId)) {
+  if (activeChannels.has(parentThreadId) || deliveringParents.has(parentThreadId)) {
     queueDelivery(parentThreadId, delivery);
     return;
   }
   const found = findThread(useSessionStore.getState().projects, parentThreadId);
   if (!found) return;
   const { project, thread: parent } = found;
+  // Claim the slot synchronously, before any await, so a concurrent child's
+  // done handler queues instead of racing the acquireSession window. Handed off
+  // to activeChannels (set synchronously inside streamPromptOnThread) for the
+  // rest of the turn; released in finally.
+  deliveringParents.add(parentThreadId);
   try {
     let sessionId = parent.sessionId ?? null;
     if (!sessionId) {
@@ -1693,13 +1704,27 @@ async function deliverToParent(parentThreadId: string, delivery: Delivery): Prom
     }));
     await streamPromptOnThread(parentThreadId, sessionId, delivery.message);
   } catch (e) {
-    useSessionStore.setState((s) => ({
-      streaming: { ...s.streaming, [parentThreadId]: false },
-      threadErrors: {
-        ...s.threadErrors,
-        [parentThreadId]: String(e instanceof Error ? e.message : e),
-      },
-    }));
+    // Mirror submitPrompt's catch: drop the channel so a failed delivery does
+    // not block every future one behind a stale busy-guard, and render the
+    // failure inline on the seeded assistant turn.
+    activeChannels.delete(parentThreadId);
+    useSessionStore.setState((s) => {
+      const list = s.turns[parentThreadId] ?? [];
+      const last = list[list.length - 1];
+      const streaming = { ...s.streaming, [parentThreadId]: false };
+      if (last && last.role === "assistant") {
+        return {
+          streaming,
+          turns: {
+            ...s.turns,
+            [parentThreadId]: [...list.slice(0, -1), { ...last, streaming: false, error: String(e) }],
+          },
+        };
+      }
+      return { streaming, threadErrors: { ...s.threadErrors, [parentThreadId]: String(e) } };
+    });
+  } finally {
+    deliveringParents.delete(parentThreadId);
   }
 }
 
