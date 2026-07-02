@@ -29,7 +29,7 @@ export default async function Home() {
     url: PRODUCTION_URL,
     downloadUrl: RELEASES_URL,
     description:
-      "A desktop app for your coding agent. It runs on your machine, uses your own API keys, and is powered by the Pi agent.",
+      "A desktop app for your coding agent. It runs on your machine and uses your own API keys.",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
   };
 

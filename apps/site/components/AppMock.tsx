@@ -88,7 +88,7 @@ const THREADS: { title: string; time: string; active?: boolean }[] = [
   { title: "Add /healthz endpoint", time: "now", active: true },
   { title: "Refactor the auth guard", time: "2h" },
   { title: "Fix JSONL U+2028 framing", time: "1d" },
-  { title: "Bump Pi to 0.80.3", time: "2d" },
+  { title: "Bump deps to latest", time: "2d" },
 ];
 
 function Sidebar() {

@@ -8,7 +8,7 @@ import "./globals.css";
 import { SITE_URL, IS_PRODUCTION, canonical, PRODUCTION_URL } from "@/lib/site";
 
 const DESCRIPTION =
-  "A real desktop app for your coding agent. It runs on your machine, uses your own API keys, and is powered by the Pi agent. Beta, expect rough edges.";
+  "A real desktop app for your coding agent. It runs on your machine and uses your own API keys. Beta, expect rough edges.";
 
 export const metadata: Metadata = {
   title: "Hoy Chat, a desktop app for coding agents",
@@ -20,7 +20,6 @@ export const metadata: Metadata = {
     "desktop app for coding agents",
     "AI coding agent GUI",
     "local coding agent",
-    "Pi coding agent",
     "bring your own API key",
   ],
   // Every deploy consolidates to the production apex; the beta stays out of the
