@@ -3,6 +3,13 @@
 // new build shows up without editing markup; FALLBACK_VERSION is only used when
 // the build-time releases fetch is empty or fails.
 
+// The site's own canonical origin, used for metadataBase and OpenGraph URLs.
+// Defaults to the production apex; a beta or preview deploy sets
+// NEXT_PUBLIC_SITE_URL to its own origin (e.g. the Pages custom domain) so the
+// metadata advertises where the page actually lives instead of pointing
+// crawlers at production. Inlined at build time (static export).
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://hoy.chat";
+
 export const REPO = "acidtib/hoy.chat";
 export const REPO_URL = `https://github.com/${REPO}`;
 export const RELEASES_URL = `${REPO_URL}/releases`;

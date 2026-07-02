@@ -5,16 +5,17 @@ import Script from "next/script";
 // the same package the desktop app uses (@fontsource-variable/geist).
 import "@fontsource-variable/geist";
 import "./globals.css";
+import { SITE_URL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Hoy Chat, a desktop app for coding agents",
   description:
     "A real desktop app for your coding agent. It runs on your machine, uses your own API keys, and is powered by the Pi agent. Beta, expect rough edges.",
-  metadataBase: new URL("https://hoy.chat"),
+  metadataBase: new URL(SITE_URL),
   openGraph: {
     title: "Hoy Chat",
     description: "A desktop app for your coding agent. Runs locally, your keys. Beta.",
-    url: "https://hoy.chat",
+    url: SITE_URL,
     siteName: "Hoy Chat",
     type: "website",
   },
