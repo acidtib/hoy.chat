@@ -1,10 +1,18 @@
-import { useMemo } from "react";
-import { FolderPlus, Plus, Sparkle } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Check, ChevronDown, FolderPlus, Plus, Sparkle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useSessionStore } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 import { pickDirectory } from "@/lib/ipc";
-import { formatRelativeTime } from "@/lib/utils";
+import { cn, formatRelativeTime } from "@/lib/utils";
 
 // The home screen shown when no thread panel is open. It is a launcher, not a
 // splash: the fastest paths to value (resume a recent thread, start a new one,
@@ -13,9 +21,15 @@ const MAX_RECENTS = 6;
 
 export function HomePage() {
   const projects = useSessionStore((s) => s.projects);
+  const activeProjectId = useSessionStore((s) => s.activeProjectId);
   const addThread = useSessionStore((s) => s.addThread);
   const addProject = useSessionStore((s) => s.addProject);
   const openThread = useSessionStore((s) => s.openThread);
+  const setActiveProject = useSessionStore((s) => s.setActiveProject);
+
+  // Explicit pick from the project chooser; overrides the default target until
+  // the user changes it. Cleared implicitly when it no longer resolves.
+  const [picked, setPicked] = useState<string | null>(null);
 
   // Most recently touched non-archived threads across all projects, each tagged
   // with its project for context.
@@ -29,9 +43,21 @@ export function HomePage() {
     return rows.slice(0, MAX_RECENTS);
   }, [projects]);
 
-  // New threads land in the project of the most recent thread, else the first
-  // project. Null when there is no project yet (first run).
-  const targetProjectId = recents[0]?.project.id ?? projects[0]?.id ?? null;
+  const exists = (id: string | null) =>
+    !!id && projects.some((p) => p.id === id);
+
+  // Target project for a new thread, in priority order: the user's explicit
+  // pick, then the last project they worked in, then the most recent thread's
+  // project, then the first project. Each is validated so a stale id (removed
+  // project) falls through.
+  const targetProjectId =
+    (exists(picked) ? picked : null) ??
+    (exists(activeProjectId) ? activeProjectId : null) ??
+    recents[0]?.project.id ??
+    projects[0]?.id ??
+    null;
+
+  const targetProject = projects.find((p) => p.id === targetProjectId) ?? null;
 
   async function handleOpenProject() {
     const dir = await pickDirectory(
@@ -54,10 +80,54 @@ export function HomePage() {
 
         <div className="flex flex-wrap items-center gap-2">
           {hasProjects && targetProjectId && (
-            <Button size="sm" onClick={() => addThread(targetProjectId)}>
-              <Plus className="size-4" />
-              New thread
-            </Button>
+            <>
+              <Button size="sm" onClick={() => addThread(targetProjectId)}>
+                <Plus className="size-4" />
+                New thread
+              </Button>
+              {/* Choose which project the new thread lands in. Shown only with
+                  more than one project; otherwise the target is unambiguous. */}
+              {projects.length > 1 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <span className="text-muted-foreground">in</span>
+                      <span className="max-w-[10rem] truncate">
+                        {targetProject?.name}
+                      </span>
+                      <ChevronDown className="size-3.5 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-52">
+                    <DropdownMenuLabel>New thread in</DropdownMenuLabel>
+                    {projects.map((p) => (
+                      <DropdownMenuItem
+                        key={p.id}
+                        onSelect={() => {
+                          setPicked(p.id);
+                          setActiveProject(p.id);
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "size-4",
+                            p.id === targetProjectId
+                              ? "opacity-100"
+                              : "opacity-0",
+                          )}
+                        />
+                        <span className="truncate">{p.name}</span>
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => void handleOpenProject()}>
+                      <FolderPlus className="size-4" />
+                      Open project...
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </>
           )}
           <Button
             variant={hasProjects ? "outline" : "default"}

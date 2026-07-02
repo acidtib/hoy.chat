@@ -245,6 +245,11 @@ interface SessionStore {
   projects: Project[];
   panels: Panel[];
   activeThreadId: string | null;
+  // The last project the user worked in (opened/focused a thread, or added a
+  // project). Survives closing all panels, so the home launcher can default a
+  // new thread to it. Not persisted across restart; the recency fallback covers
+  // a cold start.
+  activeProjectId: string | null;
   bodyWidth: number;
   sidebarCollapsed: boolean;
   // Which view the sidebar shows: the projects -> threads tree, or the flat
@@ -325,6 +330,7 @@ interface SessionStore {
 
   openThread: (id: string) => void;
   focusPanel: (id: string) => void;
+  setActiveProject: (id: string | null) => void;
   requestTeardown: (
     action: "close" | "archive" | "delete",
     threadId: string,
@@ -426,6 +432,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   projects: [],
   panels: [],
   activeThreadId: null,
+  activeProjectId: null,
   bodyWidth: initialBodyWidth(),
   sidebarCollapsed: false,
   sidebarView: "projects",
@@ -468,12 +475,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         threadId: id,
         nonce: (s.focusRequest?.nonce ?? 0) + 1,
       };
+      // Remember the project as the last worked in (drives the home launcher's
+      // default target).
+      const activeProjectId =
+        findThread(s.projects, id)?.project.id ?? s.activeProjectId;
       if (s.panels.some((p) => p.id === id))
-        return { activeThreadId: id, expandedThreadId, focusRequest };
+        return { activeThreadId: id, activeProjectId, expandedThreadId, focusRequest };
       const { panels, width } = placeNewPanel(s.panels, s.bodyWidth);
       return {
         panels: [...panels, { id, width }],
         activeThreadId: id,
+        activeProjectId,
         expandedThreadId,
         focusRequest,
       };
@@ -483,7 +495,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   // Pointer-down focus inside an open panel: active accent only, no composer
   // focus and no full screen change.
-  focusPanel: (id) => set({ activeThreadId: id }),
+  focusPanel: (id) =>
+    set((s) => ({
+      activeThreadId: id,
+      activeProjectId: findThread(s.projects, id)?.project.id ?? s.activeProjectId,
+    })),
+
+  setActiveProject: (id) => set({ activeProjectId: id }),
 
   requestTeardown: (action, threadId) => {
     // The confirm dialog only guards a live stream; when the user has turned that
@@ -745,6 +763,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         projects: s.projects.filter((p) => p.id !== projectId),
         panels,
         activeThreadId,
+        activeProjectId:
+          s.activeProjectId === projectId ? null : s.activeProjectId,
       };
     });
   },
