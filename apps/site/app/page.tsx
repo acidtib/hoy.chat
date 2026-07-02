@@ -12,14 +12,33 @@ import {
   ModelBeat,
 } from "@/components/AppMock";
 import { getLatestVersion } from "@/lib/releases";
+import { PRODUCTION_URL, RELEASES_URL } from "@/lib/site";
 
 // Resolved at build time via the static export; a new GitHub release refreshes
 // the displayed version on the next deploy without editing this file.
 export default async function Home() {
   const version = await getLatestVersion();
 
+  const softwareJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "Hoy Chat",
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "macOS, Windows, Linux",
+    softwareVersion: version,
+    url: PRODUCTION_URL,
+    downloadUrl: RELEASES_URL,
+    description:
+      "A desktop app for your coding agent. It runs on your machine, uses your own API keys, and is powered by the Pi agent.",
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  };
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }}
+      />
       <SiteHeader />
 
       <main>

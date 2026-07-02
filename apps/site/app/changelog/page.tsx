@@ -4,11 +4,13 @@ import remarkGfm from "remark-gfm";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { getReleases, getLatestVersion, formatDate } from "@/lib/releases";
-import { RELEASES_URL } from "@/lib/site";
+import { RELEASES_URL, canonical } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Changelog, Hoy Chat",
   description: "Every build of Hoy we have shipped, pulled from GitHub Releases.",
+  // Override the layout's canonical so this page points at itself, not the home.
+  alternates: { canonical: canonical("/changelog") },
 };
 
 // Built statically from GitHub Releases. getReleases() swallows any fetch
