@@ -19,8 +19,11 @@
 // registers, passed as the tools allowlist in hoy-sidecar.ts (HOY-186). The
 // mcp and agent tools are not in that list; each is advertised via its own
 // block, appended only when the tool is actually available in the session.
-// Pi appends skills, current date, and cwd after a custom prompt, so they are
-// not restated here.
+// The agent block (HOY-234 Phase 3) is built dynamically from the enabled
+// types in the loaded subagent registry (hoy-agents-registry.ts), not a
+// static list, so newly registered or disabled types are reflected without
+// editing this file. Pi appends skills, current date, and cwd after a custom
+// prompt, so they are not restated here.
 
 export const HOY_SYSTEM_PROMPT = `You are Hoy, a coding agent running inside the Hoy desktop app. Your name is Hoy. When asked who you are or what your name is, answer that you are Hoy. You help users by reading files, executing commands, editing code, and writing new files.
 
@@ -90,23 +93,25 @@ export const MCP_TOOLS_PROMPT = `MCP tools:
 - The mcp tool bridges to configured Model Context Protocol servers. Discover before calling: mcp({action:"search"}) lists available tools as server/tool with descriptions; mcp({action:"describe", server, tool}) returns a tool's input schema; mcp({action:"call", server, tool, args}) invokes it.
 - Search or describe before calling an unfamiliar tool so you pass the right arguments. Starting a server and each tool call may require user approval.`;
 
-// Appended to the base prompt only when the agent tool is available (parent
-// sessions; a spawned child never has it, depth cap). Advertises the tool's
-// contract so the model reaches for it deliberately: the call returns a handle
-// immediately (fire-and-forget), and the subagent's result is delivered back
-// into the conversation when it finishes (HOY-233).
-export const AGENT_TOOLS_PROMPT = `Subagents:
-- The agent tool spawns a specialized child agent that runs in its own thread. Two types: general-purpose (full tool access) and Explore (read-only: read, grep, find, ls). Call agent({subagentType, task}) with a complete, self-contained task; the subagent does not see this conversation.
+// Built from the enabled registry types so the model sees exactly what it can
+// spawn. HOY-233 delivery contract retained: results come back.
+export function agentToolsPrompt(agentTypes: Array<{ name: string; description?: string }>): string {
+  const lines = agentTypes.map((t) => `  - ${t.name}${t.description ? `: ${t.description}` : ""}`).join("\n");
+  return `Subagents:
+- The agent tool spawns a specialized child agent that runs in its own thread. Call agent({subagentType, task}) with a complete, self-contained task; the subagent does not see this conversation. Available types:
+${lines}
 - Fire-and-forget: the call returns a handle immediately and the subagent runs independently. When it finishes, its result is delivered back into this conversation as a new message, so you may keep working; you will be resumed with the subagent's result when it arrives.
 - Spawning asks for user approval. A subagent cannot spawn further subagents.`;
+}
 
-// The full override. The MCP block is included only when servers are configured;
-// the agent block only when the tool is available. Callers pass whether
-// loadMcpConfig found any servers, and whether this is a parent session.
-export function buildHoySystemPrompt(mcpConfigured: boolean, agentEnabled = false): string {
+export function buildHoySystemPrompt(
+  mcpConfigured: boolean,
+  agentEnabled = false,
+  agentTypes: Array<{ name: string; description?: string }> = [],
+): string {
   let prompt = HOY_SYSTEM_PROMPT;
   if (mcpConfigured) prompt += `\n\n${MCP_TOOLS_PROMPT}`;
-  if (agentEnabled) prompt += `\n\n${AGENT_TOOLS_PROMPT}`;
+  if (agentEnabled) prompt += `\n\n${agentToolsPrompt(agentTypes)}`;
   return prompt;
 }
 

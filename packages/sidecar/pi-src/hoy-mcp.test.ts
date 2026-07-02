@@ -195,12 +195,16 @@ describe("mcp proxy tool (real stdio server)", () => {
     await shutdown();
   });
 
-  test("system prompt advertises the agent tool only when agent is enabled", () => {
+  test("system prompt advertises enabled agent types dynamically", () => {
     expect(buildHoySystemPrompt(false, false)).not.toContain("Subagents:");
-    const enabled = buildHoySystemPrompt(false, true);
+    const enabled = buildHoySystemPrompt(false, true, [
+      { name: "Explore", description: "read-only" },
+      { name: "Reviewer", description: "reviews diffs" },
+    ]);
     expect(enabled).toContain("Subagents:");
-    expect(enabled).toContain("Fire-and-forget");
+    expect(enabled).toContain("Explore");
+    expect(enabled).toContain("Reviewer");
+    expect(enabled).toContain("reviews diffs");
     expect(enabled).toContain("delivered back");
-    expect(enabled).not.toContain("does NOT come back");
   });
 });
