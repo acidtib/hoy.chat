@@ -5,6 +5,7 @@ mod oauth;
 mod pi_config;
 mod reader;
 mod sidecar;
+mod subagents_config;
 mod workspace;
 
 use sidecar::SidecarManager;
