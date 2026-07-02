@@ -21,13 +21,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import {
-  arch,
-  hostname,
-  platform,
-  type as osType,
-  version,
-} from "@tauri-apps/plugin-os";
+import { arch, hostname, platform, version } from "@tauri-apps/plugin-os";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   Select,
@@ -679,10 +673,6 @@ function AboutPanel() {
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Platform</dt>
             <dd className="font-mono text-xs">{platform()}</dd>
-          </div>
-          <div className="flex justify-between">
-            <dt className="text-muted-foreground">OS type</dt>
-            <dd className="font-mono text-xs">{osType()}</dd>
           </div>
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Version</dt>

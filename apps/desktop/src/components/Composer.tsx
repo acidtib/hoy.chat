@@ -3,15 +3,15 @@ import {
   AtSign,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Clock,
   Code,
   File as FileIcon,
   Folder,
   GitBranch,
   Image as ImageIcon,
-  Maximize2,
   MessageSquare,
-  Minimize2,
   Plus,
   SendHorizontal,
   Sparkles,
@@ -837,9 +837,9 @@ export function Composer({
               }
             >
               {expanded ? (
-                <Minimize2 className="size-3.5" />
+                <ChevronsDownUp className="size-3.5" />
               ) : (
-                <Maximize2 className="size-3.5" />
+                <ChevronsUpDown className="size-3.5" />
               )}
             </Button>
           </TooltipTrigger>
