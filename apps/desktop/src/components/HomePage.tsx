@@ -44,11 +44,11 @@ export function HomePage() {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
-      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center gap-8 px-8 py-16">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-8 pb-16 pt-14">
         <div className="flex items-center gap-2.5">
-          <Sparkle className="size-5 text-brand" />
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            What&rsquo;s up next?
+          <Sparkle className="size-[18px] text-brand" />
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">
+            Threads
           </h1>
         </div>
 

@@ -14,15 +14,35 @@ any Windows distribution; not before.
 ## Visible gaps
 
 ### Real git status in the title bar
-The branch chip in `TitleBar.tsx` is a static mock ("main"). Needed: a Rust
-command (`git -C <project.path>`) returning branch, dirty flag, stash count;
-refresh on active-project change and window focus. Related decision: macOS
-`titleBarStyle` (the window runs `decorations: false`, which also removes
-macOS traffic lights).
+The mocked "main" branch chip was removed from `TitleBar.tsx` (a false signal
+for a git-native audience; HOY-233). To reinstate it for real: a Rust command
+(`git -C <project.path>`) returning branch, dirty flag, stash count; refresh on
+active-project change and window focus. Related decision: macOS `titleBarStyle`
+(the window runs `decorations: false`, which also removes macOS traffic lights).
 
 ### Cross-restart restore of open panels
 The sidebar and history restore across restarts; open panels do not, threads
 reopen on demand. Decide whether the panel strip should persist.
+
+### Composer and picker accessibility (from the apps/desktop critique)
+The message composer is a bespoke `contenteditable` (`role=textbox`) with inline
+mention chips (`contenteditable=false` spans) and custom `@`/`/` menus built as
+`div`/`button` lists. Screen-reader gaps: chips carry no `aria-label` (announce
+only their text); the pickers have no `listbox`/`option` roles, no
+`aria-activedescendant`, and focus is deliberately kept in the editor
+(`onMouseDown preventDefault`), so SR users get no option announcements or roving
+focus. Also verify the settings/other modals have a focus trap + `aria-modal` +
+Escape. Decide: add ARIA roles/roving semantics to the existing contenteditable,
+or move to a textarea + token model. Largest remaining item from the critique
+(Sam persona); needs its own focused pass.
+
+### Provider state taxonomy (from the apps/desktop critique)
+`ProvidersPanel` uses five overlapping verbs/states: Connect, Reconnect, Signed
+in, Add key, Saved key. "Signed in" appears in both the subscription block and
+the API-keys list (a provider like Anthropic authed via OAuth shows in both),
+which is ambiguous about subscription-vs-key auth. Settle a consistent vocabulary
+per axis (e.g. subscriptions: Connect / Connected; keys: Add key / Key saved) and
+disambiguate the dual appearance.
 
 ## Features not built yet
 

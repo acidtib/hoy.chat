@@ -98,7 +98,7 @@ const MODE_LABELS: Array<{ value: PermissionMode; label: string }> = [
 // DOM carries the ContextRef in data-* so the editor serializes back to a draft.
 
 const MENTION_CLASS =
-  "mention-chip mx-px inline-flex items-center gap-1 rounded border border-border/70 bg-muted/60 px-1 align-middle text-[0.9em] text-foreground";
+  "mention-chip mx-px inline-flex items-center gap-1 rounded-sm border border-border/70 bg-muted/60 px-1 align-middle text-[0.9em] text-foreground";
 
 const ICON_SVG: Record<ContextRef["kind"], string> = {
   file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
@@ -1215,7 +1215,7 @@ function SlashRow({
           {command.description}
         </span>
       )}
-      <span className="ml-auto shrink-0 rounded border border-border/60 px-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+      <span className="ml-auto shrink-0 rounded-sm border border-border/60 px-1 text-[11px] uppercase tracking-wide text-muted-foreground">
         {command.source}
       </span>
     </button>

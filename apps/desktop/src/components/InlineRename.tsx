@@ -36,7 +36,7 @@ export function InlineRename({
         if (e.key === "Escape") onClose();
       }}
       className={cn(
-        "rounded border border-border bg-background/60 px-1 text-foreground focus:outline-none",
+        "rounded-sm border border-border bg-background/60 px-1 text-foreground focus:outline-none",
         className,
       )}
     />
