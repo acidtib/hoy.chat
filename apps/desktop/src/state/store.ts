@@ -358,6 +358,13 @@ interface SessionStore {
   setSidebarWidth: (width: number) => void;
   addProject: (path: string) => void;
   addThread: (projectId: string) => string;
+  // Create a child thread for a spawned subagent (HOY-231) and drive it
+  // through create_session + the shared streaming helper, same as a
+  // user-submitted thread.
+  spawnChildThread: (
+    parentThreadId: string,
+    payload: { agentId: string; subagentType: string; task: string },
+  ) => Promise<void>;
   removeProject: (projectId: string) => void;
 
   // Credential changes go through the store (HOY-196): the backend respawns
@@ -758,6 +765,60 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     get().openThread(thread.id);
     return thread.id;
   },
+  spawnChildThread: async (parentThreadId, payload) => {
+    const found = findThread(get().projects, parentThreadId);
+    if (!found) return;
+    const { project, thread: parent } = found;
+    const childId = newId("t");
+    const shortTask =
+      payload.task.length > 40 ? `${payload.task.slice(0, 40)}...` : payload.task;
+    const child: Thread = {
+      id: childId,
+      title: `${payload.subagentType}: ${shortTask}`,
+      updatedAt: Date.now(),
+      sessionId: null,
+      parentThreadId,
+      spawnedBy: { type: payload.subagentType, agentId: payload.agentId },
+    };
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === project.id ? { ...p, threads: [...p.threads, child] } : p,
+      ),
+      // Seed the transcript like submitPrompt does: a user turn carrying the
+      // task, then the in-flight assistant turn streamPromptOnThread folds
+      // events into. Without this, applyEvent is a no-op (it requires the
+      // last turn to already be an assistant turn) and nothing would render.
+      turns: {
+        ...s.turns,
+        [childId]: [
+          { role: "user", text: payload.task },
+          { role: "assistant", blocks: [], streaming: true },
+        ],
+      },
+      streaming: { ...s.streaming, [childId]: true },
+    }));
+    try {
+      const cwd = project.path ?? "";
+      const sessionId = await createSession(
+        cwd,
+        null,
+        payload.subagentType,
+        parent.permissionMode ?? null,
+      );
+      set((s) => ({
+        projects: patchThread(s.projects, childId, (t) => ({ ...t, sessionId })),
+      }));
+      await streamPromptOnThread(childId, sessionId, payload.task);
+    } catch (e) {
+      set((s) => ({
+        streaming: { ...s.streaming, [childId]: false },
+        threadErrors: {
+          ...s.threadErrors,
+          [childId]: String(e instanceof Error ? e.message : e),
+        },
+      }));
+    }
+  },
   removeProject: (projectId) => {
     // Tear down any live sidecars the project's threads are running.
     const removed = get().projects.find((p) => p.id === projectId);
@@ -1045,189 +1106,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // place before the prompt streams.
       await applyThreadPermissionMode(threadId, sessionId);
 
-      const channel = new Channel<AgentEvent>();
-      activeChannels.set(threadId, channel);
-      channel.onmessage = (event) => {
-        // Ignore events from a superseded channel: closing a panel kills the
-        // sidecar, which makes the reader emit a (now-expected) error + done over
-        // this channel. Without this guard that stale error would resurface as a
-        // banner and orphaned turns when the thread is reopened.
-        if (activeChannels.get(threadId) !== channel) return;
-        set((s) => ({
-          turns: {
-            ...s.turns,
-            [threadId]: applyEvent(s.turns[threadId] ?? [], event),
-          },
-        }));
-        if (event.kind === "permissionRequest") {
-          const { kind: _k, ...request } = event;
-          set((s) => {
-            let turns = s.turns;
-            // HOY-199: mark the tool block awaiting approval so the user sees
-            // what the tool will do (the diff) before deciding. The block was
-            // created by the tool `start` event that precedes this request.
-            if (request.toolCallId) {
-              turns = {
-                ...turns,
-                [threadId]: markToolPending(
-                  turns[threadId] ?? [],
-                  request.toolCallId,
-                  request.toolName,
-                  request.toolArgs,
-                ),
-              };
-            }
-            return {
-              turns,
-              pendingPermissions: {
-                ...s.pendingPermissions,
-                [threadId]: [
-                  ...(s.pendingPermissions[threadId] ?? []),
-                  request,
-                ],
-              },
-            };
-          });
-        } else if (event.kind === "done") {
-          activeChannels.delete(threadId);
-          stopStreaming();
-          // A turn cannot end with a dialog still blocking it; drop any
-          // leftovers so no orphaned card survives the turn. Also remove
-          // pending tool blocks that were never replaced (HOY-199).
-          set((s) => {
-            const turns = s.turns[threadId];
-            if (!turns) return { pendingPermissions: { ...s.pendingPermissions, [threadId]: [] } };
-            const last = turns[turns.length - 1];
-            if (last && last.role === "assistant") {
-              const filtered = { ...last, blocks: last.blocks.filter((b) => b.kind !== "tool" || !b.tool.pending) };
-              // A delivered steer/follow-up opens a fresh assistant turn; if the
-              // run ended before it produced anything, drop the empty shell so no
-              // blank bubble is left behind.
-              const isEmpty =
-                filtered.blocks.length === 0 &&
-                !filtered.reasoning &&
-                !filtered.error &&
-                !filtered.aborted;
-              const nextTurns = isEmpty
-                ? turns.slice(0, -1)
-                : [...turns.slice(0, -1), filtered];
-              return {
-                turns: { ...s.turns, [threadId]: nextTurns },
-                pendingPermissions: { ...s.pendingPermissions, [threadId]: [] },
-              };
-            }
-            return { pendingPermissions: { ...s.pendingPermissions, [threadId]: [] } };
-          });
-          void get().refreshStats(threadId);
-        } else if (event.kind === "queueUpdate") {
-          // Pi sends the full queue arrays each time; replace, don't append. The
-          // chips reflect what is still queued; anything that left the queue was
-          // delivered into the run, so render it as a user turn followed by a
-          // fresh assistant turn (HOY-218). This keeps the live transcript in
-          // order and identical to a reloaded thread.
-          set((s) => {
-            const prev = s.queued[threadId] ?? { steering: [], followUp: [] };
-            const delivered = [
-              ...removedItems(prev.steering, event.steering),
-              ...removedItems(prev.followUp, event.followUp),
-            ];
-            const queued = {
-              ...s.queued,
-              [threadId]: {
-                steering: event.steering,
-                followUp: event.followUp,
-              },
-            };
-            if (delivered.length === 0) return { queued };
-            const list = s.turns[threadId] ?? [];
-            const closed = list.map((t, i) =>
-              i === list.length - 1 && t.role === "assistant"
-                ? { ...t, streaming: false }
-                : t,
-            );
-            const appended: Turn[] = [
-              ...closed,
-              ...delivered.map((deliveredText) => ({
-                role: "user" as const,
-                text: deliveredText,
-              })),
-              { role: "assistant" as const, blocks: [], streaming: true },
-            ];
-            return { queued, turns: { ...s.turns, [threadId]: appended } };
-          });
-        } else if (event.kind === "notify") {
-          // Transient notice; auto-expire so it does not pile up (ext UI).
-          const id = ++noticeSeq;
-          set((s) => ({
-            notices: {
-              ...s.notices,
-              [threadId]: [
-                ...(s.notices[threadId] ?? []),
-                { id, message: event.message, type: event.notifyType ?? "info" },
-              ],
-            },
-          }));
-          setTimeout(() => get().dismissNotice(threadId, id), NOTICE_TTL_MS);
-        } else if (event.kind === "setStatus") {
-          // Keyed footer status; an absent statusText clears that key.
-          set((s) => {
-            const thread = { ...(s.statuses[threadId] ?? {}) };
-            if (event.statusText === undefined) delete thread[event.statusKey];
-            else thread[event.statusKey] = event.statusText;
-            return { statuses: { ...s.statuses, [threadId]: thread } };
-          });
-        } else if (event.kind === "setWidget") {
-          // Keyed composer widget; absent widgetLines clears that key.
-          set((s) => {
-            const thread = { ...(s.widgets[threadId] ?? {}) };
-            if (event.widgetLines === undefined) delete thread[event.widgetKey];
-            else
-              thread[event.widgetKey] = {
-                lines: event.widgetLines,
-                placement: event.widgetPlacement ?? "aboveEditor",
-              };
-            return { widgets: { ...s.widgets, [threadId]: thread } };
-          });
-        } else if (event.kind === "setTitle") {
-          void getCurrentWindow().setTitle(event.title);
-        } else if (event.kind === "setEditorText") {
-          get().setDraft(threadId, event.text);
-        } else if (event.kind === "tool" && event.phase === "end") {
-          // Tool output is added to context, so the usage bar slides (HOY-208).
-          void get().refreshStats(threadId);
-        } else if (event.kind === "status" && event.label === "compacting") {
-          // Compaction rewrites context; refresh after it's done (the next
-          // text/tool event will update the bar; this is a best-effort interim).
-          void get().refreshStats(threadId);
-        } else if (event.kind === "compactionEnd") {
-          // Auto-path compaction finished (threshold/overflow). Clear the manual
-          // flag defensively, refresh the usage meter, and surface an honest
-          // notice; failures are shown, not swallowed (HOY-229).
-          set((s) => ({ compacting: { ...s.compacting, [threadId]: false } }));
-          if (event.aborted || event.errorMessage) {
-            pushNotice(
-              threadId,
-              `Compaction ${event.aborted ? "aborted" : "failed"}${
-                event.errorMessage ? `: ${event.errorMessage}` : ""
-              }`,
-              "error",
-            );
-          } else {
-            const after =
-              event.estimatedTokensAfter != null
-                ? ` -> ${event.estimatedTokensAfter.toLocaleString()}`
-                : "";
-            const before =
-              event.tokensBefore != null
-                ? `${event.tokensBefore.toLocaleString()}${after} tokens`
-                : "context";
-            pushNotice(threadId, `Compacted ${before}`, "info");
-          }
-          void get().refreshStats(threadId);
-        }
-      };
-
-      await sendPrompt(sessionId, outbound, channel, images);
+      await streamPromptOnThread(threadId, sessionId, outbound, images);
     } catch (e) {
       activeChannels.delete(threadId);
       stopStreaming();
@@ -1528,6 +1407,219 @@ const pendingSessions = new Map<string, Promise<string>>();
 // started). Entry is dropped on done / close / send failure.
 const activeChannels = new Map<string, Channel<AgentEvent>>();
 
+// Wire a per-turn Channel to `threadId` and stream a prompt over it. Shared by
+// submitPrompt (a user-submitted turn) and spawnChildThread (a subagent's
+// turn, HOY-231), so a child thread streams through the exact same event
+// handling as any other thread. Module-level (outside the store creator), so
+// it uses useSessionStore.getState()/setState() in place of the creator's
+// bound get()/set(); those are the same functions under the hood.
+async function streamPromptOnThread(
+  threadId: string,
+  sessionId: string,
+  message: string,
+  images?: ImageContent[],
+): Promise<void> {
+  const stopStreaming = () =>
+    useSessionStore.setState((s) => ({
+      streaming: { ...s.streaming, [threadId]: false },
+    }));
+
+  const channel = new Channel<AgentEvent>();
+  activeChannels.set(threadId, channel);
+  channel.onmessage = (event) => {
+    // Ignore events from a superseded channel: closing a panel kills the
+    // sidecar, which makes the reader emit a (now-expected) error + done over
+    // this channel. Without this guard that stale error would resurface as a
+    // banner and orphaned turns when the thread is reopened.
+    if (activeChannels.get(threadId) !== channel) return;
+    // A subagent spawn (HOY-231): create the child thread and drive it
+    // through this same helper, rather than folding it into this thread's
+    // transcript.
+    if (event.kind === "subagentSpawned") {
+      void useSessionStore.getState().spawnChildThread(threadId, {
+        agentId: event.agentId,
+        subagentType: event.subagentType,
+        task: event.task,
+      });
+      return;
+    }
+    useSessionStore.setState((s) => ({
+      turns: {
+        ...s.turns,
+        [threadId]: applyEvent(s.turns[threadId] ?? [], event),
+      },
+    }));
+    if (event.kind === "permissionRequest") {
+      const { kind: _k, ...request } = event;
+      useSessionStore.setState((s) => {
+        let turns = s.turns;
+        // HOY-199: mark the tool block awaiting approval so the user sees
+        // what the tool will do (the diff) before deciding. The block was
+        // created by the tool `start` event that precedes this request.
+        if (request.toolCallId) {
+          turns = {
+            ...turns,
+            [threadId]: markToolPending(
+              turns[threadId] ?? [],
+              request.toolCallId,
+              request.toolName,
+              request.toolArgs,
+            ),
+          };
+        }
+        return {
+          turns,
+          pendingPermissions: {
+            ...s.pendingPermissions,
+            [threadId]: [
+              ...(s.pendingPermissions[threadId] ?? []),
+              request,
+            ],
+          },
+        };
+      });
+    } else if (event.kind === "done") {
+      activeChannels.delete(threadId);
+      stopStreaming();
+      // A turn cannot end with a dialog still blocking it; drop any
+      // leftovers so no orphaned card survives the turn. Also remove
+      // pending tool blocks that were never replaced (HOY-199).
+      useSessionStore.setState((s) => {
+        const turns = s.turns[threadId];
+        if (!turns) return { pendingPermissions: { ...s.pendingPermissions, [threadId]: [] } };
+        const last = turns[turns.length - 1];
+        if (last && last.role === "assistant") {
+          const filtered = { ...last, blocks: last.blocks.filter((b) => b.kind !== "tool" || !b.tool.pending) };
+          // A delivered steer/follow-up opens a fresh assistant turn; if the
+          // run ended before it produced anything, drop the empty shell so no
+          // blank bubble is left behind.
+          const isEmpty =
+            filtered.blocks.length === 0 &&
+            !filtered.reasoning &&
+            !filtered.error &&
+            !filtered.aborted;
+          const nextTurns = isEmpty
+            ? turns.slice(0, -1)
+            : [...turns.slice(0, -1), filtered];
+          return {
+            turns: { ...s.turns, [threadId]: nextTurns },
+            pendingPermissions: { ...s.pendingPermissions, [threadId]: [] },
+          };
+        }
+        return { pendingPermissions: { ...s.pendingPermissions, [threadId]: [] } };
+      });
+      void useSessionStore.getState().refreshStats(threadId);
+    } else if (event.kind === "queueUpdate") {
+      // Pi sends the full queue arrays each time; replace, don't append. The
+      // chips reflect what is still queued; anything that left the queue was
+      // delivered into the run, so render it as a user turn followed by a
+      // fresh assistant turn (HOY-218). This keeps the live transcript in
+      // order and identical to a reloaded thread.
+      useSessionStore.setState((s) => {
+        const prev = s.queued[threadId] ?? { steering: [], followUp: [] };
+        const delivered = [
+          ...removedItems(prev.steering, event.steering),
+          ...removedItems(prev.followUp, event.followUp),
+        ];
+        const queued = {
+          ...s.queued,
+          [threadId]: {
+            steering: event.steering,
+            followUp: event.followUp,
+          },
+        };
+        if (delivered.length === 0) return { queued };
+        const list = s.turns[threadId] ?? [];
+        const closed = list.map((t, i) =>
+          i === list.length - 1 && t.role === "assistant"
+            ? { ...t, streaming: false }
+            : t,
+        );
+        const appended: Turn[] = [
+          ...closed,
+          ...delivered.map((deliveredText) => ({
+            role: "user" as const,
+            text: deliveredText,
+          })),
+          { role: "assistant" as const, blocks: [], streaming: true },
+        ];
+        return { queued, turns: { ...s.turns, [threadId]: appended } };
+      });
+    } else if (event.kind === "notify") {
+      // Transient notice; auto-expire so it does not pile up (ext UI).
+      const id = ++noticeSeq;
+      useSessionStore.setState((s) => ({
+        notices: {
+          ...s.notices,
+          [threadId]: [
+            ...(s.notices[threadId] ?? []),
+            { id, message: event.message, type: event.notifyType ?? "info" },
+          ],
+        },
+      }));
+      setTimeout(() => useSessionStore.getState().dismissNotice(threadId, id), NOTICE_TTL_MS);
+    } else if (event.kind === "setStatus") {
+      // Keyed footer status; an absent statusText clears that key.
+      useSessionStore.setState((s) => {
+        const thread = { ...(s.statuses[threadId] ?? {}) };
+        if (event.statusText === undefined) delete thread[event.statusKey];
+        else thread[event.statusKey] = event.statusText;
+        return { statuses: { ...s.statuses, [threadId]: thread } };
+      });
+    } else if (event.kind === "setWidget") {
+      // Keyed composer widget; absent widgetLines clears that key.
+      useSessionStore.setState((s) => {
+        const thread = { ...(s.widgets[threadId] ?? {}) };
+        if (event.widgetLines === undefined) delete thread[event.widgetKey];
+        else
+          thread[event.widgetKey] = {
+            lines: event.widgetLines,
+            placement: event.widgetPlacement ?? "aboveEditor",
+          };
+        return { widgets: { ...s.widgets, [threadId]: thread } };
+      });
+    } else if (event.kind === "setTitle") {
+      void getCurrentWindow().setTitle(event.title);
+    } else if (event.kind === "setEditorText") {
+      useSessionStore.getState().setDraft(threadId, event.text);
+    } else if (event.kind === "tool" && event.phase === "end") {
+      // Tool output is added to context, so the usage bar slides (HOY-208).
+      void useSessionStore.getState().refreshStats(threadId);
+    } else if (event.kind === "status" && event.label === "compacting") {
+      // Compaction rewrites context; refresh after it's done (the next
+      // text/tool event will update the bar; this is a best-effort interim).
+      void useSessionStore.getState().refreshStats(threadId);
+    } else if (event.kind === "compactionEnd") {
+      // Auto-path compaction finished (threshold/overflow). Clear the manual
+      // flag defensively, refresh the usage meter, and surface an honest
+      // notice; failures are shown, not swallowed (HOY-229).
+      useSessionStore.setState((s) => ({ compacting: { ...s.compacting, [threadId]: false } }));
+      if (event.aborted || event.errorMessage) {
+        pushNotice(
+          threadId,
+          `Compaction ${event.aborted ? "aborted" : "failed"}${
+            event.errorMessage ? `: ${event.errorMessage}` : ""
+          }`,
+          "error",
+        );
+      } else {
+        const after =
+          event.estimatedTokensAfter != null
+            ? ` -> ${event.estimatedTokensAfter.toLocaleString()}`
+            : "";
+        const before =
+          event.tokensBefore != null
+            ? `${event.tokensBefore.toLocaleString()}${after} tokens`
+            : "context";
+        pushNotice(threadId, `Compacted ${before}`, "info");
+      }
+      void useSessionStore.getState().refreshStats(threadId);
+    }
+  };
+
+  await sendPrompt(sessionId, message, channel, images);
+}
+
 // Monotonic id for transient extension `notify` notices, so each can be
 // dismissed (by click or auto-expiry) without colliding.
 let noticeSeq = 0;
@@ -1717,6 +1809,8 @@ function persistProjects(
           renamed: !!t.renamed,
           draft: drafts[t.id] || null,
           permissionMode: t.permissionMode ?? null,
+          parentThreadId: t.parentThreadId ?? null,
+          spawnedBy: t.spawnedBy ?? null,
         })),
     })),
   };

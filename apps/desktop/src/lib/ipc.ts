@@ -134,11 +134,20 @@ export function removeMcpServer(
 // Spawn a thread's own sidecar in its project dir, returning the sessionId the
 // thread then drives. Empty cwd falls back to the backend's default dir.
 // `sessionFile` reopens an existing transcript (M4 restore); omit for a new one.
+// `subagentType`/`permissionMode` (HOY-231) brand and gate a spawned child
+// thread's sidecar; omit for an ordinary user thread.
 export function createSession(
   cwd: string,
   sessionFile?: string | null,
+  subagentType?: string | null,
+  permissionMode?: string | null,
 ): Promise<string> {
-  return invoke<string>("create_session", { cwd, sessionFile: sessionFile ?? null });
+  return invoke<string>("create_session", {
+    cwd,
+    sessionFile: sessionFile ?? null,
+    subagentType: subagentType ?? null,
+    permissionMode: permissionMode ?? null,
+  });
 }
 
 // Tear down a thread's sidecar (panel close / delete). The control session is

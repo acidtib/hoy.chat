@@ -42,6 +42,9 @@ export type AgentEvent =
     }
   | { kind: "error"; message: string }
   | { kind: "aborted" }
+  // The agent tool spawned a subagent (HOY-231). The renderer creates a child
+  // thread and drives it through the same create_session + send_prompt path.
+  | { kind: "subagentSpawned"; agentId: string; subagentType: string; task: string }
   | { kind: "done" };
 
 export type NotifyType = "info" | "warning" | "error";
@@ -358,6 +361,11 @@ export interface Thread {
   // Permission mode (HOY-186). Persisted with the thread; absent means default.
   // Applied to the live sidecar via /hoy_mode, re-applied after spawn/restore.
   permissionMode?: PermissionMode | null;
+  // Set on a spawned child thread (HOY-231); null/absent on user threads. Kept
+  // flat in project.threads; the sidebar derives nesting from this link.
+  parentThreadId?: string | null;
+  // The subagent type + parent handle that produced this child.
+  spawnedBy?: { type: string; agentId: string } | null;
   // Thinking level (HOY-204). Session-local only, not persisted; workspace.rs
   // knows nothing of this field. Hydrated from get_state on session open.
   thinkingLevel?: ThinkingLevel | null;
