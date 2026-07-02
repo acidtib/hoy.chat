@@ -44,6 +44,7 @@ export const BUILTIN_SUBAGENTS: SubagentType[] = [
 ];
 
 interface AgentFrontmatter {
+  [key: string]: unknown;
   description?: string;
   tools?: string[];
   prompt_mode?: string;

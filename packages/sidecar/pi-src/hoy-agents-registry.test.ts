@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSubagentRegistry, enabledTypes, BUILTIN_SUBAGENTS } from "./hoy-agents-registry";
+import { loadSubagentRegistry, enabledTypes } from "./hoy-agents-registry";
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), "hoy-agents-"));
