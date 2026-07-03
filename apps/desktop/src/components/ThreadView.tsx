@@ -56,6 +56,7 @@ import { Composer } from "@/components/Composer";
 import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
 import { findThread, useSessionStore } from "@/state/store";
+import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
 import { usePrefsStore } from "@/state/prefs";
 import { listProjectPaths } from "@/lib/ipc";
 import { contextKey, modelSupportsImages } from "@/lib/types";
@@ -154,6 +155,15 @@ export function ThreadView({
       sessionId: found?.thread.sessionId ?? null,
     };
   }, [projects, threadId]);
+
+  const threadIsAgent = (() => {
+    const found = findThread(projects, threadId);
+    if (!found) return false;
+    return (
+      isSubagentThread(found.thread) ||
+      childThreadIdsOf(projects, threadId).length > 0
+    );
+  })();
 
   // @ context picker inputs (HOY-220): the gitignore-aware path search for this
   // project, and the other threads offered under the Threads section.
@@ -257,7 +267,11 @@ export function ThreadView({
           <Sparkle
             className={cn(
               "size-4 shrink-0",
-              active ? "text-brand" : "text-muted-foreground",
+              threadIsAgent
+                ? "text-agent"
+                : active
+                  ? "text-brand"
+                  : "text-muted-foreground",
             )}
           />
           {editingTitle ? (
@@ -392,9 +406,9 @@ export function ThreadView({
                   turn.origin === "subagentResult" ? (
                     <div
                       key={i}
-                      className="rounded-md border border-brand/40 bg-brand/5 px-3 py-2 text-sm leading-relaxed text-muted-foreground"
+                      className="rounded-md border border-agent/40 bg-agent/5 px-3 py-2 text-sm leading-relaxed text-muted-foreground"
                     >
-                      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-brand">
+                      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-agent">
                         Subagent result{turn.subagent ? ` -- ${turn.subagent.type}` : ""}
                       </div>
                       <div className="whitespace-pre-wrap">{turn.text}</div>
