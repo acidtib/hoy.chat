@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { ArrowLeft, Sparkle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,18 +14,14 @@ import {
   fleetRollup,
   fleetRoots,
   fleetStatusCounts,
+  pickByIds,
 } from "@/state/fleet";
 import { formatTokens } from "@/lib/utils";
 
-// Option A (design doc): the full-body fleet dashboard, toggled in from
-// FleetRail's expand button. Same selectors as FleetRail, one card per fleet
-// instead of a single compact list.
+// Option A (design doc): the full-body fleet dashboard, reached from the
+// footer's Fleet button. One card per fleet over the shared recursive tree.
 export function FleetBoard() {
   const projects = useSessionStore((s) => s.projects);
-  const streaming = useSessionStore((s) => s.streaming);
-  const agentQueue = useSessionStore((s) => s.agentQueue);
-  const stats = useSessionStore((s) => s.stats);
-  const threadErrors = useSessionStore((s) => s.threadErrors);
   const setBodyView = useSessionStore((s) => s.setBodyView);
 
   const roots = useMemo(() => fleetRoots(projects), [projects]);
@@ -38,6 +35,17 @@ export function FleetBoard() {
     }
     return [...ids];
   }, [roots, projects]);
+
+  // Scoped to fleet members only (HOY-249): a delta from a thread outside every
+  // fleet does not re-render the board.
+  const streaming = useSessionStore(useShallow((s) => pickByIds(s.streaming, allMemberIds)));
+  const stats = useSessionStore(useShallow((s) => pickByIds(s.stats, allMemberIds)));
+  const threadErrors = useSessionStore(
+    useShallow((s) => pickByIds(s.threadErrors, allMemberIds)),
+  );
+  const agentQueue = useSessionStore(
+    useShallow((s) => s.agentQueue.filter((id) => allMemberIds.includes(id))),
+  );
 
   const counts = useMemo(
     () => fleetStatusCounts(allMemberIds, streaming, agentQueue, threadErrors),
@@ -104,15 +112,17 @@ export function FleetBoard() {
 // over the shared recursive tree at the full (non-dense) row width.
 function FleetCard({ rootId, title }: { rootId: string; title: string }) {
   const projects = useSessionStore((s) => s.projects);
-  const stats = useSessionStore((s) => s.stats);
 
   const members = useMemo(
     () => fleetMembers(projects, rootId),
     [projects, rootId],
   );
+  const memberIds = useMemo(() => members.map((t) => t.id), [members]);
+  // Scoped to this fleet's members (HOY-249).
+  const stats = useSessionStore(useShallow((s) => pickByIds(s.stats, memberIds)));
   const rollup = useMemo(
-    () => fleetRollup(members.map((t) => t.id), stats),
-    [members, stats],
+    () => fleetRollup(memberIds, stats),
+    [memberIds, stats],
   );
 
   return (

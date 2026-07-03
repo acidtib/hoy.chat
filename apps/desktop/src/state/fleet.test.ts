@@ -7,6 +7,7 @@ import {
   fleetRollup,
   fleetStatusCounts,
   currentTool,
+  pickByIds,
 } from "./fleet";
 
 // Fixture tree: root r has two children c1 (leaf) and c2, and c2 has a
@@ -152,4 +153,14 @@ test("currentTool only looks at the last assistant turn", () => {
     asst({ streaming: true, blocks: [toolBlock("New", true, "New tool")] }),
   ];
   expect(currentTool(turns)).toBe("New tool");
+});
+
+test("pickByIds keeps only the requested ids and skips absent ones", () => {
+  const record = { a: 1, b: 2, c: 3 };
+  expect(pickByIds(record, ["a", "c"])).toEqual({ a: 1, c: 3 });
+  // An id with no entry is skipped, not set to undefined.
+  const picked = pickByIds(record, ["a", "z"]);
+  expect(picked).toEqual({ a: 1 });
+  expect("z" in picked).toBe(false);
+  expect(pickByIds(record, [])).toEqual({});
 });

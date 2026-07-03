@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Sparkle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, formatTokens } from "@/lib/utils";
 import { useSessionStore } from "@/state/store";
-import { fleetMembers, fleetStatus, currentTool, type FleetStatus } from "@/state/fleet";
+import { fleetMembers, fleetStatus, currentTool, pickByIds, type FleetStatus } from "@/state/fleet";
 import { MAX_SUBAGENT_DEPTH } from "@/state/limits";
 import type { Thread } from "@/lib/types";
 
@@ -29,11 +30,6 @@ function depthPadding(depth: number): string {
 // only, not the whole workspace tree.
 export function FleetTree({ rootId, dense }: { rootId: string; dense: boolean }) {
   const projects = useSessionStore((s) => s.projects);
-  const streaming = useSessionStore((s) => s.streaming);
-  const agentQueue = useSessionStore((s) => s.agentQueue);
-  const stats = useSessionStore((s) => s.stats);
-  const threadErrors = useSessionStore((s) => s.threadErrors);
-  const turns = useSessionStore((s) => s.turns);
   const openThread = useSessionStore((s) => s.openThread);
   const setBodyView = useSessionStore((s) => s.setBodyView);
   const submitPrompt = useSessionStore((s) => s.submitPrompt);
@@ -41,6 +37,19 @@ export function FleetTree({ rootId, dense }: { rootId: string; dense: boolean })
   const requestTeardown = useSessionStore((s) => s.requestTeardown);
 
   const members = useMemo(() => fleetMembers(projects, rootId), [projects, rootId]);
+  const memberIds = useMemo(() => members.map((t) => t.id), [members]);
+
+  // Scoped subscriptions (HOY-249): subscribe to only this fleet's members'
+  // slices, not the whole records, so a streaming delta from a thread outside
+  // this fleet does not re-render the tree. useShallow keeps the projected slice
+  // referentially stable until a member's own value changes.
+  const streaming = useSessionStore(useShallow((s) => pickByIds(s.streaming, memberIds)));
+  const stats = useSessionStore(useShallow((s) => pickByIds(s.stats, memberIds)));
+  const threadErrors = useSessionStore(useShallow((s) => pickByIds(s.threadErrors, memberIds)));
+  const agentQueue = useSessionStore(
+    useShallow((s) => s.agentQueue.filter((id) => memberIds.includes(id))),
+  );
+  const turns = useSessionStore(useShallow((s) => pickByIds(s.turns, memberIds)));
 
   const { byId, childrenMap } = useMemo(() => {
     const byId = new Map(members.map((t) => [t.id, t]));
