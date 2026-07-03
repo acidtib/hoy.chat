@@ -41,7 +41,7 @@ import {
   threadDepth,
   type Delivery,
 } from "./delivery";
-import { MAX_SUBAGENT_DEPTH } from "./limits";
+import { MAX_SUBAGENT_DEPTH, MAX_CONCURRENT_AGENTS } from "./limits";
 import type {
   AgentEvent,
   ContextRef,
@@ -252,6 +252,10 @@ function attr(value: string): string {
   return value.replace(/"/g, "'");
 }
 
+// The spawn notify payload for a subagent (HOY-231), carried through
+// spawnChildThread and stashed in queuedPayloads while a child waits for a slot.
+type SpawnPayload = { agentId: string; subagentType: string; task: string };
+
 // Session list is keyed by sessionId from the start so multi-session is a data
 // change, not a redesign. Models, supported providers, and provider auth status
 // are cached here so the top bar and settings page render from our state.
@@ -325,6 +329,15 @@ interface SessionStore {
   // In-memory only (base64 never touches disk); cleared on submit and on panel
   // close, revoking each preview object URL.
   composerAttachments: Record<string, ImageAttachment[]>;
+  // Concurrency limiter for subagent spawns (HOY-245). All transient, never
+  // persisted. `runningAgents` holds the child thread ids whose INITIAL run is
+  // streaming (a slot each); `agentQueue` is the FIFO of child ids waiting for a
+  // slot; `queuedPayloads` carries each queued child's spawn args so the pump
+  // can replay them when a slot frees. Foreground and resume runs never touch
+  // any of these.
+  runningAgents: Set<string>;
+  agentQueue: string[];
+  queuedPayloads: Record<string, { payload: SpawnPayload; childDepth: number }>;
   // Pi's per-session steering/follow-up queues, keyed by threadId (HOY-218). Fed
   // by queueUpdate events (Pi sends full arrays, so we replace). Drives the
   // read-only queued-message chips. Cleared on panel close; abort leaves it
@@ -381,8 +394,11 @@ interface SessionStore {
   // user-submitted thread.
   spawnChildThread: (
     parentThreadId: string,
-    payload: { agentId: string; subagentType: string; task: string },
+    payload: SpawnPayload,
   ) => Promise<void>;
+  // Start as many queued subagent runs as free slots allow (HOY-245). Called
+  // when a slot frees (an initial run's first done, or a teardown).
+  pumpAgentQueue: () => void;
   removeProject: (projectId: string) => void;
 
   // Pull the subagent registry into the store (HOY-234). No-op cache miss on
@@ -512,6 +528,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   slashCommands: {},
   drafts: {},
   composerAttachments: {},
+  runningAgents: new Set<string>(),
+  agentQueue: [],
+  queuedPayloads: {},
   queued: {},
   expandedThreadId: null,
   focusRequest: null,
@@ -835,50 +854,61 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       projects: s.projects.map((p) =>
         p.id === project.id ? { ...p, threads: [...p.threads, child] } : p,
       ),
-      // Seed the transcript like submitPrompt does: a user turn carrying the
-      // task, then the in-flight assistant turn streamPromptOnThread folds
-      // events into. Without this, applyEvent is a no-op (it requires the
-      // last turn to already be an assistant turn) and nothing would render.
+      // Seed the user turn so the child is visible in the transcript even while
+      // queued. The in-flight assistant turn + streaming[childId] are seeded by
+      // startChildRun once a slot is taken, so a queued child shows the task but
+      // does not stream (HOY-245).
       turns: {
         ...s.turns,
-        [childId]: [
-          { role: "user", text: payload.task },
-          { role: "assistant", blocks: [], streaming: true },
-        ],
+        [childId]: [{ role: "user", text: payload.task }],
       },
-      streaming: { ...s.streaming, [childId]: true },
     }));
     // Auto-open the child so the user follows the run live instead of finding
     // it after the fact (HOY-236). The child is already in projects above, so
     // openThread's findThread resolves. FleetView (HOY-235) will later route
-    // this to a consolidated view; the call site is unchanged.
+    // this to a consolidated view; the call site is unchanged. HOY-246 will gate
+    // this so a queued child does not steal focus; left as-is for now.
     get().openThread(childId);
-    try {
-      const cwd = project.path ?? "";
-      const sessionId = await createSession(
-        cwd,
-        null,
-        payload.subagentType,
-        parent.permissionMode ?? null,
-        childDepth,
-      );
+    // Concurrency gate (HOY-245): an initial run takes a slot only if one is
+    // free; otherwise the child waits FIFO. A slot releases on the run's first
+    // done. Foreground and resume runs bypass this entirely (they never reach
+    // here), which is what keeps deep trees deadlock-free under a small cap.
+    if (get().runningAgents.size < MAX_CONCURRENT_AGENTS) {
+      set((s) => ({ runningAgents: new Set(s.runningAgents).add(childId) }));
+      await startChildRun(childId, payload, childDepth);
+    } else {
       set((s) => ({
-        projects: patchThread(s.projects, childId, (t) => ({ ...t, sessionId })),
-      }));
-      // Same reconcile as submitPrompt: apply the (possibly inherited) model
-      // and permission mode before the prompt streams.
-      await applyThreadModel(childId, sessionId);
-      await applyThreadPermissionMode(childId, sessionId);
-      await streamPromptOnThread(childId, sessionId, payload.task);
-    } catch (e) {
-      set((s) => ({
-        streaming: { ...s.streaming, [childId]: false },
-        threadErrors: {
-          ...s.threadErrors,
-          [childId]: String(e instanceof Error ? e.message : e),
+        agentQueue: [...s.agentQueue, childId],
+        queuedPayloads: {
+          ...s.queuedPayloads,
+          [childId]: { payload, childDepth },
         },
       }));
     }
+  },
+  pumpAgentQueue: () => {
+    const s = get();
+    if (!s.agentQueue.length || s.runningAgents.size >= MAX_CONCURRENT_AGENTS) {
+      return;
+    }
+    const [next, ...rest] = s.agentQueue;
+    const entry = s.queuedPayloads[next];
+    const { [next]: _dropped, ...restPayloads } = s.queuedPayloads;
+    // A child torn down while queued (teardown purges its payload) or otherwise
+    // gone: drop it and keep pumping so a live one behind it can start.
+    if (!entry || !findThread(s.projects, next)) {
+      set({ agentQueue: rest, queuedPayloads: restPayloads });
+      get().pumpAgentQueue();
+      return;
+    }
+    set({
+      agentQueue: rest,
+      runningAgents: new Set(s.runningAgents).add(next),
+      queuedPayloads: restPayloads,
+    });
+    void startChildRun(next, entry.payload, entry.childDepth);
+    // Fill any further free slots (cap may allow more than one).
+    get().pumpAgentQueue();
   },
   removeProject: (projectId) => {
     // Tear down any live sidecars the project's threads are running.
@@ -1449,6 +1479,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         archived: true,
       })),
     }));
+    // HOY-245: an archived thread must never start or hold a slot. Purge it from
+    // the limiter, then pump in case a freed slot lets a still-live queued agent
+    // start. The cascade above visits each descendant, so each is purged.
+    purgeFromLimiter(threadId);
+    get().pumpAgentQueue();
   },
 
   unarchiveThread: (threadId) =>
@@ -1479,6 +1514,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         })),
       };
     });
+    // HOY-245: same purge as archive. A deleted subtree never starts or leaks a
+    // slot; the cascade above visits each descendant.
+    purgeFromLimiter(threadId);
+    get().pumpAgentQueue();
   },
 }));
 
@@ -1491,6 +1530,87 @@ const pendingSessions = new Map<string, Promise<string>>();
 // events from a channel whose thread has moved on (panel closed, or a newer turn
 // started). Entry is dropped on done / close / send failure.
 const activeChannels = new Map<string, Channel<AgentEvent>>();
+
+// The run body of a subagent's INITIAL spawn (HOY-245). Split out of
+// spawnChildThread so both the immediate-start path (a free slot) and the pump
+// path (a slot freed later) drive an identical run: seed the in-flight assistant
+// turn, acquire a session, reconcile model/permission mode, then stream. Seeding
+// lives here so a queued child gets its streaming turn only when it actually
+// starts, not while it waits.
+async function startChildRun(
+  childId: string,
+  payload: SpawnPayload,
+  childDepth: number,
+): Promise<void> {
+  const found = findThread(useSessionStore.getState().projects, childId);
+  // Torn down between enqueue and start: nothing to run.
+  if (!found) return;
+  const { project, thread: child } = found;
+  const parent = child.parentThreadId
+    ? findThread(useSessionStore.getState().projects, child.parentThreadId)?.thread
+    : undefined;
+  useSessionStore.setState((s) => ({
+    // Seed the in-flight assistant turn streamPromptOnThread folds events into;
+    // applyEvent is a no-op unless the last turn is an assistant turn. The user
+    // turn was seeded at insert time, so replace to the full [user, assistant].
+    turns: {
+      ...s.turns,
+      [childId]: [
+        { role: "user", text: payload.task },
+        { role: "assistant", blocks: [], streaming: true },
+      ],
+    },
+    streaming: { ...s.streaming, [childId]: true },
+  }));
+  try {
+    const cwd = project.path ?? "";
+    const sessionId = await createSession(
+      cwd,
+      null,
+      payload.subagentType,
+      parent?.permissionMode ?? null,
+      childDepth,
+    );
+    useSessionStore.setState((s) => ({
+      projects: patchThread(s.projects, childId, (t) => ({ ...t, sessionId })),
+    }));
+    // Same reconcile as submitPrompt: apply the (possibly inherited) model and
+    // permission mode before the prompt streams.
+    await applyThreadModel(childId, sessionId);
+    await applyThreadPermissionMode(childId, sessionId);
+    await streamPromptOnThread(childId, sessionId, payload.task);
+  } catch (e) {
+    useSessionStore.setState((s) => ({
+      streaming: { ...s.streaming, [childId]: false },
+      threadErrors: {
+        ...s.threadErrors,
+        [childId]: String(e instanceof Error ? e.message : e),
+      },
+    }));
+  }
+}
+
+// Remove a torn-down thread from the concurrency limiter (HOY-245) so it never
+// starts and never leaks a slot. Callers pump after to fill a freed slot.
+function purgeFromLimiter(threadId: string): void {
+  useSessionStore.setState((s) => {
+    if (
+      !s.runningAgents.has(threadId) &&
+      !s.agentQueue.includes(threadId) &&
+      !(threadId in s.queuedPayloads)
+    ) {
+      return {};
+    }
+    const runningAgents = new Set(s.runningAgents);
+    runningAgents.delete(threadId);
+    const { [threadId]: _dropped, ...queuedPayloads } = s.queuedPayloads;
+    return {
+      runningAgents,
+      agentQueue: s.agentQueue.filter((id) => id !== threadId),
+      queuedPayloads,
+    };
+  });
+}
 
 // Wire a per-turn Channel to `threadId` and stream a prompt over it. Shared by
 // submitPrompt (a user-submitted turn) and spawnChildThread (a subagent's
@@ -1594,6 +1714,19 @@ async function streamPromptOnThread(
         return { pendingPermissions: { ...s.pendingPermissions, [threadId]: [] } };
       });
       void useSessionStore.getState().refreshStats(threadId);
+      // HOY-245: release this thread's concurrency slot on its INITIAL run's
+      // first done. Membership in runningAgents is what marks an initial run;
+      // resume runs (a delivered child resuming its parent) and foreground turns
+      // are not in the set, so this is a no-op for them. Free the slot before
+      // delivery so a still-queued sibling can start immediately.
+      if (useSessionStore.getState().runningAgents.has(threadId)) {
+        useSessionStore.setState((s) => {
+          const runningAgents = new Set(s.runningAgents);
+          runningAgents.delete(threadId);
+          return { runningAgents };
+        });
+        useSessionStore.getState().pumpAgentQueue();
+      }
       // HOY-233: push this child's result up to its parent, and drain any
       // deliveries queued for this thread while it streamed.
       void deliverAndDrain(threadId);
