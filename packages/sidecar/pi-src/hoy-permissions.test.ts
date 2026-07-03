@@ -137,3 +137,34 @@ describe("/hoy_mode over RPC", () => {
     expect(notify.notifyType).toBe("error");
   });
 });
+
+// Regression (HOY-234): a child spawned for a type absent from the registry
+// must fail closed, not fall through to the parent branch (HOY_TOOLS +
+// createHoyAgents, which would defeat the depth cap). The factory throws
+// synchronously during createAgentSessionRuntime, before runRpcMode is ever
+// reached, so the process exits non-zero without producing any RPC output.
+describe("child factory fails closed on unknown subagent type (HOY-234)", () => {
+  test("process exits non-zero and never reaches RPC-ready", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "hoy-rpc-agent-"));
+    const cwd = mkdtempSync(join(tmpdir(), "hoy-rpc-cwd-"));
+
+    const child = Bun.spawn(["bun", join(import.meta.dir, "hoy-sidecar.ts")], {
+      cwd,
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: agentDir,
+        HOY_PERMISSION_MODE: "default",
+        HOY_SUBAGENT_TYPE: "definitely-not-a-real-type",
+      },
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const exitCode = await child.exited;
+    expect(exitCode).not.toBe(0);
+
+    rmSync(agentDir, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  });
+});

@@ -52,7 +52,7 @@ fn read_config_at(path: &Path) -> Map<String, Value> {
 // Mirrors pi_config::write_auth_map_atomic_at. 0600 because an inline secret,
 // while discouraged, is possible.
 fn write_config_atomic_at(path: &Path, config: &Map<String, Value>) -> Result<(), String> {
-    let dir = path.parent().ok_or("mcp.json path has no parent")?;
+    let dir = path.parent().ok_or("subagents.json path has no parent")?;
     std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     #[cfg(unix)]
     {
@@ -61,7 +61,7 @@ fn write_config_atomic_at(path: &Path, config: &Map<String, Value>) -> Result<()
     }
 
     let mut body = serde_json::to_vec_pretty(&Value::Object(config.clone()))
-        .map_err(|e| format!("serialize mcp.json: {e}"))?;
+        .map_err(|e| format!("serialize subagents.json: {e}"))?;
     body.push(b'\n');
 
     let tmp = dir.join(format!("subagents.json.tmp-{}", std::process::id()));

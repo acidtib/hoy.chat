@@ -85,6 +85,19 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   // servers configured it simply reports none available (HOY-232).
   const mcpConfig = loadMcpConfig(agentDir, cwd);
   const registry = loadSubagentRegistry(agentDir, cwd);
+
+  // Depth cap is absolute: if this child was spawned for a type that is no
+  // longer in the freshly-loaded registry (its .hoy/agents/*.md was deleted or
+  // renamed since the parent validated the spawn), fail closed. Falling through
+  // to the parent branch would hand the child HOY_TOOLS (including agent) and
+  // createHoyAgents, promoting it to a spawner. Phase 1's resolveSubagentType
+  // threw here; preserve that.
+  if (subagentType && !registry[subagentType]) {
+    throw new Error(
+      `hoy-sidecar: unknown subagent type "${subagentType}"; refusing to start child session (depth cap).`,
+    );
+  }
+
   const childType = subagentType ? registry[subagentType] : null;
   const tools = childType ? childType.tools : HOY_TOOLS;
   const advertised = enabledTypes(registry).map((t) => ({ name: t.name, description: t.description }));
