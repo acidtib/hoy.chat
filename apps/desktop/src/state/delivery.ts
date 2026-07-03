@@ -67,6 +67,20 @@ export function shouldDeliverToParent(thread: {
   return !!thread.parentThreadId && !thread.completedAt;
 }
 
+// On teardown of a subagent child, its parent's outstanding-children counter must
+// be decremented iff the child was still outstanding: it has a parent AND had not
+// yet delivered (no completedAt). A child that already delivered decremented the
+// counter at apply time and was stamped completedAt, so this returns false there,
+// avoiding a double-decrement (HOY-240 auto-close stamps completedAt BEFORE
+// closePanel). Same shape as shouldDeliverToParent, named for the teardown call
+// site. HOY-245.
+export function shouldDecrementParentOnTeardown(thread: {
+  parentThreadId?: string | null;
+  completedAt?: number | null;
+}): boolean {
+  return !!thread.parentThreadId && !thread.completedAt;
+}
+
 // An intermediate agent (a subagent that is itself a parent of live children)
 // must defer delivering its own result up until every child has delivered back
 // into it, otherwise its result is computed before its descendants' work lands

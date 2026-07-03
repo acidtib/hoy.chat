@@ -7,6 +7,7 @@ import {
   takeNextDelivery,
   pendingDeliveries,
   shouldDeliverToParent,
+  shouldDecrementParentOnTeardown,
   shouldDeferUpDelivery,
   childThreadIdsOf,
   isSubagentThread,
@@ -79,6 +80,18 @@ test("shouldDeliverToParent: only a not-yet-completed child delivers", () => {
   expect(shouldDeliverToParent({ parentThreadId: "p1", completedAt: 123 })).toBe(false); // already delivered
   expect(shouldDeliverToParent({ parentThreadId: null, completedAt: null })).toBe(false); // not a child
   expect(shouldDeliverToParent({})).toBe(false);
+});
+
+test("shouldDecrementParentOnTeardown: only an undelivered child decrements its parent", () => {
+  // A mid-flight child (has a parent, no completedAt) still counts, so a teardown
+  // decrements the parent's outstandingChildren.
+  expect(shouldDecrementParentOnTeardown({ parentThreadId: "p1", completedAt: null })).toBe(true);
+  // Already delivered (completedAt stamped) decremented at apply time; skip to
+  // avoid a double-decrement.
+  expect(shouldDecrementParentOnTeardown({ parentThreadId: "p1", completedAt: 123 })).toBe(false);
+  // Not a subagent (no parent) and a root thread never decrement anything.
+  expect(shouldDecrementParentOnTeardown({ parentThreadId: null, completedAt: null })).toBe(false);
+  expect(shouldDecrementParentOnTeardown({})).toBe(false);
 });
 
 test("shouldDeferUpDelivery: a leaf child (no outstanding children) never defers", () => {

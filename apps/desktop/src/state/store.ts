@@ -36,6 +36,7 @@ import {
   buildDelivery,
   childThreadIdsOf,
   queueDelivery,
+  shouldDecrementParentOnTeardown,
   shouldDeferUpDelivery,
   shouldDeliverToParent,
   takeNextDelivery,
@@ -1634,25 +1635,65 @@ function releaseAgentSlot(threadId: string): void {
   useSessionStore.getState().pumpAgentQueue();
 }
 
+// Child ids whose teardown has already decremented their parent's
+// outstandingChildren (HOY-245). archive/delete purge each thread twice (via
+// closePanel and then directly), so this guard makes the decrement once-per-child
+// and stops a second purge from over-counting a still-live parent.
+const teardownAccounted = new Set<string>();
+
 // Remove a torn-down thread from the concurrency limiter (HOY-245) so it never
-// starts and never leaks a slot. Callers pump after to fill a freed slot.
+// starts and never leaks a slot. Callers pump after to fill a freed slot. Also
+// keeps outstandingChildren converging on teardown (see below).
 function purgeFromLimiter(threadId: string): void {
   useSessionStore.setState((s) => {
+    const patch: Partial<SessionStore> = {};
     if (
-      !s.runningAgents.has(threadId) &&
-      !s.agentQueue.includes(threadId) &&
-      !(threadId in s.queuedPayloads)
+      s.runningAgents.has(threadId) ||
+      s.agentQueue.includes(threadId) ||
+      threadId in s.queuedPayloads
     ) {
-      return {};
+      const runningAgents = new Set(s.runningAgents);
+      runningAgents.delete(threadId);
+      const { [threadId]: _dropped, ...queuedPayloads } = s.queuedPayloads;
+      patch.runningAgents = runningAgents;
+      patch.agentQueue = s.agentQueue.filter((id) => id !== threadId);
+      patch.queuedPayloads = queuedPayloads;
     }
-    const runningAgents = new Set(s.runningAgents);
-    runningAgents.delete(threadId);
-    const { [threadId]: _dropped, ...queuedPayloads } = s.queuedPayloads;
-    return {
-      runningAgents,
-      agentQueue: s.agentQueue.filter((id) => id !== threadId),
-      queuedPayloads,
-    };
+
+    // HOY-245: a mid-flight child that has NOT yet delivered (no completedAt)
+    // still counts against its parent's outstandingChildren. Tearing it down here
+    // must decrement that count, otherwise an idle intermediate parent defers its
+    // own up-delivery to root forever. The decrement runs regardless of limiter
+    // membership because a deferring intermediate child (its slot already
+    // released, but still undelivered) is in none of the maps above. It is
+    // guarded once-per-child (teardownAccounted) so the double purge per
+    // archive/delete cannot decrement twice and over-count a still-live parent.
+    // We deliberately do NOT re-trigger the parent's delivery: a surgically
+    // torn-down subtree just will not auto-deliver to root until the parent next
+    // runs, the safe direction (a missing result from a subtree the user removed,
+    // never a wrong one reaching root).
+    const purged = findThread(s.projects, threadId)?.thread;
+    let outstanding = s.outstandingChildren;
+    if (
+      purged &&
+      shouldDecrementParentOnTeardown(purged) &&
+      !teardownAccounted.has(threadId) &&
+      (outstanding[purged.parentThreadId!] ?? 0) > 0
+    ) {
+      teardownAccounted.add(threadId);
+      const parentId = purged.parentThreadId!;
+      const next = Math.max(0, (outstanding[parentId] ?? 0) - 1);
+      outstanding = { ...outstanding };
+      if (next === 0) delete outstanding[parentId];
+      else outstanding[parentId] = next;
+    }
+    // Stale-key cleanup: drop the purged thread's own child-count entry.
+    if (threadId in outstanding) {
+      if (outstanding === s.outstandingChildren) outstanding = { ...outstanding };
+      delete outstanding[threadId];
+    }
+    if (outstanding !== s.outstandingChildren) patch.outstandingChildren = outstanding;
+    return patch;
   });
 }
 
@@ -2012,7 +2053,25 @@ async function deliverToParent(parentThreadId: string, delivery: Delivery): Prom
           },
         };
       }
-      return { streaming, threadErrors: { ...s.threadErrors, [parentThreadId]: String(e) } };
+      // HOY-245: a pre-seed failure never ran the apply-path decrement, and the
+      // caller already took this delivery off the queue (takeNextDelivery), so
+      // without this the parent's counter stays inflated and it defers forever.
+      // Guarded strictly on !seeded: a post-seed error already decremented.
+      const outstandingChildren = !seeded
+        ? (() => {
+            const cur = s.outstandingChildren[parentThreadId] ?? 0;
+            const next = Math.max(0, cur - 1);
+            const copy = { ...s.outstandingChildren };
+            if (next === 0) delete copy[parentThreadId];
+            else copy[parentThreadId] = next;
+            return copy;
+          })()
+        : s.outstandingChildren;
+      return {
+        streaming,
+        threadErrors: { ...s.threadErrors, [parentThreadId]: String(e) },
+        ...(outstandingChildren !== s.outstandingChildren ? { outstandingChildren } : {}),
+      };
     });
   } finally {
     deliveringParents.delete(parentThreadId);
