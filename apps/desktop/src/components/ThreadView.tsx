@@ -803,15 +803,20 @@ function toolIcon(kind: ToolKind): ReactNode {
 // shows on expand.
 function ToolCall({ tool }: { tool: ToolUI }) {
   const kind = toolKind(tool.name);
-  // Every tool renders as a bordered card, open by default so its body (diff,
-  // command + output, or result) is visible without a click.
+  const expandToolDetails = usePrefsStore((s) => s.expandToolDetails);
+  // Each tool renders as a bordered card. Collapsed by default (HOY-251) to a
+  // header row; the user clicks it to reveal the body (diff, command + output,
+  // or result). Expanded when the pref is on, or when the tool needs attention:
+  // an approval-pending tool shows a diff the user must see to approve, and an
+  // errored tool surfaces its failure without a hunt.
+  const defaultOpen = expandToolDetails || tool.pending || tool.isError;
   // The terminal body already shows the command ($ ...), so the header stays a
   // generic tool label (lowercase, like the other tools) instead of repeating it.
   const headerTitle = kind === "terminal" ? tool.name : tool.title;
 
   return (
     <Tool
-      defaultOpen
+      defaultOpen={defaultOpen}
       className="group my-0.5 overflow-hidden rounded-md border border-border/70"
     >
       <ToolHeader

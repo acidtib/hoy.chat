@@ -19,6 +19,11 @@ export interface AppPrefs {
   sendOnEnter: boolean;
   // Reasoning blocks in the transcript start expanded instead of collapsed.
   expandReasoning: boolean;
+  // Tool-use blocks in the transcript start expanded instead of collapsed.
+  // Off by default (HOY-251): a tool renders as a compact header row and the
+  // user clicks to reveal its body. Approval-pending and errored tools stay
+  // open regardless, so a diff to approve or a failure is never hidden.
+  expandToolDetails: boolean;
   // Confirm before closing a panel whose response is still streaming.
   confirmCloseStreaming: boolean;
   // Starting directory for the "Open project" picker. Empty = OS default.
@@ -48,6 +53,7 @@ const memoryStorage = {
 export const PREFS_DEFAULTS: AppPrefs = {
   sendOnEnter: true,
   expandReasoning: false,
+  expandToolDetails: false,
   confirmCloseStreaming: true,
   defaultProjectDir: "",
   autoOpenSpawnedThreads: false,
@@ -74,6 +80,7 @@ export const usePrefsStore = create<PrefsStore>()(
       partialize: (s) => ({
         sendOnEnter: s.sendOnEnter,
         expandReasoning: s.expandReasoning,
+        expandToolDetails: s.expandToolDetails,
         confirmCloseStreaming: s.confirmCloseStreaming,
         defaultProjectDir: s.defaultProjectDir,
         autoOpenSpawnedThreads: s.autoOpenSpawnedThreads,

@@ -359,6 +359,7 @@ function ModelPanel() {
 function ChatPanel() {
   const sendOnEnter = usePrefsStore((s) => s.sendOnEnter);
   const expandReasoning = usePrefsStore((s) => s.expandReasoning);
+  const expandToolDetails = usePrefsStore((s) => s.expandToolDetails);
   const setPref = usePrefsStore((s) => s.setPref);
 
   return (
@@ -380,6 +381,13 @@ function ChatPanel() {
           description="Show model thinking blocks expanded instead of collapsed."
           checked={expandReasoning}
           onChange={(v) => setPref("expandReasoning", v)}
+        />
+        <Separator />
+        <ToggleRow
+          label="Expand tool details"
+          description="Show tool-use blocks expanded instead of collapsed. When off, each tool is a compact row you click to reveal; tools awaiting approval or showing an error stay open."
+          checked={expandToolDetails}
+          onChange={(v) => setPref("expandToolDetails", v)}
         />
       </Section>
     </div>
