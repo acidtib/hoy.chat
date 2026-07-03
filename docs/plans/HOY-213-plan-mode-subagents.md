@@ -5,8 +5,12 @@ out read-only exploration, add a dedicated built-in "Plan" architect subagent
 that returns a decision-complete plan, and give the produced plan a clean
 handoff into execution.
 
-**Status:** Slice 1 gate change landed (agent allowed in plan mode). Prompt
-update, Plan subagent, and handoff pending.
+**Status:** Done. All three slices landed: the plan-file gate + prompt update
+(Slice 1), the dedicated Plan architect subagent (Slice 2), and the renderer-side
+plan-to-execution handoff card (Slice 3). Subagent recursion depth and the
+concurrency limiter that plan-mode fan-out rides on are covered by HOY-245
+(shipped): depth is capped at MAX_SUBAGENT_DEPTH (3) and enforced by withholding
+the `agent` tool at the cap, not by anything plan-mode-specific.
 
 ## Background: what exists today
 
