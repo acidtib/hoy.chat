@@ -15,8 +15,12 @@ describe("usePrefsStore", () => {
     expect(PREFS_DEFAULTS).toEqual({
       sendOnEnter: true,
       expandReasoning: false,
+      expandToolDetails: false,
       confirmCloseStreaming: true,
       defaultProjectDir: "",
+      autoOpenSpawnedThreads: false,
+      requireSubagentApproval: false,
+      maxConcurrentAgents: 4,
     });
   });
 
