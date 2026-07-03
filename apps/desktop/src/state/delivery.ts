@@ -76,12 +76,49 @@ export function isSubagentThread(thread: {
   return !!thread.parentThreadId;
 }
 
-// Ids of the direct children of parentId (depth is capped at 1, so no
-// grandchildren exist). Used to cascade archive/delete so a child is never
-// left rootless when its parent leaves the tree. HOY-238.
+// Ids of the direct children of parentId only (single-level; callers that need
+// the whole subtree self-recurse). Used to cascade archive/delete so a child
+// is never left rootless when its parent leaves the tree. HOY-238.
 export function childThreadIdsOf(projects: Project[], parentId: string): string[] {
   return projects
     .flatMap((p) => p.threads)
     .filter((t) => t.parentThreadId === parentId)
     .map((t) => t.id);
+}
+
+// Depth of a thread in the subagent tree: 0 for a root (user) thread, +1 per
+// ancestor. Walks parentThreadId up. Visited-guarded against corrupt data
+// (the parent link is a tree by construction, so cycles never arise normally).
+export function threadDepth(projects: Project[], threadId: string): number {
+  const byId = new Map(projects.flatMap((p) => p.threads).map((t) => [t.id, t]));
+  const seen = new Set<string>();
+  let depth = 0;
+  let cur = byId.get(threadId);
+  while (cur?.parentThreadId && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    cur = byId.get(cur.parentThreadId);
+    depth += 1;
+  }
+  return depth;
+}
+
+// Every transitive descendant of ancestorId (children, grandchildren, ...).
+// For aggregate rollups; the archive/delete cascade uses childThreadIdsOf
+// (single-level) because it self-recurses. Visited-guarded.
+export function descendantThreadIdsOf(projects: Project[], ancestorId: string): string[] {
+  const all = projects.flatMap((p) => p.threads);
+  const out: string[] = [];
+  const seen = new Set<string>([ancestorId]);
+  const stack = [ancestorId];
+  while (stack.length) {
+    const parentId = stack.pop()!;
+    for (const t of all) {
+      if (t.parentThreadId === parentId && !seen.has(t.id)) {
+        seen.add(t.id);
+        out.push(t.id);
+        stack.push(t.id);
+      }
+    }
+  }
+  return out;
 }
