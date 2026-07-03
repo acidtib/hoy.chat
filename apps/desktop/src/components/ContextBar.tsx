@@ -1,4 +1,10 @@
-import { Clock, FolderPlus, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  Clock,
+  FolderPlus,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Sparkle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -72,6 +78,16 @@ export function ContextBar({
             active={sidebarView === "history"}
           >
             <Clock className="size-4" />
+          </FooterIconButton>
+          <FooterIconButton
+            label={sidebarView === "fleet" ? "Show Projects" : "Show Fleet"}
+            onClick={() =>
+              setSidebarView(sidebarView === "fleet" ? "projects" : "fleet")
+            }
+            active={sidebarView === "fleet"}
+            activeClassName="text-agent"
+          >
+            <Sparkle className="size-4" />
           </FooterIconButton>
           <FooterIconButton
             label="Add Project"
@@ -168,6 +184,7 @@ function FooterIconButton({
   className,
   tooltipSide = "top",
   active = false,
+  activeClassName = "text-brand",
 }: {
   label: string;
   children: React.ReactNode;
@@ -175,6 +192,9 @@ function FooterIconButton({
   className?: string;
   tooltipSide?: "top" | "right";
   active?: boolean;
+  // Color when active; defaults to the brand navigation color, overridden by
+  // callers representing a different surface (e.g. text-agent for Fleet).
+  activeClassName?: string;
 }) {
   return (
     <Tooltip>
@@ -184,7 +204,7 @@ function FooterIconButton({
           size="icon-sm"
           className={cn(
             "size-7 hover:text-foreground",
-            active ? "text-brand" : "text-muted-foreground",
+            active ? activeClassName : "text-muted-foreground",
             className,
           )}
           onClick={onClick}
