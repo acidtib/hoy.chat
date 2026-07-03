@@ -389,6 +389,7 @@ function ChatPanel() {
 function WorkspacePanel() {
   const defaultProjectDir = usePrefsStore((s) => s.defaultProjectDir);
   const confirmCloseStreaming = usePrefsStore((s) => s.confirmCloseStreaming);
+  const autoOpenSpawnedThreads = usePrefsStore((s) => s.autoOpenSpawnedThreads);
   const setPref = usePrefsStore((s) => s.setPref);
 
   async function browse() {
@@ -425,6 +426,13 @@ function WorkspacePanel() {
           description="Ask before closing a thread whose response is still streaming."
           checked={confirmCloseStreaming}
           onChange={(v) => setPref("confirmCloseStreaming", v)}
+        />
+        <Separator />
+        <ToggleRow
+          label="Auto-open spawned subagent threads"
+          description="Open a panel for each subagent a thread spawns. Off by default; watch spawned agents in FleetView instead (the sidebar's Fleet toggle)."
+          checked={autoOpenSpawnedThreads}
+          onChange={(v) => setPref("autoOpenSpawnedThreads", v)}
         />
       </Section>
     </div>
