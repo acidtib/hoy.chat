@@ -8,7 +8,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decide, type GateDecision, type PermissionMode } from "./hoy-permissions";
+import { decide, isPlanFilePath, type GateDecision, type PermissionMode } from "./hoy-permissions";
 
 describe("gate policy table", () => {
   const table: Array<[PermissionMode, string, GateDecision]> = [
@@ -26,10 +26,13 @@ describe("gate policy table", () => {
     ["acceptEdits", "some_custom_tool", "ask"],
     ["plan", "read", "allow"],
     ["plan", "grep", "allow"],
-    ["plan", "edit", "block"],
-    ["plan", "write", "allow"],
+    // write/edit with no path context fall through to ask (HOY-213); the
+    // plan-file allow path is covered in its own block below.
+    ["plan", "edit", "ask"],
+    ["plan", "write", "ask"],
     ["plan", "mcp", "allow"],
     ["plan", "bash", "allow"],
+    ["plan", "agent", "allow"],
     ["plan", "some_custom_tool", "block"],
     ["autonomous", "edit", "allow"],
     ["autonomous", "bash", "allow"],
@@ -47,11 +50,38 @@ describe("agent tool gating (HOY-231)", () => {
     expect(decide("default", "agent")).toBe("allow");
     expect(decide("acceptEdits", "agent")).toBe("allow");
   });
-  test("blocked in plan mode", () => {
-    expect(decide("plan", "agent")).toBe("block");
+  test("allowed in plan mode (HOY-213: plan may fan out read-only subagents)", () => {
+    expect(decide("plan", "agent")).toBe("allow");
   });
   test("allowed in autonomous", () => {
     expect(decide("autonomous", "agent")).toBe("allow");
+  });
+});
+
+describe("plan-mode file gate (HOY-213)", () => {
+  const cwd = "/proj";
+
+  test("plan files under .hoy/plans are allowed for write and edit", () => {
+    expect(decide("plan", "write", { path: ".hoy/plans/HOY-1.md", cwd })).toBe("allow");
+    expect(decide("plan", "edit", { path: ".hoy/plans/HOY-1.md", cwd })).toBe("allow");
+    expect(decide("plan", "write", { path: "/proj/.hoy/plans/nested/x.md", cwd })).toBe("allow");
+  });
+
+  test("writes elsewhere ask for approval, not blocked (a user can save a plan elsewhere)", () => {
+    expect(decide("plan", "write", { path: "docs/x.md", cwd })).toBe("ask");
+    expect(decide("plan", "edit", { path: "src/main.ts", cwd })).toBe("ask");
+  });
+
+  test("traversal out of the plan dir is not a plan file", () => {
+    expect(isPlanFilePath(".hoy/plans/../../secret", cwd)).toBe(false);
+    expect(isPlanFilePath("../.hoy/plans/x", cwd)).toBe(false);
+    expect(decide("plan", "write", { path: ".hoy/plans/../evil.ts", cwd })).toBe("ask");
+  });
+
+  test("isPlanFilePath needs both a path and a cwd", () => {
+    expect(isPlanFilePath(undefined, cwd)).toBe(false);
+    expect(isPlanFilePath(".hoy/plans/x.md", undefined)).toBe(false);
+    expect(isPlanFilePath(".hoy/plans/x.md", cwd)).toBe(true);
   });
 });
 

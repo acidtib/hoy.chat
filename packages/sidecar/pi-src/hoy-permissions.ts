@@ -11,6 +11,7 @@
 // and resets mode to the env value; Rust keeps the env in sync on every mode
 // change so that reset is harmless.
 
+import { isAbsolute, join, relative } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AUTONOMOUS_MODE_PROMPT, PLAN_MODE_PROMPT } from "./hoy-system-prompt";
 
@@ -25,15 +26,48 @@ export function isPermissionMode(value: string): value is PermissionMode {
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 const MUTATING_TOOLS = new Set(["edit", "write"]);
 
+// Project-relative directory where plan mode may write and edit plan files
+// (HOY-213). Consistent with the other .hoy/ project state (agents, mcp.json);
+// keeps agent working plans out of the team's committed docs/plans/ docs.
+export const PLAN_DIR = ".hoy/plans";
+
+// True when `path` resolves to a file strictly inside <cwd>/.hoy/plans. Resolves
+// relative paths against cwd and rejects any traversal out of the plan dir, so a
+// path like ../../etc/x or .hoy/plans/../../secret cannot pass.
+export function isPlanFilePath(path: string | undefined, cwd: string | undefined): boolean {
+  if (!path || !cwd) return false;
+  const abs = isAbsolute(path) ? path : join(cwd, path);
+  const planRoot = join(cwd, PLAN_DIR);
+  const rel = relative(planRoot, abs);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
 export type GateDecision = "allow" | "ask" | "block";
 
 // The policy table from HOY-186. Read-only tools never gate; custom tools are
-// treated like bash (and fail safe to block in plan mode).
-export function decide(mode: PermissionMode, toolName: string): GateDecision {
+// treated like bash (and fail safe to block in plan mode). `opts.path`/`opts.cwd`
+// scope the plan-mode file gate (HOY-213): write and edit run frictionlessly for
+// plan files under .hoy/plans, and elsewhere they ask for approval rather than
+// hard-block, so a user who asks for the plan saved somewhere else can approve
+// that write while the default location stays prompt-free.
+export function decide(
+  mode: PermissionMode,
+  toolName: string,
+  opts?: { path?: string; cwd?: string },
+): GateDecision {
   if (READ_ONLY_TOOLS.has(toolName)) return "allow";
   if (mode === "autonomous") return "allow";
   if (mode === "plan") {
-    if (toolName === "write" || toolName === "mcp" || toolName === "bash") return "allow";
+    // agent (HOY-213): plan mode may fan out subagents to parallelize read-only
+    // exploration and delegate deep planning to the Plan architect. Spawned
+    // children inherit plan mode, so they stay non-mutating by construction.
+    if (toolName === "mcp" || toolName === "bash" || toolName === "agent") return "allow";
+    // write/edit (HOY-213): a plan file under .hoy/plans is allowed outright so
+    // the architect can author and refine it; anywhere else asks for approval,
+    // which is how a user-requested alternate plan location gets in.
+    if (toolName === "write" || toolName === "edit") {
+      return isPlanFilePath(opts?.path, opts?.cwd) ? "allow" : "ask";
+    }
     return "block";
   }
   if (toolName === "agent") return "allow"; // consent lives in the agent tool (names type + task)
@@ -118,6 +152,9 @@ const DENY_REASON =
 export function createHoyPermissions(initialMode: PermissionMode) {
   return function hoyPermissions(pi: ExtensionAPI) {
     let mode: PermissionMode = initialMode;
+    // The child runs in the project dir, so process.cwd() is the project root
+    // used to resolve the .hoy/plans plan-file gate (HOY-213).
+    const cwd = process.cwd();
     // "Allow for this session" grants, keyed by tool name. Cleared on respawn
     // with the rest of the closure.
     const sessionAllowed = new Set<string>();
@@ -148,7 +185,8 @@ export function createHoyPermissions(initialMode: PermissionMode) {
     });
 
     pi.on("tool_call", async (event, ctx) => {
-      const decision = decide(mode, event.toolName);
+      const path = typeof (event.input as any)?.path === "string" ? (event.input as any).path : undefined;
+      const decision = decide(mode, event.toolName, { path, cwd });
       if (decision === "allow") return undefined;
       if (decision === "block") {
         return { block: true, reason: blockReason(mode, event.toolName) };
