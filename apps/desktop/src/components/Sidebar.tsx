@@ -357,6 +357,7 @@ function ProjectGroup({
                       childCount={children.length}
                       childrenOpen={childrenOpen}
                       onToggleChildren={() => toggleChildren(thread.id)}
+                      isAgent={children.length > 0}
                     />
                     {childrenOpen &&
                       children.map((child) => (
@@ -367,6 +368,7 @@ function ProjectGroup({
                           active={child.id === activeThreadId}
                           open={openIds.has(child.id)}
                           onSelect={() => onSelectThread(child.id)}
+                          isAgent
                         />
                       ))}
                   </div>
@@ -388,6 +390,7 @@ function ThreadRow({
   childCount,
   childrenOpen,
   onToggleChildren,
+  isAgent = false,
 }: {
   thread: Thread;
   depth: number;
@@ -397,6 +400,7 @@ function ThreadRow({
   childCount?: number;
   childrenOpen?: boolean;
   onToggleChildren?: () => void;
+  isAgent?: boolean;
 }) {
   const renameThread = useSessionStore((s) => s.renameThread);
   const requestTeardown = useSessionStore((s) => s.requestTeardown);
@@ -449,7 +453,11 @@ function ThreadRow({
       <Sparkle
         className={cn(
           "mt-0.5 size-3.5 shrink-0",
-          active || open ? "text-brand" : "text-muted-foreground",
+          isAgent
+            ? "text-agent"
+            : active || open
+              ? "text-brand"
+              : "text-muted-foreground",
         )}
       />
       <span className="min-w-0 flex-1">
