@@ -67,6 +67,15 @@ export function shouldDeliverToParent(thread: {
   return !!thread.parentThreadId && !thread.completedAt;
 }
 
+// A thread is a subagent thread iff it was spawned by a parent. Drives the
+// agent color identity in the sidebar and panels (HOY-236). Parent-role
+// detection uses childThreadIdsOf(projects, id).length > 0.
+export function isSubagentThread(thread: {
+  parentThreadId?: string | null;
+}): boolean {
+  return !!thread.parentThreadId;
+}
+
 // Ids of the direct children of parentId (depth is capped at 1, so no
 // grandchildren exist). Used to cascade archive/delete so a child is never
 // left rootless when its parent leaves the tree. HOY-238.

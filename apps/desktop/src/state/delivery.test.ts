@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from "bun:test";
-import type { Turn } from "../lib/types";
+import type { Project, Turn } from "../lib/types";
 import {
   extractResultText,
   buildDelivery,
@@ -8,6 +8,7 @@ import {
   pendingDeliveries,
   shouldDeliverToParent,
   childThreadIdsOf,
+  isSubagentThread,
 } from "./delivery";
 
 const asst = (over: Partial<Extract<Turn, { role: "assistant" }>> = {}): Turn => ({
@@ -88,4 +89,29 @@ test("childThreadIdsOf: returns ids of threads whose parentThreadId matches", ()
   ] as any;
   expect(childThreadIdsOf(projects, "parent").sort()).toEqual(["kidA", "kidB"]);
   expect(childThreadIdsOf(projects, "parent-with-no-kids")).toEqual([]);
+});
+
+test("isSubagentThread is true when the thread has a parent", () => {
+  expect(isSubagentThread({ parentThreadId: "t_parent" })).toBe(true);
+});
+
+test("isSubagentThread is false for a top-level thread", () => {
+  expect(isSubagentThread({ parentThreadId: null })).toBe(false);
+  expect(isSubagentThread({})).toBe(false);
+});
+
+test("childThreadIdsOf detects a parent's children", () => {
+  const projects: Project[] = [
+    {
+      id: "p1",
+      name: "p1",
+      threads: [
+        { id: "a", title: "a", updatedAt: 0, sessionId: null },
+        { id: "b", title: "b", updatedAt: 0, sessionId: null, parentThreadId: "a" },
+        { id: "c", title: "c", updatedAt: 0, sessionId: null },
+      ],
+    },
+  ];
+  expect(childThreadIdsOf(projects, "a")).toEqual(["b"]);
+  expect(childThreadIdsOf(projects, "c")).toEqual([]);
 });
