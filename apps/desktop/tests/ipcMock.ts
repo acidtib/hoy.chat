@@ -32,6 +32,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     saveProviderKey: mock(),
     saveWorkspace: mock(),
     sendPrompt: mock(),
+    setKeepAwake: mock(),
     setModel: mock(),
     setPermissionMode: mock(),
     setSubagentEnabled: mock(),

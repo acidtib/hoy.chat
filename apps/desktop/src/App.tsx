@@ -16,11 +16,12 @@ import { ConfirmCloseDialog } from "@/components/ConfirmCloseDialog";
 import { TitleBar, WindowResizeHandles } from "@/components/TitleBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { activeSessionId, getState } from "@/lib/ipc";
+import { activeSessionId, getState, setKeepAwake } from "@/lib/ipc";
 import { refreshProviderData } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
 import { useSessionStore, findThread } from "@/state/store";
+import { usePrefsStore } from "@/state/prefs";
 import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
 import type { PiState } from "@/lib/types";
 
@@ -48,6 +49,14 @@ function App() {
   useEffect(() => {
     void initWorkspace();
   }, [initWorkspace]);
+
+  // Sync the keep-awake pref to the backend (HOY-188). Runs on mount so the
+  // persisted choice reaches the Rust owner thread (whose default is on), and
+  // again whenever the user toggles it.
+  const keepAwakeWhileStreaming = usePrefsStore((s) => s.keepAwakeWhileStreaming);
+  useEffect(() => {
+    void setKeepAwake(keepAwakeWhileStreaming);
+  }, [keepAwakeWhileStreaming]);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {

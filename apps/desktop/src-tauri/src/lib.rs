@@ -125,7 +125,8 @@ pub fn run() {
             commands::list_project_paths,
             commands::read_context_file,
             commands::load_workspace,
-            commands::save_workspace
+            commands::save_workspace,
+            commands::set_keep_awake
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

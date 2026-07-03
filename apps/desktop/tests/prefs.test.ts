@@ -21,6 +21,7 @@ describe("usePrefsStore", () => {
       autoOpenSpawnedThreads: false,
       requireSubagentApproval: false,
       maxConcurrentAgents: 4,
+      keepAwakeWhileStreaming: true,
     });
   });
 

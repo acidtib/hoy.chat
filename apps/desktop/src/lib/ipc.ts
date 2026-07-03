@@ -217,6 +217,13 @@ export function deleteSessionFile(sessionFile: string): Promise<void> {
   return invoke<void>("delete_session_file", { sessionFile });
 }
 
+// Toggle the OS keep-awake behavior (HOY-188). Synced from the
+// keepAwakeWhileStreaming pref on boot and whenever it changes; the backend's
+// owner thread only holds the wake lock while a turn streams AND this is on.
+export function setKeepAwake(enabled: boolean): Promise<void> {
+  return invoke<void>("set_keep_awake", { enabled });
+}
+
 export function loadWorkspace(): Promise<Workspace> {
   return invoke<Workspace>("load_workspace");
 }

@@ -404,6 +404,15 @@ pub fn delete_session_file(session_file: String) -> Result<(), String> {
     }
 }
 
+// Toggle the OS keep-awake behavior at runtime (HOY-188). The renderer syncs the
+// persisted `keepAwakeWhileStreaming` pref here on boot and whenever it changes;
+// the keep-awake owner thread reads the flag each poll. No session needed: the
+// feature is app-global, not per-thread. Default (before any call) is enabled.
+#[tauri::command]
+pub fn set_keep_awake(enabled: bool) {
+    crate::keep_awake::set_enabled(enabled);
+}
+
 #[tauri::command]
 pub fn load_workspace() -> Result<Workspace, String> {
     workspace::load()

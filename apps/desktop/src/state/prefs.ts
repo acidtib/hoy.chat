@@ -41,6 +41,11 @@ export interface AppPrefs {
   // FIFO (HOY-247). Clamped to at least 1 at the call site. The depth cap stays
   // a hard constant, not a pref, so the fork-bomb guard cannot be tuned away.
   maxConcurrentAgents: number;
+  // Keep the machine awake while any thread is mid-turn (HOY-188), so a long
+  // unattended run does not idle-sleep out from under the user. On by default.
+  // Synced to the Rust keep-awake owner thread via the set_keep_awake command;
+  // when off, the wake lock is never taken and the machine may idle-sleep.
+  keepAwakeWhileStreaming: boolean;
 }
 
 interface PrefsStore extends AppPrefs {
@@ -64,6 +69,7 @@ export const PREFS_DEFAULTS: AppPrefs = {
   autoOpenSpawnedThreads: false,
   requireSubagentApproval: false,
   maxConcurrentAgents: MAX_CONCURRENT_AGENTS,
+  keepAwakeWhileStreaming: true,
 };
 
 export const usePrefsStore = create<PrefsStore>()(
@@ -92,6 +98,7 @@ export const usePrefsStore = create<PrefsStore>()(
         autoOpenSpawnedThreads: s.autoOpenSpawnedThreads,
         requireSubagentApproval: s.requireSubagentApproval,
         maxConcurrentAgents: s.maxConcurrentAgents,
+        keepAwakeWhileStreaming: s.keepAwakeWhileStreaming,
       }),
     },
   ),

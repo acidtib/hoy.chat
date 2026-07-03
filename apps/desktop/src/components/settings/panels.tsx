@@ -400,6 +400,7 @@ function WorkspacePanel() {
   const autoOpenSpawnedThreads = usePrefsStore((s) => s.autoOpenSpawnedThreads);
   const requireSubagentApproval = usePrefsStore((s) => s.requireSubagentApproval);
   const maxConcurrentAgents = usePrefsStore((s) => s.maxConcurrentAgents);
+  const keepAwakeWhileStreaming = usePrefsStore((s) => s.keepAwakeWhileStreaming);
   const setPref = usePrefsStore((s) => s.setPref);
 
   async function browse() {
@@ -470,6 +471,13 @@ function WorkspacePanel() {
             }}
           />
         </Field>
+        <Separator />
+        <ToggleRow
+          label="Keep the computer awake while working"
+          description="Prevent the machine from sleeping while a thread is mid-turn, so a long unattended run does not idle-sleep. The display may still dim; an explicit sleep or lid close is never overridden."
+          checked={keepAwakeWhileStreaming}
+          onChange={(v) => setPref("keepAwakeWhileStreaming", v)}
+        />
       </Section>
     </div>
   );
