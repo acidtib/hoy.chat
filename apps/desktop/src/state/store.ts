@@ -31,6 +31,7 @@ import {
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
+import { extractProposedPlan, planKickoffPrompt } from "@/lib/plan";
 import { usePrefsStore } from "@/state/prefs";
 import {
   buildDelivery,
@@ -304,6 +305,11 @@ interface SessionStore {
   streaming: Record<string, boolean>;
   stats: Record<string, SessionStats | null>;
   threadErrors: Record<string, string | null>;
+  // Plan-mode handoff (HOY-213): a plan-mode turn that finished carrying a
+  // proposed_plan block sets planReady[threadId] to the extracted plan text.
+  // Drives the "Plan ready" card; transient (not persisted), cleared on
+  // implement/dismiss and when the thread streams again.
+  planReady: Record<string, string>;
   // Manual compaction in flight, keyed by threadId; gates the Compact affordance
   // and shows a compacting chip (HOY-229).
   compacting: Record<string, boolean>;
@@ -466,6 +472,11 @@ interface SessionStore {
   // /hoy_mode immediately (even mid-stream). No session yet: recorded on the
   // thread and applied when one spawns.
   setPermissionMode: (threadId: string, mode: PermissionMode) => Promise<void>;
+  // Plan-mode handoff (HOY-213): approve the ready plan into execution by
+  // switching the thread to `mode` and sending the kickoff prompt, or dismiss
+  // the card (keep planning / discard) without executing.
+  implementPlan: (threadId: string, mode: PermissionMode) => Promise<void>;
+  dismissPlanReady: (threadId: string) => void;
   // Answer the thread's oldest pending approval card.
   answerPermission: (
     threadId: string,
@@ -530,6 +541,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   streaming: {},
   stats: {},
   threadErrors: {},
+  planReady: {},
   compacting: {},
   autoCompaction: {},
   pendingPermissions: {},
@@ -1106,6 +1118,25 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
 
+  dismissPlanReady: (threadId) => {
+    set((s) => {
+      if (!(threadId in s.planReady)) return {};
+      const planReady = { ...s.planReady };
+      delete planReady[threadId];
+      return { planReady };
+    });
+  },
+
+  implementPlan: async (threadId, mode) => {
+    const plan = get().planReady[threadId];
+    // Clear the card first so a double click cannot fire two kickoffs.
+    get().dismissPlanReady(threadId);
+    // Switch out of plan mode so the kickoff turn has full tool access, then
+    // send the plan as the opening instruction of the execution turn.
+    await get().setPermissionMode(threadId, mode);
+    await get().submitPrompt(threadId, planKickoffPrompt(plan));
+  },
+
   answerPermission: async (threadId, requestId, answer) => {
     const sessionId = findThread(get().projects, threadId)?.thread.sessionId;
     if (!sessionId) return;
@@ -1135,6 +1166,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const found = findThread(get().projects, threadId);
     if (!found) return;
     const { thread, project } = found;
+    // A new user turn supersedes any pending plan-ready card (HOY-213).
+    get().dismissPlanReady(threadId);
 
     // The message is the composer draft with @ mentions encoded inline (HOY-220).
     // `text` is the human-readable message (markers -> labels); `contexts` are the
@@ -1840,6 +1873,9 @@ async function streamPromptOnThread(
       // HOY-233: push this child's result up to its parent, and drain any
       // deliveries queued for this thread while it streamed.
       void deliverAndDrain(threadId);
+      // HOY-213: a plan-mode turn that produced a proposed_plan block raises the
+      // "Plan ready" handoff card.
+      flagPlanReadyIfPresent(threadId);
     } else if (event.kind === "queueUpdate") {
       // Pi sends the full queue arrays each time; replace, don't append. The
       // chips reflect what is still queued; anything that left the queue was
@@ -1949,6 +1985,26 @@ async function streamPromptOnThread(
   };
 
   await sendPrompt(sessionId, message, channel, images);
+}
+
+// HOY-213: after a plan-mode turn finishes, surface the "Plan ready" handoff card
+// when the final assistant turn carried a proposed_plan block (inline plan mode
+// or a delivered Plan-subagent result, both of which land as assistant text on
+// this thread). Detection only reads state; the card drives the actual handoff.
+function flagPlanReadyIfPresent(threadId: string): void {
+  const s = useSessionStore.getState();
+  const thread = findThread(s.projects, threadId)?.thread;
+  if (!thread || thread.permissionMode !== "plan") return;
+  const turns = s.turns[threadId];
+  const last = turns?.[turns.length - 1];
+  if (!last || last.role !== "assistant") return;
+  const text = last.blocks.map((b) => (b.kind === "text" ? b.content : "")).join("");
+  const plan = extractProposedPlan(text);
+  if (plan) {
+    useSessionStore.setState((st) => ({
+      planReady: { ...st.planReady, [threadId]: plan },
+    }));
+  }
 }
 
 // HOY-233: on a thread's `done`, push a finished child's result up to its parent

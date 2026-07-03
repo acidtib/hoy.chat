@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Archive,
   CircleStop,
+  ClipboardCheck,
   File as FileIcon,
   FilePen,
   Folder,
@@ -65,6 +66,7 @@ import type {
   ExtWidget,
   ImageAttachment,
   Notice,
+  PermissionMode,
   PermissionRequest,
   PiState,
   SlashCommand,
@@ -121,6 +123,9 @@ export function ThreadView({
   );
   const setPermissionMode = useSessionStore((s) => s.setPermissionMode);
   const answerPermission = useSessionStore((s) => s.answerPermission);
+  const planReady = useSessionStore((s) => s.planReady[threadId]);
+  const implementPlan = useSessionStore((s) => s.implementPlan);
+  const dismissPlanReady = useSessionStore((s) => s.dismissPlanReady);
   const notices = useSessionStore((s) => s.notices[threadId] ?? EMPTY_NOTICES);
   const dismissNotice = useSessionStore((s) => s.dismissNotice);
   const expandReasoning = usePrefsStore((s) => s.expandReasoning);
@@ -505,6 +510,13 @@ export function ThreadView({
             </div>
           )}
 
+          {planReady !== undefined && (
+            <PlanReadyCard
+              onImplement={(mode) => void implementPlan(threadId, mode)}
+              onDismiss={() => dismissPlanReady(threadId)}
+            />
+          )}
+
           {pendingPermissions.length > 0 && (
             <ApprovalCard
               key={pendingPermissions[0].requestId}
@@ -609,6 +621,62 @@ function ApprovalCard({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Plan-mode handoff card (HOY-213). Shown when a plan-mode turn produced a
+// proposed_plan block. The two Implement actions pick the execute mode to land
+// in (default reviews each edit; acceptEdits auto-approves file edits), so the
+// user chooses oversight at approval time. Keep planning dismisses and stays in
+// plan mode. The plan stays in the transcript either way.
+function PlanReadyCard({
+  onImplement,
+  onDismiss,
+}: {
+  onImplement: (mode: PermissionMode) => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="mx-3 mb-2 shrink-0 rounded-lg border border-agent/40 bg-card/70 px-3 py-2.5">
+      <div className="flex items-start gap-2.5">
+        <ClipboardCheck className="mt-0.5 size-4 shrink-0 text-agent" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-medium leading-relaxed text-foreground">
+            Plan ready
+          </div>
+          <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Approve to leave plan mode and start implementing, or keep planning to
+            refine it first.
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-end gap-1.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs text-muted-foreground"
+          onClick={onDismiss}
+        >
+          Keep planning
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
+          onClick={() => onImplement("default")}
+        >
+          Implement (review each edit)
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
+          onClick={() => onImplement("acceptEdits")}
+        >
+          Implement (auto-approve edits)
+        </Button>
+      </div>
     </div>
   );
 }

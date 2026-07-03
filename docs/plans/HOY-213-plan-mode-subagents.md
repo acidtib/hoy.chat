@@ -184,12 +184,29 @@ Integration with our RPC architecture (the plumbing that makes this fit):
 - **On Discard:** no injection; the plan block can be left in history (a later
   `context` filter to strip stale plans is optional, out of scope here).
 
-Implementation risk to verify before building Slice 3: confirm the installed
-`@earendil-works/pi-coding-agent` exposes an `agent_end`/turn-end event and that
-raising `ctx.ui.select` there works in RPC mode. If the event is unavailable,
-fall back to renderer-side detection (scan the completed turn for the block and
-render an inline card), which delivers the same UX without a sidecar turn-end
-hook.
+**Resolved: renderer-side detection (not sidecar `ctx.ui.select`).** The pi API
+does expose `agent_end` (with `messages[]`) and `turn_end`, but raising
+`ctx.ui.select` inside `agent_end` in RPC mode would block the turn-completion
+path the renderer waits on (the terminal `done`), risking a wedged turn. Since
+the produced plan already lands in the thread transcript (inline plan mode's
+assistant turn, or a delivered Plan-subagent result), the renderer can detect and
+present the card without any sidecar/Rust change. This delivers the same
+Implement / Keep planning / Discard card UX with less risk and fewer moving
+parts, so Slice 3 is renderer-only:
+
+- **Extraction:** `extractProposedPlan(text)` via
+  `/<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>/i` over the just-completed
+  assistant turn (and delivered subagent results).
+- **Trigger:** when a plan-mode thread's turn completes, if a plan block is
+  present, set a transient store marker `planReady[threadId] = plan` (a store
+  map like `streaming`/`threadErrors`, not persisted).
+- **Card:** ThreadView renders a "Plan ready" card above the composer with
+  Implement (review each edit) / Implement (auto-approve edits) / Keep planning /
+  Discard.
+- **Actions:** Implement(mode) calls `setPermissionMode(threadId, mode)` then
+  sends the kickoff prompt ("Plan mode is now disabled. Full tool access is
+  restored. Implement this proposed plan now:\n\n${plan}") and clears the marker;
+  Keep planning / Discard just clear the marker.
 
 ## Verification and rollout
 
