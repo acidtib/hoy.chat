@@ -70,7 +70,9 @@ fn project_path(project: &str) -> Result<PathBuf, String> {
     if project.trim().is_empty() {
         return Err("project path is required for project scope".to_string());
     }
-    Ok(PathBuf::from(project).join(PROJECT_CONFIG_DIR).join("mcp.json"))
+    Ok(PathBuf::from(project)
+        .join(PROJECT_CONFIG_DIR)
+        .join("mcp.json"))
 }
 
 // The standard cross-tool file at the project root. Read-only from this UI; the
@@ -124,7 +126,10 @@ fn entries_at(path: &Path, scope: McpScope) -> Vec<McpServerEntry> {
             name,
             scope,
             transport: transport_of(&spec),
-            disabled: spec.get("disabled").and_then(Value::as_bool).unwrap_or(false),
+            disabled: spec
+                .get("disabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             spec,
         })
         .collect();

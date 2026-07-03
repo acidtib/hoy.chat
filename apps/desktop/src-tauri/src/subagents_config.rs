@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use crate::pi_config::agent_dir;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use crate::pi_config::agent_dir;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 const PROJECT_CONFIG_DIR: &str = ".hoy";
 static SUBAGENTS_MUTATION_LOCK: Mutex<()> = Mutex::new(());
@@ -22,7 +22,9 @@ fn project_path(project: &str) -> Result<PathBuf, String> {
     if project.trim().is_empty() {
         return Err("project path is required for project scope".to_string());
     }
-    Ok(PathBuf::from(project).join(PROJECT_CONFIG_DIR).join("subagents.json"))
+    Ok(PathBuf::from(project)
+        .join(PROJECT_CONFIG_DIR)
+        .join("subagents.json"))
 }
 
 fn path_for(scope: SubagentScope, project: Option<&str>) -> Result<PathBuf, String> {
@@ -96,13 +98,18 @@ fn write_config_atomic_at(path: &Path, config: &Map<String, Value>) -> Result<()
 
 fn disabled_vec(config: &Map<String, Value>) -> Vec<String> {
     match config.get("disabled") {
-        Some(Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(String::from)).collect(),
+        Some(Value::Array(a)) => a
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
         _ => Vec::new(),
     }
 }
 
 fn set_disabled_at(path: &Path, name: &str, disabled: bool) -> Result<(), String> {
-    let _guard = SUBAGENTS_MUTATION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = SUBAGENTS_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut config = read_config_at(path);
     let mut list = disabled_vec(&config);
     let present = list.iter().any(|n| n == name);
@@ -113,11 +120,19 @@ fn set_disabled_at(path: &Path, name: &str, disabled: bool) -> Result<(), String
     } else {
         return Ok(());
     }
-    config.insert("disabled".to_string(), Value::Array(list.into_iter().map(Value::String).collect()));
+    config.insert(
+        "disabled".to_string(),
+        Value::Array(list.into_iter().map(Value::String).collect()),
+    );
     write_config_atomic_at(path, &config)
 }
 
-pub fn set_enabled(scope: SubagentScope, project: Option<&str>, name: &str, enabled: bool) -> Result<(), String> {
+pub fn set_enabled(
+    scope: SubagentScope,
+    project: Option<&str>,
+    name: &str,
+    enabled: bool,
+) -> Result<(), String> {
     if name.trim().is_empty() {
         return Err("subagent name is required".to_string());
     }
@@ -135,15 +150,21 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("subagents.json");
         // Seed an unknown top-level key to prove read-modify-write preserves it.
-        std::fs::write(&path, serde_json::to_vec(&json!({ "note": "keep", "disabled": [] })).unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&json!({ "note": "keep", "disabled": [] })).unwrap(),
+        )
+        .unwrap();
 
         set_disabled_at(&path, "Reviewer", true).unwrap();
-        let after: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let after: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(after["note"], "keep");
         assert_eq!(after["disabled"], json!(["Reviewer"]));
 
         set_disabled_at(&path, "Reviewer", false).unwrap();
-        let after2: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let after2: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(after2["disabled"], json!([]));
         std::fs::remove_dir_all(&dir).ok();
     }

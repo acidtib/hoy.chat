@@ -257,8 +257,15 @@ pub async fn remove_mcp_server(
 }
 
 #[tauri::command]
-pub fn list_subagents(cwd: String, manager: State<'_, SidecarManager>) -> Result<serde_json::Value, String> {
-    let path = if cwd.trim().is_empty() { std::env::temp_dir() } else { PathBuf::from(cwd) };
+pub fn list_subagents(
+    cwd: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<serde_json::Value, String> {
+    let path = if cwd.trim().is_empty() {
+        std::env::temp_dir()
+    } else {
+        PathBuf::from(cwd)
+    };
     manager.list_subagents(&path)
 }
 

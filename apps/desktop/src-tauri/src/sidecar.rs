@@ -943,7 +943,10 @@ impl SidecarManager {
     // project's .hoy/agents.
     pub fn list_subagents(&self, cwd: &Path) -> Result<serde_json::Value, String> {
         if !self.bin.exists() {
-            return Err(format!("sidecar binary not found at {}. Run sidecar/build.sh.", self.bin.display()));
+            return Err(format!(
+                "sidecar binary not found at {}. Run sidecar/build.sh.",
+                self.bin.display()
+            ));
         }
         let out = std::process::Command::new(&self.bin)
             .env("PI_PACKAGE_DIR", &self.payload)
@@ -953,7 +956,11 @@ impl SidecarManager {
             .output()
             .map_err(|e| format!("spawn sidecar for list_subagents: {e}"))?;
         if !out.status.success() {
-            return Err(format!("list_subagents exited {}: {}", out.status, String::from_utf8_lossy(&out.stderr)));
+            return Err(format!(
+                "list_subagents exited {}: {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr)
+            ));
         }
         serde_json::from_slice(&out.stdout).map_err(|e| format!("parse list_subagents output: {e}"))
     }
