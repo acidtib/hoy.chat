@@ -71,6 +71,7 @@ interface AgentFrontmatter {
   prompt_mode?: string;
   model?: string;
   thinking?: string;
+  enabled?: boolean;
 }
 
 // Intersect a declared tool list with KNOWN_TOOLS and drop `agent`. Omitted -> general set.
@@ -107,7 +108,10 @@ function parseAgentFile(path: string, name: string, scope: SubagentScope): Subag
     model: typeof fm.model === "string" ? fm.model : undefined,
     thinking: typeof fm.thinking === "string" ? fm.thinking : undefined,
     source: path,
-    enabled: true,
+    // Frontmatter default (HOY-244): a type ships disabled with `enabled: false`;
+    // anything else defaults on. The subagents.json overlay below can force it on
+    // (the settings toggle) or off, overriding this default.
+    enabled: fm.enabled !== false,
   };
 }
 
@@ -124,11 +128,12 @@ function agentFiles(dir: string): Array<{ name: string; path: string }> {
     .map((n) => ({ name: n.slice(0, -3), path: join(dir, n) }));
 }
 
-// The disabled name set from a scope's subagents.json ({ "disabled": [...] }).
-function disabledSet(path: string): Set<string> {
+// A string-name set under `key` in a scope's subagents.json (e.g. "disabled" or
+// "enabled"). Missing/malformed -> empty set.
+function nameSet(path: string, key: "disabled" | "enabled"): Set<string> {
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8"));
-    const list = parsed && Array.isArray(parsed.disabled) ? parsed.disabled : [];
+    const list = parsed && Array.isArray(parsed[key]) ? parsed[key] : [];
     return new Set(list.filter((x: unknown): x is string => typeof x === "string"));
   } catch {
     return new Set();
@@ -150,13 +155,17 @@ export function loadSubagentRegistry(agentDir: string, cwd: string): SubagentReg
       if (parsed) reg[name] = parsed;
     }
   }
-  // Overlay disabled state (global + project subagents.json). Project entry wins.
-  const disabled = new Set<string>([
-    ...disabledSet(join(agentDir, "subagents.json")),
-    ...disabledSet(join(cwd, ".hoy", "subagents.json")),
-  ]);
-  for (const name of Object.keys(reg)) {
-    if (disabled.has(name)) reg[name].enabled = false;
+  // Overlay explicit enable/disable overrides from subagents.json, global then
+  // project so the project scope wins. `enabled` forces a type on (overriding a
+  // frontmatter `enabled: false`), `disabled` forces it off; a name in neither
+  // keeps its frontmatter default. The settings toggle writes into these lists.
+  for (const dir of [join(agentDir, "subagents.json"), join(cwd, ".hoy", "subagents.json")]) {
+    const on = nameSet(dir, "enabled");
+    const off = nameSet(dir, "disabled");
+    for (const name of Object.keys(reg)) {
+      if (on.has(name)) reg[name].enabled = true;
+      else if (off.has(name)) reg[name].enabled = false;
+    }
   }
   return reg;
 }

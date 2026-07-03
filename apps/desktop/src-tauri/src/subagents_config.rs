@@ -96,8 +96,8 @@ fn write_config_atomic_at(path: &Path, config: &Map<String, Value>) -> Result<()
     })
 }
 
-fn disabled_vec(config: &Map<String, Value>) -> Vec<String> {
-    match config.get("disabled") {
+fn name_vec(config: &Map<String, Value>, key: &str) -> Vec<String> {
+    match config.get(key) {
         Some(Value::Array(a)) => a
             .iter()
             .filter_map(|v| v.as_str().map(String::from))
@@ -106,24 +106,58 @@ fn disabled_vec(config: &Map<String, Value>) -> Vec<String> {
     }
 }
 
-fn set_disabled_at(path: &Path, name: &str, disabled: bool) -> Result<(), String> {
+// Store an empty list as an absent key so subagents.json stays minimal.
+fn put_list(config: &mut Map<String, Value>, key: &str, list: Vec<String>) {
+    if list.is_empty() {
+        config.remove(key);
+    } else {
+        config.insert(
+            key.to_string(),
+            Value::Array(list.into_iter().map(Value::String).collect()),
+        );
+    }
+}
+
+fn ensure_present(list: &mut Vec<String>, name: &str) -> bool {
+    if list.iter().any(|n| n == name) {
+        false
+    } else {
+        list.push(name.to_string());
+        true
+    }
+}
+
+fn ensure_absent(list: &mut Vec<String>, name: &str) -> bool {
+    let before = list.len();
+    list.retain(|n| n != name);
+    list.len() != before
+}
+
+// Two-sided override (HOY-244): a name lives in exactly one of `enabled` /
+// `disabled`, or neither (frontmatter default). Recording explicit intent in
+// both directions keeps the settings toggle authoritative even for a type that
+// ships `enabled: false` in its .md frontmatter.
+fn set_enabled_at(path: &Path, name: &str, enabled: bool) -> Result<(), String> {
     let _guard = SUBAGENTS_MUTATION_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     let mut config = read_config_at(path);
-    let mut list = disabled_vec(&config);
-    let present = list.iter().any(|n| n == name);
-    if disabled && !present {
-        list.push(name.to_string());
-    } else if !disabled && present {
-        list.retain(|n| n != name);
+    let mut enabled_list = name_vec(&config, "enabled");
+    let mut disabled_list = name_vec(&config, "disabled");
+    let changed = if enabled {
+        let added = ensure_present(&mut enabled_list, name);
+        let removed = ensure_absent(&mut disabled_list, name);
+        added || removed
     } else {
+        let added = ensure_present(&mut disabled_list, name);
+        let removed = ensure_absent(&mut enabled_list, name);
+        added || removed
+    };
+    if !changed {
         return Ok(());
     }
-    config.insert(
-        "disabled".to_string(),
-        Value::Array(list.into_iter().map(Value::String).collect()),
-    );
+    put_list(&mut config, "enabled", enabled_list);
+    put_list(&mut config, "disabled", disabled_list);
     write_config_atomic_at(path, &config)
 }
 
@@ -136,7 +170,7 @@ pub fn set_enabled(
     if name.trim().is_empty() {
         return Err("subagent name is required".to_string());
     }
-    set_disabled_at(&path_for(scope, project)?, name.trim(), !enabled)
+    set_enabled_at(&path_for(scope, project)?, name.trim(), enabled)
 }
 
 #[cfg(test)]
@@ -156,16 +190,21 @@ mod tests {
         )
         .unwrap();
 
-        set_disabled_at(&path, "Reviewer", true).unwrap();
+        set_enabled_at(&path, "Reviewer", false).unwrap();
         let after: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(after["note"], "keep");
         assert_eq!(after["disabled"], json!(["Reviewer"]));
+        // An empty list is stored as an absent key, not `[]`.
+        assert!(after.get("enabled").is_none());
 
-        set_disabled_at(&path, "Reviewer", false).unwrap();
+        set_enabled_at(&path, "Reviewer", true).unwrap();
         let after2: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(after2["disabled"], json!([]));
+        // Enabling moves the name from disabled to enabled (two-sided override),
+        // so a frontmatter-disabled type can be forced on from the settings toggle.
+        assert!(after2.get("disabled").is_none());
+        assert_eq!(after2["enabled"], json!(["Reviewer"]));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -67,6 +67,35 @@ test("disabled names in subagents.json set enabled=false; enabledTypes filters t
   expect(enabledTypes(reg).find((t) => t.name === "Explore")).toBeDefined();
 });
 
+test("frontmatter enabled:false ships a type disabled by default (HOY-244)", () => {
+  const cwd = tmp();
+  writeAgent(join(cwd, ".hoy", "agents"), "Shy", "description: d\nenabled: false", "p");
+  writeAgent(join(cwd, ".hoy", "agents"), "On", "description: d", "p");
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  expect(reg["Shy"].enabled).toBe(false);
+  expect(reg["On"].enabled).toBe(true);
+  expect(enabledTypes(reg).find((t) => t.name === "Shy")).toBeUndefined();
+});
+
+test("subagents.json enabled[] forces a frontmatter-disabled type back on (HOY-244)", () => {
+  const cwd = tmp();
+  writeAgent(join(cwd, ".hoy", "agents"), "Shy", "description: d\nenabled: false", "p");
+  writeFileSync(join(cwd, ".hoy", "subagents.json"), JSON.stringify({ enabled: ["Shy"] }));
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  expect(reg["Shy"].enabled).toBe(true);
+  expect(enabledTypes(reg).find((t) => t.name === "Shy")).toBeDefined();
+});
+
+test("project overlay wins over global for enable/disable (HOY-244)", () => {
+  const agentDir = tmp();
+  const cwd = tmp();
+  writeAgent(join(cwd, ".hoy", "agents"), "X", "description: d", "p");
+  writeFileSync(join(agentDir, "subagents.json"), JSON.stringify({ disabled: ["X"] }));
+  writeFileSync(join(cwd, ".hoy", "subagents.json"), JSON.stringify({ enabled: ["X"] }));
+  const reg = loadSubagentRegistry(agentDir, cwd);
+  expect(reg["X"].enabled).toBe(true);
+});
+
 test("malformed frontmatter is skipped, others still load", () => {
   const cwd = tmp();
   mkdirSync(join(cwd, ".hoy", "agents"), { recursive: true });
