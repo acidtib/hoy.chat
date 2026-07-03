@@ -1,3 +1,7 @@
+# Impeccable design-hook cache (machine-local: embeds absolute paths, a session
+# UUID, and timestamps; regenerated on demand, never shared).
+.impeccable/
+
 # Pi sidecar build artifacts (regenerate with packages/sidecar/build.sh)
 /packages/sidecar/hoy-pi-*-unknown-*
 /packages/sidecar/hoy-pi-*-apple-*
