@@ -10,11 +10,13 @@ function registryFrom(types: SubagentRegistry[string][]): SubagentRegistry {
 
 const builtinRegistry: SubagentRegistry = registryFrom(BUILTIN_SUBAGENTS);
 
-// Fake ExtensionAPI: capture the registered tool.
-function mountAgentTool(registry: SubagentRegistry) {
+// Fake ExtensionAPI: capture the registered tool. requireApproval defaults to
+// true here so the consent-gate tests below exercise the prompt; the default-off
+// no-prompt behavior (HOY-248) gets its own test that passes false.
+function mountAgentTool(registry: SubagentRegistry, requireApproval = true) {
   let tool: any;
   const pi: any = { registerTool: (t: any) => (tool = t), registerCommand: () => {}, on: () => {} };
-  createHoyAgents(registry)(pi);
+  createHoyAgents(registry, requireApproval)(pi);
   return tool;
 }
 
@@ -56,6 +58,31 @@ describe("agent tool", () => {
     expect(payload.task).toBe("read the README");
     expect(typeof payload.agentId).toBe("string");
     expect(res.details.agentId).toBe(payload.agentId);
+  });
+
+  test("does not prompt when approval is not required (HOY-248 default off)", async () => {
+    const tool = mountAgentTool(builtinRegistry, false);
+    let asks = 0;
+    const notifies: string[] = [];
+    const c = ctx({
+      select: async () => {
+        asks++;
+        return "Deny";
+      },
+      notifies,
+    });
+    const res = await tool.execute(
+      "c0",
+      { subagentType: "Explore", task: "read the README" },
+      undefined,
+      undefined,
+      c,
+    );
+    // No consent prompt, and the spawn proceeds regardless of what select would return.
+    expect(asks).toBe(0);
+    expect(notifies).toHaveLength(1);
+    expect(notifies[0].startsWith(SPAWN_NOTIFY_PREFIX)).toBe(true);
+    expect(typeof res.details.agentId).toBe("string");
   });
 
   test("Deny throws and fires no notify", async () => {

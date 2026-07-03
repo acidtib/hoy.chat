@@ -286,8 +286,10 @@ pub fn active_session_id(manager: State<'_, SidecarManager>) -> Option<String> {
 // fresh. `subagent_type` (HOY-231) brands a spawned child session's system
 // prompt; `permission_mode` seeds it with the parent's mode. `depth` (HOY-245)
 // is the subagent chain's recursion depth, relayed to the sidecar as
-// HOY_SUBAGENT_DEPTH; root sessions pass 0. Returns the new sessionId the
-// thread stores and drives.
+// HOY_SUBAGENT_DEPTH; root sessions pass 0. `require_subagent_approval`
+// (HOY-248) relays the renderer pref to the sidecar as
+// HOY_REQUIRE_SUBAGENT_APPROVAL; false (default) spawns without a consent
+// prompt. Returns the new sessionId the thread stores and drives.
 #[tauri::command]
 pub async fn create_session(
     cwd: String,
@@ -295,6 +297,7 @@ pub async fn create_session(
     subagent_type: Option<String>,
     permission_mode: Option<String>,
     depth: u32,
+    require_subagent_approval: bool,
     manager: State<'_, SidecarManager>,
 ) -> Result<String, String> {
     let path = if cwd.trim().is_empty() {
@@ -308,6 +311,7 @@ pub async fn create_session(
         permission_mode.as_deref(),
         subagent_type.as_deref(),
         depth,
+        require_subagent_approval,
     )
 }
 

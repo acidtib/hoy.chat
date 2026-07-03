@@ -390,6 +390,7 @@ function WorkspacePanel() {
   const defaultProjectDir = usePrefsStore((s) => s.defaultProjectDir);
   const confirmCloseStreaming = usePrefsStore((s) => s.confirmCloseStreaming);
   const autoOpenSpawnedThreads = usePrefsStore((s) => s.autoOpenSpawnedThreads);
+  const requireSubagentApproval = usePrefsStore((s) => s.requireSubagentApproval);
   const setPref = usePrefsStore((s) => s.setPref);
 
   async function browse() {
@@ -433,6 +434,13 @@ function WorkspacePanel() {
           description="Open a panel for each subagent a thread spawns. Off by default; watch spawned agents in FleetView instead (the sidebar's Fleet toggle)."
           checked={autoOpenSpawnedThreads}
           onChange={(v) => setPref("autoOpenSpawnedThreads", v)}
+        />
+        <Separator />
+        <ToggleRow
+          label="Require approval before spawning subagents"
+          description="Ask before a thread spawns each subagent type. Off by default; spawns proceed without a prompt and you watch or intervene in FleetView. Applies to sessions started after the change."
+          checked={requireSubagentApproval}
+          onChange={(v) => setPref("requireSubagentApproval", v)}
         />
       </Section>
     </div>

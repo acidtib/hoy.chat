@@ -14,7 +14,11 @@ const ALLOW = "Allow";
 const ALLOW_SESSION = "Allow for this session";
 const DENY = "Deny";
 
-export function createHoyAgents(registry: SubagentRegistry) {
+// `requireApproval` (HOY-248) mirrors the renderer pref requireSubagentApproval,
+// relayed via HOY_REQUIRE_SUBAGENT_APPROVAL. Off by default: a spawn proceeds
+// without a consent prompt. On restores the per-type Allow / Allow-for-session /
+// Deny gate.
+export function createHoyAgents(registry: SubagentRegistry, requireApproval: boolean) {
   const sessionAllowed = new Set<string>();
   const types = enabledTypes(registry);
   const agentParams = Type.Object({
@@ -38,7 +42,7 @@ export function createHoyAgents(registry: SubagentRegistry) {
     const task = String(params.task ?? "").trim();
     if (!task) throw new Error("agent requires a non-empty task.");
 
-    if (!sessionAllowed.has(type.name)) {
+    if (requireApproval && !sessionAllowed.has(type.name)) {
       const snippet = task.length > 80 ? `${task.slice(0, 77)}...` : task;
       const choice = await ctx.ui.select(`Spawn ${type.name} subagent to: ${snippet}?`, [ALLOW, ALLOW_SESSION, DENY]);
       if (choice === ALLOW_SESSION) sessionAllowed.add(type.name);

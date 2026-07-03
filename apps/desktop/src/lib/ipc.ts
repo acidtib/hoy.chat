@@ -162,12 +162,16 @@ export function setSubagentEnabled(
 // thread's sidecar; omit for an ordinary user thread.
 // `depth` (HOY-245) is the thread's position in the subagent tree (root = 0);
 // the sidecar uses it to decide whether to grant the `agent` tool.
+// `requireSubagentApproval` (HOY-248) relays the renderer pref of the same name
+// to the sidecar as HOY_REQUIRE_SUBAGENT_APPROVAL; when false (default) the
+// `agent` tool spawns without a consent prompt.
 export function createSession(
   cwd: string,
   sessionFile: string | null | undefined,
   subagentType: string | null | undefined,
   permissionMode: string | null | undefined,
   depth: number,
+  requireSubagentApproval: boolean,
 ): Promise<string> {
   return invoke<string>("create_session", {
     cwd,
@@ -175,6 +179,7 @@ export function createSession(
     subagentType: subagentType ?? null,
     permissionMode: permissionMode ?? null,
     depth,
+    requireSubagentApproval,
   });
 }
 

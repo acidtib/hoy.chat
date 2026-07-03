@@ -1600,6 +1600,7 @@ async function startChildRun(
       payload.subagentType,
       parent?.permissionMode ?? null,
       childDepth,
+      usePrefsStore.getState().requireSubagentApproval,
     );
     useSessionStore.setState((s) => ({
       projects: patchThread(s.projects, childId, (t) => ({ ...t, sessionId })),
@@ -2115,9 +2116,14 @@ function acquireSession(
   // reopens an existing thread's sidecar, root or subagent), so its depth is
   // computed directly rather than derived from a parent + 1.
   const depth = threadDepth(useSessionStore.getState().projects, threadId);
-  const spawn = createSession(cwd, sessionFile ?? null, null, null, depth).finally(() =>
-    pendingSessions.delete(threadId),
-  );
+  const spawn = createSession(
+    cwd,
+    sessionFile ?? null,
+    null,
+    null,
+    depth,
+    usePrefsStore.getState().requireSubagentApproval,
+  ).finally(() => pendingSessions.delete(threadId));
   pendingSessions.set(threadId, spawn);
   return spawn;
 }

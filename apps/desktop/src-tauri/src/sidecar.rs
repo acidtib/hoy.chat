@@ -96,6 +96,7 @@ impl PiProcess {
         permission_mode: Option<&str>,
         subagent_type: Option<&str>,
         depth: u32,
+        require_subagent_approval: bool,
     ) -> Result<Arc<PiProcess>, String> {
         if agent_dir.as_os_str().is_empty() {
             return Err("agent dir not resolved (set HOME or HOY_AGENT_DIR)".into());
@@ -126,6 +127,13 @@ impl PiProcess {
         // HOY-245: recursion depth for a subagent chain, always set (root
         // sessions are depth 0). Read by the TS sidecar entry to cap recursion.
         command.env("HOY_SUBAGENT_DEPTH", depth.to_string());
+        // HOY-248: when the renderer pref requireSubagentApproval is on, the
+        // sidecar's `agent` tool raises a per-type consent prompt; off (default)
+        // spawns without gating. Always set so a respawn restores the behavior.
+        command.env(
+            "HOY_REQUIRE_SUBAGENT_APPROVAL",
+            if require_subagent_approval { "1" } else { "0" },
+        );
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -762,6 +770,10 @@ pub struct SidecarManager {
     // Every session has an entry, root sessions included, since depth is always
     // set (unlike subagent_type, which is optional).
     depths: Mutex<HashMap<SessionId, u32>>,
+    // Per-session subagent-approval flag (HOY-248). Mirrors depths so respawn
+    // restores HOY_REQUIRE_SUBAGENT_APPROVAL; without it a respawn would drop
+    // the gate a user had turned on. Every session has an entry.
+    require_approvals: Mutex<HashMap<SessionId, bool>>,
     handle_counter: AtomicUsize,
     bin: PathBuf,
     payload: PathBuf,
@@ -801,6 +813,7 @@ impl SidecarManager {
             cwds: Mutex::new(HashMap::new()),
             subagent_types: Mutex::new(HashMap::new()),
             depths: Mutex::new(HashMap::new()),
+            require_approvals: Mutex::new(HashMap::new()),
             handle_counter: AtomicUsize::new(1),
             bin,
             payload,
@@ -830,11 +843,20 @@ impl SidecarManager {
         self.depths.lock().unwrap().get(id).copied().unwrap_or(0)
     }
 
+    fn require_approval_of(&self, id: &str) -> bool {
+        self.require_approvals
+            .lock()
+            .unwrap()
+            .get(id)
+            .copied()
+            .unwrap_or(false)
+    }
+
     // Spawn the boot control session in the manager's default cwd. The first
     // session spawned becomes the active one (used for model enumeration).
     pub fn spawn_session(&self) -> Result<SessionId, String> {
         let cwd = self.cwd.clone();
-        let id = self.spawn_session_in(&cwd, None, None, None, 0)?;
+        let id = self.spawn_session_in(&cwd, None, None, None, 0, false)?;
         let mut active = self.active.lock().unwrap();
         if active.is_none() {
             *active = Some(id.clone());
@@ -853,6 +875,7 @@ impl SidecarManager {
         permission_mode: Option<&str>,
         subagent_type: Option<&str>,
         depth: u32,
+        require_subagent_approval: bool,
     ) -> Result<SessionId, String> {
         if !self.bin.exists() {
             return Err(format!(
@@ -869,6 +892,7 @@ impl SidecarManager {
             permission_mode,
             subagent_type,
             depth,
+            require_subagent_approval,
         )?;
         let id = format!("s{}", self.handle_counter.fetch_add(1, Ordering::Relaxed));
         self.sessions.lock().unwrap().insert(id.clone(), proc);
@@ -883,6 +907,10 @@ impl SidecarManager {
                 .insert(id.clone(), t.to_string());
         }
         self.depths.lock().unwrap().insert(id.clone(), depth);
+        self.require_approvals
+            .lock()
+            .unwrap()
+            .insert(id.clone(), require_subagent_approval);
         Ok(id)
     }
 
@@ -939,6 +967,7 @@ impl SidecarManager {
         self.cwds.lock().unwrap().remove(id);
         self.subagent_types.lock().unwrap().remove(id);
         self.depths.lock().unwrap().remove(id);
+        self.require_approvals.lock().unwrap().remove(id);
         drop(old);
     }
 
@@ -970,6 +999,7 @@ impl SidecarManager {
         let mode = self.mode_of(id);
         let subagent_type = self.subagent_type_of(id);
         let depth = self.depth_of(id);
+        let require_subagent_approval = self.require_approval_of(id);
         let cwd = self
             .cwds
             .lock()
@@ -986,6 +1016,7 @@ impl SidecarManager {
             mode.as_deref(),
             subagent_type.as_deref(),
             depth,
+            require_subagent_approval,
         )?;
         let old = {
             let mut sessions = self.sessions.lock().unwrap();
@@ -1265,7 +1296,7 @@ mod live_tests {
 
         // 1. Fresh session: prompt and wait for the turn to complete.
         let id = manager
-            .spawn_session_in(&cwd, None, None, None, 0)
+            .spawn_session_in(&cwd, None, None, None, 0, false)
             .expect("spawn fresh session");
         let process = manager.get(&id).expect("session present");
         let events: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
@@ -1308,7 +1339,7 @@ mod live_tests {
         // 2. Tear down the first sidecar, then reopen the same file in a new one.
         manager.remove(&id);
         let id2 = manager
-            .spawn_session_in(&cwd, Some(&session_file), None, None, 0)
+            .spawn_session_in(&cwd, Some(&session_file), None, None, 0, false)
             .expect("spawn restoring session");
         let restored = manager.get(&id2).expect("restored session present");
         let response = restored

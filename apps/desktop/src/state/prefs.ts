@@ -26,6 +26,11 @@ export interface AppPrefs {
   // Open a panel for each subagent a thread spawns. Off by default; FleetView
   // is the intended way to watch spawned agents instead.
   autoOpenSpawnedThreads: boolean;
+  // Prompt for consent before a thread spawns each subagent type. Off by
+  // default (HOY-248): spawns proceed without a gate and the user watches or
+  // intervenes via FleetView. On restores the per-type "Allow / Allow for this
+  // session / Deny" prompt. Threaded to the sidecar as HOY_REQUIRE_SUBAGENT_APPROVAL.
+  requireSubagentApproval: boolean;
 }
 
 interface PrefsStore extends AppPrefs {
@@ -46,6 +51,7 @@ export const PREFS_DEFAULTS: AppPrefs = {
   confirmCloseStreaming: true,
   defaultProjectDir: "",
   autoOpenSpawnedThreads: false,
+  requireSubagentApproval: false,
 };
 
 export const usePrefsStore = create<PrefsStore>()(
@@ -71,6 +77,7 @@ export const usePrefsStore = create<PrefsStore>()(
         confirmCloseStreaming: s.confirmCloseStreaming,
         defaultProjectDir: s.defaultProjectDir,
         autoOpenSpawnedThreads: s.autoOpenSpawnedThreads,
+        requireSubagentApproval: s.requireSubagentApproval,
       }),
     },
   ),

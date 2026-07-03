@@ -53,6 +53,11 @@ const subagentDepth = Number(process.env.HOY_SUBAGENT_DEPTH ?? 0);
 const MAX_SUBAGENT_DEPTH = 3;
 const canSpawn = subagentDepth < MAX_SUBAGENT_DEPTH;
 
+// HOY-248: gate the `agent` tool's spawn on a per-type consent prompt only when
+// Rust relays the renderer pref as HOY_REQUIRE_SUBAGENT_APPROVAL=1. Default off:
+// spawns proceed without a prompt and the user watches/intervenes via FleetView.
+const requireSubagentApproval = process.env.HOY_REQUIRE_SUBAGENT_APPROVAL === "1";
+
 // OAuth login runs as its own short-lived invocation of this binary (Rust sets
 // HOY_OAUTH_LOGIN=<providerId>). It speaks a different, one-shot JSONL protocol
 // over stdio and exits; it never reaches runRpcMode below.
@@ -135,7 +140,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       extensionFactories: [
         createHoyPermissions(initialMode),
         createHoyMcp(mcpConfig),
-        ...(canSpawn ? [createHoyAgents(registry)] : []),
+        ...(canSpawn ? [createHoyAgents(registry, requireSubagentApproval)] : []),
       ],
     },
   });
