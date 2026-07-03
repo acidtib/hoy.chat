@@ -284,14 +284,17 @@ pub fn active_session_id(manager: State<'_, SidecarManager>) -> Option<String> {
 // to the manager's default (temp) dir so threads without a project path still
 // run. `session_file` (M4) reopens a thread's existing transcript; None starts
 // fresh. `subagent_type` (HOY-231) brands a spawned child session's system
-// prompt; `permission_mode` seeds it with the parent's mode. Returns the new
-// sessionId the thread stores and drives.
+// prompt; `permission_mode` seeds it with the parent's mode. `depth` (HOY-245)
+// is the subagent chain's recursion depth, relayed to the sidecar as
+// HOY_SUBAGENT_DEPTH; root sessions pass 0. Returns the new sessionId the
+// thread stores and drives.
 #[tauri::command]
 pub async fn create_session(
     cwd: String,
     session_file: Option<String>,
     subagent_type: Option<String>,
     permission_mode: Option<String>,
+    depth: u32,
     manager: State<'_, SidecarManager>,
 ) -> Result<String, String> {
     let path = if cwd.trim().is_empty() {
@@ -304,6 +307,7 @@ pub async fn create_session(
         session_file.as_deref(),
         permission_mode.as_deref(),
         subagent_type.as_deref(),
+        depth,
     )
 }
 
