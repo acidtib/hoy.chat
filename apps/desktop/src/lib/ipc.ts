@@ -160,17 +160,21 @@ export function setSubagentEnabled(
 // `sessionFile` reopens an existing transcript (M4 restore); omit for a new one.
 // `subagentType`/`permissionMode` (HOY-231) brand and gate a spawned child
 // thread's sidecar; omit for an ordinary user thread.
+// `depth` (HOY-245) is the thread's position in the subagent tree (root = 0);
+// the sidecar uses it to decide whether to grant the `agent` tool.
 export function createSession(
   cwd: string,
-  sessionFile?: string | null,
-  subagentType?: string | null,
-  permissionMode?: string | null,
+  sessionFile: string | null | undefined,
+  subagentType: string | null | undefined,
+  permissionMode: string | null | undefined,
+  depth: number,
 ): Promise<string> {
   return invoke<string>("create_session", {
     cwd,
     sessionFile: sessionFile ?? null,
     subagentType: subagentType ?? null,
     permissionMode: permissionMode ?? null,
+    depth,
   });
 }
 

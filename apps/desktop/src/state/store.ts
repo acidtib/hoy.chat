@@ -38,8 +38,10 @@ import {
   queueDelivery,
   shouldDeliverToParent,
   takeNextDelivery,
+  threadDepth,
   type Delivery,
 } from "./delivery";
+import { MAX_SUBAGENT_DEPTH } from "./limits";
 import type {
   AgentEvent,
   ContextRef,
@@ -799,6 +801,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const found = findThread(get().projects, parentThreadId);
     if (!found) return;
     const { project, thread: parent } = found;
+    const childDepth = threadDepth(get().projects, parentThreadId) + 1;
+    if (childDepth > MAX_SUBAGENT_DEPTH) {
+      // Belt-and-suspenders: a parent at max depth should not have had the agent
+      // tool at all (the sidecar withholds it), so this should be unreachable.
+      // Guard against a stale sidecar rather than spawning past the cap.
+      console.warn(`HOY-245: refusing spawn at depth ${childDepth} > ${MAX_SUBAGENT_DEPTH}`);
+      return;
+    }
     const childId = newId("t");
     const def = get().subagents.find((d) => d.name === payload.subagentType);
     // A type with no model inherits the parent's (closes HOY-237); thinking
@@ -850,6 +860,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         null,
         payload.subagentType,
         parent.permissionMode ?? null,
+        childDepth,
       );
       set((s) => ({
         projects: patchThread(s.projects, childId, (t) => ({ ...t, sessionId })),
@@ -1841,7 +1852,11 @@ function acquireSession(
 ): Promise<string> {
   const existing = pendingSessions.get(threadId);
   if (existing) return existing;
-  const spawn = createSession(cwd, sessionFile ?? null).finally(() =>
+  // threadId already carries the thread's own parentThreadId chain (this
+  // reopens an existing thread's sidecar, root or subagent), so its depth is
+  // computed directly rather than derived from a parent + 1.
+  const depth = threadDepth(useSessionStore.getState().projects, threadId);
+  const spawn = createSession(cwd, sessionFile ?? null, null, null, depth).finally(() =>
     pendingSessions.delete(threadId),
   );
   pendingSessions.set(threadId, spawn);
