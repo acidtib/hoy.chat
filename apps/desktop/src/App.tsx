@@ -9,6 +9,7 @@ import {
 import { Sidebar } from "@/components/Sidebar";
 import { ThreadHistory } from "@/components/ThreadHistory";
 import { FleetRail } from "@/components/fleet/FleetRail";
+import { FleetBoard } from "@/components/fleet/FleetBoard";
 import { HomePage } from "@/components/HomePage";
 import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
@@ -31,6 +32,7 @@ function App() {
   const expandedThreadId = useSessionStore((s) => s.expandedThreadId);
   const sidebarCollapsed = useSessionStore((s) => s.sidebarCollapsed);
   const sidebarView = useSessionStore((s) => s.sidebarView);
+  const bodyView = useSessionStore((s) => s.bodyView);
   const initWorkspace = useSessionStore((s) => s.initWorkspace);
   const activeId = useSessionStore((s) => s.activeSessionId);
   const setDefaultModel = useSessionStore((s) => s.setDefaultModel);
@@ -174,7 +176,9 @@ function App() {
               ref={bodyRef}
               className="relative flex min-h-0 flex-1 overflow-hidden"
             >
-              {panels.length === 0 ? (
+              {bodyView === "fleet" ? (
+                <FleetBoard />
+              ) : panels.length === 0 ? (
                 <HomePage />
               ) : (
                 <div
