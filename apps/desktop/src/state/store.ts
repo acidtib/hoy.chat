@@ -1702,6 +1702,11 @@ async function deliverAndDrain(finishedThreadId: string): Promise<void> {
         completedAt: th.completedAt ?? Date.now(),
       })),
     }));
+    // Auto-close: a delivered child is terminal. closePanel kills its sidecar
+    // and drops the panel; the sessionFile persists so reopening rehydrates
+    // read-only. Reopen-to-continue is harmless (completedAt guard = no
+    // re-deliver). Runs AFTER deliverToParent, which read the child's turns.
+    useSessionStore.getState().closePanel(finishedThreadId);
   }
   // This thread may itself be a parent with a queued delivery: it just went idle,
   // so deliver the next one now (deliverToParent handles the not-busy path).
