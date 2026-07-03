@@ -14,7 +14,26 @@ use sidecar::SidecarManager;
 pub fn run() {
     // mut is only consumed by the debug-gated MCP bridge block below.
     #[cfg_attr(not(debug_assertions), allow(unused_mut))]
-    let mut builder = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Single-instance guard (HOY-192): a second launch of the app hands its argv
+    // to this callback in the already-running process instead of opening a second
+    // window, then exits. Focus and restore the existing window so the user lands
+    // back on it. Must be the FIRST plugin registered (plugin docs), and is
+    // desktop-only.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+
+    builder = builder
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
