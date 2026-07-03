@@ -19,11 +19,13 @@ import { activeSessionId, getState } from "@/lib/ipc";
 import { refreshProviderData } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
-import { useSessionStore } from "@/state/store";
+import { useSessionStore, findThread } from "@/state/store";
+import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
 import type { PiState } from "@/lib/types";
 
 function App() {
   const panels = useSessionStore((s) => s.panels);
+  const projects = useSessionStore((s) => s.projects);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
   const expandedThreadId = useSessionStore((s) => s.expandedThreadId);
   const sidebarCollapsed = useSessionStore((s) => s.sidebarCollapsed);
@@ -138,6 +140,15 @@ function App() {
     }
   }
 
+  const panelIsAgent = (panelId: string) => {
+    const found = findThread(projects, panelId);
+    if (!found) return false;
+    return (
+      isSubagentThread(found.thread) ||
+      childThreadIdsOf(projects, panelId).length > 0
+    );
+  };
+
   return (
     <TooltipProvider delayDuration={200}>
       <SettingsModal />
@@ -172,9 +183,13 @@ function App() {
                       onPointerDownCapture={() => focusPanel(expandedPanel.id)}
                       className={cn(
                         "flex min-h-0 flex-1 flex-col border-t-2",
-                        expandedPanel.id === activeThreadId
-                          ? "border-t-brand/70"
-                          : "border-t-transparent",
+                        panelIsAgent(expandedPanel.id)
+                          ? expandedPanel.id === activeThreadId
+                            ? "border-t-agent/80"
+                            : "border-t-agent/40"
+                          : expandedPanel.id === activeThreadId
+                            ? "border-t-brand/70"
+                            : "border-t-transparent",
                       )}
                     >
                       <ThreadView
@@ -198,9 +213,13 @@ function App() {
                             onPointerDownCapture={() => focusPanel(panel.id)}
                             className={cn(
                               "flex min-h-0 shrink-0 flex-col border-r border-t-2 border-r-border",
-                              panel.id === activeThreadId
-                                ? "border-t-brand/70"
-                                : "border-t-transparent",
+                              panelIsAgent(panel.id)
+                                ? panel.id === activeThreadId
+                                  ? "border-t-agent/80"
+                                  : "border-t-agent/40"
+                                : panel.id === activeThreadId
+                                  ? "border-t-brand/70"
+                                  : "border-t-transparent",
                             )}
                           >
                             <ThreadView
