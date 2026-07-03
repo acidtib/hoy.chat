@@ -1,7 +1,7 @@
 // HOY-233 Phase 2: pure helpers for delivering a finished subagent's result back
 // to its parent thread. No Tauri imports (import type only) so bun test can load
 // this module standalone. The side-effectful wiring lives in store.ts.
-import type { Turn } from "../lib/types";
+import type { Project, Turn } from "../lib/types";
 
 export type Delivery = { message: string; subagentType: string; agentId: string };
 
@@ -65,4 +65,14 @@ export function shouldDeliverToParent(thread: {
   completedAt?: number | null;
 }): boolean {
   return !!thread.parentThreadId && !thread.completedAt;
+}
+
+// Ids of the direct children of parentId (depth is capped at 1, so no
+// grandchildren exist). Used to cascade archive/delete so a child is never
+// left rootless when its parent leaves the tree. HOY-238.
+export function childThreadIdsOf(projects: Project[], parentId: string): string[] {
+  return projects
+    .flatMap((p) => p.threads)
+    .filter((t) => t.parentThreadId === parentId)
+    .map((t) => t.id);
 }

@@ -7,6 +7,7 @@ import {
   takeNextDelivery,
   pendingDeliveries,
   shouldDeliverToParent,
+  childThreadIdsOf,
 } from "./delivery";
 
 const asst = (over: Partial<Extract<Turn, { role: "assistant" }>> = {}): Turn => ({
@@ -74,4 +75,17 @@ test("shouldDeliverToParent: only a not-yet-completed child delivers", () => {
   expect(shouldDeliverToParent({ parentThreadId: "p1", completedAt: 123 })).toBe(false); // already delivered
   expect(shouldDeliverToParent({ parentThreadId: null, completedAt: null })).toBe(false); // not a child
   expect(shouldDeliverToParent({})).toBe(false);
+});
+
+test("childThreadIdsOf: returns ids of threads whose parentThreadId matches", () => {
+  const projects = [
+    { id: "p", name: "p", path: null, threads: [
+      { id: "parent", title: "", updatedAt: 0, sessionId: null },
+      { id: "kidA", title: "", updatedAt: 0, sessionId: null, parentThreadId: "parent" },
+      { id: "kidB", title: "", updatedAt: 0, sessionId: null, parentThreadId: "parent" },
+      { id: "other", title: "", updatedAt: 0, sessionId: null, parentThreadId: "somethingElse" },
+    ] },
+  ] as any;
+  expect(childThreadIdsOf(projects, "parent").sort()).toEqual(["kidA", "kidB"]);
+  expect(childThreadIdsOf(projects, "parent-with-no-kids")).toEqual([]);
 });

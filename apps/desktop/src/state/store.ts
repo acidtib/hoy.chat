@@ -34,6 +34,7 @@ import { draftContexts, draftToMessage } from "@/lib/mentions";
 import { usePrefsStore } from "@/state/prefs";
 import {
   buildDelivery,
+  childThreadIdsOf,
   queueDelivery,
   shouldDeliverToParent,
   takeNextDelivery,
@@ -1412,6 +1413,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   archiveThread: (threadId) => {
+    // Cascade first so a child is never left rootless when its parent is
+    // filtered out of the tree; archiveThread on each child reuses the same
+    // untouched-delete + closePanel teardown. HOY-238.
+    for (const childId of childThreadIdsOf(get().projects, threadId)) {
+      get().archiveThread(childId);
+    }
     // An untouched thread has nothing worth keeping in history; archiving it
     // deletes it instead.
     const found = findThread(get().projects, threadId);
@@ -1437,6 +1444,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     })),
 
   deleteThread: (threadId) => {
+    // Cascade first so a child is never left rootless when its parent is
+    // removed from the tree. HOY-238.
+    for (const childId of childThreadIdsOf(get().projects, threadId)) {
+      get().deleteThread(childId);
+    }
     const thread = findThread(get().projects, threadId)?.thread;
     if (thread?.sessionId) releaseSession(thread.sessionId);
     if (thread?.sessionFile) void deleteSessionFile(thread.sessionFile);
