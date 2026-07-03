@@ -42,9 +42,16 @@ if (!agentDir) {
 }
 
 // Set by Rust (create_session) only for spawned child sessions. Selects the
-// child's built-in type; absent for user threads. Depth cap: a child never gets
-// the agent tool, so it cannot spawn (HOY-231).
+// child's built-in type; absent for user threads.
 const subagentType = process.env.HOY_SUBAGENT_TYPE;
+
+// Numeric depth from Rust (0 for root/user threads). A thread may spawn iff
+// depth < MAX_SUBAGENT_DEPTH. Mirrors apps/desktop/src/state/limits.ts; keep
+// the two in sync. This is the authoritative structural gate: a child at or
+// beyond the cap never receives the agent tool, so it cannot spawn (HOY-245).
+const subagentDepth = Number(process.env.HOY_SUBAGENT_DEPTH ?? 0);
+const MAX_SUBAGENT_DEPTH = 3;
+const canSpawn = subagentDepth < MAX_SUBAGENT_DEPTH;
 
 // OAuth login runs as its own short-lived invocation of this binary (Rust sets
 // HOY_OAUTH_LOGIN=<providerId>). It speaks a different, one-shot JSONL protocol
@@ -99,7 +106,8 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   }
 
   const childType = subagentType ? registry[subagentType] : null;
-  const tools = childType ? childType.tools : HOY_TOOLS;
+  const baseTools = childType ? childType.tools : HOY_TOOLS;
+  const tools = canSpawn && !baseTools.includes("agent") ? [...baseTools, "agent"] : baseTools;
   const advertised = enabledTypes(registry).map((t) => ({ name: t.name, description: t.description }));
 
   const services = await createAgentSessionServices({
@@ -108,8 +116,11 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
     resourceLoaderOptions: {
       noContextFiles: false,
       systemPromptOverride: () => {
-        const base = buildHoySystemPrompt(mcpConfig.servers.length > 0, !childType, advertised);
-        return childType ? effectiveChildPrompt(childType, buildHoySystemPrompt(mcpConfig.servers.length > 0, false)) : base;
+        // Spawn guidance (agent tool + advertised types) is on iff this thread
+        // can spawn, so a spawning-capable child sees it too. A non-spawning
+        // child gets guidance off; effectiveChildPrompt still applies its body.
+        const base = buildHoySystemPrompt(mcpConfig.servers.length > 0, canSpawn, advertised);
+        return childType ? effectiveChildPrompt(childType, base) : base;
       },
       // Disk discovery of <agentDir>/{extensions,skills,prompts,themes} needs no
       // opt-in: DefaultResourceLoader.reload() auto-discovers user-scope resources
@@ -118,10 +129,14 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       // in-process extensionFactories. Proven against the bun --compile binary in
       // HOY-228 (jiti + typebox resolve via Pi's virtualModules; an extension's
       // own node_modules deps resolve from disk). See docs/plans/HOY-228-*.
-      // A child never gets createHoyAgents, so it cannot spawn (depth cap).
-      extensionFactories: childType
-        ? [createHoyPermissions(initialMode), createHoyMcp(mcpConfig)]
-        : [createHoyPermissions(initialMode), createHoyMcp(mcpConfig), createHoyAgents(registry)],
+      // createHoyAgents is the switch that installs the agent tool. It is added
+      // iff this thread may spawn (depth < MAX_SUBAGENT_DEPTH), independent of
+      // root-vs-child; a child at or beyond the cap never gets it.
+      extensionFactories: [
+        createHoyPermissions(initialMode),
+        createHoyMcp(mcpConfig),
+        ...(canSpawn ? [createHoyAgents(registry)] : []),
+      ],
     },
   });
   const result = await createAgentSessionFromServices({
