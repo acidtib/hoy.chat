@@ -8,10 +8,10 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decide, type PermissionMode } from "./hoy-permissions";
+import { decide, type GateDecision, type PermissionMode } from "./hoy-permissions";
 
 describe("gate policy table", () => {
-  const table: Array<[PermissionMode, string, string]> = [
+  const table: Array<[PermissionMode, string, GateDecision]> = [
     ["default", "read", "allow"],
     ["default", "grep", "allow"],
     ["default", "find", "allow"],
