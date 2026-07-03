@@ -28,6 +28,7 @@ import {
   type RecencyBucket,
 } from "@/lib/utils";
 import { useSessionStore } from "@/state/store";
+import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
 import type { Thread } from "@/lib/types";
 
 type HistoryItem = { thread: Thread; projectName: string };
@@ -134,6 +135,10 @@ export function ThreadHistory() {
                     thread={thread}
                     projectName={projectName}
                     active={thread.id === activeThreadId}
+                    isAgent={
+                      isSubagentThread(thread) ||
+                      childThreadIdsOf(projects, thread.id).length > 0
+                    }
                     archived={showArchived}
                     onSelect={() => openThread(thread.id)}
                     onArchive={() => requestTeardown("archive", thread.id)}
@@ -154,6 +159,7 @@ function HistoryRow({
   thread,
   projectName,
   active,
+  isAgent,
   archived,
   onSelect,
   onArchive,
@@ -163,6 +169,7 @@ function HistoryRow({
   thread: Thread;
   projectName: string;
   active: boolean;
+  isAgent: boolean;
   archived: boolean;
   onSelect: () => void;
   onArchive: () => void;
@@ -185,7 +192,11 @@ function HistoryRow({
         <Sparkle
           className={cn(
             "mt-0.5 size-3.5 shrink-0",
-            active ? "text-brand" : "text-muted-foreground",
+            isAgent
+              ? "text-agent"
+              : active
+                ? "text-brand"
+                : "text-muted-foreground",
           )}
         />
         <span className="min-w-0 flex-1">
