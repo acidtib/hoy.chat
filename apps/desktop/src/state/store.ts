@@ -904,7 +904,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // free; otherwise the child waits FIFO. A slot releases on the run's first
     // done. Foreground and resume runs bypass this entirely (they never reach
     // here), which is what keeps deep trees deadlock-free under a small cap.
-    if (get().runningAgents.size < MAX_CONCURRENT_AGENTS) {
+    if (get().runningAgents.size < concurrencyCap()) {
       set((s) => ({ runningAgents: new Set(s.runningAgents).add(childId) }));
       await startChildRun(childId, payload, childDepth);
     } else {
@@ -919,7 +919,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
   pumpAgentQueue: () => {
     const s = get();
-    if (!s.agentQueue.length || s.runningAgents.size >= MAX_CONCURRENT_AGENTS) {
+    if (!s.agentQueue.length || s.runningAgents.size >= concurrencyCap()) {
       return;
     }
     const [next, ...rest] = s.agentQueue;
@@ -1635,6 +1635,15 @@ async function startChildRun(
 // the done-path release: guarded on membership so it is idempotent, callable
 // from any termination path (done, startChildRun error / early return) without
 // double-releasing.
+// HOY-247: the live concurrency cap. Its default lives in limits.ts and seeds
+// the maxConcurrentAgents pref; the pref is the effective value, clamped to at
+// least 1 so a malformed stored value can never stall spawns. The depth cap
+// stays a hard constant (a tunable depth would weaken the fork-bomb guard).
+function concurrencyCap(): number {
+  const n = usePrefsStore.getState().maxConcurrentAgents;
+  return Number.isFinite(n) ? Math.max(1, Math.floor(n)) : MAX_CONCURRENT_AGENTS;
+}
+
 function releaseAgentSlot(threadId: string): void {
   if (!useSessionStore.getState().runningAgents.has(threadId)) return;
   useSessionStore.setState((s) => {
@@ -1703,6 +1712,12 @@ function purgeFromLimiter(threadId: string): void {
       delete outstanding[threadId];
     }
     if (outstanding !== s.outstandingChildren) patch.outstandingChildren = outstanding;
+    // HOY-247: once the thread is gone from projects (delete removes it before
+    // this purge, so `purged` is undefined) its once-per-teardown guard entry is
+    // dead weight; prune it so teardownAccounted does not grow unbounded across a
+    // session. Archive keeps the thread, so `purged` stays defined there and the
+    // guard correctly persists for the paired purge.
+    if (!purged) teardownAccounted.delete(threadId);
     return patch;
   });
 }

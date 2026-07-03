@@ -399,6 +399,7 @@ function WorkspacePanel() {
   const confirmCloseStreaming = usePrefsStore((s) => s.confirmCloseStreaming);
   const autoOpenSpawnedThreads = usePrefsStore((s) => s.autoOpenSpawnedThreads);
   const requireSubagentApproval = usePrefsStore((s) => s.requireSubagentApproval);
+  const maxConcurrentAgents = usePrefsStore((s) => s.maxConcurrentAgents);
   const setPref = usePrefsStore((s) => s.setPref);
 
   async function browse() {
@@ -450,6 +451,25 @@ function WorkspacePanel() {
           checked={requireSubagentApproval}
           onChange={(v) => setPref("requireSubagentApproval", v)}
         />
+        <Separator />
+        <Field
+          label="Max concurrent subagents"
+          hint="How many spawned subagents stream at once; the rest queue and start as slots free. Minimum 1."
+        >
+          <Input
+            type="number"
+            min={1}
+            max={16}
+            value={maxConcurrentAgents}
+            className="w-24"
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n) && n >= 1) {
+                setPref("maxConcurrentAgents", Math.min(16, Math.floor(n)));
+              }
+            }}
+          />
+        </Field>
       </Section>
     </div>
   );

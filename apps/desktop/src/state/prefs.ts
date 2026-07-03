@@ -12,6 +12,7 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { MAX_CONCURRENT_AGENTS } from "./limits";
 
 export interface AppPrefs {
   // Composer: Enter sends. When false, Enter inserts a newline and Cmd/Ctrl+Enter
@@ -36,6 +37,10 @@ export interface AppPrefs {
   // intervenes via FleetView. On restores the per-type "Allow / Allow for this
   // session / Deny" prompt. Threaded to the sidecar as HOY_REQUIRE_SUBAGENT_APPROVAL.
   requireSubagentApproval: boolean;
+  // How many spawned subagent initial runs may stream at once; the rest queue
+  // FIFO (HOY-247). Clamped to at least 1 at the call site. The depth cap stays
+  // a hard constant, not a pref, so the fork-bomb guard cannot be tuned away.
+  maxConcurrentAgents: number;
 }
 
 interface PrefsStore extends AppPrefs {
@@ -58,6 +63,7 @@ export const PREFS_DEFAULTS: AppPrefs = {
   defaultProjectDir: "",
   autoOpenSpawnedThreads: false,
   requireSubagentApproval: false,
+  maxConcurrentAgents: MAX_CONCURRENT_AGENTS,
 };
 
 export const usePrefsStore = create<PrefsStore>()(
@@ -85,6 +91,7 @@ export const usePrefsStore = create<PrefsStore>()(
         defaultProjectDir: s.defaultProjectDir,
         autoOpenSpawnedThreads: s.autoOpenSpawnedThreads,
         requireSubagentApproval: s.requireSubagentApproval,
+        maxConcurrentAgents: s.maxConcurrentAgents,
       }),
     },
   ),
