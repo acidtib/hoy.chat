@@ -4,14 +4,22 @@ import { Button } from "@/components/ui/button";
 import { cn, formatTokens } from "@/lib/utils";
 import { useSessionStore } from "@/state/store";
 import { fleetMembers, fleetStatus, currentTool, type FleetStatus } from "@/state/fleet";
+import { MAX_SUBAGENT_DEPTH } from "@/state/limits";
 import type { Thread } from "@/lib/types";
 
 // Depth-based indentation, generalizing Sidebar.tsx's ThreadRow convention
 // (pl-3 at depth 0, pl-9 at depth 1) by the same +24px-per-level step. Written
 // as literal class strings (not built from a template) so Tailwind's scanner
-// can see them; MAX_SUBAGENT_DEPTH (state/limits.ts) caps real depth at 3, so
-// five entries cover every reachable fleet with room to spare.
+// can see them; MAX_SUBAGENT_DEPTH caps real depth at 3, so five entries cover
+// every reachable fleet with room to spare. The assertion below fails loudly
+// (rather than silently flattening indentation) if that cap is ever raised
+// past what this table covers.
 const DEPTH_PADDING = ["pl-3", "pl-9", "pl-[60px]", "pl-[84px]", "pl-[108px]"] as const;
+if (MAX_SUBAGENT_DEPTH >= DEPTH_PADDING.length) {
+  throw new Error(
+    `FleetTree.DEPTH_PADDING has ${DEPTH_PADDING.length} entries but MAX_SUBAGENT_DEPTH is ${MAX_SUBAGENT_DEPTH}; add more entries.`,
+  );
+}
 function depthPadding(depth: number): string {
   return DEPTH_PADDING[Math.min(depth, DEPTH_PADDING.length - 1)];
 }
