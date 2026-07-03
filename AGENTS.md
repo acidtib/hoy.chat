@@ -1,6 +1,6 @@
-# CLAUDE.md — Pi Desktop
+# AGENTS.md — Hoy
 
-Project conventions and guardrails. The MVP build spec (PI_DESKTOP_SPEC.md, M0-M4) is complete and deleted; it lives in git history. Open work is tracked in `TODO.md` and Linear. This file is the short, always-loaded version: the decisions that must not drift.
+Project conventions and guardrails. Open work is tracked in `TODO.md` and Linear. This file is the short, always-loaded version: the decisions that must not drift.
 
 ## What we're building
 A native desktop GUI for the **Pi coding agent** (`@earendil-works/pi-coding-agent`). Tauri v2 shell + React/TS webview + Pi running as a **spawned sidecar** over its RPC (JSONL-over-stdio) protocol. The sidecar is our own thin SDK entry running Pi's `runRpcMode` (see below), not the stock CLI. Same three-layer architecture as OpenAI's Codex desktop app (renderer → Rust main → spawned agent process), deliberately.
