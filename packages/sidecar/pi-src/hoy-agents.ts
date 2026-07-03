@@ -51,7 +51,7 @@ export function createHoyAgents(registry: SubagentRegistry) {
       content: [
         {
           type: "text" as const,
-          text: `Spawned ${type.name} subagent (${agentId}). It runs in its own thread; its result will be delivered back into this conversation when it finishes.`,
+          text: `Spawned ${type.name} subagent (${agentId}).`,
         },
       ],
       details: { agentId },
