@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+mod keep_awake;
 mod mcp_config;
 mod oauth;
 mod pi_config;
@@ -83,6 +84,9 @@ pub fn run() {
                 Ok(id) => eprintln!("[hoy-desktop] sidecar session ready: {id}"),
                 Err(e) => eprintln!("[hoy-desktop] sidecar spawn failed: {e}"),
             }
+
+            // HOY-188: keep the machine awake while any session is mid-turn.
+            keep_awake::spawn(tauri::Manager::app_handle(app).clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -37,6 +37,9 @@ tauri-plugin-process = "2.3.1"
 # Single desktop instance (HOY-192): a second launch focuses the running window
 # instead of starting a duplicate. Registered first in lib.rs, desktop-only.
 tauri-plugin-single-instance = "2"
+# Keep the machine awake while an agent turn is streaming (HOY-188). Driven from
+# a single owner thread in keep_awake.rs (Windows thread-affinity requirement).
+keepawake = "0.6"
 
 [dev-dependencies]
 # test-util enables tokio's paused virtual clock (start_paused) for the

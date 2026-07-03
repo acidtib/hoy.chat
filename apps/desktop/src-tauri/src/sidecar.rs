@@ -980,6 +980,17 @@ impl SidecarManager {
             .ok_or_else(|| format!("unknown session: {id}"))
     }
 
+    // HOY-188: true while at least one session is mid-turn (its event sink is
+    // attached). The keep-awake supervisor polls this to decide whether to hold a
+    // wake lock. Cheap: a mutex lock plus a small map scan.
+    pub fn any_streaming(&self) -> bool {
+        self.sessions
+            .lock()
+            .unwrap()
+            .values()
+            .any(|p| p.is_streaming())
+    }
+
     // Replace a session's child with a fresh one under the same SessionId. Used
     // after writing auth.json so the running sidecar reloads credentials (Pi
     // caches auth in memory at startup). The session's cwd and permission mode
