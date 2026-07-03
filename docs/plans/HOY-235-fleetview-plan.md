@@ -1,4 +1,4 @@
-# HOY-235: FleetView -- SDD plan
+# HOY-235: FleetView SDD plan
 
 Design: docs/plans/HOY-235-fleetview-design.md. Read it first; this plan
 assumes its decisions (hybrid surface, FleetTree sharing, action table,
@@ -25,7 +25,7 @@ store additions) without repeating the rationale.
 `apps/desktop/src/state/fleet.test.ts`.
 
 **No Tauri imports** (only `import type` for `Project`/`Thread`/`Turn`/
-`SessionStats` from `../lib/types`), so `bun test` can load it standalone --
+`SessionStats` from `../lib/types`), so `bun test` can load it standalone,
 same rule `delivery.ts` follows.
 
 **Interfaces** (exact shapes from the design doc):
@@ -58,16 +58,15 @@ export function currentTool(turns: import("../lib/types").Turn[]): string | null
 1. `fleetRoots`: filter `projects.flatMap(p => p.threads)` to
    `!t.parentThreadId && childThreadIdsOf(projects, t.id).length > 0`
    (import `childThreadIdsOf` from `./delivery`; a single direct child is
-   enough to qualify -- do not require depth >= 2).
+   enough to qualify, depth >= 2 is not required).
 2. `fleetMembers`: `[root, ...descendantThreadIdsOf(projects, rootId).map(id
    => byId.get(id))]`, filtering out any id that fails to resolve (defensive,
    mirrors `delivery.ts`'s guarded lookups). Import `descendantThreadIdsOf`
    from `./delivery`.
-3. `fleetStatus`: priority `error > running > queued > done`.
-   `threadErrors[id]` truthy -> `"error"` UNLESS `streaming[id]` is true (a
-   fresh run in flight supersedes a stale error from a prior turn -- running
-   wins). Then `streaming[id]` -> `"running"`. Then
-   `agentQueue.includes(id)` -> `"queued"`. Else `"done"`.
+3. `fleetStatus`: priority `running > error > queued > done`.
+   `streaming[id]` true -> `"running"` (a fresh run in flight supersedes a
+   stale error from a prior turn). Else `threadErrors[id]` truthy ->
+   `"error"`. Else `agentQueue.includes(id)` -> `"queued"`. Else `"done"`.
 4. `fleetRollup`: `memberIds.reduce`, skip ids with `stats[id] == null`, sum
    `stats[id]!.tokens.total` and `stats[id]!.cost`. Empty/all-null input
    returns `{ tokens: 0, cost: 0 }`.
@@ -96,15 +95,15 @@ export function currentTool(turns: import("../lib/types").Turn[]): string | null
 **Steps**:
 1. Widen the `sidebarView` field type from `"projects" | "history"` to
    `"projects" | "history" | "fleet"` (the state field, its initial value
-   stays `"projects"`, and the `setSidebarView` action signature -- check
+   stays `"projects"`, and the `setSidebarView` action signature: check
    whether it is already typed against the union or against a narrower
-   literal; widen whichever needs it so `"fleet"` type-checks).
+   literal, widen whichever needs it so `"fleet"` type-checks).
 2. Add `bodyView: "panels" | "fleet"` to the store interface and initial
    state (`"panels"`), plus `setBodyView: (view: "panels" | "fleet") =>
    void` implemented as `set({ bodyView: view })`, placed next to
    `setSidebarView`.
 3. Do NOT touch `openThread`, `submitPrompt`, `stopStreaming`,
-   `requestTeardown`, or any other existing action -- this task is additive
+   `requestTeardown`, or any other existing action; this task is additive
    only, per the design doc's explicit call that `openThread` stays
    body-view-unaware.
 
@@ -130,7 +129,7 @@ verification is meaningful for this task alone.
   do not invent new spacing tokens).
 - Each row: status dot (color per `FleetStatus`: running=`text-agent` with a
   pulse via `animate-pulse` on the dot, queued=muted outline, done=a
-  success/`--ok`-equivalent token already in the theme -- check
+  success/`--ok`-equivalent token already in the theme, check
   `globals.css`/tailwind config for the existing success color used
   elsewhere before inventing one, error=`text-destructive`), Sparkle icon
   (teal, matching `Sidebar.tsx`'s agent rows), thread title, and:
@@ -141,7 +140,7 @@ verification is meaningful for this task alone.
     token count, and the action buttons from the design doc's action table,
     shown on hover (`opacity-0 group-hover:opacity-100`, same pattern as
     `Sidebar.tsx` row actions).
-- "Steer" (running rows, dense=false only -- the rail has no room for it,
+- "Steer" (running rows, dense=false only; the rail has no room for it,
   matches the design doc's "one piece of Option B's body worth inline UI"
   being scoped to the fuller row) toggles a local `useState` boolean revealing
   a single `<input>` + send button in place of the actions row; Enter or the
@@ -151,7 +150,7 @@ verification is meaningful for this task alone.
   `requestTeardown("archive", id)`. "Open" calls `openThread(id)` then
   `setBodyView("panels")`.
 - Row click (not on an action button) also opens the thread, same as
-  clicking "Open" -- matches `Sidebar.tsx`'s row-is-clickable convention.
+  clicking "Open", matching `Sidebar.tsx`'s row-is-clickable convention.
 
 **FleetRail.tsx**:
 - Mirrors `SidebarShell` wrapping (reuse `SidebarShell` from `Sidebar.tsx`
@@ -162,7 +161,7 @@ verification is meaningful for this task alone.
 - Body: `fleetRoots(projects)` mapped to a heading (fleet root's title) +
   `<FleetTree dense rootId={root.id} />`; empty state "No agents running"
   (centered, muted, mirrors `Sidebar.tsx`'s `SidebarEmptyState` tone but no
-  action button -- there is nothing to create here) when `fleetRoots` is
+  action button, there is nothing to create here) when `fleetRoots` is
   empty.
 
 **App.tsx**: extend the sidebar ternary
@@ -175,8 +174,8 @@ used elsewhere), `label`/`active` mirroring the Clock button's pattern but
 toggling `sidebarView` between `"fleet"` and `"projects"`, and
 `active ? "text-agent" : "text-muted-foreground"` in place of the Clock
 button's brand color (this button represents the agent-fleet surface, not a
-brand navigation state -- keep the color distinction deliberate, do not
-copy `text-brand`).
+brand navigation state; keep the color distinction deliberate, do not copy
+`text-brand`).
 
 **Verification**: `bun run check:ts`, then manual: `bun run tauri:dev`,
 spawn a subagent (or two, nested), open the fleet rail via the new footer
@@ -193,12 +192,12 @@ name to open its panel, click Steer and send a message, click Stop.
   icon + label, placed where the mockup's back-out affordance would sit),
   and the aggregate rollup line: `fleetStatusCounts`/`fleetRollup` computed
   across the union of every `fleetRoots(projects)`'s `fleetMembers` (not
-  per-fleet here -- this is the whole-app total, mirrored in the mockup's
+  per-fleet here, this is the whole-app total, mirrored in the mockup's
   `.rollup` bar). Format tokens with `formatTokens`, cost with the same
   `$X.XXXX`/`$X.XX` split ContextBar's `PanelStats` already uses (reuse
   that formatting logic; extract it to a shared helper in `@/lib/utils` only
   if duplicating the two-line ternary would be uglier than a one-line
-  import -- judgment call for the implementer, not a hard requirement).
+  import; judgment call for the implementer, not a hard requirement).
 - Body: scrollable list of fleet cards, one per `fleetRoots(projects)`
   entry: a bordered card with a header (root title, member count, that
   fleet's own `fleetRollup`) and `<FleetTree dense={false} rootId={root.id}
@@ -210,8 +209,8 @@ name to open its panel, click Steer and send a message, click Stop.
 the existing `panels.length === 0 ? <HomePage /> : <panel strip>` ternary:
 `bodyView === "fleet" ? <FleetBoard /> : (existing ternary)`. The
 `ResizeObserver`/`bodyRef` measurement and the footer (`ContextBar`) stay
-exactly as they are -- `bodyView` only swaps what renders inside the
-existing body container, it does not restructure the shell.
+exactly as they are; `bodyView` only swaps what renders inside the existing
+body container, it does not restructure the shell.
 
 **Verification**: `bun run check:ts`, then manual: from the fleet rail's
 expand button, confirm the board replaces the body (panel strip/HomePage
@@ -224,15 +223,15 @@ confirm each still works from the board.
 
 Read `fleet.ts`, the store diff, and all three new components together.
 Check specifically:
-- No component reads Tauri/IPC directly -- all fleet data flows through
+- No component reads Tauri/IPC directly; all fleet data flows through
   `useSessionStore` selectors and the pure `fleet.ts` functions, matching
   the rest of the codebase's separation.
 - `FleetTree` is genuinely shared (both call sites pass `dense` and nothing
-  else diverges in the recursive walk) -- if Task 3/4 implementers drifted
+  else diverges in the recursive walk); if Task 3/4 implementers drifted
   into two near-duplicate trees, that is a finding to fix before merge, not
   a footnote.
 - Steer/Stop/Cancel/Open all resolve to the exact existing store actions
-  named in the design doc's action table -- no new IPC calls anywhere.
+  named in the design doc's action table; no new IPC calls anywhere.
 - `openThread` and `submitPrompt` are unmodified (diff review, not just a
   claim).
 - No emojis/em-dashes; commit messages `HOY-235:`-prefixed, no
