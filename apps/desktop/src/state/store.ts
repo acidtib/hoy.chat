@@ -838,6 +838,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       },
       streaming: { ...s.streaming, [childId]: true },
     }));
+    // Auto-open the child so the user follows the run live instead of finding
+    // it after the fact (HOY-236). The child is already in projects above, so
+    // openThread's findThread resolves. FleetView (HOY-235) will later route
+    // this to a consolidated view; the call site is unchanged.
+    get().openThread(childId);
     try {
       const cwd = project.path ?? "";
       const sessionId = await createSession(
