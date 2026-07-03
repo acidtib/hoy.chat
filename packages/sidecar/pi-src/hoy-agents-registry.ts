@@ -24,6 +24,9 @@ export interface SubagentType {
   // HOY-244: opt a type into forking the parent's transcript at spawn instead of
   // starting fresh. Enforced at session creation in hoy-sidecar.ts.
   inheritContext?: boolean;
+  // HOY-244: cap the type's turn budget (positive integer). Enforced by the
+  // hoy-turn-budget extension, which aborts the run once the budget is spent.
+  maxTurns?: number;
 }
 
 export type SubagentRegistry = Record<string, SubagentType>;
@@ -76,6 +79,7 @@ interface AgentFrontmatter {
   thinking?: string;
   enabled?: boolean;
   inherit_context?: boolean;
+  max_turns?: number;
 }
 
 // Intersect a declared tool list with KNOWN_TOOLS and drop `agent`. Omitted -> general set.
@@ -117,6 +121,8 @@ function parseAgentFile(path: string, name: string, scope: SubagentScope): Subag
     // (the settings toggle) or off, overriding this default.
     enabled: fm.enabled !== false,
     inheritContext: fm.inherit_context === true,
+    maxTurns:
+      typeof fm.max_turns === "number" && fm.max_turns > 0 ? Math.floor(fm.max_turns) : undefined,
   };
 }
 

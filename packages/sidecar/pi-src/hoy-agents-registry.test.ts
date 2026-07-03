@@ -105,6 +105,19 @@ test("inherit_context frontmatter flows to inheritContext (HOY-244)", () => {
   expect(reg["Fresh"].inheritContext).toBe(false);
 });
 
+test("max_turns frontmatter parses to a positive integer, else undefined (HOY-244)", () => {
+  const cwd = tmp();
+  writeAgent(join(cwd, ".hoy", "agents"), "Budgeted", "description: d\nmax_turns: 5", "p");
+  writeAgent(join(cwd, ".hoy", "agents"), "Frac", "description: d\nmax_turns: 4.7", "p");
+  writeAgent(join(cwd, ".hoy", "agents"), "Zero", "description: d\nmax_turns: 0", "p");
+  writeAgent(join(cwd, ".hoy", "agents"), "None", "description: d", "p");
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  expect(reg["Budgeted"].maxTurns).toBe(5);
+  expect(reg["Frac"].maxTurns).toBe(4);
+  expect(reg["Zero"].maxTurns).toBeUndefined();
+  expect(reg["None"].maxTurns).toBeUndefined();
+});
+
 test("malformed frontmatter is skipped, others still load", () => {
   const cwd = tmp();
   mkdirSync(join(cwd, ".hoy", "agents"), { recursive: true });

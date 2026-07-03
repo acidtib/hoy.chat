@@ -465,6 +465,8 @@ export interface SubagentDef {
   enabled: boolean;
   // HOY-244: type forks the parent's transcript at spawn instead of a fresh start.
   inheritContext?: boolean;
+  // HOY-244: per-type turn budget; the run is aborted once it is spent.
+  maxTurns?: number | null;
 }
 
 // Mirror of events::OAuthSelectOption.

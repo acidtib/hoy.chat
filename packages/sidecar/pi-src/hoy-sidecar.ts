@@ -22,6 +22,7 @@ import {
 import { createHoyPermissions, isPermissionMode, type PermissionMode } from "./hoy-permissions";
 import { createHoyMcp, loadMcpConfig } from "./hoy-mcp";
 import { createHoyAgents } from "./hoy-agents";
+import { createHoyTurnBudget } from "./hoy-turn-budget";
 import { loadSubagentRegistry, enabledTypes, effectiveChildPrompt } from "./hoy-agents-registry";
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
@@ -82,6 +83,7 @@ if (process.env.HOY_LIST_SUBAGENTS) {
     source: t.source ?? null,
     enabled: t.enabled,
     inheritContext: t.inheritContext ?? false,
+    maxTurns: t.maxTurns ?? null,
   }));
   process.stdout.write(JSON.stringify(defs));
   process.exit(0);
@@ -142,6 +144,9 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         createHoyPermissions(initialMode),
         createHoyMcp(mcpConfig),
         ...(canSpawn ? [createHoyAgents(registry, requireSubagentApproval)] : []),
+        // HOY-244: cap a budgeted subagent type's turns; root/unbudgeted threads
+        // run uncapped. childType is null for user threads, so this is child-only.
+        ...(childType?.maxTurns ? [createHoyTurnBudget(childType.maxTurns)] : []),
       ],
     },
   });
