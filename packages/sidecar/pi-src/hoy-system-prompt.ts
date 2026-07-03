@@ -101,7 +101,7 @@ export function agentToolsPrompt(agentTypes: Array<{ name: string; description?:
 - The agent tool spawns a specialized child agent that runs in its own thread. Call agent({subagentType, task}) with a complete, self-contained task; the subagent does not see this conversation. Available types:
 ${lines}
 - Fire-and-forget: the call returns a handle immediately and the subagent runs independently. When it finishes, its result is delivered back into this conversation as a new message, so you may keep working; you will be resumed with the subagent's result when it arrives.
-- Spawning asks for user approval. A subagent cannot spawn further subagents.`;
+- Spawning asks for user approval. A subagent may spawn its own subagents, up to a small nesting limit; keep the tree shallow and spawn only when it genuinely helps.`;
 }
 
 export function buildHoySystemPrompt(
