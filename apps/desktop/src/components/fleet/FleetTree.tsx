@@ -25,9 +25,9 @@ function depthPadding(depth: number): string {
   return DEPTH_PADDING[Math.min(depth, DEPTH_PADDING.length - 1)];
 }
 
-// Recursive fleet row renderer, shared by FleetRail (dense) and FleetBoard
-// (dense=false). Walks the parent/children structure of one fleet's members
-// only, not the whole workspace tree.
+// Recursive fleet row renderer used by FleetBoard's cards (dense=false). Walks
+// the parent/children structure of one fleet's members only, not the whole
+// workspace tree. The dense variant is retained for a future compact surface.
 export function FleetTree({ rootId, dense }: { rootId: string; dense: boolean }) {
   const projects = useSessionStore((s) => s.projects);
   const openThread = useSessionStore((s) => s.openThread);
