@@ -21,6 +21,9 @@ export interface SubagentType {
   thinking?: string;
   source?: string;
   enabled: boolean;
+  // HOY-244: opt a type into forking the parent's transcript at spawn instead of
+  // starting fresh. Enforced at session creation in hoy-sidecar.ts.
+  inheritContext?: boolean;
 }
 
 export type SubagentRegistry = Record<string, SubagentType>;
@@ -72,6 +75,7 @@ interface AgentFrontmatter {
   model?: string;
   thinking?: string;
   enabled?: boolean;
+  inherit_context?: boolean;
 }
 
 // Intersect a declared tool list with KNOWN_TOOLS and drop `agent`. Omitted -> general set.
@@ -112,6 +116,7 @@ function parseAgentFile(path: string, name: string, scope: SubagentScope): Subag
     // anything else defaults on. The subagents.json overlay below can force it on
     // (the settings toggle) or off, overriding this default.
     enabled: fm.enabled !== false,
+    inheritContext: fm.inherit_context === true,
   };
 }
 

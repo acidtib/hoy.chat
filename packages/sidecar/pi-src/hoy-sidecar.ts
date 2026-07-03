@@ -81,6 +81,7 @@ if (process.env.HOY_LIST_SUBAGENTS) {
     thinking: t.thinking ?? null,
     source: t.source ?? null,
     enabled: t.enabled,
+    inheritContext: t.inheritContext ?? false,
   }));
   process.stdout.write(JSON.stringify(defs));
   process.exit(0);
@@ -160,13 +161,24 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
 // appending to the same file (stable identity across restart and respawn); fall
 // back to a fresh session if the file is missing or unreadable.
 const sessionFile = process.env.HOY_SESSION_FILE;
+// HOY-244: on first spawn of a subagent whose type sets `inherit_context: true`,
+// Rust passes the parent's transcript path here; forkFrom mints a fresh child
+// session seeded with the parent's history so the child starts with full context.
+// The renderer gates this (only sets the env for inheriting types), so honoring
+// it unconditionally is correct. Absent, or on respawn (own HOY_SESSION_FILE set),
+// this branch is skipped.
+const inheritFrom = process.env.HOY_INHERIT_FROM_SESSION;
 let sessionManager: SessionManager;
 try {
-  sessionManager = sessionFile
-    ? SessionManager.open(sessionFile)
-    : SessionManager.create(process.cwd());
+  if (sessionFile) {
+    sessionManager = SessionManager.open(sessionFile);
+  } else if (inheritFrom) {
+    sessionManager = SessionManager.forkFrom(inheritFrom, process.cwd());
+  } else {
+    sessionManager = SessionManager.create(process.cwd());
+  }
 } catch (e) {
-  console.error(`hoy-sidecar: could not open ${sessionFile}, starting fresh: ${e}`);
+  console.error(`hoy-sidecar: could not open/fork session, starting fresh: ${e}`);
   sessionManager = SessionManager.create(process.cwd());
 }
 

@@ -305,6 +305,7 @@ pub async fn create_session(
     permission_mode: Option<String>,
     depth: u32,
     require_subagent_approval: bool,
+    inherit_from_session: Option<String>,
     manager: State<'_, SidecarManager>,
 ) -> Result<String, String> {
     let path = if cwd.trim().is_empty() {
@@ -319,6 +320,7 @@ pub async fn create_session(
         subagent_type.as_deref(),
         depth,
         require_subagent_approval,
+        inherit_from_session.as_deref(),
     )
 }
 

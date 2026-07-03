@@ -463,6 +463,8 @@ export interface SubagentDef {
   thinking: string | null;
   source: string | null;
   enabled: boolean;
+  // HOY-244: type forks the parent's transcript at spawn instead of a fresh start.
+  inheritContext?: boolean;
 }
 
 // Mirror of events::OAuthSelectOption.

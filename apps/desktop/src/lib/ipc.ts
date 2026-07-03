@@ -172,6 +172,7 @@ export function createSession(
   permissionMode: string | null | undefined,
   depth: number,
   requireSubagentApproval: boolean,
+  inheritFromSession: string | null | undefined,
 ): Promise<string> {
   return invoke<string>("create_session", {
     cwd,
@@ -180,6 +181,7 @@ export function createSession(
     permissionMode: permissionMode ?? null,
     depth,
     requireSubagentApproval,
+    inheritFromSession: inheritFromSession ?? null,
   });
 }
 

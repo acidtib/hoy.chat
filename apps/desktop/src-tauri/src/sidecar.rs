@@ -97,6 +97,7 @@ impl PiProcess {
         subagent_type: Option<&str>,
         depth: u32,
         require_subagent_approval: bool,
+        inherit_from_session: Option<&str>,
     ) -> Result<Arc<PiProcess>, String> {
         if agent_dir.as_os_str().is_empty() {
             return Err("agent dir not resolved (set HOME or HOY_AGENT_DIR)".into());
@@ -134,6 +135,14 @@ impl PiProcess {
             "HOY_REQUIRE_SUBAGENT_APPROVAL",
             if require_subagent_approval { "1" } else { "0" },
         );
+        // HOY-244: when a subagent type sets `inherit_context: true`, the renderer
+        // passes the parent's transcript path here. The sidecar forks a fresh child
+        // session seeded with the parent's history (only on first spawn; a respawn
+        // opens the child's own file, which already holds the fork, so this is None
+        // there). Absent -> the child starts with a clean context, as usual.
+        if let Some(parent) = inherit_from_session {
+            command.env("HOY_INHERIT_FROM_SESSION", parent);
+        }
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -856,7 +865,7 @@ impl SidecarManager {
     // session spawned becomes the active one (used for model enumeration).
     pub fn spawn_session(&self) -> Result<SessionId, String> {
         let cwd = self.cwd.clone();
-        let id = self.spawn_session_in(&cwd, None, None, None, 0, false)?;
+        let id = self.spawn_session_in(&cwd, None, None, None, 0, false, None)?;
         let mut active = self.active.lock().unwrap();
         if active.is_none() {
             *active = Some(id.clone());
@@ -876,6 +885,7 @@ impl SidecarManager {
         subagent_type: Option<&str>,
         depth: u32,
         require_subagent_approval: bool,
+        inherit_from_session: Option<&str>,
     ) -> Result<SessionId, String> {
         if !self.bin.exists() {
             return Err(format!(
@@ -893,6 +903,7 @@ impl SidecarManager {
             subagent_type,
             depth,
             require_subagent_approval,
+            inherit_from_session,
         )?;
         let id = format!("s{}", self.handle_counter.fetch_add(1, Ordering::Relaxed));
         self.sessions.lock().unwrap().insert(id.clone(), proc);
@@ -1035,6 +1046,9 @@ impl SidecarManager {
             subagent_type.as_deref(),
             depth,
             require_subagent_approval,
+            // Respawn opens the child's own transcript (which already contains any
+            // inherited history from first spawn), so no re-fork (HOY-244).
+            None,
         )?;
         let old = {
             let mut sessions = self.sessions.lock().unwrap();
@@ -1314,7 +1328,7 @@ mod live_tests {
 
         // 1. Fresh session: prompt and wait for the turn to complete.
         let id = manager
-            .spawn_session_in(&cwd, None, None, None, 0, false)
+            .spawn_session_in(&cwd, None, None, None, 0, false, None)
             .expect("spawn fresh session");
         let process = manager.get(&id).expect("session present");
         let events: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
@@ -1357,7 +1371,7 @@ mod live_tests {
         // 2. Tear down the first sidecar, then reopen the same file in a new one.
         manager.remove(&id);
         let id2 = manager
-            .spawn_session_in(&cwd, Some(&session_file), None, None, 0, false)
+            .spawn_session_in(&cwd, Some(&session_file), None, None, 0, false, None)
             .expect("spawn restoring session");
         let restored = manager.get(&id2).expect("restored session present");
         let response = restored

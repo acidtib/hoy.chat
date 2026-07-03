@@ -96,6 +96,15 @@ test("project overlay wins over global for enable/disable (HOY-244)", () => {
   expect(reg["X"].enabled).toBe(true);
 });
 
+test("inherit_context frontmatter flows to inheritContext (HOY-244)", () => {
+  const cwd = tmp();
+  writeAgent(join(cwd, ".hoy", "agents"), "Heir", "description: d\ninherit_context: true", "p");
+  writeAgent(join(cwd, ".hoy", "agents"), "Fresh", "description: d", "p");
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  expect(reg["Heir"].inheritContext).toBe(true);
+  expect(reg["Fresh"].inheritContext).toBe(false);
+});
+
 test("malformed frontmatter is skipped, others still load", () => {
   const cwd = tmp();
   mkdirSync(join(cwd, ".hoy", "agents"), { recursive: true });

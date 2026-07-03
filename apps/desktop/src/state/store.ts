@@ -1632,6 +1632,15 @@ async function startChildRun(
   }));
   try {
     const cwd = project.path ?? "";
+    // HOY-244: if the child's type opts into inherit_context, fork it from the
+    // parent's transcript. Only when the parent has an established session file;
+    // a child spawned before the parent has one has no meaningful context to
+    // inherit, so it starts fresh. The sidecar also gates on the env being set.
+    const childDef = useSessionStore
+      .getState()
+      .subagents.find((d) => d.name === payload.subagentType);
+    const inheritFrom =
+      childDef?.inheritContext && parent?.sessionFile ? parent.sessionFile : null;
     const sessionId = await createSession(
       cwd,
       null,
@@ -1639,6 +1648,7 @@ async function startChildRun(
       parent?.permissionMode ?? null,
       childDepth,
       usePrefsStore.getState().requireSubagentApproval,
+      inheritFrom,
     );
     useSessionStore.setState((s) => ({
       projects: patchThread(s.projects, childId, (t) => ({ ...t, sessionId })),
@@ -2199,6 +2209,9 @@ function acquireSession(
     null,
     depth,
     usePrefsStore.getState().requireSubagentApproval,
+    // Reopen path: the thread opens its own transcript (sessionFile), so there is
+    // no parent to fork from (HOY-244).
+    null,
   ).finally(() => pendingSessions.delete(threadId));
   pendingSessions.set(threadId, spawn);
   return spawn;

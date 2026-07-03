@@ -18,6 +18,7 @@ function AgentRow({ def, onToggle, busy }: { def: SubagentDef; onToggle?: (next:
           <span className="text-sm font-medium text-foreground">{def.name}</span>
           <Badge variant="outline" className="text-[10px]">{def.scope}</Badge>
           {def.model && <Badge variant="outline" className="text-[10px]">{def.model}</Badge>}
+          {def.inheritContext && <Badge variant="outline" className="text-[10px]">inherits context</Badge>}
         </div>
         {def.description && <p className="text-xs text-muted-foreground">{def.description}</p>}
         <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{def.tools.join(", ")}</p>
