@@ -111,14 +111,16 @@ returns `kind: "custom"` with the typed `text`.
 - `ApprovalCard` (ThreadView.tsx): when `request.title` starts with `HOY_ASK:`,
   parse the JSON and render `<QuestionnaireCard payload onAnswer />` instead of
   the flat buttons.
-- `QuestionnaireCard`: renders each question with its header chip, the options as
-  radios (single) or checkboxes (multi) with optional descriptions, the
-  recommended option first with a "Recommended" chip, and an "Other" row with a
-  text input. When a selected option carries `preview`, its text renders in a
-  monospace preformatted box stacked directly under that option. Submit is
-  disabled until every question has a selection (or typed Other text). Submit ->
-  `onAnswer({ value: JSON.stringify(answers) })`; Cancel ->
-  `onAnswer({ cancelled: true })`.
+- `QuestionnaireCard`: renders one question at a time as a stepper (progress dots
+  + "N of M", Back / Next / Submit), not all questions stacked. Each question
+  shows its header chip and the options as radios (single) or checkboxes (multi)
+  with optional descriptions, the recommended option first with a "Recommended"
+  chip, and an "Other" row with a text input. When a selected option carries
+  `preview`, its text renders in a monospace preformatted box stacked directly
+  under that option. Next is disabled until the current question is answered;
+  Submit (on the last step) until all are. Answers accumulate across steps and
+  persist when navigating Back. Submit -> `onAnswer({ value: JSON.stringify(answers) })`;
+  Cancel -> `onAnswer({ cancelled: true })`.
 - Types: a local payload/answer type for the parse (sidecar is a separate
   package, so the shape is mirrored, matching the existing three-way mirror
   convention for events).

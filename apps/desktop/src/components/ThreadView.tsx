@@ -647,9 +647,11 @@ function ApprovalCard({
 // blocking select path as ApprovalCard, but renders each question's header chip,
 // radio (single) or checkbox (multi) options with trade-off text, a recommended
 // marker, an optional preview stacked under the selected option, and a free-form
-// "Other" row on single-select. Answers serialize to JSON in the select `value`;
-// the sidecar parses them back into structured answers. Cancel declines the whole
-// dialog, which the sidecar degrades to a cancelled result.
+// "Other" row on single-select. Multiple questions are shown one at a time as a
+// stepper (Back / Next / Submit with a progress indicator) rather than stacked,
+// so the card stays compact and focused. Answers serialize to JSON in the select
+// `value`; the sidecar parses them back into structured answers. Cancel declines
+// the whole dialog, which the sidecar degrades to a cancelled result.
 const ASK_OTHER = " other";
 
 function orderedOptions(q: AskQuestion) {
@@ -681,8 +683,9 @@ function QuestionnaireCard({
   payload: AskPayload;
   onAnswer: (answer: { value?: string; cancelled?: boolean }) => void;
 }) {
-  // single-select: one chosen value per question id (may be ASK_OTHER).
-  // multi-select: the chosen values per question id.
+  // One question at a time (stepper). single-select: one chosen value per
+  // question id (may be ASK_OTHER). multi-select: the chosen values per id.
+  const [step, setStep] = useState(0);
   const [single, setSingle] = useState<Record<string, string>>({});
   const [multi, setMulti] = useState<Record<string, string[]>>({});
   const [otherText, setOtherText] = useState<Record<string, string>>({});
@@ -694,6 +697,11 @@ function QuestionnaireCard({
     if (sel === ASK_OTHER) return (otherText[q.id]?.trim().length ?? 0) > 0;
     return true;
   };
+
+  const total = payload.questions.length;
+  const q = payload.questions[step];
+  const isLast = step === total - 1;
+  const currentAnswered = isAnswered(q);
   const allAnswered = payload.questions.every(isAnswered);
 
   const toggleMulti = (qid: string, value: string) =>
@@ -705,19 +713,19 @@ function QuestionnaireCard({
     });
 
   const submit = () => {
-    const answers: AskAnswer[] = payload.questions.map((q) => {
-      if (q.multiSelect) {
-        const values = multi[q.id] ?? [];
-        const labels = values.map((v) => q.options.find((o) => o.value === v)?.label ?? v);
-        return { questionId: q.id, kind: "multi", selectedValues: values, selectedLabels: labels };
+    const answers: AskAnswer[] = payload.questions.map((qq) => {
+      if (qq.multiSelect) {
+        const values = multi[qq.id] ?? [];
+        const labels = values.map((v) => qq.options.find((o) => o.value === v)?.label ?? v);
+        return { questionId: qq.id, kind: "multi", selectedValues: values, selectedLabels: labels };
       }
-      const sel = single[q.id];
+      const sel = single[qq.id];
       if (sel === ASK_OTHER) {
-        return { questionId: q.id, kind: "custom", selectedValues: [], selectedLabels: [], text: otherText[q.id]?.trim() ?? "" };
+        return { questionId: qq.id, kind: "custom", selectedValues: [], selectedLabels: [], text: otherText[qq.id]?.trim() ?? "" };
       }
-      const opt = q.options.find((o) => o.value === sel);
+      const opt = qq.options.find((o) => o.value === sel);
       return {
-        questionId: q.id,
+        questionId: qq.id,
         kind: "option",
         selectedValues: opt ? [opt.value] : [],
         selectedLabels: opt ? [opt.label] : [],
@@ -730,104 +738,143 @@ function QuestionnaireCard({
     <div className="mx-3 mb-2 flex max-h-[70vh] shrink-0 flex-col rounded-lg border border-brand/40 bg-card/70 px-3 py-2.5">
       <div className="flex min-h-0 items-start gap-2.5 overflow-y-auto">
         <ShieldQuestion className="mt-0.5 size-4 shrink-0 text-brand" />
-        <div className="min-w-0 flex-1 space-y-4">
-          {payload.questions.map((q) => (
-            <div key={q.id} className="space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                {q.header && (
-                  <Badge variant="outline" className="text-[10px]">
-                    {q.header}
-                  </Badge>
-                )}
-                <span className="text-xs font-medium text-foreground">{q.question}</span>
+        <div className="min-w-0 flex-1 space-y-2">
+          {total > 1 && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                {payload.questions.map((qq, i) => (
+                  <span
+                    key={qq.id}
+                    className={cn(
+                      "h-1.5 rounded-full transition-all",
+                      i === step ? "w-4 bg-brand" : isAnswered(qq) ? "w-1.5 bg-brand/60" : "w-1.5 bg-border",
+                    )}
+                  />
+                ))}
               </div>
-              <div className="space-y-1">
-                {orderedOptions(q).map((o) => {
-                  const selected = q.multiSelect
-                    ? (multi[q.id]?.includes(o.value) ?? false)
-                    : single[q.id] === o.value;
-                  return (
-                    <div key={o.value}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          q.multiSelect
-                            ? toggleMulti(q.id, o.value)
-                            : setSingle((p) => ({ ...p, [q.id]: o.value }))
-                        }
-                        className={cn(
-                          "flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
-                          selected ? "border-brand/60 bg-brand/5" : "border-border hover:border-brand/40",
-                        )}
-                      >
-                        <OptionMark multi={q.multiSelect} selected={selected} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-xs text-foreground">{o.label}</span>
-                            {o.value === q.recommendedValue && (
-                              <Badge variant="outline" className="border-brand/40 text-[9px] text-brand">
-                                Recommended
-                              </Badge>
-                            )}
-                          </div>
-                          {o.description && <p className="text-[11px] text-muted-foreground">{o.description}</p>}
-                        </div>
-                      </button>
-                      {selected && o.preview && (
-                        <pre className="mt-1 ml-6 overflow-x-auto whitespace-pre rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
-                          {o.preview}
-                        </pre>
-                      )}
-                    </div>
-                  );
-                })}
-                {!q.multiSelect && (
-                  <div>
+              <span className="text-[10px] text-muted-foreground">
+                {step + 1} of {total}
+              </span>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              {q.header && (
+                <Badge variant="outline" className="text-[10px]">
+                  {q.header}
+                </Badge>
+              )}
+              <span className="text-xs font-medium text-foreground">{q.question}</span>
+            </div>
+            <div className="space-y-1">
+              {orderedOptions(q).map((o) => {
+                const selected = q.multiSelect
+                  ? (multi[q.id]?.includes(o.value) ?? false)
+                  : single[q.id] === o.value;
+                return (
+                  <div key={o.value}>
                     <button
                       type="button"
-                      onClick={() => setSingle((p) => ({ ...p, [q.id]: ASK_OTHER }))}
+                      onClick={() =>
+                        q.multiSelect
+                          ? toggleMulti(q.id, o.value)
+                          : setSingle((p) => ({ ...p, [q.id]: o.value }))
+                      }
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
-                        single[q.id] === ASK_OTHER ? "border-brand/60 bg-brand/5" : "border-border hover:border-brand/40",
+                        "flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
+                        selected ? "border-brand/60 bg-brand/5" : "border-border hover:border-brand/40",
                       )}
                     >
-                      <OptionMark multi={false} selected={single[q.id] === ASK_OTHER} />
-                      <span className="text-xs text-muted-foreground">Other</span>
+                      <OptionMark multi={q.multiSelect} selected={selected} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-xs text-foreground">{o.label}</span>
+                          {o.value === q.recommendedValue && (
+                            <Badge variant="outline" className="border-brand/40 text-[9px] text-brand">
+                              Recommended
+                            </Badge>
+                          )}
+                        </div>
+                        {o.description && <p className="text-[11px] text-muted-foreground">{o.description}</p>}
+                      </div>
                     </button>
-                    {single[q.id] === ASK_OTHER && (
-                      <Input
-                        autoFocus
-                        value={otherText[q.id] ?? ""}
-                        onChange={(e) => setOtherText((p) => ({ ...p, [q.id]: e.target.value }))}
-                        placeholder="Type your answer"
-                        className="mt-1 ml-6 h-7 text-xs"
-                      />
+                    {selected && o.preview && (
+                      <pre className="mt-1 ml-6 overflow-x-auto whitespace-pre rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+                        {o.preview}
+                      </pre>
                     )}
                   </div>
-                )}
-              </div>
+                );
+              })}
+              {!q.multiSelect && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setSingle((p) => ({ ...p, [q.id]: ASK_OTHER }))}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
+                      single[q.id] === ASK_OTHER ? "border-brand/60 bg-brand/5" : "border-border hover:border-brand/40",
+                    )}
+                  >
+                    <OptionMark multi={false} selected={single[q.id] === ASK_OTHER} />
+                    <span className="text-xs text-muted-foreground">Other</span>
+                  </button>
+                  {single[q.id] === ASK_OTHER && (
+                    <Input
+                      autoFocus
+                      value={otherText[q.id] ?? ""}
+                      onChange={(e) => setOtherText((p) => ({ ...p, [q.id]: e.target.value }))}
+                      placeholder="Type your answer"
+                      className="mt-1 ml-6 h-7 text-xs"
+                    />
+                  )}
+                </div>
+              )}
             </div>
-          ))}
+          </div>
         </div>
       </div>
-      <div className="mt-3 flex shrink-0 items-center justify-end gap-1.5">
+      <div className="mt-3 flex shrink-0 items-center justify-between gap-1.5">
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 text-xs text-muted-foreground hover:text-destructive"
-          onClick={() => onAnswer({ cancelled: true })}
+          disabled={step === 0}
+          className="h-7 text-xs text-muted-foreground disabled:opacity-40"
+          onClick={() => setStep((s) => Math.max(0, s - 1))}
         >
-          Cancel
+          Back
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!allAnswered}
-          className="h-7 border-brand/40 text-xs text-brand hover:text-brand"
-          onClick={submit}
-        >
-          Submit
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground hover:text-destructive"
+            onClick={() => onAnswer({ cancelled: true })}
+          >
+            Cancel
+          </Button>
+          {isLast ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!allAnswered}
+              className="h-7 border-brand/40 text-xs text-brand hover:text-brand"
+              onClick={submit}
+            >
+              Submit
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!currentAnswered}
+              className="h-7 border-brand/40 text-xs text-brand hover:text-brand"
+              onClick={() => setStep((s) => Math.min(total - 1, s + 1))}
+            >
+              Next
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
