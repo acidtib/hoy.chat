@@ -33,6 +33,8 @@ export function ContextBar({
   const sidebarWidth = useSessionStore((s) => s.sidebarWidth);
   const sidebarView = useSessionStore((s) => s.sidebarView);
   const setSidebarView = useSessionStore((s) => s.setSidebarView);
+  const bodyView = useSessionStore((s) => s.bodyView);
+  const setBodyView = useSessionStore((s) => s.setBodyView);
   const panels = useSessionStore((s) => s.panels);
   const expandedThreadId = useSessionStore((s) => s.expandedThreadId);
 
@@ -80,16 +82,6 @@ export function ContextBar({
             <Clock className="size-4" />
           </FooterIconButton>
           <FooterIconButton
-            label={sidebarView === "fleet" ? "Show Projects" : "Show Fleet"}
-            onClick={() =>
-              setSidebarView(sidebarView === "fleet" ? "projects" : "fleet")
-            }
-            active={sidebarView === "fleet"}
-            activeClassName="text-agent"
-          >
-            <Sparkle className="size-4" />
-          </FooterIconButton>
-          <FooterIconButton
             label="Add Project"
             className="ml-auto"
             onClick={handleAddProject}
@@ -118,6 +110,20 @@ export function ContextBar({
             />
           ))
         )}
+      </div>
+
+      {/* Fleet toggle, pinned to the footer's bottom-right corner: swaps the
+          main body between the panel strip and the full-body FleetView. Kept
+          out of the sidebar cell so it survives a collapsed sidebar. */}
+      <div className="flex shrink-0 items-center border-l border-border px-1.5">
+        <FooterIconButton
+          label={bodyView === "fleet" ? "Show Panels" : "Show FleetView"}
+          onClick={() => setBodyView(bodyView === "fleet" ? "panels" : "fleet")}
+          active={bodyView === "fleet"}
+          activeClassName="text-agent"
+        >
+          <Sparkle className="size-4" />
+        </FooterIconButton>
       </div>
     </footer>
   );

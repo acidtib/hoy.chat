@@ -431,7 +431,7 @@ function WorkspacePanel() {
         <Separator />
         <ToggleRow
           label="Auto-open spawned subagent threads"
-          description="Open a panel for each subagent a thread spawns. Off by default; watch spawned agents in FleetView instead (the sidebar's Fleet toggle)."
+          description="Open a panel for each subagent a thread spawns. Off by default; watch spawned agents in FleetView instead (the footer's Fleet button)."
           checked={autoOpenSpawnedThreads}
           onChange={(v) => setPref("autoOpenSpawnedThreads", v)}
         />

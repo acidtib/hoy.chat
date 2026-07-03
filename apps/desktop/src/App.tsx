@@ -8,7 +8,6 @@ import {
 } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { ThreadHistory } from "@/components/ThreadHistory";
-import { FleetRail } from "@/components/fleet/FleetRail";
 import { FleetBoard } from "@/components/fleet/FleetBoard";
 import { HomePage } from "@/components/HomePage";
 import { ThreadView } from "@/components/ThreadView";
@@ -160,13 +159,7 @@ function App() {
       <div className="flex h-screen flex-col bg-background text-foreground">
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           {!sidebarCollapsed &&
-            (sidebarView === "history" ? (
-              <ThreadHistory />
-            ) : sidebarView === "fleet" ? (
-              <FleetRail />
-            ) : (
-              <Sidebar />
-            ))}
+            (sidebarView === "history" ? <ThreadHistory /> : <Sidebar />)}
 
           {/* Main column: the title bar spans the main body only (the sidebar
               keeps the top-left corner, Zed-style); panels render below it. */}

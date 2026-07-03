@@ -276,7 +276,7 @@ interface SessionStore {
   sidebarCollapsed: boolean;
   // Which view the sidebar shows: the projects -> threads tree, or the flat
   // time-bucketed history (toggled from the bottom-bar clock).
-  sidebarView: "projects" | "history" | "fleet";
+  sidebarView: "projects" | "history";
   sidebarWidth: number;
   bodyView: "panels" | "fleet";
   // Global settings modal, openable from any entry point (home cog, thread menu).
@@ -392,7 +392,7 @@ interface SessionStore {
   setBodyWidth: (width: number) => void;
   resizePanelEdge: (index: number, deltaPx: number) => void;
   toggleSidebar: () => void;
-  setSidebarView: (view: "projects" | "history" | "fleet") => void;
+  setSidebarView: (view: "projects" | "history") => void;
   setBodyView: (view: "panels" | "fleet") => void;
   setSettingsOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
