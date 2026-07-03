@@ -67,6 +67,19 @@ export function shouldDeliverToParent(thread: {
   return !!thread.parentThreadId && !thread.completedAt;
 }
 
+// An intermediate agent (a subagent that is itself a parent of live children)
+// must defer delivering its own result up until every child has delivered back
+// into it, otherwise its result is computed before its descendants' work lands
+// (a bug that only becomes reachable at depth >= 2). `outstanding` is the parent
+// thread's outstanding-children count. A leaf (no children -> 0) never defers, so
+// depth-1 delivery is unchanged. HOY-245.
+export function shouldDeferUpDelivery(
+  thread: { parentThreadId?: string | null },
+  outstanding: number,
+): boolean {
+  return isSubagentThread(thread) && outstanding > 0;
+}
+
 // A thread is a subagent thread iff it was spawned by a parent. Drives the
 // agent color identity in the sidebar and panels (HOY-236). Parent-role
 // detection uses childThreadIdsOf(projects, id).length > 0.

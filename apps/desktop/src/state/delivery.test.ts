@@ -7,6 +7,7 @@ import {
   takeNextDelivery,
   pendingDeliveries,
   shouldDeliverToParent,
+  shouldDeferUpDelivery,
   childThreadIdsOf,
   isSubagentThread,
   threadDepth,
@@ -78,6 +79,32 @@ test("shouldDeliverToParent: only a not-yet-completed child delivers", () => {
   expect(shouldDeliverToParent({ parentThreadId: "p1", completedAt: 123 })).toBe(false); // already delivered
   expect(shouldDeliverToParent({ parentThreadId: null, completedAt: null })).toBe(false); // not a child
   expect(shouldDeliverToParent({})).toBe(false);
+});
+
+test("shouldDeferUpDelivery: a leaf child (no outstanding children) never defers", () => {
+  // Depth-1 behavior: an isSubagentThread with 0 outstanding delivers immediately.
+  expect(shouldDeferUpDelivery({ parentThreadId: "p1" }, 0)).toBe(false);
+  // Even a root with a stray count never defers (it has no parent to deliver to).
+  expect(shouldDeferUpDelivery({ parentThreadId: null }, 3)).toBe(false);
+  expect(shouldDeferUpDelivery({}, 3)).toBe(false);
+});
+
+test("shouldDeferUpDelivery: an intermediate agent with outstanding children defers", () => {
+  const c = { parentThreadId: "root" };
+  // One grandchild outstanding -> defer.
+  expect(shouldDeferUpDelivery(c, 1)).toBe(true);
+  // Two grandchildren outstanding -> still defer; only 0 clears it.
+  expect(shouldDeferUpDelivery(c, 2)).toBe(true);
+  // After both grandchildren applied (counter decremented to 0) -> delivers up.
+  expect(shouldDeferUpDelivery(c, 0)).toBe(false);
+});
+
+test("deliver-once across depths: completedAt gates a re-deliver even once undeferred", () => {
+  // After an intermediate agent finally delivers up, completedAt is stamped; a
+  // further done (outstanding now 0, so no defer) must not re-deliver.
+  const delivered = { parentThreadId: "root", completedAt: 999 };
+  expect(shouldDeferUpDelivery(delivered, 0)).toBe(false);
+  expect(shouldDeliverToParent(delivered)).toBe(false);
 });
 
 test("childThreadIdsOf: returns ids of threads whose parentThreadId matches", () => {

@@ -36,6 +36,7 @@ import {
   buildDelivery,
   childThreadIdsOf,
   queueDelivery,
+  shouldDeferUpDelivery,
   shouldDeliverToParent,
   takeNextDelivery,
   threadDepth,
@@ -338,6 +339,11 @@ interface SessionStore {
   runningAgents: Set<string>;
   agentQueue: string[];
   queuedPayloads: Record<string, { payload: SpawnPayload; childDepth: number }>;
+  // Outstanding-children counter, keyed by parent thread id (HOY-245). Transient,
+  // never persisted. Incremented when a child is spawned, decremented when a
+  // child's result is applied to the parent. An intermediate agent defers its own
+  // up-delivery while this is > 0 so its result reflects its descendants' work.
+  outstandingChildren: Record<string, number>;
   // Pi's per-session steering/follow-up queues, keyed by threadId (HOY-218). Fed
   // by queueUpdate events (Pi sends full arrays, so we replace). Drives the
   // read-only queued-message chips. Cleared on panel close; abort leaves it
@@ -531,6 +537,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   runningAgents: new Set<string>(),
   agentQueue: [],
   queuedPayloads: {},
+  outstandingChildren: {},
   queued: {},
   expandedThreadId: null,
   focusRequest: null,
@@ -869,6 +876,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       turns: {
         ...s.turns,
         [childId]: [{ role: "user", text: payload.task }],
+      },
+      // HOY-245: count this child against its parent so the parent defers its own
+      // up-delivery until the child (run-now or queued) delivers back into it.
+      outstandingChildren: {
+        ...s.outstandingChildren,
+        [parentThreadId]: (s.outstandingChildren[parentThreadId] ?? 0) + 1,
       },
     }));
     // Auto-open the child so the user follows the run live instead of finding
@@ -1879,7 +1892,14 @@ async function deliverAndDrain(finishedThreadId: string): Promise<void> {
   const found = findThread(state.projects, finishedThreadId);
   if (!found) return;
   const { thread } = found;
-  if (shouldDeliverToParent(thread)) {
+  // HOY-245: an intermediate agent (a subagent that is itself a parent) must not
+  // deliver its result up while it still has outstanding children; its result
+  // would be computed before their work lands. Defer until the counter is 0.
+  // Depth-1 leaves have no children (counter undefined -> 0), so they deliver
+  // immediately, exactly as before.
+  const outstanding = state.outstandingChildren[finishedThreadId] ?? 0;
+  const deferUp = shouldDeferUpDelivery(thread, outstanding);
+  if (!deferUp && shouldDeliverToParent(thread)) {
     const childTurns = state.turns[finishedThreadId] ?? [];
     const delivery = buildDelivery(
       thread.spawnedBy?.type ?? "subagent",
@@ -1957,6 +1977,18 @@ async function deliverToParent(parentThreadId: string, delivery: Delivery): Prom
         ...th,
         updatedAt: Date.now(),
       })),
+      // HOY-245: this is the single point a child's result is APPLIED to the
+      // parent (the busy/queued early-return above does not reach here). One
+      // decrement per apply; when it hits 0 the parent stops deferring and its
+      // next done delivers its now-complete result up.
+      outstandingChildren: (() => {
+        const cur = s.outstandingChildren[parentThreadId] ?? 0;
+        const nextCount = Math.max(0, cur - 1);
+        const copy = { ...s.outstandingChildren };
+        if (nextCount === 0) delete copy[parentThreadId];
+        else copy[parentThreadId] = nextCount;
+        return copy;
+      })(),
     }));
     seeded = true;
     await streamPromptOnThread(parentThreadId, sessionId, delivery.message);
