@@ -891,10 +891,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }));
     // Auto-open the child so the user follows the run live instead of finding
     // it after the fact (HOY-236). The child is already in projects above, so
-    // openThread's findThread resolves. FleetView (HOY-235) will later route
-    // this to a consolidated view; the call site is unchanged. HOY-246 will gate
-    // this so a queued child does not steal focus; left as-is for now.
-    get().openThread(childId);
+    // openThread's findThread resolves. FleetView (HOY-235) is the alternative
+    // watch surface, so this is gated behind the autoOpenSpawnedThreads pref
+    // (HOY-246), off by default to avoid a panel-per-subagent storm at scale.
+    if (usePrefsStore.getState().autoOpenSpawnedThreads) get().openThread(childId);
     // Concurrency gate (HOY-245): an initial run takes a slot only if one is
     // free; otherwise the child waits FIFO. A slot releases on the run's first
     // done. Foreground and resume runs bypass this entirely (they never reach

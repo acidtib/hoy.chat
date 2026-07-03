@@ -23,6 +23,9 @@ export interface AppPrefs {
   confirmCloseStreaming: boolean;
   // Starting directory for the "Open project" picker. Empty = OS default.
   defaultProjectDir: string;
+  // Open a panel for each subagent a thread spawns. Off by default; FleetView
+  // is the intended way to watch spawned agents instead.
+  autoOpenSpawnedThreads: boolean;
 }
 
 interface PrefsStore extends AppPrefs {
@@ -42,6 +45,7 @@ export const PREFS_DEFAULTS: AppPrefs = {
   expandReasoning: false,
   confirmCloseStreaming: true,
   defaultProjectDir: "",
+  autoOpenSpawnedThreads: false,
 };
 
 export const usePrefsStore = create<PrefsStore>()(
@@ -66,6 +70,7 @@ export const usePrefsStore = create<PrefsStore>()(
         expandReasoning: s.expandReasoning,
         confirmCloseStreaming: s.confirmCloseStreaming,
         defaultProjectDir: s.defaultProjectDir,
+        autoOpenSpawnedThreads: s.autoOpenSpawnedThreads,
       }),
     },
   ),
