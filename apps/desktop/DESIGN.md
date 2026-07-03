@@ -40,6 +40,7 @@ shipped default.
 | `--ring` | `oklch(0.62 0.16 274)` | focus ring (brand-tinted) |
 | `--brand` | `oklch(0.62 0.17 274)` | indigo/violet accent |
 | `--brand-foreground` | `oklch(0.98 0.01 274)` | text on brand |
+| `--agent` | `oklch(0.72 0.12 195)` | subagent/parent thread identity (teal) |
 | `--sidebar` | `oklch(0.185 0.004 285)` | sidebar surface |
 | `--sidebar-primary` | `oklch(0.62 0.17 274)` | active item (brand) |
 
@@ -56,7 +57,7 @@ Restrained. A single brand hue (indigo/violet, ~274) carries identity through th
 ring, active sidebar item, and `chart-1`; everything else is a tinted-neutral
 ramp (chroma <=0.008, hue ~285). The brand accent is used sparingly, never as a
 fill across large surfaces. Active-panel affordance is a `border-t-brand/70` top
-edge, not a filled state.
+edge, not a filled state. A second reserved hue, `--agent` (teal, ~195), marks subagent threads and the threads running them (see HOY-236); it is the only non-brand identity hue and never fills large surfaces.
 
 ### Contrast
 
