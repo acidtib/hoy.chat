@@ -22,6 +22,7 @@ import {
 import { createHoyPermissions, isPermissionMode, type PermissionMode } from "./hoy-permissions";
 import { createHoyMcp, loadMcpConfig } from "./hoy-mcp";
 import { createHoyAgents } from "./hoy-agents";
+import { createHoyAskQuestion } from "./hoy-ask-question";
 import { createHoyTurnBudget } from "./hoy-turn-budget";
 import { loadSubagentRegistry, enabledTypes, effectiveChildPrompt } from "./hoy-agents-registry";
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
@@ -30,7 +31,7 @@ import { runOAuthLogin } from "./hoy-oauth";
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
 // with grep/find/ls while bash is blocked; the prompt's tools list matches.
-const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "agent"];
+const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "agent", "ask_question"];
 const envMode = process.env.HOY_PERMISSION_MODE ?? "default";
 const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "default";
 
@@ -143,6 +144,13 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       extensionFactories: [
         createHoyPermissions(initialMode),
         createHoyMcp(mcpConfig),
+        // HOY-253: ask_question is a user-interaction tool, not a side
+        // effect. Only root/user threads get it in their tool set (HOY_TOOLS);
+        // child subagents (childType set) do not, since the intent-interrogation
+        // phase belongs to the thread talking to the user, not a fire-and-forget
+        // child. Registering it unconditionally is harmless (mirrors mcp): a
+        // child never has it in `tools`, so it cannot call it.
+        createHoyAskQuestion(),
         ...(canSpawn ? [createHoyAgents(registry, requireSubagentApproval)] : []),
         // HOY-244: cap a budgeted subagent type's turns; root/unbudgeted threads
         // run uncapped. childType is null for user threads, so this is child-only.

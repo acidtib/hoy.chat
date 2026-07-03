@@ -56,6 +56,11 @@ export function decide(
   opts?: { path?: string; cwd?: string },
 ): GateDecision {
   if (READ_ONLY_TOOLS.has(toolName)) return "allow";
+  // ask_question (HOY-253) is a user interaction, not a side effect: it renders a
+  // questionnaire and waits for the answer. Never gate it, in any mode. Without
+  // this, plan mode would block it as a custom tool and default mode would raise
+  // an approval card before the question card ever showed.
+  if (toolName === "ask_question") return "allow";
   if (mode === "autonomous") return "allow";
   if (mode === "plan") {
     // agent (HOY-213): plan mode may fan out subagents to parallelize read-only
@@ -133,10 +138,6 @@ function slimInput(toolName: string, input: any): any {
     return { ...input, content: `${input.content.slice(0, 1497)}...` };
   }
   return input;
-}
-
-function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
 function blockReason(mode: PermissionMode, toolName: string): string {

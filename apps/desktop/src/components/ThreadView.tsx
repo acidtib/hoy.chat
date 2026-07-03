@@ -3,8 +3,12 @@ import {
   Activity,
   AlertCircle,
   Archive,
+  Check,
+  Circle,
+  CircleDot,
   CircleStop,
   ClipboardCheck,
+  Square,
   File as FileIcon,
   FilePen,
   Folder,
@@ -23,8 +27,15 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  parseAskPayload,
+  type AskAnswer,
+  type AskPayload,
+  type AskQuestion,
+} from "@/lib/ask-question";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -566,6 +577,13 @@ function ApprovalCard({
     cancelled?: boolean;
   }) => void;
 }) {
+  // HOY-253: an ask_question call rides the select path with its payload smuggled
+  // in the title. Render the structured questionnaire instead of flat buttons.
+  const askPayload =
+    request.method === "select" ? parseAskPayload(request.title) : null;
+  if (askPayload) {
+    return <QuestionnaireCard payload={askPayload} onAnswer={onAnswer} />;
+  }
   const isText = request.method === "input" || request.method === "editor";
   const choices =
     request.method === "confirm"
@@ -621,6 +639,196 @@ function ApprovalCard({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// HOY-253: structured questionnaire for the ask_question tool. Rides the same
+// blocking select path as ApprovalCard, but renders each question's header chip,
+// radio (single) or checkbox (multi) options with trade-off text, a recommended
+// marker, an optional preview stacked under the selected option, and a free-form
+// "Other" row on single-select. Answers serialize to JSON in the select `value`;
+// the sidecar parses them back into structured answers. Cancel declines the whole
+// dialog, which the sidecar degrades to a cancelled result.
+const ASK_OTHER = " other";
+
+function orderedOptions(q: AskQuestion) {
+  if (!q.recommendedValue) return q.options;
+  const rec = q.options.filter((o) => o.value === q.recommendedValue);
+  const rest = q.options.filter((o) => o.value !== q.recommendedValue);
+  return [...rec, ...rest];
+}
+
+function OptionMark({ multi, selected }: { multi: boolean; selected: boolean }) {
+  if (multi) {
+    return selected ? (
+      <Check className="mt-0.5 size-3.5 shrink-0 text-brand" />
+    ) : (
+      <Square className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+    );
+  }
+  return selected ? (
+    <CircleDot className="mt-0.5 size-3.5 shrink-0 text-brand" />
+  ) : (
+    <Circle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+  );
+}
+
+function QuestionnaireCard({
+  payload,
+  onAnswer,
+}: {
+  payload: AskPayload;
+  onAnswer: (answer: { value?: string; cancelled?: boolean }) => void;
+}) {
+  // single-select: one chosen value per question id (may be ASK_OTHER).
+  // multi-select: the chosen values per question id.
+  const [single, setSingle] = useState<Record<string, string>>({});
+  const [multi, setMulti] = useState<Record<string, string[]>>({});
+  const [otherText, setOtherText] = useState<Record<string, string>>({});
+
+  const isAnswered = (q: AskQuestion): boolean => {
+    if (q.multiSelect) return (multi[q.id]?.length ?? 0) > 0;
+    const sel = single[q.id];
+    if (!sel) return false;
+    if (sel === ASK_OTHER) return (otherText[q.id]?.trim().length ?? 0) > 0;
+    return true;
+  };
+  const allAnswered = payload.questions.every(isAnswered);
+
+  const toggleMulti = (qid: string, value: string) =>
+    setMulti((prev) => {
+      const cur = new Set(prev[qid] ?? []);
+      if (cur.has(value)) cur.delete(value);
+      else cur.add(value);
+      return { ...prev, [qid]: [...cur] };
+    });
+
+  const submit = () => {
+    const answers: AskAnswer[] = payload.questions.map((q) => {
+      if (q.multiSelect) {
+        const values = multi[q.id] ?? [];
+        const labels = values.map((v) => q.options.find((o) => o.value === v)?.label ?? v);
+        return { questionId: q.id, kind: "multi", selectedValues: values, selectedLabels: labels };
+      }
+      const sel = single[q.id];
+      if (sel === ASK_OTHER) {
+        return { questionId: q.id, kind: "custom", selectedValues: [], selectedLabels: [], text: otherText[q.id]?.trim() ?? "" };
+      }
+      const opt = q.options.find((o) => o.value === sel);
+      return {
+        questionId: q.id,
+        kind: "option",
+        selectedValues: opt ? [opt.value] : [],
+        selectedLabels: opt ? [opt.label] : [],
+      };
+    });
+    onAnswer({ value: JSON.stringify({ answers }) });
+  };
+
+  return (
+    <div className="mx-3 mb-2 flex max-h-[70vh] shrink-0 flex-col rounded-lg border border-brand/40 bg-card/70 px-3 py-2.5">
+      <div className="flex min-h-0 items-start gap-2.5 overflow-y-auto">
+        <ShieldQuestion className="mt-0.5 size-4 shrink-0 text-brand" />
+        <div className="min-w-0 flex-1 space-y-4">
+          {payload.questions.map((q) => (
+            <div key={q.id} className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                {q.header && (
+                  <Badge variant="outline" className="text-[10px]">
+                    {q.header}
+                  </Badge>
+                )}
+                <span className="text-xs font-medium text-foreground">{q.question}</span>
+              </div>
+              <div className="space-y-1">
+                {orderedOptions(q).map((o) => {
+                  const selected = q.multiSelect
+                    ? (multi[q.id]?.includes(o.value) ?? false)
+                    : single[q.id] === o.value;
+                  return (
+                    <div key={o.value}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          q.multiSelect
+                            ? toggleMulti(q.id, o.value)
+                            : setSingle((p) => ({ ...p, [q.id]: o.value }))
+                        }
+                        className={cn(
+                          "flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
+                          selected ? "border-brand/60 bg-brand/5" : "border-border hover:border-brand/40",
+                        )}
+                      >
+                        <OptionMark multi={q.multiSelect} selected={selected} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs text-foreground">{o.label}</span>
+                            {o.value === q.recommendedValue && (
+                              <Badge variant="outline" className="border-brand/40 text-[9px] text-brand">
+                                Recommended
+                              </Badge>
+                            )}
+                          </div>
+                          {o.description && <p className="text-[11px] text-muted-foreground">{o.description}</p>}
+                        </div>
+                      </button>
+                      {selected && o.preview && (
+                        <pre className="mt-1 ml-6 overflow-x-auto whitespace-pre rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+                          {o.preview}
+                        </pre>
+                      )}
+                    </div>
+                  );
+                })}
+                {!q.multiSelect && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setSingle((p) => ({ ...p, [q.id]: ASK_OTHER }))}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
+                        single[q.id] === ASK_OTHER ? "border-brand/60 bg-brand/5" : "border-border hover:border-brand/40",
+                      )}
+                    >
+                      <OptionMark multi={false} selected={single[q.id] === ASK_OTHER} />
+                      <span className="text-xs text-muted-foreground">Other</span>
+                    </button>
+                    {single[q.id] === ASK_OTHER && (
+                      <Input
+                        autoFocus
+                        value={otherText[q.id] ?? ""}
+                        onChange={(e) => setOtherText((p) => ({ ...p, [q.id]: e.target.value }))}
+                        placeholder="Type your answer"
+                        className="mt-1 ml-6 h-7 text-xs"
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-3 flex shrink-0 items-center justify-end gap-1.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs text-muted-foreground hover:text-destructive"
+          onClick={() => onAnswer({ cancelled: true })}
+        >
+          Cancel
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!allAnswered}
+          className="h-7 border-brand/40 text-xs text-brand hover:text-brand"
+          onClick={submit}
+        >
+          Submit
+        </Button>
+      </div>
     </div>
   );
 }
