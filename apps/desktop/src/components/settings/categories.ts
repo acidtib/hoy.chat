@@ -1,5 +1,6 @@
 import {
   Archive,
+  Bot,
   Boxes,
   Brain,
   Cable,
@@ -30,6 +31,7 @@ export type CategoryId =
   | "gateway"
   | "tools"
   | "mcp"
+  | "subagents"
   | "archived";
 
 export interface Category {
@@ -51,6 +53,7 @@ export const CATEGORIES: Category[] = [
   { id: "memory", label: "Memory & Context", icon: Brain, group: 0 },
   { id: "providers", label: "Providers", icon: Plug, group: 1 },
   { id: "mcp", label: "MCP", icon: Cable, group: 1 },
+  { id: "subagents", label: "Subagents", icon: Bot, group: 1 },
   { id: "about", label: "About", icon: Info, group: 1 },
   { id: "appearance", label: "Appearance", icon: Palette, group: 2, placeholder: true },
   { id: "safety", label: "Safety", icon: ShieldCheck, group: 2, placeholder: true },

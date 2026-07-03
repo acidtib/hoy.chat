@@ -14,6 +14,7 @@
     "core:window:allow-start-resize-dragging",
     "core:window:allow-set-title",
     "opener:default",
+    "opener:allow-open-path",
     "dialog:default",
     "mcp-bridge:default",
     "os:default",

@@ -28,4 +28,12 @@ export async function refreshProviderData(): Promise<void> {
         if (!String(e).includes("no active session")) throw e;
       }),
   ]);
+
+  // Warm the subagent registry cache so spawnChildThread can resolve a child
+  // type's model/thinking (HOY-234). Sessionless: list_subagents is a one-shot
+  // sidecar spawn, so this is safe at boot before any session exists. Re-read
+  // the store since initWorkspace may have set the active project meanwhile.
+  const latest = useSessionStore.getState();
+  const projectPath = latest.projects.find((p) => p.id === latest.activeProjectId)?.path ?? "";
+  await latest.refreshSubagents(projectPath);
 }

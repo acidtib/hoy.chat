@@ -41,6 +41,7 @@ import type { ModelInfo, ModelRef } from "@/lib/types";
 import type { CategoryId } from "./categories";
 import { ProvidersPanel } from "./ProvidersPanel";
 import { McpPanel } from "./McpPanel";
+import { SubagentsPanel } from "./SubagentsPanel";
 import { useSessionStore } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 
@@ -771,6 +772,8 @@ export function SettingsPanel({ id }: { id: CategoryId }) {
       );
     case "mcp":
       return <McpPanel />;
+    case "subagents":
+      return <SubagentsPanel />;
     case "archived":
       return (
         <Placeholder
