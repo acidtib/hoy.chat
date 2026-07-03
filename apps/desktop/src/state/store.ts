@@ -606,6 +606,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // Abandon the streaming channel so the killed sidecar's trailing error/done
     // events are ignored rather than re-populating this thread's state.
     activeChannels.delete(id);
+    // Manually closing a RUNNING subagent kills its sidecar above, so its
+    // trailing done is dropped by the activeChannels guard and the done-path
+    // slot release never fires. Purge it from the limiter and pump so the slot
+    // frees (HOY-245). Idempotent for HOY-240 auto-close of a delivered child:
+    // its initial done already released the slot, so purge is a no-op and the
+    // pump harmlessly fills any free slot.
+    purgeFromLimiter(id);
+    get().pumpAgentQueue();
     set((s) => {
       const index = s.panels.findIndex((p) => p.id === id);
       if (index < 0) return s;
@@ -1543,8 +1551,12 @@ async function startChildRun(
   childDepth: number,
 ): Promise<void> {
   const found = findThread(useSessionStore.getState().projects, childId);
-  // Torn down between enqueue and start: nothing to run.
-  if (!found) return;
+  // Torn down between enqueue and start: nothing to run. Release the slot the
+  // caller took before returning, or it leaks (no channel wired, no done fires).
+  if (!found) {
+    releaseAgentSlot(childId);
+    return;
+  }
   const { project, thread: child } = found;
   const parent = child.parentThreadId
     ? findThread(useSessionStore.getState().projects, child.parentThreadId)?.thread
@@ -1587,7 +1599,26 @@ async function startChildRun(
         [childId]: String(e instanceof Error ? e.message : e),
       },
     }));
+    // A createSession / applyThread* failure wires no channel, so no done ever
+    // fires and the done-path release cannot run: release the slot here or it
+    // leaks forever (HOY-245). Idempotent with the done-path release (both guard
+    // on membership), so a later done is a harmless no-op.
+    releaseAgentSlot(childId);
   }
+}
+
+// Release a subagent's concurrency slot (HOY-245) and pump the queue. Mirrors
+// the done-path release: guarded on membership so it is idempotent, callable
+// from any termination path (done, startChildRun error / early return) without
+// double-releasing.
+function releaseAgentSlot(threadId: string): void {
+  if (!useSessionStore.getState().runningAgents.has(threadId)) return;
+  useSessionStore.setState((s) => {
+    const runningAgents = new Set(s.runningAgents);
+    runningAgents.delete(threadId);
+    return { runningAgents };
+  });
+  useSessionStore.getState().pumpAgentQueue();
 }
 
 // Remove a torn-down thread from the concurrency limiter (HOY-245) so it never
