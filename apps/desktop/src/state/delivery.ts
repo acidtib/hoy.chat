@@ -56,3 +56,13 @@ export function takeNextDelivery(parentThreadId: string): Delivery | undefined {
   if (q.length === 0) pendingDeliveries.delete(parentThreadId);
   return next;
 }
+
+// A child delivers its result to its parent exactly once, on first completion.
+// completedAt is set on that first delivery; a later done (e.g. a follow-up in
+// the child's own composer) sees it set and does not re-inject. HOY-239.
+export function shouldDeliverToParent(thread: {
+  parentThreadId?: string | null;
+  completedAt?: number | null;
+}): boolean {
+  return !!thread.parentThreadId && !thread.completedAt;
+}

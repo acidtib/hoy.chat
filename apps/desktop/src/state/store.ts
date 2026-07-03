@@ -35,6 +35,7 @@ import { usePrefsStore } from "@/state/prefs";
 import {
   buildDelivery,
   queueDelivery,
+  shouldDeliverToParent,
   takeNextDelivery,
   type Delivery,
 } from "./delivery";
@@ -1686,14 +1687,21 @@ async function deliverAndDrain(finishedThreadId: string): Promise<void> {
   const found = findThread(state.projects, finishedThreadId);
   if (!found) return;
   const { thread } = found;
-  if (thread.parentThreadId) {
+  if (shouldDeliverToParent(thread)) {
     const childTurns = state.turns[finishedThreadId] ?? [];
     const delivery = buildDelivery(
       thread.spawnedBy?.type ?? "subagent",
       thread.spawnedBy?.agentId ?? "",
       childTurns,
     );
-    await deliverToParent(thread.parentThreadId, delivery);
+    await deliverToParent(thread.parentThreadId!, delivery);
+    // Stamp terminal so a later done (follow-up) does not re-deliver. HOY-239.
+    useSessionStore.setState((s) => ({
+      projects: patchThread(s.projects, finishedThreadId, (th) => ({
+        ...th,
+        completedAt: th.completedAt ?? Date.now(),
+      })),
+    }));
   }
   // This thread may itself be a parent with a queued delivery: it just went idle,
   // so deliver the next one now (deliverToParent handles the not-busy path).

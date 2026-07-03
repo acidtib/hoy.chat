@@ -6,6 +6,7 @@ import {
   queueDelivery,
   takeNextDelivery,
   pendingDeliveries,
+  shouldDeliverToParent,
 } from "./delivery";
 
 const asst = (over: Partial<Extract<Turn, { role: "assistant" }>> = {}): Turn => ({
@@ -66,4 +67,11 @@ test("queueDelivery / takeNextDelivery is FIFO per parent", () => {
 
 test("takeNextDelivery on an unknown parent is undefined", () => {
   expect(takeNextDelivery("nobody")).toBeUndefined();
+});
+
+test("shouldDeliverToParent: only a not-yet-completed child delivers", () => {
+  expect(shouldDeliverToParent({ parentThreadId: "p1", completedAt: null })).toBe(true);
+  expect(shouldDeliverToParent({ parentThreadId: "p1", completedAt: 123 })).toBe(false); // already delivered
+  expect(shouldDeliverToParent({ parentThreadId: null, completedAt: null })).toBe(false); // not a child
+  expect(shouldDeliverToParent({})).toBe(false);
 });

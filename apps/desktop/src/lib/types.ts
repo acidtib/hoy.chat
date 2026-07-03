@@ -371,6 +371,9 @@ export interface Thread {
   parentThreadId?: string | null;
   // The subagent type + parent handle that produced this child.
   spawnedBy?: { type: string; agentId: string } | null;
+  // Epoch ms a child delivered its result to its parent. Terminal marker: set
+  // once, on first delivery; gates deliver-once and signals a done child. HOY-239/240.
+  completedAt?: number | null;
   // Thinking level (HOY-204). Session-local only, not persisted; workspace.rs
   // knows nothing of this field. Hydrated from get_state on session open.
   thinkingLevel?: ThinkingLevel | null;
