@@ -53,18 +53,21 @@ export function SubagentsPanel() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-    // Warm the store cache too, so spawnChildThread can resolve project-scoped
-    // agents as soon as this panel has been opened (HOY-234).
-    void useSessionStore.getState().refreshSubagents(projectPath ?? "");
   }, [projectPath]);
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // Warm the store cache so spawnChildThread can resolve project-scoped agents
+  // as soon as this panel has been opened (HOY-234). Scoped to the project, not
+  // folded into refresh(), so a per-row toggle does not re-fire it (HOY-243).
+  useEffect(() => {
+    void useSessionStore.getState().refreshSubagents(projectPath ?? "");
+  }, [projectPath]);
 
   const toggle = (def: SubagentDef, next: boolean) => {
     setBusy(true);
     void (async () => {
       try {
-        const scope = def.scope as SubagentScope; // built-in rows have no Switch
-        await setSubagentEnabled(scope, def.name, next, projectPath);
+        await setSubagentEnabled(def.scope, def.name, next, projectPath);
         await refresh();
       } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
       finally { setBusy(false); }

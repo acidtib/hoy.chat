@@ -116,6 +116,28 @@ describe("agent tool", () => {
     ).rejects.toThrow(/Unknown subagent type/);
   });
 
+  test("a disabled type is rejected like an unknown one", async () => {
+    const registry = {
+      Off: { name: "Off", scope: "builtin", tools: ["read"], promptMode: "replace", enabled: false },
+    } as any;
+    const tool = mountAgentTool(registry);
+    await expect(
+      tool.execute("c6", { subagentType: "Off", task: "x" }, undefined, undefined, ctx()),
+    ).rejects.toThrow(/Unknown subagent type/);
+  });
+
+  test("a global-scope type is not trust-gated when the project is untrusted", async () => {
+    // Only project-scope types are gated on project trust; global (user agent
+    // dir) types are the user's own and spawn regardless.
+    const registry = {
+      Glob: { name: "Glob", scope: "global", tools: ["read"], promptMode: "replace", enabled: true },
+    } as any;
+    const tool = mountAgentTool(registry);
+    const untrusted = ctx({ trusted: false });
+    const res = await tool.execute("c7", { subagentType: "Glob", task: "t" }, undefined, undefined, untrusted);
+    expect(res.content[0].text).toContain("Spawned");
+  });
+
   test("execute refuses a project-scoped type when the project is untrusted", async () => {
     const registry = {
       Explore: { name: "Explore", scope: "builtin", tools: ["read"], promptMode: "replace", enabled: true },

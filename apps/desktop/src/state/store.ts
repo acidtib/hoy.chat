@@ -68,6 +68,7 @@ import type {
   Thread,
   Turn,
 } from "@/lib/types";
+import { isThinkingLevel } from "@/lib/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export const SIDEBAR_MIN_WIDTH = 220;
@@ -856,8 +857,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const childModel = def?.model
       ? (resolveModelRef(get(), def.model) ?? parent.model ?? null)
       : (parent.model ?? null);
+    // Validate the registry-supplied thinking string rather than casting it
+    // blind (HOY-243); a malformed value falls back to the parent's level.
     const childThinking =
-      (def?.thinking as ThinkingLevel | undefined) ?? parent.thinkingLevel ?? null;
+      (isThinkingLevel(def?.thinking) ? def.thinking : undefined) ??
+      parent.thinkingLevel ??
+      null;
     const shortTask =
       payload.task.length > 40 ? `${payload.task.slice(0, 40)}...` : payload.task;
     const child: Thread = {

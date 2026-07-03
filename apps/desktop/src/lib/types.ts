@@ -228,6 +228,13 @@ export type ThinkingLevel =
 export const THINKING_LEVELS: ThinkingLevel[] =
   ["off", "minimal", "low", "medium", "high", "xhigh"];
 
+// Guard for registry-supplied thinking strings (a subagent def's `thinking` is
+// a free string until resolved). Keeps a malformed value from being cast
+// straight to ThinkingLevel (HOY-243).
+export function isThinkingLevel(value: unknown): value is ThinkingLevel {
+  return typeof value === "string" && (THINKING_LEVELS as string[]).includes(value);
+}
+
 // Pi's CompactionResult, returned by the compact command (HOY-229).
 export interface CompactionResult {
   tokensBefore: number;
