@@ -208,18 +208,32 @@ export type ReasoningContentProps = ComponentProps<
 };
 
 export const ReasoningContent = memo(
-  ({ className, children, ...props }: ReasoningContentProps) => (
-    <CollapsibleContent
-      className={cn(
-        "mt-4 text-sm",
-        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
-        className
-      )}
-      {...props}
-    >
-      <Streamdown>{children}</Streamdown>
-    </CollapsibleContent>
-  )
+  ({ className, children, ...props }: ReasoningContentProps) => {
+    const { isStreaming } = useReasoning();
+    return (
+      <CollapsibleContent
+        className={cn(
+          "mt-4 text-sm",
+          "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+          className
+        )}
+        {...props}
+      >
+        {/* While thinking streams, render the growing text as plain preformatted
+            text rather than re-parsing the whole markdown through Streamdown on
+            every token. An open reasoning block re-renders on each delta, so the
+            Streamdown parse is O(n) per token, O(n^2) across the block — the
+            source of the "thinking open" lag (HOY-258 follow-up). Reasoning is a
+            raw thought stream, so plain text reads fine live; once streaming ends
+            we render the settled text through Streamdown for real formatting. */}
+        {isStreaming ? (
+          <div className="whitespace-pre-wrap break-words">{children}</div>
+        ) : (
+          <Streamdown>{children}</Streamdown>
+        )}
+      </CollapsibleContent>
+    );
+  }
 );
 
 Reasoning.displayName = "Reasoning";
