@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Minus, Settings, Square, X } from "lucide-react";
+import { GitBranch, Minus, Settings, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -46,9 +46,17 @@ export function TitleBar() {
             >
               {projectName}
             </span>
-            {/* The branch chip is intentionally omitted until real git status
-                (branch/dirty/stash) is wired; a hard-coded "main" is a false
-                signal for a git-native audience. Tracked in TODO.md. */}
+            {/* Mocked branch chip to match the website app mock; real git
+                status (branch/dirty/stash) is not wired yet. Tracked in
+                TODO.md (HOY-233). */}
+            <span
+              data-tauri-drag-region
+              className="flex shrink-0 items-center gap-1"
+              title="Branch switching is not available yet"
+            >
+              <GitBranch className="size-3.5" />
+              main
+            </span>
           </>
         )}
       </div>
