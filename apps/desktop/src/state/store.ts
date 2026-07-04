@@ -34,6 +34,7 @@ import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
 import { detectPlanIntent, extractProposedPlan, planKickoffPrompt } from "@/lib/plan";
+import { shortId } from "@/lib/utils";
 import { usePrefsStore } from "@/state/prefs";
 import {
   buildDelivery,
@@ -158,13 +159,6 @@ function placeNewPanel(
     panels: shrinkPanels(panels, PANEL_MIN_WIDTH - Math.max(0, available)),
     width: PANEL_MIN_WIDTH,
   };
-}
-
-function newId(prefix: string): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
-  }
-  return `${prefix}_${Math.floor(Math.random() * 1e9).toString(36)}`;
 }
 
 // Items present in `prev` but no longer in `next` (multiset-aware). Used to detect
@@ -315,6 +309,9 @@ interface SessionStore {
   // when the dashboard mounts; null until the first fetch resolves.
   usageReport: UsageReport | null;
   usageLoading: boolean;
+  // Wall-clock of the last successful usage fetch, so refreshUsage can skip
+  // re-walking the whole transcript tree on rapid home <-> panel navigation.
+  usageFetchedAt: number | null;
   threadErrors: Record<string, string | null>;
   // Plan-mode handoff (HOY-213): a plan-mode turn that finished carrying a
   // proposed_plan block sets planReady[threadId] to the extracted plan text.
@@ -324,9 +321,6 @@ interface SessionStore {
   // Manual compaction in flight, keyed by threadId; gates the Compact affordance
   // and shows a compacting chip (HOY-229).
   compacting: Record<string, boolean>;
-  // Per-session auto-compaction, mirrored from get_state and written via
-  // set_auto_compaction; read by the MemoryPanel toggle (HOY-229).
-  autoCompaction: Record<string, boolean>;
   // Approval cards awaiting an answer, keyed by threadId (HOY-186). Usually at
   // most one; pi preflights sibling tool calls sequentially, but a queue keeps
   // any overlap safe. Cleared on done and on panel close.
@@ -544,13 +538,16 @@ interface SessionStore {
   // Trigger a manual compaction on the thread's session, optionally with custom
   // summarization instructions (HOY-229). Gated on an idle, live session.
   compact: (threadId: string, customInstructions?: string) => Promise<void>;
-  // Push auto-compaction to the active live session so a mid-conversation
-  // toggle takes effect at once (HOY-275); the persisted default is a renderer
-  // pref (autoCompaction) applied to every session on spawn. Optimistic on the
-  // per-session mirror, reverted on failure.
-  setAutoCompaction: (threadId: string, enabled: boolean) => Promise<void>;
+  // Fan a changed auto-compaction pref out to every currently-live session so a
+  // mid-conversation toggle takes effect at once (HOY-275). The pref itself
+  // (usePrefsStore.autoCompaction) is the source of truth, applied to each
+  // session on spawn; this only reaches sessions that are already live.
+  setAutoCompaction: (enabled: boolean) => Promise<void>;
   setThreadSessionIdInternal: (threadId: string, sessionId: string) => void;
 }
+
+// How long a usage report stays fresh before refreshUsage re-walks disk.
+const USAGE_TTL_MS = 30_000;
 
 export const useSessionStore = create<SessionStore>((set, get) => ({
   // Empty until initWorkspace() loads the persisted tree from disk on boot.
@@ -577,10 +574,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   stats: {},
   usageReport: null,
   usageLoading: false,
+  usageFetchedAt: null,
   threadErrors: {},
   planReady: {},
   compacting: {},
-  autoCompaction: {},
   pendingPermissions: {},
   notices: {},
   statuses: {},
@@ -864,21 +861,21 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         return s;
       }
       const thread: Thread = {
-        id: newId("t"),
+        id: shortId("t"),
         title: "New thread",
         updatedAt: Date.now(),
         sessionId: null,
       };
       openId = thread.id;
       return {
-        projects: [...s.projects, { id: newId("p"), name, path, threads: [thread] }],
+        projects: [...s.projects, { id: shortId("p"), name, path, threads: [thread] }],
       };
     });
     if (openId) get().openThread(openId);
   },
   addThread: (projectId) => {
     const thread: Thread = {
-      id: newId("t"),
+      id: shortId("t"),
       title: "New thread",
       updatedAt: Date.now(),
       sessionId: null,
@@ -903,7 +900,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       console.warn(`HOY-245: refusing spawn at depth ${childDepth} > ${MAX_SUBAGENT_DEPTH}`);
       return;
     }
-    const childId = newId("t");
+    const childId = shortId("t");
     const def = get().subagents.find((d) => d.name === payload.subagentType);
     // A type with no model inherits the parent's (closes HOY-237); thinking
     // likewise. A type with a model that fails to resolve also falls back to
@@ -1414,10 +1411,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   refreshUsage: async () => {
+    // Re-reading the whole ~/.hoy/sessions transcript tree is expensive, so skip
+    // it when a recent report is already loaded: repeated home <-> panel
+    // navigation should not re-walk disk each visit. A short TTL still picks up
+    // new usage as the user keeps working.
+    const last = get().usageFetchedAt;
+    if (get().usageReport && last != null && Date.now() - last < USAGE_TTL_MS) {
+      return;
+    }
     set({ usageLoading: true });
     try {
       const report = await getUsageStats();
-      set({ usageReport: report, usageLoading: false });
+      set({ usageReport: report, usageLoading: false, usageFetchedAt: Date.now() });
     } catch {
       // Best-effort: leave the last report in place and drop the spinner.
       set({ usageLoading: false });
@@ -1462,29 +1467,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
 
-  setAutoCompaction: async (threadId, enabled) => {
-    const thread = findThread(get().projects, threadId)?.thread;
-    if (!thread?.sessionId) return;
-    const previous = get().autoCompaction[threadId];
-    set((s) => ({ autoCompaction: { ...s.autoCompaction, [threadId]: enabled } }));
-    try {
-      await ipcSetAutoCompaction(thread.sessionId, enabled);
-      // Re-sync in case Pi's effective state differs from the requested value.
-      const synced = await getState(thread.sessionId).catch(() => null);
-      if (synced) {
-        set((s) => ({
-          autoCompaction: {
-            ...s.autoCompaction,
-            [threadId]: synced.autoCompactionEnabled,
-          },
-        }));
-      }
-    } catch (e) {
-      set((s) => ({
-        autoCompaction: { ...s.autoCompaction, [threadId]: previous ?? !enabled },
-        threadErrors: { ...s.threadErrors, [threadId]: String(e) },
-      }));
-    }
+  setAutoCompaction: async (enabled) => {
+    // Fan the pref out to every currently-live session. autoCompactionApplied
+    // holds exactly those sessionIds (added on spawn, dropped on release), so it
+    // is the live-session registry. Best-effort, matching applyAutoCompaction: a
+    // per-session RPC hiccup must not revert the global pref or raise a thread
+    // error, since Pi persists the value globally and the next spawn re-applies.
+    await Promise.allSettled(
+      [...autoCompactionApplied].map((sessionId) =>
+        ipcSetAutoCompaction(sessionId, enabled),
+      ),
+    );
   },
 
   // Internal: pin a thread to the sidecar session it spawned. Not part of the
@@ -2234,6 +2227,24 @@ async function deliverAndDrain(finishedThreadId: string): Promise<void> {
 // a session-less parent and clobber each other's turn.
 const deliveringParents = new Set<string>();
 
+// Decrement a parent's outstanding-children counter, deleting the key at zero.
+// Shared by the deliverToParent paths that must account for a delivery the
+// caller (deliverAndDrain) already dequeued: the normal apply, a pre-seed error,
+// and the no-sessionFile bail-out. Skipping the decrement leaves the counter
+// inflated so shouldDeferUpDelivery never clears and the parent's own up-delivery
+// hangs the grandparent forever.
+function decrementOutstanding(
+  map: Record<string, number>,
+  parentThreadId: string,
+): Record<string, number> {
+  const cur = map[parentThreadId] ?? 0;
+  const next = Math.max(0, cur - 1);
+  const copy = { ...map };
+  if (next === 0) delete copy[parentThreadId];
+  else copy[parentThreadId] = next;
+  return copy;
+}
+
 // Inject `delivery` into `parentThreadId` as a marked subagent-result turn and
 // stream the parent's continuation. If the parent is mid-turn, queue instead and
 // let its next `done` drain it. Resumes the parent sidecar from its transcript
@@ -2255,7 +2266,17 @@ async function deliverToParent(parentThreadId: string, delivery: Delivery): Prom
   try {
     let sessionId = parent.sessionId ?? null;
     if (!sessionId) {
-      if (!parent.sessionFile) return; // unreachable: a parent has run a turn
+      if (!parent.sessionFile) {
+        // Normally unreachable — a parent that queued a child has run a turn and
+        // has a sessionFile — but a deep parent that has not yet persisted a turn
+        // can land here. The caller already dequeued this delivery so we cannot
+        // re-run it; still decrement, or the parent defers its own up-delivery
+        // forever and the grandparent hangs.
+        useSessionStore.setState((s) => ({
+          outstandingChildren: decrementOutstanding(s.outstandingChildren, parentThreadId),
+        }));
+        return;
+      }
       sessionId = await acquireSession(parentThreadId, project.path ?? "", parent.sessionFile);
       useSessionStore.getState().setThreadSessionIdInternal(parentThreadId, sessionId);
     }
@@ -2283,14 +2304,7 @@ async function deliverToParent(parentThreadId: string, delivery: Delivery): Prom
       // parent (the busy/queued early-return above does not reach here). One
       // decrement per apply; when it hits 0 the parent stops deferring and its
       // next done delivers its now-complete result up.
-      outstandingChildren: (() => {
-        const cur = s.outstandingChildren[parentThreadId] ?? 0;
-        const nextCount = Math.max(0, cur - 1);
-        const copy = { ...s.outstandingChildren };
-        if (nextCount === 0) delete copy[parentThreadId];
-        else copy[parentThreadId] = nextCount;
-        return copy;
-      })(),
+      outstandingChildren: decrementOutstanding(s.outstandingChildren, parentThreadId),
     }));
     seeded = true;
     await streamPromptOnThread(parentThreadId, sessionId, delivery.message);
@@ -2319,14 +2333,7 @@ async function deliverToParent(parentThreadId: string, delivery: Delivery): Prom
       // without this the parent's counter stays inflated and it defers forever.
       // Guarded strictly on !seeded: a post-seed error already decremented.
       const outstandingChildren = !seeded
-        ? (() => {
-            const cur = s.outstandingChildren[parentThreadId] ?? 0;
-            const next = Math.max(0, cur - 1);
-            const copy = { ...s.outstandingChildren };
-            if (next === 0) delete copy[parentThreadId];
-            else copy[parentThreadId] = next;
-            return copy;
-          })()
+        ? decrementOutstanding(s.outstandingChildren, parentThreadId)
         : s.outstandingChildren;
       return {
         streaming,

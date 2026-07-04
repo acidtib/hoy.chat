@@ -42,7 +42,6 @@ function seed(thread: Partial<Thread>) {
     stats: {},
     threadErrors: {},
     modelSelecting: {},
-    autoCompaction: {},
     defaultModel: null,
   });
 }
@@ -91,5 +90,19 @@ describe("auto-compaction default at spawn", () => {
 
     expect(setAutoCompaction).toHaveBeenCalledTimes(1);
     expect(setAutoCompaction).toHaveBeenCalledWith("sess_live_ac", true);
+  });
+});
+
+describe("setAutoCompaction fan-out (HOY-275)", () => {
+  test("toggling pushes the new value to a currently-live session", async () => {
+    seed({ sessionId: null });
+    createSession.mockResolvedValue("sess_fanout");
+    // Spawn the session so it registers as live (applyAutoCompaction).
+    await useSessionStore.getState().submitPrompt("t1", "hello");
+    setAutoCompaction.mockClear();
+
+    await useSessionStore.getState().setAutoCompaction(false);
+
+    expect(setAutoCompaction).toHaveBeenCalledWith("sess_fanout", false);
   });
 });

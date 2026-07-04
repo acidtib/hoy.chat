@@ -29,17 +29,22 @@ export function UsageDashboard() {
     void refreshUsage();
   }, [refreshUsage]);
 
-  const view = useMemo(() => {
+  // The cards, heatmap, and streak are an all-time summary — keyed on `report`
+  // alone so a range toggle does not re-run the (sort + Set) streak/peak math.
+  const summary = useMemo(() => {
     if (!report) return null;
-    // The cards, heatmap, and streak are an all-time summary; only the charts
-    // below (trend + model usage) respond to the range switch.
-    const rangeDays = daysInRange(report.days, range);
     return {
       totals: totals(report.days),
       streaks: streaks(report.days),
       peak: peakHour(report.days),
+    };
+  }, [report]);
+  // Only the charts below (trend + model usage) respond to the range switch.
+  const ranged = useMemo(() => {
+    if (!report) return null;
+    return {
       trend: trendDays(report.days, range),
-      breakdown: modelBreakdown(rangeDays),
+      breakdown: modelBreakdown(daysInRange(report.days, range)),
     };
   }, [report, range]);
 
@@ -53,7 +58,7 @@ export function UsageDashboard() {
       </div>
     );
   }
-  const v = view!;
+  const v = { ...summary!, ...ranged! };
   return (
     <section className="space-y-8">
       <h2 className="text-sm font-medium text-foreground">Usage Stats</h2>

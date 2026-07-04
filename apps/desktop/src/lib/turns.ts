@@ -330,7 +330,14 @@ function buildDiff(toolName: string, args: unknown): string | undefined {
   const a = (args ?? {}) as Record<string, unknown>;
   if (toolName === "edit" && Array.isArray(a.edits)) {
     const parts: string[] = [];
-    for (const edit of a.edits as Array<{ oldText: string; newText: string }>) {
+    for (const raw of a.edits) {
+      const edit = raw as { oldText?: unknown; newText?: unknown };
+      // A restored or variant edit call may carry an element without string
+      // oldText/newText; skip it rather than throwing and blanking the whole
+      // thread render.
+      if (typeof edit.oldText !== "string" || typeof edit.newText !== "string") {
+        continue;
+      }
       for (const line of edit.oldText.split("\n")) parts.push(`- ${line}`);
       for (const line of edit.newText.split("\n")) parts.push(`+ ${line}`);
     }

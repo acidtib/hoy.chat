@@ -48,6 +48,20 @@ impl OAuthLogin {
         }
     }
 
+    // Reap a finished login's child once its reader thread exits, so it does not
+    // linger as a defunct process and a later oauth_login_submit sees "no active
+    // login" rather than writing to a dead pipe. Guarded on pid so an older
+    // login's thread cannot reap a newer login that replace() has since stored.
+    fn reap_if_current(&self, pid: u32) {
+        let mut guard = self.inner.lock().unwrap();
+        if guard.as_ref().map(|s| s.child.id()) == Some(pid) {
+            if let Some(mut old) = guard.take() {
+                let _ = old.child.kill();
+                let _ = old.child.wait();
+            }
+        }
+    }
+
     fn write_line(&self, line: &str) -> Result<(), String> {
         let mut guard = self.inner.lock().unwrap();
         let session = guard.as_mut().ok_or("no active login")?;
@@ -131,6 +145,7 @@ pub fn oauth_login_start(
     let stdin = child.stdin.take().ok_or("login child has no stdin")?;
     let stdout = child.stdout.take().ok_or("login child has no stdout")?;
     let stderr = child.stderr.take().ok_or("login child has no stderr")?;
+    let pid = child.id();
     oauth.replace(Session { child, stdin });
 
     thread::spawn(move || {
@@ -177,6 +192,10 @@ pub fn oauth_login_start(
                 message: "login process exited unexpectedly".into(),
             });
         }
+        // The loop ended, so this child is finished (done, error, or closed
+        // pipe). Reap it — but only if it is still the current login, since a
+        // newer one started via replace() now owns `inner`.
+        app.state::<OAuthLogin>().reap_if_current(pid);
     });
 
     Ok(())

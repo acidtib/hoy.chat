@@ -20,15 +20,24 @@ impl JsonlFramer {
     pub fn push(&mut self, chunk: &[u8]) -> Vec<String> {
         self.buf.extend_from_slice(chunk);
         let mut out = Vec::new();
-        while let Some(nl) = self.buf.iter().position(|&b| b == b'\n') {
-            let mut line: Vec<u8> = self.buf.drain(..=nl).collect();
-            line.pop(); // drop the LF
+        // Scan forward over the buffer, advancing `start` past each record, then
+        // drain the consumed prefix once. Draining per record instead would
+        // re-shift the trailing bytes on every iteration (quadratic on a chunk
+        // that completes many small records).
+        let mut start = 0;
+        while let Some(rel) = self.buf[start..].iter().position(|&b| b == b'\n') {
+            let end = start + rel; // index of the LF
+            let mut line = &self.buf[start..end];
             if line.last() == Some(&b'\r') {
-                line.pop();
+                line = &line[..line.len() - 1];
             }
             if !line.is_empty() {
-                out.push(String::from_utf8_lossy(&line).into_owned());
+                out.push(String::from_utf8_lossy(line).into_owned());
             }
+            start = end + 1;
+        }
+        if start > 0 {
+            self.buf.drain(..start);
         }
         out
     }

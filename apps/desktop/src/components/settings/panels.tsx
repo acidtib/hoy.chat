@@ -20,7 +20,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { arch, hostname, platform, version } from "@tauri-apps/plugin-os";
+import { arch, platform, version } from "@tauri-apps/plugin-os";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   Select,
@@ -487,34 +487,23 @@ function WorkspacePanel() {
 // settings and defaults it on, but that value is unreachable when the toggle is
 // set from Settings with no thread open, so the renderer pref is the source of
 // truth. Every session adopts it on spawn (store.applyAutoCompaction); toggling
-// also pushes to the active live session so the current conversation reflects
-// the change at once. The control is therefore always enabled.
+// also fans the change out to every already-live session so open conversations
+// reflect it at once. The control is therefore always enabled.
 function AutoCompactionRow() {
   const autoCompaction = usePrefsStore((s) => s.autoCompaction);
   const setPref = usePrefsStore((s) => s.setPref);
-  const activeThreadId = useSessionStore((s) => s.activeThreadId);
-  const activeSessionId = useSessionStore((s) => {
-    if (!activeThreadId) return null;
-    for (const p of s.projects) {
-      const t = p.threads.find((th) => th.id === activeThreadId);
-      if (t) return t.sessionId ?? null;
-    }
-    return null;
-  });
   const setAutoCompaction = useSessionStore((s) => s.setAutoCompaction);
 
   return (
     <ToggleRow
       label="Auto-compaction"
-      description="Automatically summarize older turns as the context window fills, instead of stalling on overflow. Applies to new conversations and the one you're in."
+      description="Automatically summarize older turns as the context window fills, instead of stalling on overflow. Applies to new conversations and any that are open."
       checked={autoCompaction}
       onChange={(v) => {
         setPref("autoCompaction", v);
-        // Live session: apply now so the open conversation honors it without a
-        // reopen. New sessions pick it up on spawn.
-        if (activeThreadId && activeSessionId) {
-          void setAutoCompaction(activeThreadId, v);
-        }
+        // Fan the change out to every live session so open conversations honor
+        // it without a reopen. New sessions pick it up on spawn.
+        void setAutoCompaction(v);
       }}
     />
   );
@@ -668,13 +657,9 @@ function UpdateCheck() {
 }
 
 function AboutPanel() {
-  const [_host, setHost] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
 
   useEffect(() => {
-    hostname()
-      .then(setHost)
-      .catch(() => setHost(null));
     getVersion()
       .then(setAppVersion)
       .catch(() => setAppVersion(null));

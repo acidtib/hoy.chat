@@ -5,6 +5,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+// Short, prefixed random id. Uses crypto.randomUUID when available and falls
+// back to Math.random for environments without it (older webviews). Shared by
+// the store (thread/project ids) and image attachments so the two id schemes
+// cannot drift apart.
+export function shortId(prefix: string): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
+  }
+  return `${prefix}_${Math.floor(Math.random() * 1e9).toString(36)}`;
+}
+
 // Compact relative time for sidebar thread rows: "now", "5m", "3h", "2d", "3w".
 export function formatRelativeTime(epochMs: number, now = Date.now()): string {
   const seconds = Math.max(0, Math.round((now - epochMs) / 1000));

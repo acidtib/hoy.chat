@@ -3,13 +3,9 @@
 // (no data: URI prefix), matching Pi's ImageContent.data.
 
 import type { ImageAttachment } from "./types";
+import { shortId } from "./utils";
 
-function attachmentId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `img_${crypto.randomUUID().slice(0, 8)}`;
-  }
-  return `img_${Math.floor(Math.random() * 1e9).toString(36)}`;
-}
+const attachmentId = () => shortId("img");
 
 // btoa over the whole binary string blows the call stack on large images, so
 // chunk the byte array through String.fromCharCode.

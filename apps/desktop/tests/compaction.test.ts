@@ -1,14 +1,12 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import type { CompactionResult, PiState, SessionStats } from "@/lib/types";
+import type { CompactionResult, SessionStats } from "@/lib/types";
 
 import { mockIpcModule } from "./ipcMock";
 
 const compact = mock<(s: string, ci?: string) => Promise<CompactionResult>>();
-const setAutoCompaction = mock<(s: string, e: boolean) => Promise<void>>();
-const getState = mock<(s: string) => Promise<PiState>>();
 const getSessionStats = mock<(s: string) => Promise<SessionStats>>();
 
-mockIpcModule({ compact, setAutoCompaction, getState, getSessionStats });
+mockIpcModule({ compact, getSessionStats });
 
 const { useSessionStore } = await import("@/state/store");
 
@@ -26,7 +24,6 @@ function seed(overrides: Record<string, unknown> = {}) {
     streaming: {},
     stats: {},
     compacting: {},
-    autoCompaction: {},
     notices: {},
     threadErrors: {},
     ...overrides,
@@ -36,10 +33,6 @@ function seed(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   compact.mockReset();
   compact.mockResolvedValue({ tokensBefore: 1000, estimatedTokensAfter: 200 });
-  setAutoCompaction.mockReset();
-  setAutoCompaction.mockResolvedValue(undefined);
-  getState.mockReset();
-  getState.mockResolvedValue({ autoCompactionEnabled: true } as PiState);
   getSessionStats.mockReset();
   getSessionStats.mockResolvedValue({} as SessionStats);
   seed();
@@ -68,20 +61,5 @@ describe("compact (HOY-229)", () => {
     const notices = useSessionStore.getState().notices["t1"] ?? [];
     expect(notices.some((n) => n.type === "error")).toBe(true);
     expect(useSessionStore.getState().compacting["t1"]).toBe(false);
-  });
-});
-
-describe("setAutoCompaction (HOY-229)", () => {
-  test("dispatches set_auto_compaction and reflects get_state", async () => {
-    await useSessionStore.getState().setAutoCompaction("t1", true);
-    expect(setAutoCompaction).toHaveBeenCalledWith("sess_live", true);
-    expect(useSessionStore.getState().autoCompaction["t1"]).toBe(true);
-  });
-
-  test("reverts on failure", async () => {
-    setAutoCompaction.mockRejectedValueOnce(new Error("nope"));
-    seed({ autoCompaction: { t1: true } });
-    await useSessionStore.getState().setAutoCompaction("t1", false);
-    expect(useSessionStore.getState().autoCompaction["t1"]).toBe(true);
   });
 });
