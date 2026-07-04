@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, ChevronDown, FolderPlus, Plus, Sparkle } from "lucide-react";
+import { Check, ChevronDown, FolderPlus, GitBranch, Sparkle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,32 +9,26 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HomeComposer } from "@/components/home/HomeComposer";
 import { useSessionStore } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 import { pickDirectory } from "@/lib/ipc";
 import { cn, formatRelativeTime } from "@/lib/utils";
-import { TaskComposer } from "@/components/home/TaskComposer";
-import { UsageDashboard } from "@/components/home/UsageDashboard";
 
-// The home screen shown when no thread panel is open. It is a launcher, not a
-// splash: the fastest paths to value (resume a recent thread, start a new one,
-// open a project) fill the space instead of a single heading over a void.
+// The home screen shown when no thread panel is open and the body is not the
+// fleet/usage view (HOY-264). A clean "start a new task" hero built on the real
+// composer; usage stats live in their own Usage view.
 const MAX_RECENTS = 6;
 
 export function HomePage() {
   const projects = useSessionStore((s) => s.projects);
   const activeProjectId = useSessionStore((s) => s.activeProjectId);
-  const addThread = useSessionStore((s) => s.addThread);
   const addProject = useSessionStore((s) => s.addProject);
   const openThread = useSessionStore((s) => s.openThread);
   const setActiveProject = useSessionStore((s) => s.setActiveProject);
 
-  // Explicit pick from the project chooser; overrides the default target until
-  // the user changes it. Cleared implicitly when it no longer resolves.
   const [picked, setPicked] = useState<string | null>(null);
 
-  // Most recently touched non-archived threads across all projects, each tagged
-  // with its project for context.
   const recents = useMemo(() => {
     const rows = projects.flatMap((p) =>
       p.threads
@@ -48,10 +42,6 @@ export function HomePage() {
   const exists = (id: string | null) =>
     !!id && projects.some((p) => p.id === id);
 
-  // Target project for a new thread, in priority order: the user's explicit
-  // pick, then the last project they worked in, then the most recent thread's
-  // project, then the first project. Each is validated so a stale id (removed
-  // project) falls through.
   const targetProjectId =
     (exists(picked) ? picked : null) ??
     (exists(activeProjectId) ? activeProjectId : null) ??
@@ -68,49 +58,39 @@ export function HomePage() {
     if (dir) addProject(dir);
   }
 
-  const hasProjects = projects.length > 0;
-
-  const greeting = (() => {
-    const h = new Date().getHours();
-    if (h < 12) return "Good morning";
-    if (h < 18) return "Good afternoon";
-    return "Good evening";
-  })();
+  const hasTarget = !!targetProject && !!targetProjectId;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-8 pb-16 pt-14">
-        <div className="flex items-center gap-2.5">
-          <Sparkle className="size-[18px] text-brand" />
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">
-            {greeting}
-          </h1>
-        </div>
+      {/* Faint brand watermark behind the hero. */}
+      <Sparkle
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-16 size-40 -translate-x-1/2 text-foreground/[0.03]"
+      />
 
-        <TaskComposer projectId={targetProjectId} />
+      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center px-8 py-16">
+        <h1 className="mb-6 text-center text-2xl font-semibold tracking-tight text-foreground">
+          {hasTarget
+            ? `Start a new task in ${targetProject.name}`
+            : "Start a new task"}
+        </h1>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {hasProjects && targetProjectId && (
-            <>
-              <Button size="sm" onClick={() => addThread(targetProjectId)}>
-                <Plus className="size-4" />
-                New thread
-              </Button>
-              {/* Choose which project the new thread lands in. Shown only with
-                  more than one project; otherwise the target is unambiguous. */}
-              {projects.length > 1 && (
+        {hasTarget ? (
+          <div className="w-full">
+            {/* Composer header: project pill (functional) + branch pill (mock). */}
+            <div className="flex items-center gap-3 border border-b-0 border-border bg-card px-3 py-2 text-xs">
+              {projects.length > 1 ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1.5">
-                      <span className="text-muted-foreground">in</span>
-                      <span className="max-w-[10rem] truncate">
-                        {targetProject?.name}
+                    <button className="inline-flex items-center gap-1.5 text-foreground">
+                      <span className="max-w-[12rem] truncate">
+                        {targetProject.name}
                       </span>
                       <ChevronDown className="size-3.5 text-muted-foreground" />
-                    </Button>
+                    </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="min-w-52">
-                    <DropdownMenuLabel>New thread in</DropdownMenuLabel>
+                    <DropdownMenuLabel>Project</DropdownMenuLabel>
                     {projects.map((p) => (
                       <DropdownMenuItem
                         key={p.id}
@@ -122,9 +102,7 @@ export function HomePage() {
                         <Check
                           className={cn(
                             "size-4",
-                            p.id === targetProjectId
-                              ? "opacity-100"
-                              : "opacity-0",
+                            p.id === targetProjectId ? "opacity-100" : "opacity-0",
                           )}
                         />
                         <span className="truncate">{p.name}</span>
@@ -137,60 +115,67 @@ export function HomePage() {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+              ) : (
+                <span className="text-foreground">{targetProject.name}</span>
               )}
-            </>
-          )}
-          <Button
-            variant={hasProjects ? "outline" : "default"}
-            size="sm"
-            onClick={() => void handleOpenProject()}
-          >
-            <FolderPlus className="size-4" />
-            Open project
-          </Button>
-        </div>
 
-        <UsageDashboard />
+              {/* Mocked branch pill: git switching is not wired (HOY-264). */}
+              <span
+                className="inline-flex items-center gap-1.5 text-muted-foreground"
+                title="Branch switching is not available yet"
+              >
+                <GitBranch className="size-3.5" />
+                main
+                <ChevronDown className="size-3.5" />
+              </span>
+            </div>
 
-        {hasProjects ? (
-          <div className="space-y-2">
-            <p className="px-1 text-xs font-medium text-muted-foreground">
-              Recent
-            </p>
-            {recents.length > 0 ? (
-              <div className="divide-y divide-border border border-border">
-                {recents.map(({ thread, project }) => (
-                  <button
-                    key={thread.id}
-                    type="button"
-                    onClick={() => openThread(thread.id)}
-                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/40 focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
-                  >
-                    <Sparkle className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate text-sm">
-                      {thread.title}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {project.name}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                      {formatRelativeTime(thread.updatedAt)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="border border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                No threads yet. Start one to put the agent to work.
+            <HomeComposer
+              projectId={targetProjectId}
+              projectPath={targetProject.path ?? null}
+            />
+
+            {recents.length > 0 && (
+              <div className="mt-8 space-y-2">
+                <p className="px-1 text-xs font-medium text-muted-foreground">
+                  Recent
+                </p>
+                <div className="divide-y divide-border border border-border">
+                  {recents.map(({ thread, project }) => (
+                    <button
+                      key={thread.id}
+                      type="button"
+                      onClick={() => openThread(thread.id)}
+                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/40 focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
+                    >
+                      <Sparkle className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate text-sm">
+                        {thread.title}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {project.name}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                        {formatRelativeTime(thread.updatedAt)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         ) : (
-          <p className="max-w-md text-sm text-muted-foreground">
-            Open a project directory to start. Each project holds its own threads,
-            and every thread is a conversation with the agent running in that
-            working directory.
-          </p>
+          <div className="flex flex-col items-center gap-4">
+            <p className="max-w-md text-center text-sm text-muted-foreground">
+              Open a project directory to start. Each project holds its own
+              threads, and every thread is a conversation with the agent running
+              in that working directory.
+            </p>
+            <Button onClick={() => void handleOpenProject()}>
+              <FolderPlus className="size-4" />
+              Open project
+            </Button>
+          </div>
         )}
       </div>
     </div>
