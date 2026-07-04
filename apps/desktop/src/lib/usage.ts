@@ -25,6 +25,50 @@ export function daysInRange(
   return days.filter((d) => d.date >= cutoffKey);
 }
 
+function emptyDay(date: string): UsageDay {
+  return {
+    date,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
+    messages: 0,
+    sessions: 0,
+    byModel: {},
+    byHour: new Array(24).fill(0),
+  };
+}
+
+// A continuous, gap-filled day series for the trend chart: every calendar day
+// in the window, with real data where present and a zero day otherwise. "7d"/
+// "30d" are the trailing window ending today; "all" spans the first active day
+// through today. Keeps the x-axis time-accurate instead of collapsing gaps.
+export function trendDays(
+  days: UsageDay[],
+  range: UsageRange,
+  today: Date = new Date(),
+): UsageDay[] {
+  const byDate = new Map(days.map((d) => [d.date, d]));
+  const end = new Date(today);
+  let start: Date;
+  if (range === "7d") {
+    start = new Date(today);
+    start.setDate(start.getDate() - 6);
+  } else if (range === "30d") {
+    start = new Date(today);
+    start.setDate(start.getDate() - 29);
+  } else {
+    const first = days[0]?.date;
+    start = first ? new Date(`${first}T00:00:00`) : new Date(today);
+  }
+  const out: UsageDay[] = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const key = dateKey(cursor);
+    out.push(byDate.get(key) ?? emptyDay(key));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
+
 export interface UsageTotals {
   tokens: number;
   cost: number;

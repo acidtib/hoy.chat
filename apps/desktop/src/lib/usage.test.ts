@@ -1,6 +1,14 @@
 import { test, expect } from "bun:test";
 import type { UsageDay } from "./types";
-import { daysInRange, totals, streaks, peakHour, modelRanking, dateKey } from "./usage";
+import {
+  daysInRange,
+  totals,
+  streaks,
+  peakHour,
+  modelRanking,
+  dateKey,
+  trendDays,
+} from "./usage";
 
 function day(
   date: string,
@@ -70,6 +78,26 @@ test("modelRanking ranks by tokens with shares", () => {
   expect(rows[0].model).toBe("opus");
   expect(rows[0].share).toBeCloseTo(0.75, 5);
   expect(rows[1].model).toBe("deepseek");
+});
+
+test("trendDays fills gaps as a continuous window", () => {
+  const days = [day("2026-07-04", 10), day("2026-07-08", 20), day("2026-07-10", 30)];
+  const seven = trendDays(days, "7d", today);
+  expect(seven.length).toBe(7); // 07-04 .. 07-10, inclusive
+  expect(seven[0].date).toBe("2026-07-04");
+  expect(seven[6].date).toBe("2026-07-10");
+  // A gap day is zero-filled, a present day keeps its tokens.
+  const gap = seven.find((d) => d.date === "2026-07-05");
+  expect(gap?.tokens.total).toBe(0);
+  expect(seven.find((d) => d.date === "2026-07-08")?.tokens.total).toBe(20);
+});
+
+test("trendDays 'all' spans the first active day through today", () => {
+  const days = [day("2026-07-06", 5), day("2026-07-10", 5)];
+  const all = trendDays(days, "all", today);
+  expect(all[0].date).toBe("2026-07-06");
+  expect(all[all.length - 1].date).toBe("2026-07-10");
+  expect(all.length).toBe(5); // 07-06 .. 07-10
 });
 
 test("dateKey is local YYYY-MM-DD", () => {
