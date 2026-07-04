@@ -80,11 +80,8 @@ export function TokenTrendChart({
               left: `${clamp((hover + 0.5) / days.length, 0.18, 0.82) * 100}%`,
             }}
           >
-            <div className="mb-1.5 border-b border-border pb-1.5">
-              <div className="font-medium text-foreground">{active.date}</div>
-              <div className="tabular-nums text-muted-foreground">
-                Total {formatTokens(active.tokens.total)} tokens
-              </div>
+            <div className="mb-1.5 border-b border-border pb-1.5 font-medium text-foreground">
+              {active.date} - {formatTokens(active.tokens.total)} tokens
             </div>
             <div className="space-y-0.5">
               {breakdown
