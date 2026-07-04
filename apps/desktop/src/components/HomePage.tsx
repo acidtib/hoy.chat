@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, ChevronDown, FolderPlus, GitBranch, Sparkle } from "lucide-react";
+import { Check, ChevronDown, FolderPlus, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HomeComposer } from "@/components/home/HomeComposer";
+import { ThreadModelIcon } from "@/components/ThreadModelIcon";
 import { useSessionStore } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 import { pickDirectory } from "@/lib/ipc";
@@ -143,7 +144,10 @@ export function HomePage() {
                       onClick={() => openThread(thread.id)}
                       className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/40 focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
                     >
-                      <Sparkle className="size-4 shrink-0 text-muted-foreground" />
+                      <ThreadModelIcon
+                        model={thread.model}
+                        className="size-4 shrink-0 text-muted-foreground"
+                      />
                       <span className="min-w-0 flex-1 truncate text-sm">
                         {thread.title}
                       </span>

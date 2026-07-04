@@ -4,7 +4,6 @@ import {
   ArchiveRestore,
   MoreHorizontal,
   Search,
-  Sparkle,
   Trash2,
   X,
 } from "lucide-react";
@@ -21,6 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { SidebarShell } from "@/components/Sidebar";
+import { ThreadModelIcon } from "@/components/ThreadModelIcon";
 import {
   bucketByRecency,
   cn,
@@ -216,7 +216,8 @@ function HistoryRow({
         onClick={onSelect}
         className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 py-1.5 text-left"
       >
-        <Sparkle
+        <ThreadModelIcon
+          model={thread.model}
           className={cn(
             "mt-0.5 size-3.5 shrink-0",
             isAgent
