@@ -6,7 +6,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Sparkle,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +31,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { InlineRename } from "@/components/InlineRename";
+import { ThreadModelIcon } from "@/components/ThreadModelIcon";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
 import { pickDirectory } from "@/lib/ipc";
@@ -430,7 +430,8 @@ function ThreadRow({
             : "text-sidebar-foreground hover:bg-sidebar-accent/50",
       )}
     >
-      <Sparkle
+      <ThreadModelIcon
+        model={thread.model}
         className={cn(
           "mt-0.5 size-3.5 shrink-0",
           isAgent
