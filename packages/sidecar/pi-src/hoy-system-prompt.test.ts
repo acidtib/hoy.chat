@@ -105,6 +105,16 @@ describe("hoy system prompt assembly", () => {
 });
 
 describe("plan mode: two-phase design gate (HOY-276 follow-up)", () => {
+  test("the plan output contract leads with a Goal, like the superpowers format", () => {
+    // HOY-276 parity: a plan must state its Goal (and Architecture) up front.
+    expect(PROPOSED_PLAN_FORMAT).toContain("**Goal:**");
+    expect(PROPOSED_PLAN_FORMAT).toContain("**Architecture:**");
+    // Goal comes before everything else in the plan body.
+    expect(PROPOSED_PLAN_FORMAT.indexOf("**Goal:**")).toBeLessThan(
+      PROPOSED_PLAN_FORMAT.indexOf("## Approaches considered"),
+    );
+  });
+
   test("the plan output contract carries the design-rationale sections", () => {
     expect(PROPOSED_PLAN_FORMAT).toContain("## Approaches considered");
     expect(PROPOSED_PLAN_FORMAT).toContain("## Design rationale");
