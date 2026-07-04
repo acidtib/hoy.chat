@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSessionStore } from "@/state/store";
 import {
   daysInRange,
-  modelRanking,
+  modelBreakdown,
   peakHour,
   streaks,
   totals,
@@ -11,7 +11,7 @@ import {
 import { formatTokens } from "@/lib/utils";
 import { StatCard } from "./StatCard";
 import { RangeSwitch } from "./RangeSwitch";
-import { ModelRanking } from "./ModelRanking";
+import { ModelUsage } from "./ModelUsage";
 import { TokenTrendChart } from "./TokenTrendChart";
 import { ActivityHeatmap } from "./ActivityHeatmap";
 
@@ -36,7 +36,7 @@ export function UsageDashboard() {
       totals: totals(days),
       streaks: streaks(report.days),
       peak: peakHour(days),
-      models: modelRanking(days),
+      breakdown: modelBreakdown(days),
     };
   }, [report, range]);
 
@@ -52,39 +52,38 @@ export function UsageDashboard() {
   }
   const v = view!;
   return (
-    <section className="space-y-6">
+    <section className="space-y-8">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-foreground">Usage Stats</h2>
         <RangeSwitch value={range} onChange={setRange} />
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="Tokens" value={formatTokens(v.totals.tokens)} />
-        <StatCard label="Sessions" value={String(v.totals.sessions)} />
+        <StatCard label="Token Usage" value={formatTokens(v.totals.tokens)} />
+        <StatCard label="Threads" value={String(v.totals.sessions)} />
         <StatCard label="Messages" value={String(v.totals.messages)} />
-        <StatCard label="Active days" value={String(v.totals.activeDays)} />
+        <StatCard label="Active Days" value={String(v.totals.activeDays)} />
         <StatCard
-          label="Current streak"
+          label="Current Streak"
           value={`${v.streaks.current}d`}
           sub={`Longest ${v.streaks.longest}d`}
         />
-        <StatCard label="Peak hour" value={v.peak != null ? formatHour(v.peak) : "-"} />
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Daily tokens</p>
-          <TokenTrendChart days={v.days} />
-        </div>
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Models</p>
-          <ModelRanking rows={v.models} />
-        </div>
+        <StatCard label="Peak Hour" value={v.peak != null ? formatHour(v.peak) : "-"} />
       </div>
 
       <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground">Activity</p>
+        <h3 className="text-sm font-medium text-foreground">Activity Heatmap</h3>
         <ActivityHeatmap days={report.days} />
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-foreground">Daily Token Trend</h3>
+        <TokenTrendChart days={v.days} breakdown={v.breakdown} />
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-foreground">Model Usage</h3>
+        <ModelUsage ranked={v.breakdown.ranked} total={v.breakdown.total} />
       </div>
     </section>
   );
