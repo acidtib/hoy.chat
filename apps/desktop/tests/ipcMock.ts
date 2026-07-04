@@ -18,6 +18,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     getMessages: mock(),
     getSessionStats: mock(),
     getState: mock(),
+    getUsageStats: mock(),
     listModels: mock(),
     listProjectPaths: mock(),
     listSubagents: mock(),

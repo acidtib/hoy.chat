@@ -13,6 +13,8 @@ import { useSessionStore } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 import { pickDirectory } from "@/lib/ipc";
 import { cn, formatRelativeTime } from "@/lib/utils";
+import { TaskComposer } from "@/components/home/TaskComposer";
+import { UsageDashboard } from "@/components/home/UsageDashboard";
 
 // The home screen shown when no thread panel is open. It is a launcher, not a
 // splash: the fastest paths to value (resume a recent thread, start a new one,
@@ -68,15 +70,24 @@ export function HomePage() {
 
   const hasProjects = projects.length > 0;
 
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return "Good morning";
+    if (h < 18) return "Good afternoon";
+    return "Good evening";
+  })();
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-8 pb-16 pt-14">
         <div className="flex items-center gap-2.5">
           <Sparkle className="size-[18px] text-brand" />
           <h1 className="text-lg font-semibold tracking-tight text-foreground">
-            Threads
+            {greeting}
           </h1>
         </div>
+
+        <TaskComposer projectId={targetProjectId} />
 
         <div className="flex flex-wrap items-center gap-2">
           {hasProjects && targetProjectId && (
@@ -138,6 +149,8 @@ export function HomePage() {
             Open project
           </Button>
         </div>
+
+        <UsageDashboard />
 
         {hasProjects ? (
           <div className="space-y-2">
