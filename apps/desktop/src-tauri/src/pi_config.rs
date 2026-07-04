@@ -6,11 +6,13 @@
 // are read-modify-write preserved untouched. Key values never leave Rust: the
 // renderer receives only configured/not-configured status.
 //
-// Branded, isolated dir: Hoy uses ~/.hoy/agent (~/.hoyd/agent in debug builds,
-// HOY-206), NOT ~/.pi, so it never touches a user's stock pi install. Rust writes
-// auth.json here; the sidecar reads the same dir because sidecar.rs passes it as
-// PI_CODING_AGENT_DIR (the env our SDK entry honors). Override with HOY_AGENT_DIR
-// (tests / power users).
+// Branded, isolated dir: Hoy uses ~/.hoy (~/.hoyd in debug builds, HOY-206), NOT
+// ~/.pi, so it never touches a user's stock pi install. HOY-255 flattened this up
+// one level from the inherited ~/.hoy/agent nesting (pi's default is ~/.pi/agent,
+// where the extra segment keeps the agent dir out of ~/.pi; for Hoy ~/.hoy is only
+// the agent's home, so the segment was redundant). Rust writes auth.json here; the
+// sidecar reads the same dir because sidecar.rs passes it as PI_CODING_AGENT_DIR
+// (the env our SDK entry honors). Override with HOY_AGENT_DIR (tests / power users).
 //
 // Schema (verified against pi-coding-agent 0.78.0 core/auth-storage.d.ts):
 //   auth.json = Record<provider, {type:"api_key", key} | {type:"oauth", ...tokens}>
@@ -75,14 +77,78 @@ const BRANDED_DIR: &str = if cfg!(debug_assertions) {
 };
 
 // Pure resolution split out so the branded-path logic is testable without
-// mutating process env. HOY_AGENT_DIR override wins; otherwise
-// <home>/BRANDED_DIR/agent.
+// mutating process env. HOY_AGENT_DIR override wins; otherwise <home>/BRANDED_DIR
+// (HOY-255 dropped the legacy trailing "agent" segment; see migrate_flatten_agent_dir).
 fn agent_dir_from(override_dir: Option<PathBuf>, home: Option<PathBuf>) -> Result<PathBuf, String> {
     if let Some(dir) = override_dir.filter(|d| !d.as_os_str().is_empty()) {
         return Ok(dir);
     }
-    home.map(|h| h.join(BRANDED_DIR).join("agent"))
+    home.map(|h| h.join(BRANDED_DIR))
         .ok_or_else(|| "cannot resolve home directory".to_string())
+}
+
+// HOY-255: one-time, best-effort migration of the pre-flatten layout. Older builds
+// stored everything under <agent_dir>/agent (i.e. ~/.hoy/agent); the agent dir is
+// now ~/.hoy directly. Move any leftover contents up one level so existing
+// auth.json, sessions, settings, and agents survive the flatten. Runs at startup
+// before the first agent_dir() consumer (the sidecar spawn). Any error is logged
+// and swallowed: a migration hiccup must never block launch.
+pub fn migrate_flatten_agent_dir() {
+    let Ok(new_dir) = agent_dir() else { return };
+    let legacy_dir = new_dir.join("agent");
+    if let Err(e) = migrate_dir_contents_up(&legacy_dir, &new_dir) {
+        eprintln!(
+            "[hoy-desktop] agent dir migration ({} -> {}): {e}",
+            legacy_dir.display(),
+            new_dir.display()
+        );
+    }
+}
+
+// Move each top-level entry of `legacy` into its parent `dest` (legacy is
+// dest/agent). Each entry moves via fs::rename, which is atomic on the same
+// filesystem, so a crash mid-run leaves every entry either fully in `legacy` or
+// fully in `dest`; a rerun finishes the rest. Never clobbers: an entry whose name
+// already exists in `dest` (a prior partial migration, or new-layout data) is left
+// untouched in `legacy`. `legacy` is removed only once it has been fully drained.
+fn migrate_dir_contents_up(legacy: &Path, dest: &Path) -> Result<(), String> {
+    let entries = match std::fs::read_dir(legacy) {
+        Ok(e) => e,
+        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("read {}: {e}", legacy.display())),
+    };
+    std::fs::create_dir_all(dest).map_err(|e| format!("create {}: {e}", dest.display()))?;
+    let mut moved = 0u32;
+    let mut left = 0u32;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("read entry in {}: {e}", legacy.display()))?;
+        let target = dest.join(entry.file_name());
+        // Skip a self-move (dest/agent/agent -> dest/agent) and never overwrite.
+        if target == legacy || target.exists() {
+            left += 1;
+            continue;
+        }
+        std::fs::rename(entry.path(), &target).map_err(|e| {
+            format!(
+                "move {} -> {}: {e}",
+                entry.path().display(),
+                target.display()
+            )
+        })?;
+        moved += 1;
+    }
+    if left == 0 {
+        // Best effort: an empty legacy dir is tidy to remove, but a leftover is harmless.
+        let _ = std::fs::remove_dir(legacy);
+    }
+    if moved > 0 {
+        eprintln!(
+            "[hoy-desktop] migrated {moved} entry(ies) from {} to {}",
+            legacy.display(),
+            dest.display()
+        );
+    }
+    Ok(())
 }
 
 fn auth_path() -> Result<PathBuf, String> {
@@ -525,11 +591,9 @@ mod tests {
 
     #[test]
     fn agent_dir_defaults_to_branded_dir() {
+        // HOY-255: flat <home>/BRANDED_DIR, no trailing "agent" segment.
         let resolved = agent_dir_from(None, Some(PathBuf::from("/home/u"))).unwrap();
-        assert_eq!(
-            resolved,
-            PathBuf::from("/home/u").join(BRANDED_DIR).join("agent")
-        );
+        assert_eq!(resolved, PathBuf::from("/home/u").join(BRANDED_DIR));
     }
 
     // cargo test compiles with debug_assertions, so this pins the dev half of
@@ -550,15 +614,76 @@ mod tests {
 
         let empty_ignored =
             agent_dir_from(Some(PathBuf::new()), Some(PathBuf::from("/home/u"))).unwrap();
-        assert_eq!(
-            empty_ignored,
-            PathBuf::from("/home/u").join(BRANDED_DIR).join("agent")
-        );
+        assert_eq!(empty_ignored, PathBuf::from("/home/u").join(BRANDED_DIR));
     }
 
     #[test]
     fn agent_dir_errors_without_home() {
         assert!(agent_dir_from(None, None).is_err());
+    }
+
+    // HOY-255 migration helper. Each test gets its own scratch dir so they can run
+    // in parallel; `dest` plays the role of the flat agent dir and `dest/agent` the
+    // legacy nested dir.
+    fn migration_scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("hoy-migrate-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn migrate_moves_legacy_contents_up_and_removes_empty_legacy() {
+        let dest = migration_scratch("move");
+        let legacy = dest.join("agent");
+        std::fs::create_dir_all(legacy.join("sessions/abc")).unwrap();
+        std::fs::write(legacy.join("auth.json"), b"{\"deepseek\":1}").unwrap();
+        std::fs::write(legacy.join("sessions/abc/s1.jsonl"), b"line").unwrap();
+
+        migrate_dir_contents_up(&legacy, &dest).unwrap();
+
+        assert_eq!(
+            std::fs::read(dest.join("auth.json")).unwrap(),
+            b"{\"deepseek\":1}"
+        );
+        assert!(dest.join("sessions/abc/s1.jsonl").exists());
+        // Fully drained -> legacy removed.
+        assert!(!legacy.exists());
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn migrate_is_idempotent_and_noops_without_legacy() {
+        let dest = migration_scratch("idempotent");
+        let legacy = dest.join("agent");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("settings.json"), b"{}").unwrap();
+
+        migrate_dir_contents_up(&legacy, &dest).unwrap();
+        // Second run: legacy is gone, so this is a clean no-op (not an error).
+        migrate_dir_contents_up(&legacy, &dest).unwrap();
+
+        assert!(dest.join("settings.json").exists());
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn migrate_never_clobbers_an_existing_destination_entry() {
+        let dest = migration_scratch("noclobber");
+        let legacy = dest.join("agent");
+        std::fs::create_dir_all(&legacy).unwrap();
+        // Same name exists in both: the flat dir already has the authoritative copy.
+        std::fs::write(dest.join("auth.json"), b"new").unwrap();
+        std::fs::write(legacy.join("auth.json"), b"stale").unwrap();
+
+        migrate_dir_contents_up(&legacy, &dest).unwrap();
+
+        // Destination copy is untouched, the stale source is left in place (not lost),
+        // and legacy survives because it was not fully drained.
+        assert_eq!(std::fs::read(dest.join("auth.json")).unwrap(), b"new");
+        assert_eq!(std::fs::read(legacy.join("auth.json")).unwrap(), b"stale");
+        assert!(legacy.exists());
+        let _ = std::fs::remove_dir_all(&dest);
     }
 
     #[test]

@@ -142,7 +142,7 @@ mod tests {
                     id: "t1".into(),
                     title: "ticket HOY-28".into(),
                     updated_at: 1_717_000_000_000,
-                    session_file: Some("/home/u/.hoy/agent/sessions/abc/s1.jsonl".into()),
+                    session_file: Some("/home/u/.hoy/sessions/abc/s1.jsonl".into()),
                     archived: false,
                     renamed: true,
                     draft: Some("unsent composer text".into()),
