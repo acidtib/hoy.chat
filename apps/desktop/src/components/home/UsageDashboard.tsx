@@ -54,7 +54,7 @@ export function UsageDashboard() {
   return (
     <section className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-foreground">Usage</h2>
+        <h2 className="text-sm font-medium text-foreground">Usage Stats</h2>
         <RangeSwitch value={range} onChange={setRange} />
       </div>
 

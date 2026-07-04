@@ -68,7 +68,7 @@ export function HomePage() {
         className="pointer-events-none absolute left-1/2 top-16 size-40 -translate-x-1/2 text-foreground/[0.03]"
       />
 
-      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center px-8 py-16">
+      <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col items-center justify-center px-8 py-16">
         <h1 className="mb-6 text-center text-2xl font-semibold tracking-tight text-foreground">
           {hasTarget
             ? `Start a new task in ${targetProject.name}`
@@ -77,8 +77,10 @@ export function HomePage() {
 
         {hasTarget ? (
           <div className="w-full">
+            {/* One bordered card: project/branch header divider + real composer. */}
+            <div className="border border-border bg-card">
             {/* Composer header: project pill (functional) + branch pill (mock). */}
-            <div className="flex items-center gap-3 border border-b-0 border-border bg-card px-3 py-2 text-xs">
+            <div className="flex items-center gap-3 border-b border-border px-3 py-2 text-xs">
               {projects.length > 1 ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -130,10 +132,11 @@ export function HomePage() {
               </span>
             </div>
 
-            <HomeComposer
-              projectId={targetProjectId}
-              projectPath={targetProject.path ?? null}
-            />
+              <HomeComposer
+                projectId={targetProjectId}
+                projectPath={targetProject.path ?? null}
+              />
+            </div>
 
             {recents.length > 0 && (
               <div className="mt-8 space-y-2">
