@@ -1,14 +1,11 @@
 # hoy.chat
 
-Native desktop apps for the [Pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent).
+A desktop app for coding agents. It runs [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
+on your machine, gives it a real UI instead of a terminal, and keeps your API
+keys on your own disk.
 
-`hoy.chat` is the umbrella project. The first app is **Hoy Desktop**, a native GUI
-that runs Pi locally and streams its work into a real desktop interface. More apps
-under the same brand are planned; a landing site lives alongside the desktop app in
-this repo.
-
-> Beta / experimental. Pre-1.0 software: expect bugs and breaking changes. You bring
-> your own model API key. Not for production use.
+> Beta. Pre-1.0, so expect bugs and breaking changes. Bring your own model API
+> key.
 
 ## Repository layout
 
@@ -63,13 +60,8 @@ bun run lint      # oxlint + clippy
 bun run test      # frontend tests (bun test)
 ```
 
-### Dev namespace (hoyd)
-
-`bun run tauri:dev` runs in an isolated `hoyd` namespace so you can safely run Hoy on
-Hoy: a separate app identifier (`chat.hoy.desktop.dev`), its own window state, and a
-separate agent dir at `~/.hoyd/agent` (production uses `~/.hoy/agent`). The dev
-namespace starts empty; copy `~/.hoy/agent/auth.json` into `~/.hoyd/agent/` to reuse a
-configured key. `bun run tauri:dev` is the only supported dev entry.
+`bun run tauri:dev` is the only supported dev entry; it runs in an isolated `hoyd`
+namespace (separate app identifier and agent dir) so you can safely run Hoy on Hoy.
 
 ## License
 
