@@ -68,8 +68,147 @@ pub fn compute_usage() -> UsageReport {
     }
 }
 
-pub fn compute_usage_from(_sessions_dir: &Path) -> UsageReport {
-    UsageReport::default()
+pub fn compute_usage_from(sessions_dir: &Path) -> UsageReport {
+    let mut acc: BTreeMap<String, DayAcc> = BTreeMap::new();
+    let mut session_count = 0u64;
+    let mut total_messages = 0u64;
+
+    let subdirs = match std::fs::read_dir(sessions_dir) {
+        Ok(r) => r,
+        Err(_) => return UsageReport::default(),
+    };
+    for sub in subdirs.flatten() {
+        let sub_path = sub.path();
+        if !sub_path.is_dir() {
+            continue;
+        }
+        let files = match std::fs::read_dir(&sub_path) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        for f in files.flatten() {
+            let fp = f.path();
+            if fp.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&fp) else {
+                continue;
+            };
+            let (msgs, sessions) = fold_file(&content, &mut acc);
+            total_messages += msgs;
+            session_count += sessions;
+        }
+    }
+    finalize(acc, session_count, total_messages)
+}
+
+// Returns (counted messages, session records) for this file.
+fn fold_file(content: &str, acc: &mut BTreeMap<String, DayAcc>) -> (u64, u64) {
+    let mut messages = 0u64;
+    let mut sessions = 0u64;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        match v.get("type").and_then(Value::as_str) {
+            Some("session") => sessions += 1,
+            Some("message") => {
+                if fold_message(&v, acc) {
+                    messages += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    (messages, sessions)
+}
+
+// Fold one message record. Counts user/assistant messages (toolResult excluded)
+// and, when an assistant usage block is present, its tokens/cost/model/hour.
+// Returns true iff the message was counted.
+fn fold_message(v: &Value, acc: &mut BTreeMap<String, DayAcc>) -> bool {
+    let msg = v.get("message");
+    let role = msg
+        .and_then(|m| m.get("role"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if role != "user" && role != "assistant" {
+        return false;
+    }
+    let ts = v
+        .get("timestamp")
+        .and_then(Value::as_str)
+        .or_else(|| msg.and_then(|m| m.get("timestamp")).and_then(Value::as_str));
+    let Some(ts) = ts else {
+        return false;
+    };
+    let Ok(parsed) = DateTime::parse_from_rfc3339(ts) else {
+        return false;
+    };
+    let local = parsed.with_timezone(&Local);
+    let date = local.format("%Y-%m-%d").to_string();
+    let hour = local.hour() as usize;
+
+    let entry = acc.entry(date).or_default();
+    entry.messages += 1;
+
+    if let Some(usage) = msg.and_then(|m| m.get("usage")) {
+        let u = |k: &str| usage.get(k).and_then(Value::as_u64).unwrap_or(0);
+        let (input, output, cache_read, cache_write) =
+            (u("input"), u("output"), u("cacheRead"), u("cacheWrite"));
+        let total = usage
+            .get("totalTokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(input + output + cache_read + cache_write);
+        entry.tokens.input += input;
+        entry.tokens.output += output;
+        entry.tokens.cache_read += cache_read;
+        entry.tokens.cache_write += cache_write;
+        entry.tokens.total += total;
+        entry.by_hour[hour] += total;
+        entry.cost += usage
+            .get("cost")
+            .and_then(|c| c.get("total"))
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0);
+        let model = msg
+            .and_then(|m| m.get("model"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string();
+        *entry.by_model.entry(model).or_insert(0) += total;
+    }
+    true
+}
+
+// BTreeMap keeps days in ascending date order (YYYY-MM-DD sorts chronologically).
+fn finalize(acc: BTreeMap<String, DayAcc>, session_count: u64, total_messages: u64) -> UsageReport {
+    let first_day = acc.keys().next().cloned();
+    let last_day = acc.keys().next_back().cloned();
+    let days = acc
+        .into_iter()
+        .map(|(date, a)| DayBucket {
+            date,
+            tokens: a.tokens,
+            cost: a.cost,
+            messages: a.messages,
+            by_model: a.by_model,
+            by_hour: a.by_hour,
+        })
+        .collect();
+    UsageReport {
+        days,
+        meta: UsageMeta {
+            session_count,
+            total_messages,
+            first_day,
+            last_day,
+        },
+    }
 }
 
 #[cfg(test)]
@@ -79,6 +218,44 @@ mod tests {
 
     fn tmp(tag: &str) -> PathBuf {
         std::env::temp_dir().join(format!("hoy-usage-{tag}-{}", std::process::id()))
+    }
+
+    fn write_session(dir: &std::path::Path, session_id: &str, lines: &[&str]) {
+        let sdir = dir.join(session_id);
+        std::fs::create_dir_all(&sdir).unwrap();
+        let body = lines.join("\n");
+        std::fs::write(sdir.join("s.jsonl"), body).unwrap();
+    }
+
+    #[test]
+    fn folds_assistant_usage_into_one_day() {
+        let root = tmp("oneday");
+        let sessions = root.join("sessions");
+        let ts = "2026-07-03T18:00:00.000Z";
+        write_session(
+            &sessions,
+            "sess-a",
+            &[
+                r#"{"type":"session","id":"sess-a","timestamp":"2026-07-03T18:00:00.000Z","cwd":"/x"}"#,
+                &format!(r#"{{"type":"message","timestamp":"{ts}","message":{{"role":"user","timestamp":"{ts}"}}}}"#),
+                &format!(r#"{{"type":"message","timestamp":"{ts}","message":{{"role":"assistant","model":"opus","timestamp":"{ts}","usage":{{"input":10,"output":20,"cacheRead":5,"cacheWrite":0,"totalTokens":35,"cost":{{"total":0.5}}}}}}}}"#),
+                &format!(r#"{{"type":"message","timestamp":"{ts}","message":{{"role":"assistant","model":"opus","timestamp":"{ts}","usage":{{"input":1,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{{"total":0.1}}}}}}}}"#),
+                r#"{"type":"toolResult","timestamp":"2026-07-03T18:00:01.000Z"}"#,
+            ],
+        );
+        let report = compute_usage_from(&sessions);
+        assert_eq!(report.days.len(), 1, "all messages share one instant -> one local day");
+        let d = &report.days[0];
+        assert_eq!(d.tokens.total, 38);
+        assert_eq!(d.tokens.input, 11);
+        assert_eq!(d.messages, 3, "1 user + 2 assistant, toolResult excluded");
+        assert_eq!(*d.by_model.get("opus").unwrap(), 38);
+        assert!((d.cost - 0.6).abs() < 1e-9);
+        assert_eq!(d.by_hour.iter().sum::<u64>(), 38, "hour histogram totals equal token total");
+        assert_eq!(report.meta.session_count, 1);
+        assert_eq!(report.meta.total_messages, 3);
+        assert_eq!(report.meta.first_day.as_deref(), report.meta.last_day.as_deref());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
