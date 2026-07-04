@@ -13,7 +13,7 @@ import { StatCard } from "./StatCard";
 import { RangeSwitch } from "./RangeSwitch";
 import { ModelUsage } from "./ModelUsage";
 import { TokenTrendChart } from "./TokenTrendChart";
-import { ActivityHeatmap } from "./ActivityHeatmap";
+import { ActivityHeatmap, HeatmapLegend } from "./ActivityHeatmap";
 
 // The usage-stats section of the home dashboard (HOY-262). Self-loads the
 // report on mount; the report is fetched once and every range is derived
@@ -72,7 +72,10 @@ export function UsageDashboard() {
       </div>
 
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Activity Heatmap</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-foreground">Activity Heatmap</h3>
+          <HeatmapLegend />
+        </div>
         <ActivityHeatmap days={report.days} />
       </div>
 
