@@ -396,8 +396,10 @@ export interface Thread {
   // live value lives in the store's drafts slice.
   draft?: string | null;
   // Selected model. Set on pick (deferred until a session exists), hydrated from
-  // get_state after spawn. Ephemeral: the session JSONL owns it after the first
-  // prompt, and persistProjects' allowlist never serializes it.
+  // get_state after spawn. The session JSONL owns it after the first prompt;
+  // persistProjects also caches it in workspace.json so the sidebar can render
+  // the thread's provider glyph on load without spawning (HOY-267), reconciled
+  // against get_state when the thread is opened.
   model?: ModelRef | null;
   // Permission mode (HOY-186). Persisted with the thread; absent means default.
   // Applied to the live sidecar via /hoy_mode, re-applied after spawn/restore.

@@ -63,6 +63,22 @@ pub struct WsThread {
     pub parent_thread_id: Option<String>,
     #[serde(default)]
     pub spawned_by: Option<SpawnedBy>,
+    // Last-selected model (HOY-267): a cached hint so the sidebar can show the
+    // thread's provider glyph on load without spawning the session. The session
+    // JSONL remains the source of truth; the renderer reconciles this against
+    // get_state after the thread is opened. Absent on new/session-less threads
+    // and pre-HOY-267 files.
+    #[serde(default)]
+    pub model: Option<WsModelRef>,
+}
+
+// A provider/model identity pair, mirroring the frontend ModelRef. Cached on the
+// thread so the sidebar row icon renders before the session is hydrated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsModelRef {
+    pub provider: String,
+    pub id: String,
 }
 
 // Which agent spawned this thread and under what role, for child threads
@@ -149,6 +165,10 @@ mod tests {
                     permission_mode: Some("acceptEdits".into()),
                     parent_thread_id: None,
                     spawned_by: None,
+                    model: Some(WsModelRef {
+                        provider: "anthropic".into(),
+                        id: "claude-opus-4-8".into(),
+                    }),
                 }],
             }],
         }
@@ -177,6 +197,29 @@ mod tests {
         assert!(!t.archived);
         assert!(t.renamed);
         assert_eq!(t.draft.as_deref(), Some("unsent composer text"));
+        let m = t.model.as_ref().expect("model persists");
+        assert_eq!(m.provider, "anthropic");
+        assert_eq!(m.id, "claude-opus-4-8");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn model_serializes_camel_case_and_omits_when_absent() {
+        let path = temp_path("model");
+        save_at(&path, &sample()).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("\"model\""));
+        assert!(raw.contains("\"provider\": \"anthropic\""));
+        assert!(raw.contains("\"id\": \"claude-opus-4-8\""));
+
+        // Pre-HOY-267 files (no model key) load with None rather than failing.
+        std::fs::write(
+            &path,
+            r#"{"projects":[{"id":"p1","name":"hoy","threads":[{"id":"t1","title":"T","updatedAt":1}]}]}"#,
+        )
+        .unwrap();
+        let loaded = load_at(&path).unwrap();
+        assert!(loaded.projects[0].threads[0].model.is_none());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -246,6 +289,7 @@ mod tests {
                         r#type: "Explore".into(),
                         agent_id: "a1".into(),
                     }),
+                    model: None,
                 }],
             }],
             active_project_id: None,
