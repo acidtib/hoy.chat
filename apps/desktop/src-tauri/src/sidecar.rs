@@ -97,16 +97,41 @@ pub struct PiProcess {
 const HOST_ENV_ALLOWLIST: &[&str] = &[
     // POSIX essentials: locating tools, temp extraction (bun single-file exec),
     // identity, and locale.
-    "HOME", "PATH", "TMPDIR", "USER", "LOGNAME", "SHELL",
-    "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "LC_MESSAGES",
+    "HOME",
+    "PATH",
+    "TMPDIR",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "LANG",
+    "LANGUAGE",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LC_MESSAGES",
     // Proxies: forwarded deliberately so the agent honors a real system proxy;
     // an injected proxy already implies control of the local environment.
-    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
-    "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "all_proxy",
     // Windows essentials (absent on Unix; keep a cross-platform build working).
-    "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "SystemRoot", "windir",
-    "ProgramFiles", "ProgramFiles(x86)", "ProgramData",
-    "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "PATHEXT",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "SystemRoot",
+    "windir",
+    "ProgramFiles",
+    "ProgramFiles(x86)",
+    "ProgramData",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "TEMP",
+    "TMP",
+    "PATHEXT",
 ];
 
 /// Reset `command`'s environment to the sanitized base: the host allowlist plus
