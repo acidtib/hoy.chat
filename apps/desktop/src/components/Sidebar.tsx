@@ -403,7 +403,25 @@ function ThreadRow({
 }) {
   const renameThread = useSessionStore((s) => s.renameThread);
   const requestTeardown = useSessionStore((s) => s.requestTeardown);
+  const models = useSessionStore((s) => s.models);
+  const defaultModel = useSessionStore((s) => s.defaultModel);
   const [editing, setEditing] = useState(false);
+
+  // A thread with neither a persisted transcript nor a live sidecar hasn't been
+  // prompted yet (HOY-289). Its row previews the model it will use — kept in
+  // sync with the composer via thread.model, falling back to the app default —
+  // instead of a meaningless just-created timestamp. Sending the first message
+  // spawns the sidecar (sessionId set), which reverts the row to the timestamp.
+  const isUnstarted = !thread.sessionFile && !thread.sessionId;
+  const intendedModel = thread.model ?? defaultModel;
+  const intendedModelLabel = useMemo(() => {
+    if (!isUnstarted || !intendedModel) return null;
+    const info = models.find(
+      (m) =>
+        m.provider === intendedModel.provider && m.id === intendedModel.id,
+    );
+    return info?.name ?? intendedModel.id;
+  }, [isUnstarted, intendedModel, models]);
 
   // A div, not a button: the hover actions nest inside the clickable row.
   // tabIndex + keydown keep it keyboard-reachable like the button it replaced.
@@ -454,8 +472,8 @@ function ThreadRow({
             {thread.title}
           </span>
         )}
-        <span className="mt-0.5 block text-[11px] tabular-nums text-muted-foreground">
-          {formatRelativeTime(thread.updatedAt)}
+        <span className="mt-0.5 block truncate text-[11px] tabular-nums text-muted-foreground">
+          {intendedModelLabel ?? formatRelativeTime(thread.updatedAt)}
         </span>
       </span>
 
