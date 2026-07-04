@@ -33,7 +33,7 @@ import {
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
-import { extractProposedPlan, planKickoffPrompt } from "@/lib/plan";
+import { detectPlanIntent, extractProposedPlan, planKickoffPrompt } from "@/lib/plan";
 import { usePrefsStore } from "@/state/prefs";
 import {
   buildDelivery,
@@ -513,6 +513,10 @@ interface SessionStore {
     message: string,
     images?: ImageContent[],
     behavior?: StreamingBehavior,
+    // HOY-291: opt out of auto-switching the thread into Plan Mode when the
+    // message reads as a plan request. The plan-kickoff turn sets this so its
+    // "implement this approved plan" instruction cannot bounce back into plan.
+    opts?: { autoPlanMode?: boolean },
   ) => Promise<void>;
   // Create a thread from the home hero and send its first prompt in one step
   // (HOY-264). Records the chosen model/permission/thinking on the new
@@ -1171,7 +1175,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // Switch out of plan mode so the kickoff turn has full tool access, then
     // send the plan as the opening instruction of the execution turn.
     await get().setPermissionMode(threadId, mode);
-    await get().submitPrompt(threadId, planKickoffPrompt(plan));
+    // autoPlanMode: false — the kickoff instruction says "implement this approved
+    // plan", which must not bounce the freshly-restored mode back into plan.
+    await get().submitPrompt(threadId, planKickoffPrompt(plan), undefined, undefined, {
+      autoPlanMode: false,
+    });
   },
 
   answerPermission: async (threadId, requestId, answer) => {
@@ -1199,7 +1207,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   // Send a prompt from a thread panel and stream the response into its turns.
   // Lazily spawns the thread's own sidecar (session per thread) in the project's
   // cwd on first send, then drives one Channel per turn.
-  submitPrompt: async (threadId, message, images, behavior) => {
+  submitPrompt: async (threadId, message, images, behavior, opts) => {
     const found = findThread(get().projects, threadId);
     if (!found) return;
     const { thread, project } = found;
@@ -1257,6 +1265,20 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         }));
       }
       return;
+    }
+
+    // Auto-switch to Plan Mode when the message asks for a plan (HOY-291), like
+    // Claude Code. Do it here, before the session mode is applied and the prompt
+    // streams, so plan mode's system prompt + tool gating shape this very turn.
+    // Skipped for the plan-kickoff turn (opts.autoPlanMode === false), and only
+    // fires from a non-plan mode so it never fights a user already in plan mode.
+    if (
+      opts?.autoPlanMode !== false &&
+      (thread.permissionMode ?? "default") !== "plan" &&
+      detectPlanIntent(text)
+    ) {
+      await get().setPermissionMode(threadId, "plan");
+      pushNotice(threadId, "Switched to Plan Mode to draft a plan first.", "info");
     }
 
     // Append the user turn plus an in-flight assistant turn the events fold into.

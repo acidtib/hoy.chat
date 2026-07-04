@@ -105,6 +105,54 @@ describe("setPermissionMode", () => {
   });
 });
 
+describe("auto-switch to Plan Mode (HOY-291)", () => {
+  test("a plan request flips a default-mode thread into plan before the turn and notifies", async () => {
+    seed({ sessionId: "sess_live" });
+    setPermissionMode.mockResolvedValue();
+
+    await useSessionStore.getState().submitPrompt("t1", "make a plan for the refactor");
+
+    expect(setPermissionMode).toHaveBeenCalledWith("sess_live", "plan");
+    expect(thread().permissionMode).toBe("plan");
+    const notices = useSessionStore.getState().notices["t1"] ?? [];
+    expect(notices.some((n) => /plan mode/i.test(n.message))).toBe(true);
+  });
+
+  test("a non-plan message leaves the mode untouched", async () => {
+    seed({ sessionId: "sess_live" });
+    setPermissionMode.mockResolvedValue();
+
+    await useSessionStore.getState().submitPrompt("t1", "fix the failing test");
+
+    expect(setPermissionMode).not.toHaveBeenCalled();
+    expect(thread().permissionMode ?? "default").toBe("default");
+  });
+
+  test("a plan request while already in plan mode does not re-apply the mode", async () => {
+    seed({ sessionId: "sess_live", permissionMode: "plan" });
+    setPermissionMode.mockResolvedValue();
+
+    await useSessionStore.getState().submitPrompt("t1", "come up with a plan for X");
+
+    expect(setPermissionMode).not.toHaveBeenCalled();
+    expect(thread().permissionMode).toBe("plan");
+  });
+
+  test("autoPlanMode:false suppresses the switch (the plan-kickoff turn)", async () => {
+    seed({ sessionId: "sess_live" });
+    setPermissionMode.mockResolvedValue();
+
+    await useSessionStore
+      .getState()
+      .submitPrompt("t1", "make a plan for X", undefined, undefined, {
+        autoPlanMode: false,
+      });
+
+    expect(setPermissionMode).not.toHaveBeenCalled();
+    expect(thread().permissionMode ?? "default").toBe("default");
+  });
+});
+
 describe("answerPermission", () => {
   test("answers via the thread's sessionId and removes the card", async () => {
     seed({ sessionId: "sess_live" });

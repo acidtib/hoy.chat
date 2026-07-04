@@ -91,3 +91,56 @@ export function planKickoffPrompt(plan: string | undefined): string {
     "Plan mode is now disabled. Full tool access is restored. Implement this approved plan now, following the steps in order.";
   return plan ? `${head}\n\n${plan}` : head;
 }
+
+// HOY-291: auto-switch to Plan Mode when a message asks for a plan. Detects, on
+// the human text of an outbound message, whether the user is asking Hoy to
+// *produce* a plan (so submitPrompt can flip a non-plan thread into plan mode
+// before the turn streams, like Claude Code). Deliberately high-precision:
+// a false positive yanks the user into a write-gated mode, so we only fire on
+// clear "make me a plan" phrasings and bail on the many innocuous uses of the
+// word "plan" (executing an existing plan, domain nouns like "pricing plan",
+// the plan file itself). Recall gaps are acceptable — the user can always pick
+// Plan Mode by hand; annoying false switches are not.
+export function detectPlanIntent(raw: string): boolean {
+  const text = raw.toLowerCase();
+  // Fast bail: no standalone "plan"/"plans" token at all.
+  if (!/\bplans?\b/.test(text)) return false;
+
+  // Negative — asking to EXECUTE/FOLLOW an existing plan, not to write one.
+  // This also covers the plan-kickoff prompt ("implement this approved plan").
+  if (
+    /\b(implement|execut\w+|carry out|carry-out|follow|apply|code up|ship|write the code for|stick to|according to)\b[^.!?\n]{0,24}\bplans?\b/.test(
+      text,
+    )
+  )
+    return false;
+  // Negative — "plan" as a domain noun, not a unit of work to design.
+  if (
+    /\b(pricing|price|subscription|payment|billing|data|phone|meal|travel|floor|business|game|lesson|study|savings|health|insurance|retirement|seating|dinner|wedding|birthday)\s+plans?\b/.test(
+      text,
+    )
+  )
+    return false;
+  // Negative — the plan artifact itself (the file/dir/document), not a request.
+  if (/\bplans?\s+(file|files|dir\w*|folder|document|doc|\.md)\b/.test(text))
+    return false;
+
+  // Positive — explicit requests to produce a plan.
+  return (
+    // "<verb> ... a/the plan": make a plan, come up with a plan, give me a plan.
+    /\b(make|create|craft|write|draft|come up with|put together|outline|sketch|propose|prepare|formulate|devise|design|give me|show me|need|want|lay out|develop)\b[^.!?\n]{0,32}\bplans?\b/.test(
+      text,
+    ) ||
+    // "plan out ...", "plan how ...", "plan this/it out", "plan first/before ...".
+    /\bplan\b\s*(out\b|how\b|this out\b|it out\b|first\b|before\b|ahead\b|the (approach|work|migration|refactor|steps|implementation)\b)/.test(
+      text,
+    ) ||
+    /\blet'?s\s+(first\s+)?(make\s+a\s+|come\s+up\s+with\s+a\s+)?plan\b/.test(text) ||
+    /\bcan\s+you\s+(please\s+)?(make\s+a\s+|come\s+up\s+with\s+a\s+|draft\s+a\s+)?plan\b/.test(
+      text,
+    ) ||
+    /\bplan\s+mode\b/.test(text) ||
+    // Message that opens with an imperative "plan …" (but not "plan file/.md").
+    /^\s*plan\b(?!\s*(file|files|\.md|:))/.test(text)
+  );
+}

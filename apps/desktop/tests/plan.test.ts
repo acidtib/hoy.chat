@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { extractProposedPlan, planKickoffPrompt, splitPlanSegments } from "@/lib/plan";
+import {
+  detectPlanIntent,
+  extractProposedPlan,
+  planKickoffPrompt,
+  splitPlanSegments,
+} from "@/lib/plan";
 
 describe("extractProposedPlan", () => {
   test("pulls the plan out of a proposed_plan block", () => {
@@ -92,5 +97,58 @@ describe("splitPlanSegments", () => {
       { kind: "markdown", text: "Here:\n" },
       { kind: "plan", text: "\n1. first\n", streaming: true },
     ]);
+  });
+});
+
+describe("detectPlanIntent", () => {
+  test.each([
+    "make a plan",
+    "Make a plan for the auth refactor",
+    "can you make a plan for this?",
+    "come up with a plan to migrate the store",
+    "put together a plan first",
+    "write a plan for the new sidebar",
+    "draft a plan",
+    "give me a plan before you touch anything",
+    "outline a plan for the rewrite",
+    "propose a plan for handling errors",
+    "I need a plan for the migration",
+    "I want a plan here",
+    "let's plan this out",
+    "let's first make a plan",
+    "plan out the refactor",
+    "plan how to split the module",
+    "plan the migration",
+    "plan this out before coding",
+    "switch to plan mode",
+    "Plan the auth system end to end",
+  ])("fires on plan request: %j", (msg) => {
+    expect(detectPlanIntent(msg)).toBe(true);
+  });
+
+  test.each([
+    "",
+    "fix the failing test",
+    "implement the plan",
+    "the plan looks good, let's implement it",
+    "follow the plan we agreed on",
+    "execute the plan",
+    "stick to the plan",
+    "ship the plan",
+    "open the plan file",
+    "read the plans directory",
+    "update the pricing plan copy",
+    "the subscription plan page is broken",
+    "add a data plan selector",
+    "what's the plan?",
+    "everything went as planned",
+    "explain the plan to me",
+    "review the plan and comment",
+  ])("does not fire on: %j", (msg) => {
+    expect(detectPlanIntent(msg)).toBe(false);
+  });
+
+  test("does not fire on the plan-kickoff prompt", () => {
+    expect(detectPlanIntent(planKickoffPrompt("# Step 1\nDo the thing."))).toBe(false);
   });
 });
