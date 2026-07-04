@@ -10,9 +10,12 @@ import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 export type ConversationProps = ComponentProps<typeof StickToBottom>;
 
 export const Conversation = ({ className, ...props }: ConversationProps) => (
+  // initial="instant": a freshly opened thread lands pinned at the bottom with
+  // no visible top-to-bottom scroll animation (HOY-271). resize stays "smooth"
+  // so live streaming / content growth still animates.
   <StickToBottom
     className={cn("relative flex-1 overflow-y-hidden", className)}
-    initial="smooth"
+    initial="instant"
     resize="smooth"
     role="log"
     {...props}
