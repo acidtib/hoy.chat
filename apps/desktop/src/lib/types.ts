@@ -2,8 +2,8 @@
 
 // Type-only import: goal.ts imports `ModelRef` from this module the same way
 // (also type-only), so this is a type-level cycle only. Both sides are erased
-// at compile time (verbatimModuleSyntax / isolatedModules strip `import type`),
-// so no runtime import cycle exists.
+// at compile time (isolatedModules strips `import type`), so no runtime
+// import cycle exists.
 import type { ThreadGoal } from "../state/goal";
 
 export type ToolPhase = "start" | "update" | "end";

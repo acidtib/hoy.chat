@@ -246,7 +246,11 @@ mod tests {
         assert_eq!(g.turns, 3);
         assert_eq!(g.tokens_baseline, 100);
         assert_eq!(g.tokens_used, 250);
+        assert_eq!(g.started_at, 1_717_000_000_000);
         assert_eq!(g.cap_turns, 25);
+        let em = g.evaluator_model.as_ref().expect("evaluator_model persists");
+        assert_eq!(em.provider, "anthropic");
+        assert_eq!(em.id, "claude-haiku");
         assert_eq!(g.last_reason.as_deref(), Some("still working"));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
