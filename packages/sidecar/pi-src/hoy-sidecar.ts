@@ -28,6 +28,7 @@ import { createHoyTurnBudget } from "./hoy-turn-budget";
 import { loadSubagentRegistry, enabledTypes, effectiveChildPrompt } from "./hoy-agents-registry";
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
+import { runGoalEval } from "./hoy-goal-eval";
 
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
@@ -91,6 +92,15 @@ if (process.env.HOY_LIST_SUBAGENTS) {
   }));
   process.stdout.write(JSON.stringify(defs));
   process.exit(0);
+}
+
+// Goal Mode (HOY-263): one-shot transcript evaluator. Rust spawns us with this
+// env, captures the {met, reason} JSON on stdout, and exits us. Runs before the
+// runtime is built so it never touches runRpcMode. Fail-open lives inside
+// runGoalEval, which always writes JSON and exits.
+if (process.env.HOY_GOAL_EVAL) {
+  await runGoalEval(agentDir, process.cwd());
+  // runGoalEval writes JSON to stdout and exits; this line is never reached.
 }
 
 const factory: CreateAgentSessionRuntimeFactory = async ({

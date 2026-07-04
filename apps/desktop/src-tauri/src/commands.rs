@@ -538,6 +538,30 @@ pub async fn get_session_stats(
     serde_json::from_value(data).map_err(|e| format!("decode SessionStats: {e}"))
 }
 
+// Goal Mode (HOY-263): judge whether a thread's goal condition is met from its
+// transcript, via a one-shot evaluator sidecar. Resolves the live session's JSONL
+// path (only pi knows it, so ask via get_session_stats like respawn does), then
+// spawns the evaluator. Fail-open is enforced sidecar-side: any evaluator failure
+// still returns {met:false, ...}, so Task 5's loop keeps working on uncertainty
+// rather than falsely stopping.
+#[tauri::command]
+pub async fn evaluate_goal(
+    session_id: String,
+    condition: String,
+    evaluator_model: Option<crate::events::ModelRef>,
+    manager: State<'_, SidecarManager>,
+) -> Result<crate::events::GoalEvaluation, String> {
+    let process = manager.get(&session_id)?;
+    let response = process
+        .request(json!({ "type": "get_session_stats" }))
+        .await?;
+    let session_file = response["data"]["sessionFile"]
+        .as_str()
+        .ok_or("evaluate_goal: session has no file on disk yet")?
+        .to_string();
+    manager.evaluate_goal(&session_file, &condition, evaluator_model.as_ref())
+}
+
 // HOY-262: aggregate local usage stats from pi's session transcripts. Pure disk
 // read, so it runs on the blocking pool rather than tying up an async worker.
 #[tauri::command]

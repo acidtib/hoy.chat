@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use tauri::ipc::Channel;
 use tokio::sync::oneshot;
 
-use crate::events::{AgentEvent, ToolPhase};
+use crate::events::{AgentEvent, GoalEvaluation, ModelRef, ToolPhase};
 use crate::reader::JsonlFramer;
 
 pub type SessionId = String;
@@ -1101,6 +1101,56 @@ impl SidecarManager {
             ));
         }
         serde_json::from_slice(&out.stdout).map_err(|e| format!("parse list_subagents output: {e}"))
+    }
+
+    // Goal Mode (HOY-263): judge a thread's transcript against `condition` via a
+    // one-shot sidecar run. Mirrors list_subagents: spawn self.bin with a mode env
+    // (HOY_GOAL_EVAL=1), capture stdout JSON, exit. `session_file` is the thread's
+    // JSONL the evaluator opens; `evaluator_model`, when set, pins the judge model
+    // (else the sidecar picks a cheap available one). Fail-open lives in the
+    // sidecar, which writes {met:false, reason:"evaluator error: ..."} and exits 0
+    // on any failure, so a clean parse here still means "keep working".
+    pub fn evaluate_goal(
+        &self,
+        session_file: &str,
+        condition: &str,
+        evaluator_model: Option<&ModelRef>,
+    ) -> Result<GoalEvaluation, String> {
+        if !self.bin.exists() {
+            return Err(format!(
+                "sidecar binary not found at {}. Run sidecar/build.sh.",
+                self.bin.display()
+            ));
+        }
+        let mut command = std::process::Command::new(&self.bin);
+        apply_sanitized_env(&mut command, &self.agent_dir, &self.cwd);
+        command
+            .env("PI_PACKAGE_DIR", &self.payload)
+            .env("HOY_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_GOAL_EVAL", "1")
+            .env("HOY_GOAL_CONDITION", condition)
+            .env("HOY_SESSION_FILE", session_file)
+            .current_dir(&self.cwd);
+        // "provider/id": provider never contains a slash, so the sidecar splits on
+        // the first one. Matches the HOY_GOAL_EVAL_MODEL format the sidecar parses.
+        if let Some(model) = evaluator_model {
+            command.env(
+                "HOY_GOAL_EVAL_MODEL",
+                format!("{}/{}", model.provider, model.id),
+            );
+        }
+        let out = command
+            .output()
+            .map_err(|e| format!("spawn sidecar for evaluate_goal: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "evaluate_goal exited {}: {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+        serde_json::from_slice(&out.stdout)
+            .map_err(|e| format!("parse evaluate_goal output: {e}"))
     }
 
     // Tear down a session's sidecar (panel close / thread delete). Dropping the

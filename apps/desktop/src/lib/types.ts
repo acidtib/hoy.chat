@@ -370,6 +370,16 @@ export interface ModelRef {
   id: string;
 }
 
+// Goal Mode (HOY-263): the one-shot evaluator's verdict on whether a thread's
+// goal condition is met. Mirrors GoalEvaluation in src-tauri/src/events.rs.
+// `met` is only true on clear evidence; the evaluator fails open to
+// { met: false, reason: "evaluator error: ..." } on any failure, so the loop
+// keeps working on uncertainty rather than falsely stopping.
+export interface GoalEvaluation {
+  met: boolean;
+  reason: string;
+}
+
 // UI-only grouping. Not backed by Pi's RPC yet: a thread maps to a Pi session and
 // a project to a working directory once persistence lands (next milestone). Kept
 // here so the sidebar renders from typed state, not ad hoc shapes.

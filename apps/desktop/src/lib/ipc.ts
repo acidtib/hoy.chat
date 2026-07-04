@@ -6,10 +6,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AgentEvent,
   CompactionResult,
+  GoalEvaluation,
   ImageContent,
   McpScope,
   McpServerList,
   ModelInfo,
+  ModelRef,
   OAuthEvent,
   PathEntry,
   PermissionMode,
@@ -303,6 +305,23 @@ export function getSessionStats(sessionId: string): Promise<SessionStats> {
 // HOY-262: aggregate local usage stats parsed from session transcripts.
 export function getUsageStats(): Promise<UsageReport> {
   return invoke<UsageReport>("get_usage_stats");
+}
+
+// Goal Mode (HOY-263): judge the thread's transcript against `condition` via a
+// one-shot evaluator sidecar. `evaluatorModel` pins the judge model; omit to let
+// the sidecar pick a cheap available one. Always resolves to { met, reason }:
+// the evaluator fails open to met:false on any error, so Task 5's loop keeps
+// working on uncertainty rather than falsely stopping.
+export function evaluateGoal(
+  sessionId: string,
+  condition: string,
+  evaluatorModel?: ModelRef,
+): Promise<GoalEvaluation> {
+  return invoke<GoalEvaluation>("evaluate_goal", {
+    sessionId,
+    condition,
+    evaluatorModel: evaluatorModel ?? null,
+  });
 }
 
 export function abort(sessionId: string): Promise<void> {

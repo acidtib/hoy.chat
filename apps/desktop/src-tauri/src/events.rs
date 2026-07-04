@@ -234,6 +234,24 @@ pub struct ModelInfo {
     pub input: Option<Vec<String>>,
 }
 
+// Goal Mode (HOY-263): a provider/model pair, mirrors ModelRef in
+// apps/desktop/src/lib/types.ts. Passed to evaluate_goal to pin the judge model.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelRef {
+    pub provider: String,
+    pub id: String,
+}
+
+// Goal Mode (HOY-263): the one-shot evaluator's verdict. Mirrors GoalEvaluation
+// in apps/desktop/src/lib/types.ts. `met` is only ever true on clear evidence;
+// every error path in the sidecar fails open to {met:false, reason:"evaluator
+// error: ..."} so the loop never stops on uncertainty.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoalEvaluation {
+    pub met: bool,
+    pub reason: String,
+}
+
 // Mirror of Pi's ImageContent (pi-ai). Sent on the prompt command's images[].
 // `data` is raw base64 with NO data: URI prefix; the renderer strips it before
 // invoke.
