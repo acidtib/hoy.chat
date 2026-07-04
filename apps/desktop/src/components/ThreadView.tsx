@@ -74,6 +74,7 @@ import { usePrefsStore } from "@/state/prefs";
 import { listProjectPaths } from "@/lib/ipc";
 import { contextKey, modelSupportsImages } from "@/lib/types";
 import type {
+  AssistantBlock,
   ContextRef,
   ExtWidget,
   ImageAttachment,
@@ -289,6 +290,10 @@ export function ThreadView({
                 : active
                   ? "text-brand"
                   : "text-muted-foreground",
+              // Breathe while this thread is generating so a working thread is
+              // legible from the header even scrolled up, and background panels
+              // that are still running stand out across the strip.
+              streaming && "animate-pulse motion-reduce:animate-none",
             )}
           />
           {editingTitle ? (
@@ -482,14 +487,13 @@ export function ThreadView({
                           <ToolCall tool={block.tool} key={block.tool.id} />
                         ),
                       )}
-                      {turn.streaming &&
-                        turn.blocks.length === 0 &&
-                        !turn.aborted && (
-                          <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-                            <span className="size-1.5 animate-pulse rounded-full bg-brand" />
-                            Working...
-                          </span>
-                        )}
+                      {turn.streaming && !turn.aborted && (
+                        <TurnStatus
+                          blocks={turn.blocks}
+                          reasoningActive={turn.reasoning?.active ?? false}
+                          awaitingApproval={pendingPermissions.length > 0}
+                        />
+                      )}
                       {turn.aborted && (
                         <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                           <CircleStop className="size-3.5" />
@@ -1120,6 +1124,52 @@ function toolIcon(kind: ToolKind): ReactNode {
   if (kind === "edit") return <FilePen />;
   if (kind === "terminal") return <Terminal />;
   return undefined;
+}
+
+// HOY-258: a persistent "the model is working" line pinned to the bottom of the
+// streaming turn, so a long tool call no longer looks idle after the first block
+// lands. It surfaces *what* is happening rather than a bare spinner, and yields
+// to the other honest-state affordances so it never becomes a second competing
+// signal:
+//   - a tool awaiting approval -> silent (the model is blocked on the user, not
+//     working; the approval card carries that state). The authority is the
+//     thread's pending-permission queue, not the tool block's own flag: Pi emits
+//     the tool `start` (running) before the approval gate, so the block reads as
+//     running while the user is actually the one being waited on.
+//   - only thinking -> silent (the reasoning block already shimmers "Thinking");
+//   - a tool running -> "Running <tool>"; otherwise the generic "Working".
+// Matches the original pulsing-dot style and honors reduced motion.
+function TurnStatus({
+  blocks,
+  reasoningActive,
+  awaitingApproval,
+}: {
+  blocks: AssistantBlock[];
+  reasoningActive: boolean;
+  awaitingApproval: boolean;
+}) {
+  if (awaitingApproval) return null;
+  if (blocks.some((b) => b.kind === "tool" && b.tool.pending)) return null;
+
+  let runningTool: ToolUI | undefined;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i];
+    if (b.kind === "tool" && b.tool.running) {
+      runningTool = b.tool;
+      break;
+    }
+  }
+
+  if (!runningTool && reasoningActive) return null;
+
+  const label = runningTool ? `Running ${runningTool.name}` : "Working";
+
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+      <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-brand motion-reduce:animate-none" />
+      <span className="truncate">{label}…</span>
+    </div>
+  );
 }
 
 // Zed splits tool calls by kind: edit and execute render as bordered cards
