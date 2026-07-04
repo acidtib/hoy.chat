@@ -23,6 +23,7 @@ import { createHoyPermissions, isPermissionMode, type PermissionMode } from "./h
 import { createHoyMcp, loadMcpConfig } from "./hoy-mcp";
 import { createHoyAgents } from "./hoy-agents";
 import { createHoyAskQuestion } from "./hoy-ask-question";
+import { createHoyInit } from "./hoy-init";
 import { createHoyTurnBudget } from "./hoy-turn-budget";
 import { loadSubagentRegistry, enabledTypes, effectiveChildPrompt } from "./hoy-agents-registry";
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
@@ -153,6 +154,10 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         // child. Registering it unconditionally is harmless (mirrors mcp): a
         // child never has it in `tools`, so it cannot call it.
         createHoyAskQuestion(),
+        // HOY-265: /init generates or refreshes AGENTS.md. A user-invoked
+        // command (surfaced via get_commands, HOY-223), so installing it
+        // unconditionally is safe: a child subagent never types /init.
+        createHoyInit(),
         ...(canSpawn ? [createHoyAgents(registry, requireSubagentApproval)] : []),
         // HOY-244: cap a budgeted subagent type's turns; root/unbudgeted threads
         // run uncapped. childType is null for user threads, so this is child-only.
