@@ -152,6 +152,12 @@ fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
             command.env(&key, val);
         }
     }
+    // Pi's `enableInstallTelemetry` setting defaults to true, which tags
+    // outbound requests to OpenRouter/NVIDIA NIM/Cloudflare/Vercel AI Gateway
+    // with "pi"/pi.dev attribution headers. Force it off unconditionally (not
+    // just an allowlisted passthrough) so Hoy never sends that branding
+    // regardless of the host env or a stale settings.json.
+    command.env("PI_TELEMETRY", "0");
 }
 
 /// Env var names referenced as `${VAR}` across the MCP config files Pi merges
@@ -1917,6 +1923,31 @@ mod live_tests {
         assert!(
             env.contains("HOY261_SECRET=s3kret"),
             "MCP-referenced secret did not pass through:\n{env}"
+        );
+    }
+
+    // Pi's install-telemetry attribution headers default to on; prove the
+    // sanitized env forces PI_TELEMETRY=0 even when an ambient value in the
+    // host env tries to turn it on.
+    #[cfg(unix)]
+    #[test]
+    fn sanitized_env_forces_telemetry_off() {
+        let dir = std::env::temp_dir().join(format!("hoy-telemetry-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::env::set_var("PI_TELEMETRY", "1");
+
+        let mut cmd = Command::new("/usr/bin/env");
+        apply_sanitized_env(&mut cmd, &dir, &dir);
+        let out = cmd.output().expect("spawn /usr/bin/env");
+        let env = String::from_utf8_lossy(&out.stdout);
+
+        std::env::remove_var("PI_TELEMETRY");
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert!(
+            env.contains("PI_TELEMETRY=0"),
+            "expected telemetry forced off, got:\n{env}"
         );
     }
 }
