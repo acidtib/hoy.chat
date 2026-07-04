@@ -5,6 +5,7 @@ mod mcp_config;
 mod oauth;
 mod pi_config;
 mod reader;
+mod session_transcript;
 mod sidecar;
 mod subagents_config;
 mod usage_stats;
@@ -126,6 +127,7 @@ pub fn run() {
             commands::set_permission_mode,
             commands::close_session,
             commands::get_messages,
+            commands::read_session_transcript,
             commands::get_entries,
             commands::get_tree,
             commands::delete_session_file,

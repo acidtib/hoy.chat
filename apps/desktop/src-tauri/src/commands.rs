@@ -10,6 +10,7 @@ use crate::events::{
 };
 use crate::mcp_config::{self, McpScope, McpServerList};
 use crate::pi_config::{self, ProviderAuth, ProviderInfo};
+use crate::session_transcript;
 use crate::sidecar::SidecarManager;
 use crate::subagents_config::{self, SubagentScope};
 use crate::workspace::{self, Workspace};
@@ -349,6 +350,17 @@ pub async fn get_messages(
         .cloned()
         .ok_or("get_messages response missing messages")?;
     serde_json::from_value(messages).map_err(|e| format!("decode messages: {e}"))
+}
+
+// Sidecar-free transcript read (HOY-287): parse a thread's session JSONL straight
+// off disk and return the same Vec<AgentMessage> shape get_messages yields. Lets a
+// reopened thread paint its transcript instantly, before a fresh sidecar has
+// spawned; hydrateThread then reconciles with the live get_messages. `session_file`
+// is the absolute path stored on the thread; the parser guards it to the branded
+// sessions dir. A missing file reads as an empty transcript.
+#[tauri::command]
+pub fn read_session_transcript(session_file: String) -> Result<Vec<Value>, String> {
+    session_transcript::read_transcript(&session_file)
 }
 
 // Read the session's tree entries (0.80.3, HOY-221): the flat, id/parentId-linked
