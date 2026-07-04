@@ -88,7 +88,6 @@ export function HomeComposer({
       thinking={thinking}
       onSelectThinking={setThinking}
       streaming={false}
-      fill
       autoFocus
       placeholder="Ask hoy, @ files, / commands..."
       widgets={[]}
