@@ -16,8 +16,8 @@ import { pickDirectory } from "@/lib/ipc";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
 // The home screen shown when no thread panel is open and the body is not the
-// fleet/usage view (HOY-264). A clean "start a new task" hero built on the real
-// composer; usage stats live in their own Usage view.
+// fleet/usage view (HOY-264). A clean "start a new thread" hero built on the
+// real composer; usage stats live in their own Usage view.
 const MAX_RECENTS = 6;
 
 export function HomePage() {
@@ -62,17 +62,9 @@ export function HomePage() {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
-      {/* Faint brand watermark behind the hero. */}
-      <Sparkle
-        aria-hidden
-        className="pointer-events-none absolute left-1/2 top-16 size-40 -translate-x-1/2 text-foreground/[0.03]"
-      />
-
       <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col items-center justify-center px-8 py-16">
         <h1 className="mb-6 text-center text-2xl font-semibold tracking-tight text-foreground">
-          {hasTarget
-            ? `Start a new task in ${targetProject.name}`
-            : "Start a new task"}
+          Start a new thread
         </h1>
 
         {hasTarget ? (
