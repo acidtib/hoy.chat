@@ -7,6 +7,7 @@ mod pi_config;
 mod reader;
 mod sidecar;
 mod subagents_config;
+mod usage_stats;
 mod workspace;
 
 use sidecar::SidecarManager;
