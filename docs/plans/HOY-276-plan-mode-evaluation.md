@@ -103,11 +103,13 @@ the **design/brainstorm side** and in **multi-worker execution affordances**.
    Superpowers also offers "fresh subagent per task + review between". Given HOY-231, a
    "delegate execution task-by-task" option is a natural adopt.
 
-7. **Plan storage is ephemeral + untracked.** Superpowers plans live in committed
-   `docs/superpowers/{specs,plans}/`. Hoy writes to `.hoy/plans/` in the project cwd, which
-   is **not gitignored and not tracked** (surfaced in HOY-291). For Hoy-the-product this is
-   the right default (a user's plans in their own repo), but there's an unresolved tension
-   between "durable, reviewable, committed" and "scratch".
+7. **Plan storage location.** Superpowers plans live in committed
+   `docs/superpowers/{specs,plans}/`. Hoy writes to `.hoy/plans/` in the project cwd. Whether
+   those plans get committed or gitignored is a **user preference, not something Hoy should
+   enforce** — some users will want plans tracked as durable, reviewable artifacts (like the
+   superpowers corpus); others treat them as scratch. So the note here is only that plans have
+   a single home (`.hoy/plans/`); Hoy should not bake in a gitignore or a tracked-vs-scratch
+   policy. (If anything, an *optional* per-user choice of plan location.)
 
 ## Recommendations (prioritized)
 
@@ -119,8 +121,9 @@ the **design/brainstorm side** and in **multi-worker execution affordances**.
     approaches → **approve** → then draft the plan, emitting a **design doc + plan** pair,
     matching the superpowers two-file split. Uses the existing `ask_question` gate.
 
-**P1 — Resolve `.hoy/` tracking.** Gitignore `.hoy/` (and/or offer "save plan to
-`docs/plans/` (tracked)" from the card). Carried from HOY-291.
+**(dropped) `.hoy/` tracking.** Earlier framed as "gitignore `.hoy/`", but committing vs
+ignoring plans is a **user preference Hoy should not enforce**. No action for Hoy; at most an
+optional per-user plan-location choice. (Ticket HOY-294 canceled for this reason.)
 
 **P2 — Optional Interfaces block for multi-file plans.** Add per-file/per-task
 Consumes/Produces to `PROPOSED_PLAN_FORMAT` when a plan spans 3+ files, so subagent-driven
@@ -139,7 +142,7 @@ type-consistency before the card appears would raise the floor on plan quality.
    `Approaches considered` + `Design rationale`; smallest change, biggest quality lift.
 2. **Two-phase plan mode: design → approve → plan** (P1) — the fuller brainstorming parity,
    producing a design+plan pair. Larger; depends on #1's format.
-3. **Gitignore `.hoy/` + optional tracked plan location** (P1) — hygiene, shared with HOY-291.
+3. ~~Gitignore `.hoy/`~~ — dropped: plan tracking is a user preference, not enforced (HOY-294 canceled).
 4. **Interfaces + subagent-driven execution for plans** (P2) — Consumes/Produces in the
    format plus a task-by-task execute path on the card, leveraging HOY-231.
 
