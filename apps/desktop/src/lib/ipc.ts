@@ -24,6 +24,7 @@ import type {
   SubagentDef,
   SubagentScope,
   ThinkingLevel,
+  UsageReport,
   Workspace,
 } from "./types";
 
@@ -289,6 +290,11 @@ export function readContextFile(root: string, path: string): Promise<string> {
 
 export function getSessionStats(sessionId: string): Promise<SessionStats> {
   return invoke<SessionStats>("get_session_stats", { sessionId });
+}
+
+// HOY-262: aggregate local usage stats parsed from session transcripts.
+export function getUsageStats(): Promise<UsageReport> {
+  return invoke<UsageReport>("get_usage_stats");
 }
 
 export function abort(sessionId: string): Promise<void> {

@@ -109,6 +109,34 @@ export interface SessionStats {
   sessionFile?: string | null;
 }
 
+// Mirror of usage_stats.rs UsageReport (HOY-262). Per-day buckets in ascending
+// date order; the frontend derives ranges/streaks/peak-hour from these.
+export interface UsageTokenBreakdown {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+export interface UsageDay {
+  date: string; // YYYY-MM-DD, local day
+  tokens: UsageTokenBreakdown;
+  cost: number;
+  messages: number;
+  byModel: Record<string, number>;
+  byHour: number[]; // length 24, tokens per local hour
+}
+export interface UsageMeta {
+  sessionCount: number;
+  totalMessages: number;
+  firstDay: string | null;
+  lastDay: string | null;
+}
+export interface UsageReport {
+  days: UsageDay[];
+  meta: UsageMeta;
+}
+
 // A single tool call rendered in a turn. Built from `tool` AgentEvents (start
 // opens it, update/end fill output). `running` flips false on the end event.
 // `pending` is true for blocks inserted before execution (from permissionRequest,
