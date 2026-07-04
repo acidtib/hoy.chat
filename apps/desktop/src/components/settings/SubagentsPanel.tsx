@@ -44,26 +44,31 @@ export function SubagentsPanel() {
   const setSubagentEnabled = useSessionStore((s) => s.setSubagentEnabled);
   const projectPath = useMemo(() => projects.find((p) => p.id === activeProjectId)?.path ?? null, [projects, activeProjectId]);
 
+  // Serve the store cache (warmed by a prior open) immediately so reopening the
+  // tab paints instantly, then revalidate in the background (HOY-274).
+  const cached = useSessionStore((s) => s.subagents);
   const [defs, setDefs] = useState<SubagentDef[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // The list to render: the fresh local copy once fetched, else the store cache,
+  // else null (never loaded → show the loading state).
+  const shown = defs ?? (cached.length ? cached : null);
+
   const refresh = useCallback(async () => {
     try {
       setError(null);
-      setDefs(await listSubagents(projectPath ?? ""));
+      const list = await listSubagents(projectPath ?? "");
+      setDefs(list);
+      // Warm the store cache from this same fetch — no second list_subagents
+      // call (HOY-274) — so spawnChildThread can resolve project-scoped agents
+      // as soon as this panel has been opened (HOY-234).
+      useSessionStore.setState({ subagents: list });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   }, [projectPath]);
   useEffect(() => { void refresh(); }, [refresh]);
-
-  // Warm the store cache so spawnChildThread can resolve project-scoped agents
-  // as soon as this panel has been opened (HOY-234). Scoped to the project, not
-  // folded into refresh(), so a per-row toggle does not re-fire it (HOY-243).
-  useEffect(() => {
-    void useSessionStore.getState().refreshSubagents(projectPath ?? "");
-  }, [projectPath]);
 
   const toggle = (def: SubagentDef, next: boolean) => {
     setBusy(true);
@@ -76,13 +81,14 @@ export function SubagentsPanel() {
     })();
   };
 
-  const byScope = (scope: SubagentScope) => (defs ?? []).filter((d) => d.scope === scope);
+  const byScope = (scope: SubagentScope) => (shown ?? []).filter((d) => d.scope === scope);
 
   return (
     <div className="space-y-6">
       <PanelHeader title="Subagents" description="Specialized agent types the model can spawn. Author them as .hoy/agents/*.md; built-ins are always available." />
       {error && <div className="border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>}
-      {(["builtin", "global", "project"] as SubagentScope[]).map((scope) => {
+      {shown === null && !error && <p className="text-xs text-muted-foreground">Loading agents...</p>}
+      {shown !== null && (["builtin", "global", "project"] as SubagentScope[]).map((scope) => {
         const rows = byScope(scope);
         if (scope === "project" && !projectPath) return null;
         return (
@@ -95,7 +101,6 @@ export function SubagentsPanel() {
           </div>
         );
       })}
-      {!defs && !error && <p className="text-xs text-muted-foreground">Loading agents...</p>}
     </div>
   );
 }
