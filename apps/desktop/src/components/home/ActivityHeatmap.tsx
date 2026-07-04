@@ -10,16 +10,16 @@ export function ActivityHeatmap({ days }: { days: UsageDay[] }) {
   const grid = heatmapGrid(days, WEEKS);
   const max = Math.max(1, ...days.map((d) => d.tokens.total));
   return (
-    <div className="flex gap-[2px] overflow-x-auto pb-1">
+    <div className="flex w-full gap-[2px]">
       {grid.map((col, ci) => (
-        <div key={ci} className="flex flex-col gap-[2px]">
+        <div key={ci} className="flex flex-1 flex-col gap-[2px]">
           {col.map((cell) => {
             const ratio = cell.tokens > 0 ? 0.2 + 0.8 * (cell.tokens / max) : 0;
             return (
               <div
                 key={cell.date}
                 title={`${cell.date}: ${formatTokens(cell.tokens)} tokens`}
-                className="size-2.5 shrink-0 border border-border/40 bg-brand"
+                className="aspect-square w-full border border-border/40 bg-brand"
                 style={{
                   opacity: ratio || undefined,
                   backgroundColor: cell.tokens > 0 ? undefined : "transparent",
