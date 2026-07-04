@@ -30,13 +30,15 @@ export function UsageDashboard() {
 
   const view = useMemo(() => {
     if (!report) return null;
-    const days = daysInRange(report.days, range);
+    // The cards, heatmap, and streak are an all-time summary; only the charts
+    // below (trend + model usage) respond to the range switch.
+    const rangeDays = daysInRange(report.days, range);
     return {
-      days,
-      totals: totals(days),
+      totals: totals(report.days),
       streaks: streaks(report.days),
-      peak: peakHour(days),
-      breakdown: modelBreakdown(days),
+      peak: peakHour(report.days),
+      rangeDays,
+      breakdown: modelBreakdown(rangeDays),
     };
   }, [report, range]);
 
@@ -53,10 +55,7 @@ export function UsageDashboard() {
   const v = view!;
   return (
     <section className="space-y-8">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-foreground">Usage Stats</h2>
-        <RangeSwitch value={range} onChange={setRange} />
-      </div>
+      <h2 className="text-sm font-medium text-foreground">Usage Stats</h2>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Token Usage" value={formatTokens(v.totals.tokens)} />
@@ -80,8 +79,11 @@ export function UsageDashboard() {
       </div>
 
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Daily Token Trend</h3>
-        <TokenTrendChart days={v.days} breakdown={v.breakdown} />
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-foreground">Daily Token Trend</h3>
+          <RangeSwitch value={range} onChange={setRange} />
+        </div>
+        <TokenTrendChart days={v.rangeDays} breakdown={v.breakdown} />
       </div>
 
       <div className="space-y-3">
