@@ -507,6 +507,21 @@ interface SessionStore {
     images?: ImageContent[],
     behavior?: StreamingBehavior,
   ) => Promise<void>;
+  // Create a thread from the home hero and send its first prompt in one step
+  // (HOY-264). Records the chosen model/permission/thinking on the new
+  // session-less thread, opens it (addThread), and submits; submitPrompt lazily
+  // spawns the session and applies the deferred picks. The thread is only minted
+  // here, on send, so opening home and leaving creates no empty thread.
+  startThread: (
+    projectId: string,
+    message: string,
+    opts: {
+      model: ModelRef | null;
+      permissionMode: PermissionMode;
+      thinkingLevel: ThinkingLevel;
+      images?: ImageContent[];
+    },
+  ) => void;
   // Abort the thread's streaming turn (HOY-195). The turn's terminal events
   // arrive over the channel as usual; no state is flipped here.
   stopStreaming: (threadId: string) => Promise<void>;
@@ -1306,6 +1321,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         return { threadErrors: { ...s.threadErrors, [threadId]: String(e) } };
       });
     }
+  },
+
+  startThread: (projectId, message, opts) => {
+    const id = get().addThread(projectId);
+    if (opts.model) {
+      void get().selectModel(id, opts.model.provider, opts.model.id);
+    }
+    void get().setPermissionMode(id, opts.permissionMode);
+    void get().selectThinkingLevel(id, opts.thinkingLevel);
+    void get().submitPrompt(id, message, opts.images);
   },
 
   stopStreaming: async (threadId) => {
