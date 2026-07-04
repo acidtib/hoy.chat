@@ -282,7 +282,7 @@ interface SessionStore {
   // time-bucketed history (toggled from the bottom-bar clock).
   sidebarView: "projects" | "history";
   sidebarWidth: number;
-  bodyView: "panels" | "fleet";
+  bodyView: "panels" | "fleet" | "usage";
   // Global settings modal, openable from any entry point (home cog, thread menu).
   settingsOpen: boolean;
   activeSessionId: string | null;
@@ -406,7 +406,7 @@ interface SessionStore {
   resizePanelEdge: (index: number, deltaPx: number) => void;
   toggleSidebar: () => void;
   setSidebarView: (view: "projects" | "history") => void;
-  setBodyView: (view: "panels" | "fleet") => void;
+  setBodyView: (view: "panels" | "fleet" | "usage") => void;
   setSettingsOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
   addProject: (path: string) => void;
