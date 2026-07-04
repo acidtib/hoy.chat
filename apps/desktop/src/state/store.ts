@@ -281,6 +281,10 @@ interface SessionStore {
   // Which view the sidebar shows: the projects -> threads tree, or the flat
   // time-bucketed history (toggled from the bottom-bar clock).
   sidebarView: "projects" | "history";
+  // When history is opened scoped to one project (the sidebar's "N more" row,
+  // HOY-257), this holds that project's id so ThreadHistory filters to it;
+  // null = all threads. Cleared whenever the sidebar view is toggled directly.
+  historyProjectId: string | null;
   sidebarWidth: number;
   bodyView: "panels" | "fleet" | "usage";
   // Global settings modal, openable from any entry point (home cog, thread menu).
@@ -406,6 +410,8 @@ interface SessionStore {
   resizePanelEdge: (index: number, deltaPx: number) => void;
   toggleSidebar: () => void;
   setSidebarView: (view: "projects" | "history") => void;
+  // Open the history view scoped to a project (null = unscoped). HOY-257.
+  openThreadHistory: (projectId: string | null) => void;
   setBodyView: (view: "panels" | "fleet" | "usage") => void;
   setSettingsOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
@@ -549,6 +555,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   bodyWidth: initialBodyWidth(),
   sidebarCollapsed: false,
   sidebarView: "projects",
+  historyProjectId: null,
   settingsOpen: false,
   sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   bodyView: "panels",
@@ -822,7 +829,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }),
 
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
-  setSidebarView: (view) => set({ sidebarView: view }),
+  setSidebarView: (view) => set({ sidebarView: view, historyProjectId: null }),
+  openThreadHistory: (projectId) =>
+    set({ sidebarView: "history", historyProjectId: projectId }),
   setBodyView: (view) => set({ bodyView: view }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setSidebarWidth: (width) =>

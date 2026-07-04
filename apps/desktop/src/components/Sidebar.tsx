@@ -39,6 +39,10 @@ import { useSessionStore } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 import type { Project, Thread } from "@/lib/types";
 
+// Cap on how many top-level threads a project group shows before collapsing the
+// rest behind an "N more" row that opens the full Thread History (HOY-257).
+const SIDEBAR_THREAD_CAP = 6;
+
 export function Sidebar() {
   const projects = useSessionStore((s) => s.projects);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
@@ -241,6 +245,29 @@ function ProjectGroup({
   // Removing a project is destructive (drops the project and all its threads
   // from the workspace); gate it behind a confirm (HOY-225).
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const openThreadHistory = useSessionStore((s) => s.openThreadHistory);
+
+  // Top-level threads, most-recent first. Children stay in project.threads for
+  // the fleet-marker computation below; they never render as rows (HOY-250).
+  const topThreads = useMemo(
+    () =>
+      project.threads
+        .filter((t) => !t.parentThreadId)
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    [project.threads],
+  );
+  // Show the 6 most recent, but never hide the thread the user is looking at
+  // (active or open). While searching the list is already the match set, so
+  // show all matches rather than re-capping them (HOY-257).
+  const shownThreads = searching
+    ? topThreads
+    : topThreads.filter(
+        (t, i) =>
+          i < SIDEBAR_THREAD_CAP ||
+          t.id === activeThreadId ||
+          openIds.has(t.id),
+      );
+  const hiddenCount = topThreads.length - shownThreads.length;
 
   return (
     <li>
@@ -324,14 +351,13 @@ function ProjectGroup({
 
       {expanded && (
         <div className="mt-0.5 flex flex-col gap-0.5 pb-1">
-          {project.threads.filter((t) => !t.parentThreadId).length === 0 ? (
+          {topThreads.length === 0 ? (
             <p className="px-2.5 py-1 pl-7 text-xs text-muted-foreground">
               No threads yet
             </p>
           ) : (
-            project.threads
-              .filter((t) => !t.parentThreadId)
-              .map((thread) => (
+            <>
+              {shownThreads.map((thread) => (
                 <ThreadRow
                   key={thread.id}
                   thread={thread}
@@ -345,7 +371,16 @@ function ProjectGroup({
                     (c) => c.parentThreadId === thread.id,
                   )}
                 />
-              ))
+              ))}
+              {hiddenCount > 0 && (
+                <button
+                  onClick={() => openThreadHistory(project.id)}
+                  className="cursor-pointer rounded-md py-1 pl-7 pr-2 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {hiddenCount} more…
+                </button>
+              )}
+            </>
           )}
         </div>
       )}

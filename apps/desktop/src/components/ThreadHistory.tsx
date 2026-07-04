@@ -6,6 +6,7 @@ import {
   Search,
   Sparkle,
   Trash2,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,7 +32,7 @@ import { useSessionStore } from "@/state/store";
 import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
 import type { Thread } from "@/lib/types";
 
-type HistoryItem = { thread: Thread; projectName: string };
+type HistoryItem = { thread: Thread; projectName: string; projectId: string };
 
 // Zed-style thread history: a flat, searchable list of every thread across
 // projects, grouped by recency. Toggled from the bottom-bar clock. The archive
@@ -43,18 +44,29 @@ export function ThreadHistory() {
   const openThread = useSessionStore((s) => s.openThread);
   const requestTeardown = useSessionStore((s) => s.requestTeardown);
   const unarchiveThread = useSessionStore((s) => s.unarchiveThread);
+  const historyProjectId = useSessionStore((s) => s.historyProjectId);
+  const openThreadHistory = useSessionStore((s) => s.openThreadHistory);
 
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const normalized = query.trim().toLowerCase();
 
+  // The project this view is scoped to (opened from the sidebar's "N more"
+  // row, HOY-257). A stale id whose project was removed reads as unscoped.
+  const scopedProject = historyProjectId
+    ? (projects.find((p) => p.id === historyProjectId) ?? null)
+    : null;
+  const scopedProjectId = scopedProject?.id ?? null;
+
   const groups = useMemo(() => {
     const items: HistoryItem[] = [];
     for (const p of projects) {
-      for (const t of p.threads) items.push({ thread: t, projectName: p.name });
+      for (const t of p.threads)
+        items.push({ thread: t, projectName: p.name, projectId: p.id });
     }
     const filtered = items
       .filter((i) => !!i.thread.archived === showArchived)
+      .filter((i) => !scopedProjectId || i.projectId === scopedProjectId)
       .filter(
         (i) =>
           !normalized ||
@@ -77,7 +89,7 @@ export function ThreadHistory() {
         items: byBucket.get(b)!,
       })),
     };
-  }, [projects, showArchived, normalized]);
+  }, [projects, showArchived, normalized, scopedProjectId]);
 
   return (
     <SidebarShell>
@@ -111,6 +123,21 @@ export function ThreadHistory() {
           </TooltipContent>
         </Tooltip>
       </div>
+
+      {scopedProject && (
+        <div className="px-3 pb-1">
+          <span className="inline-flex items-center gap-1 rounded-md bg-sidebar-accent/60 py-1 pl-2 pr-1 text-xs text-sidebar-foreground">
+            <span className="max-w-[12rem] truncate">{scopedProject.name}</span>
+            <button
+              onClick={() => openThreadHistory(null)}
+              aria-label="Clear project filter"
+              className="cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <X className="size-3" />
+            </button>
+          </span>
+        </div>
+      )}
 
       <div className="px-3 pb-1 text-[11px] uppercase tracking-wider text-muted-foreground">
         {groups.count} {showArchived ? "archived" : ""}{" "}
