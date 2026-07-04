@@ -197,6 +197,14 @@ export function getMessages(sessionId: string): Promise<unknown[]> {
   return invoke<unknown[]>("get_messages", { sessionId });
 }
 
+// Sidecar-free transcript read (HOY-287): parse the thread's session JSONL off
+// disk, returning the same raw Pi AgentMessage[] as getMessages. Lets a reopened
+// thread render instantly before its sidecar is live; the caller reconciles with
+// getMessages once the session is up. `sessionFile` is the thread's stored path.
+export function readSessionTranscript(sessionFile: string): Promise<unknown[]> {
+  return invoke<unknown[]>("read_session_transcript", { sessionFile });
+}
+
 // Read the session's tree entries (0.80.3, HOY-221): the flat SessionEntry list
 // plus the current leafId. Read side of the fork/tree gap; backs a future /tree
 // navigator. `since` returns only entries after that entry id (incremental read).

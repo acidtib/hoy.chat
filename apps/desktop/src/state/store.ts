@@ -17,6 +17,7 @@ import {
   listSubagents,
   loadWorkspace,
   readContextFile,
+  readSessionTranscript,
   removeMcpServer as ipcRemoveMcpServer,
   removeProviderKey as ipcRemoveProviderKey,
   respondPermission as ipcRespondPermission,
@@ -1516,9 +1517,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
 
-  // Restore a reopened thread's transcript: spawn a sidecar that opens its
-  // session file, pull the messages, and fold them into turns. No-op for a
-  // brand-new thread (no sessionFile -> spawns lazily on first prompt) or one
+  // Restore a reopened thread's transcript. HOY-287: paint the transcript from
+  // disk FIRST (parse the session JSONL with no sidecar, effectively instant),
+  // THEN spawn the sidecar, pull the live messages, and silently reconcile. No-op
+  // for a brand-new thread (no sessionFile -> spawns lazily on first prompt) or one
   // already live/loaded.
   hydrateThread: async (threadId) => {
     const found = findThread(get().projects, threadId);
@@ -1526,6 +1528,33 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const { thread, project } = found;
     if (!thread.sessionFile || thread.sessionId) return;
     if ((get().turns[threadId]?.length ?? 0) > 0) return;
+
+    // 1. Instant disk render. Keep the exact array reference we paint so the
+    // reconcile below can tell "still our disk render" (safe to replace) apart
+    // from "a concurrent submitPrompt replaced it" (must win). submitPrompt always
+    // spreads a new array, so identity distinguishes the two.
+    let diskTurns: Turn[] | null = null;
+    try {
+      const diskMessages = await readSessionTranscript(thread.sessionFile);
+      // Only paint if nothing populated turns while we read (a concurrent
+      // submitPrompt wins); an empty transcript leaves turns untouched.
+      if ((get().turns[threadId]?.length ?? 0) === 0 && diskMessages.length > 0) {
+        diskTurns = messagesToTurns(diskMessages);
+        const painted = diskTurns;
+        set((s) => ({ turns: { ...s.turns, [threadId]: painted } }));
+      }
+    } catch {
+      // Best-effort: a failed disk read just means no early paint; the sidecar
+      // path below still restores the transcript.
+    }
+
+    // A concurrent submitPrompt could have populated turns while we read from
+    // disk. Its live/streaming turns must win, so don't clobber and don't
+    // re-render from disk: it will spawn the sidecar itself. (turns present, not
+    // our disk array -> a real prompt got there first.)
+    const afterDisk = get().turns[threadId];
+    if (afterDisk && afterDisk !== diskTurns && afterDisk.length > 0) return;
+
     try {
       const sessionId = await acquireSession(
         threadId,
@@ -1550,9 +1579,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       });
       // A concurrent submitPrompt may have populated turns and sent a prompt
       // while we were spawning; don't clobber it with the restored transcript.
-      if ((get().turns[threadId]?.length ?? 0) > 0) return;
+      // The disk render we painted is ours to replace, so only bail when turns
+      // exist AND are not our disk array (a real prompt's turns win).
+      const beforeFetch = get().turns[threadId];
+      if (beforeFetch && beforeFetch !== diskTurns && beforeFetch.length > 0) {
+        return;
+      }
       const messages = await getMessages(sessionId);
-      if ((get().turns[threadId]?.length ?? 0) > 0) return;
+      const beforeSet = get().turns[threadId];
+      if (beforeSet && beforeSet !== diskTurns && beforeSet.length > 0) return;
       set((s) => ({
         turns: { ...s.turns, [threadId]: messagesToTurns(messages) },
       }));
