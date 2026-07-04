@@ -1,26 +1,34 @@
 "use client";
 
-// Adapted from the AI Elements `plan` component (registry.ai-sdk.dev/plan) for
-// Hoy's transcript. The registry version is built on a shadcn Card primitive
-// (rounded, generously padded, drop shadow) that this app deliberately does not
-// use -- the transcript is dense, square-cornered and low-chrome. This keeps the
-// same component API (Plan / PlanHeader / PlanTitle / PlanContent / PlanFooter /
-// PlanTrigger) and the streaming-shimmer behaviour, restyled with the `agent`
-// accent Hoy already uses for plan-mode surfaces. Collapsible so a long plan can
-// be folded away in a busy transcript.
+// The AI Elements `plan` component (registry.ai-sdk.dev/plan), vendored as-is:
+// a Collapsible wrapping a Card, with header/title/description/action/content/
+// footer slots and a streaming-shimmer title. See ProposedPlanCard in
+// ThreadView for how Hoy composes it for plan-mode handoffs (HOY-259).
 
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronsUpDownIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 import { createContext, useContext } from "react";
 import { Shimmer } from "./shimmer";
 
-type PlanContextValue = { isStreaming: boolean };
+type PlanContextValue = {
+  isStreaming: boolean;
+};
 
 const PlanContext = createContext<PlanContextValue | null>(null);
 
@@ -36,82 +44,104 @@ export type PlanProps = ComponentProps<typeof Collapsible> & {
   isStreaming?: boolean;
 };
 
-export const Plan = ({ className, isStreaming = false, ...props }: PlanProps) => (
+export const Plan = ({
+  className,
+  isStreaming = false,
+  children,
+  ...props
+}: PlanProps) => (
   <PlanContext.Provider value={{ isStreaming }}>
-    <Collapsible
-      className={cn(
-        "group my-1 overflow-hidden rounded-lg border border-agent/40 bg-agent/5",
-        className,
-      )}
-      {...props}
-    />
+    <Collapsible asChild data-slot="plan" {...props}>
+      <Card className={cn("shadow-none", className)}>{children}</Card>
+    </Collapsible>
   </PlanContext.Provider>
 );
 
-export type PlanHeaderProps = ComponentProps<"div">;
+export type PlanHeaderProps = ComponentProps<typeof CardHeader>;
 
 export const PlanHeader = ({ className, ...props }: PlanHeaderProps) => (
-  <div
-    className={cn(
-      "flex items-center gap-2 border-b border-agent/20 px-3 py-1.5",
-      className,
-    )}
+  <CardHeader
+    className={cn("flex items-start justify-between", className)}
+    data-slot="plan-header"
     {...props}
   />
 );
 
-export type PlanTitleProps = Omit<ComponentProps<"span">, "children"> & {
+export type PlanTitleProps = Omit<
+  ComponentProps<typeof CardTitle>,
+  "children"
+> & {
   children: string;
 };
 
-export const PlanTitle = ({ className, children, ...props }: PlanTitleProps) => {
+export const PlanTitle = ({ children, ...props }: PlanTitleProps) => {
   const { isStreaming } = usePlan();
+
   return (
-    <span
-      className={cn("text-xs font-medium text-agent", className)}
-      {...props}
-    >
-      {isStreaming ? <Shimmer duration={1}>{children}</Shimmer> : children}
-    </span>
+    <CardTitle data-slot="plan-title" {...props}>
+      {isStreaming ? <Shimmer>{children}</Shimmer> : children}
+    </CardTitle>
   );
 };
 
-export type PlanContentProps = ComponentProps<typeof CollapsibleContent>;
+export type PlanDescriptionProps = Omit<
+  ComponentProps<typeof CardDescription>,
+  "children"
+> & {
+  children: string;
+};
 
-export const PlanContent = ({ className, ...props }: PlanContentProps) => (
-  <CollapsibleContent
-    className={cn(
-      "px-3 py-2 text-sm data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-      className,
-    )}
-    {...props}
-  />
+export const PlanDescription = ({
+  className,
+  children,
+  ...props
+}: PlanDescriptionProps) => {
+  const { isStreaming } = usePlan();
+
+  return (
+    <CardDescription
+      className={cn("text-balance", className)}
+      data-slot="plan-description"
+      {...props}
+    >
+      {isStreaming ? <Shimmer>{children}</Shimmer> : children}
+    </CardDescription>
+  );
+};
+
+export type PlanActionProps = ComponentProps<typeof CardAction>;
+
+export const PlanAction = (props: PlanActionProps) => (
+  <CardAction data-slot="plan-action" {...props} />
+);
+
+export type PlanContentProps = ComponentProps<typeof CardContent>;
+
+export const PlanContent = (props: PlanContentProps) => (
+  <CollapsibleContent asChild>
+    <CardContent data-slot="plan-content" {...props} />
+  </CollapsibleContent>
 );
 
 export type PlanFooterProps = ComponentProps<"div">;
 
-export const PlanFooter = ({ className, ...props }: PlanFooterProps) => (
-  <div
-    className={cn(
-      "flex flex-wrap items-center justify-end gap-1.5 border-t border-agent/20 px-3 py-2",
-      className,
-    )}
-    {...props}
-  />
+export const PlanFooter = (props: PlanFooterProps) => (
+  <CardFooter data-slot="plan-footer" {...props} />
 );
 
 export type PlanTriggerProps = ComponentProps<typeof CollapsibleTrigger>;
 
-// Chevron toggle. Sits in the header; rotates when open.
 export const PlanTrigger = ({ className, ...props }: PlanTriggerProps) => (
-  <CollapsibleTrigger
-    className={cn(
-      "shrink-0 text-agent/70 outline-none transition-colors hover:text-agent",
-      className,
-    )}
-    aria-label="Toggle plan"
-    {...props}
-  >
-    <ChevronDownIcon className="size-3.5 transition-transform group-data-[state=closed]:-rotate-90" />
+  <CollapsibleTrigger asChild>
+    <Button
+      className={cn("size-8", className)}
+      data-slot="plan-trigger"
+      size="icon"
+      variant="ghost"
+      {...props}
+    >
+      <ChevronsUpDownIcon className="size-4" />
+      <span className="sr-only">Toggle plan</span>
+    </Button>
   </CollapsibleTrigger>
 );

@@ -66,6 +66,7 @@ import {
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
 import {
   Plan,
+  PlanAction,
   PlanContent,
   PlanFooter,
   PlanHeader,
@@ -961,16 +962,22 @@ function ProposedPlanCard({
 }) {
   const body = text.trim();
   return (
-    <Plan defaultOpen isStreaming={streaming}>
+    <Plan
+      defaultOpen
+      isStreaming={streaming}
+      className="my-1 ring-agent/25 [--card-spacing:--spacing(3)]"
+    >
       <PlanHeader>
-        <ClipboardCheck className="size-3.5 shrink-0 text-agent" />
-        <PlanTitle>Proposed plan</PlanTitle>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <ClipboardCheck className="size-4 shrink-0 text-agent" />
+          <PlanTitle className="text-sm text-agent">Proposed plan</PlanTitle>
           {streaming && (
-            <span className="size-1.5 animate-pulse rounded-full bg-agent motion-reduce:animate-none" />
+            <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none" />
           )}
-          <PlanTrigger />
         </div>
+        <PlanAction>
+          <PlanTrigger className="size-6 text-muted-foreground" />
+        </PlanAction>
       </PlanHeader>
       {body.length > 0 && (
         <PlanContent>
@@ -978,7 +985,7 @@ function ProposedPlanCard({
         </PlanContent>
       )}
       {ready && (
-        <PlanFooter>
+        <PlanFooter className="flex-wrap justify-end gap-1.5">
           <Button
             variant="ghost"
             size="sm"
