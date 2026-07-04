@@ -33,6 +33,7 @@ import {
 import { InlineRename } from "@/components/InlineRename";
 import { ThreadModelIcon } from "@/components/ThreadModelIcon";
 import { cn, formatRelativeTime } from "@/lib/utils";
+import { threadIconColorClass } from "@/lib/threadColor";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
 import { pickDirectory } from "@/lib/ipc";
 import { useSessionStore } from "@/state/store";
@@ -444,11 +445,11 @@ function ThreadRow({
         model={iconModel}
         className={cn(
           "mt-0.5 size-3.5 shrink-0",
-          isAgent
-            ? "text-agent"
-            : active || open
-              ? "text-brand"
-              : "text-muted-foreground",
+          threadIconColorClass({
+            id: thread.id,
+            active: active || open,
+            isAgent,
+          }),
         )}
       />
       <span className="min-w-0 flex-1">

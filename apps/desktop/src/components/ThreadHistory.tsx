@@ -28,6 +28,7 @@ import {
   RECENCY_ORDER,
   type RecencyBucket,
 } from "@/lib/utils";
+import { threadIconColorClass } from "@/lib/threadColor";
 import { useSessionStore } from "@/state/store";
 import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
 import type { Thread } from "@/lib/types";
@@ -220,11 +221,7 @@ function HistoryRow({
           model={thread.model}
           className={cn(
             "mt-0.5 size-3.5 shrink-0",
-            isAgent
-              ? "text-agent"
-              : active
-                ? "text-brand"
-                : "text-muted-foreground",
+            threadIconColorClass({ id: thread.id, active, isAgent }),
           )}
         />
         <span className="min-w-0 flex-1">

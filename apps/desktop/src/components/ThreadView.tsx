@@ -77,6 +77,7 @@ import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Composer } from "@/components/Composer";
 import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
+import { threadIconColorClass } from "@/lib/threadColor";
 import { splitPlanSegments } from "@/lib/plan";
 import { findThread, useSessionStore } from "@/state/store";
 import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
@@ -295,11 +296,11 @@ export function ThreadView({
           <Sparkle
             className={cn(
               "size-4 shrink-0",
-              threadIsAgent
-                ? "text-agent"
-                : active
-                  ? "text-brand"
-                  : "text-muted-foreground",
+              threadIconColorClass({
+                id: threadId,
+                active,
+                isAgent: threadIsAgent,
+              }),
               // Breathe while this thread is generating so a working thread is
               // legible from the header even scrolled up, and background panels
               // that are still running stand out across the strip.
