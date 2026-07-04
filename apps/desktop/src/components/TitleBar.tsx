@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GitBranch, Minus, Settings, Square, X } from "lucide-react";
+import { BarChart3, Bot, GitBranch, Minus, Settings, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -25,6 +25,8 @@ export function TitleBar() {
   const projects = useSessionStore((s) => s.projects);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
   const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
+  const bodyView = useSessionStore((s) => s.bodyView);
+  const setBodyView = useSessionStore((s) => s.setBodyView);
 
   // The focused thread's project; with no thread focused (home page) the left
   // side stays empty.
@@ -61,7 +63,26 @@ export function TitleBar() {
         )}
       </div>
 
+      {/* Global view/app controls, left → right: Usage toggle, FleetView
+          toggle, Settings cog, then the window controls. The two body-view
+          toggles keep their footer active treatment (brand for Usage,
+          text-agent for the agents/fleet view). */}
       <div className="flex shrink-0 items-center gap-0.5">
+        <TitleBarButton
+          label={bodyView === "usage" ? "Show Panels" : "Show Usage Stats"}
+          onClick={() => setBodyView(bodyView === "usage" ? "panels" : "usage")}
+          active={bodyView === "usage"}
+        >
+          <BarChart3 className="size-4" />
+        </TitleBarButton>
+        <TitleBarButton
+          label={bodyView === "fleet" ? "Show Panels" : "Show FleetView"}
+          onClick={() => setBodyView(bodyView === "fleet" ? "panels" : "fleet")}
+          active={bodyView === "fleet"}
+          activeClassName="text-agent"
+        >
+          <Bot className="size-4" />
+        </TitleBarButton>
         <TitleBarButton
           label="Settings"
           onClick={() => setSettingsOpen(true)}
@@ -183,11 +204,17 @@ function TitleBarButton({
   onClick,
   className,
   children,
+  active = false,
+  activeClassName = "text-brand",
 }: {
   label: string;
   onClick: () => void;
   className?: string;
   children: React.ReactNode;
+  active?: boolean;
+  // Color when active; defaults to the brand navigation color, overridden by
+  // callers representing a different surface (e.g. text-agent for FleetView).
+  activeClassName?: string;
 }) {
   return (
     <Button
@@ -196,7 +223,11 @@ function TitleBarButton({
       onClick={onClick}
       aria-label={label}
       title={label}
-      className={cn("size-7 text-muted-foreground hover:text-foreground", className)}
+      className={cn(
+        "size-7 hover:text-foreground",
+        active ? activeClassName : "text-muted-foreground",
+        className,
+      )}
     >
       {children}
     </Button>
