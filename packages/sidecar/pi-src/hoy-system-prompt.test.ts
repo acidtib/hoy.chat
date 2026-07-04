@@ -14,7 +14,11 @@ import {
   createAgentSessionServices,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import { HOY_SYSTEM_PROMPT } from "./hoy-system-prompt";
+import {
+  HOY_SYSTEM_PROMPT,
+  PLAN_MODE_PROMPT,
+  PROPOSED_PLAN_FORMAT,
+} from "./hoy-system-prompt";
 
 // Pi 0.80.3 edit guidelines (core/tools/edit.js). The prompt must carry these
 // verbatim; replacement strips pi's ability to inject them.
@@ -97,5 +101,26 @@ describe("hoy system prompt assembly", () => {
     expect(prompt).toContain("src/main.rs:42");
     expect(prompt).toContain("Do not add tests to projects that have none");
     expect(prompt).toContain("git reset --hard");
+  });
+});
+
+describe("plan mode: two-phase design gate (HOY-276 follow-up)", () => {
+  test("the plan output contract carries the design-rationale sections", () => {
+    expect(PROPOSED_PLAN_FORMAT).toContain("## Approaches considered");
+    expect(PROPOSED_PLAN_FORMAT).toContain("## Design rationale");
+    // Design comes before the steps so a reviewer sees the "why" before the "what".
+    expect(PROPOSED_PLAN_FORMAT.indexOf("## Approaches considered")).toBeLessThan(
+      PROPOSED_PLAN_FORMAT.indexOf("## Steps"),
+    );
+  });
+
+  test("plan mode instructs the approaches gate via a single ask_question call", () => {
+    expect(PLAN_MODE_PROMPT).toContain("design gate");
+    expect(PLAN_MODE_PROMPT).toContain("ask_question");
+    expect(PLAN_MODE_PROMPT).toContain("2-3 genuinely distinct approaches");
+    // The gate is skippable only for a genuinely trivial change.
+    expect(PLAN_MODE_PROMPT).toContain("Only skip the gate for a genuinely trivial change");
+    // ...and it must stop for the answer before emitting the plan.
+    expect(PLAN_MODE_PROMPT).toContain("do NOT emit the proposed_plan block, until the user has answered");
   });
 });
