@@ -4,7 +4,7 @@
 // than via the shell plugin so the JSONL framing (reader.rs) stays under our
 // control, per the protocol's LF-only requirement.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -86,6 +86,94 @@ pub struct PiProcess {
     sink: EventSink,
 }
 
+/// Host environment variables the sanitized sidecar is allowed to inherit.
+/// Everything else is stripped at spawn (see `apply_sanitized_env`) so a value
+/// in the desktop app's ambient environment can't steer the bundled Pi agent
+/// (HOY-261): Pi reads a range of PI_* knobs (share-viewer URL, session dir,
+/// offline/telemetry toggles) and interpolates `$ENVVAR` in config values, none
+/// of which an untrusted parent env should control. We forward only what the
+/// headless RPC sidecar genuinely needs; the vars we set per spawn
+/// (PI_PACKAGE_DIR, HOY_CODING_AGENT_DIR, HOY_*) layer on top afterward.
+const HOST_ENV_ALLOWLIST: &[&str] = &[
+    // POSIX essentials: locating tools, temp extraction (bun single-file exec),
+    // identity, and locale.
+    "HOME", "PATH", "TMPDIR", "USER", "LOGNAME", "SHELL",
+    "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "LC_MESSAGES",
+    // Proxies: forwarded deliberately so the agent honors a real system proxy;
+    // an injected proxy already implies control of the local environment.
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+    "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+    // Windows essentials (absent on Unix; keep a cross-platform build working).
+    "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "SystemRoot", "windir",
+    "ProgramFiles", "ProgramFiles(x86)", "ProgramData",
+    "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "PATHEXT",
+];
+
+/// Reset `command`'s environment to the sanitized base: the host allowlist plus
+/// any `${VAR}` referenced in the MCP config files (so MCP server secrets keep
+/// resolving, HOY-261). Call BEFORE setting the dir vars / per-spawn HOY_*; those
+/// layer on top of the cleared base.
+fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
+    command.env_clear();
+    for key in HOST_ENV_ALLOWLIST {
+        if let Some(val) = std::env::var_os(key) {
+            command.env(key, val);
+        }
+    }
+    // Keep the secrets referenced by MCP server configs (chosen over a strict
+    // allowlist so `${GITHUB_TOKEN}`-style refs still resolve; HOY-261).
+    for key in mcp_referenced_env_vars(agent_dir, cwd) {
+        if let Some(val) = std::env::var_os(&key) {
+            command.env(&key, val);
+        }
+    }
+}
+
+/// Env var names referenced as `${VAR}` across the MCP config files Pi merges
+/// (global `<agent_dir>/mcp.json` + project `<cwd>/.mcp.json` and
+/// `<cwd>/.hoy/mcp.json`). Mirrors hoy-mcp.ts `loadMcpConfig` search paths so the
+/// sanitized env still carries the secrets those references resolve from.
+fn mcp_referenced_env_vars(agent_dir: &Path, cwd: &Path) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    let files = [
+        agent_dir.join("mcp.json"),
+        cwd.join(".mcp.json"),
+        cwd.join(".hoy").join("mcp.json"),
+    ];
+    for f in files {
+        if let Ok(text) = std::fs::read_to_string(&f) {
+            collect_env_refs(&text, &mut names);
+        }
+    }
+    names
+}
+
+/// Collect `${VAR}` names from `text` (VAR = ASCII word chars), mirroring
+/// hoy-mcp.ts's `/\$\{(\w+)\}/`. Over-collecting a name written as an escaped
+/// `$${VAR}` is harmless: the value just becomes available and interpolation
+/// still treats the escaped form as a literal.
+fn collect_env_refs(text: &str, out: &mut BTreeSet<String>) {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'$' && bytes[i + 1] == b'{' {
+            let start = i + 2;
+            let mut j = start;
+            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == b'}' && j > start {
+                out.insert(text[start..j].to_string());
+                i = j + 1;
+                continue;
+            }
+            i = start;
+        } else {
+            i += 1;
+        }
+    }
+}
+
 impl PiProcess {
     fn spawn(
         bin: &Path,
@@ -103,12 +191,17 @@ impl PiProcess {
             return Err("agent dir not resolved (set HOME or HOY_AGENT_DIR)".into());
         }
         let mut command = Command::new(bin);
+        // HOY-261: strip the ambient environment and forward only the allowlist
+        // (+ MCP ${VAR} secrets) so a value in the desktop app's env can't steer
+        // the bundled Pi agent. Must precede the explicit vars set below.
+        apply_sanitized_env(&mut command, agent_dir, cwd);
         command
             // No CLI flags: this is our SDK entry (hoy-sidecar.ts), not Pi's CLI.
-            // PI_CODING_AGENT_DIR points the entry at our branded dir for
-            // auth.json / models.json / settings.json / sessions.
+            // HOY_CODING_AGENT_DIR points the entry at our branded dir for
+            // auth.json / models.json / settings.json / sessions (HOY-261: the
+            // payload sets piConfig.name="hoy", so Pi derives this same name).
             .env("PI_PACKAGE_DIR", payload)
-            .env("PI_CODING_AGENT_DIR", agent_dir)
+            .env("HOY_CODING_AGENT_DIR", agent_dir)
             .current_dir(cwd);
         // M4: open this thread's existing transcript instead of starting fresh.
         // The entry falls back to a new session if the file is missing.
@@ -787,8 +880,8 @@ pub struct SidecarManager {
     bin: PathBuf,
     payload: PathBuf,
     // Branded agent dir (~/.hoy by default, HOY-255), passed to each sidecar as
-    // PI_CODING_AGENT_DIR. Resolved once here; the same dir Rust writes auth.json
-    // to in pi_config, so Rust and the sidecar agree on credentials.
+    // HOY_CODING_AGENT_DIR (HOY-261). Resolved once here; the same dir Rust writes
+    // auth.json to in pi_config, so Rust and the sidecar agree on credentials.
     agent_dir: PathBuf,
     cwd: PathBuf,
 }
@@ -940,9 +1033,10 @@ impl SidecarManager {
             return Err("agent dir not resolved (set HOME or HOY_AGENT_DIR)".into());
         }
         let mut command = Command::new(&self.bin);
+        apply_sanitized_env(&mut command, &self.agent_dir, &self.cwd);
         command
             .env("PI_PACKAGE_DIR", &self.payload)
-            .env("PI_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_CODING_AGENT_DIR", &self.agent_dir)
             .env("HOY_OAUTH_LOGIN", provider)
             .current_dir(&self.cwd);
         Ok(command)
@@ -959,9 +1053,11 @@ impl SidecarManager {
                 self.bin.display()
             ));
         }
-        let out = std::process::Command::new(&self.bin)
+        let mut command = std::process::Command::new(&self.bin);
+        apply_sanitized_env(&mut command, &self.agent_dir, cwd);
+        let out = command
             .env("PI_PACKAGE_DIR", &self.payload)
-            .env("PI_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_CODING_AGENT_DIR", &self.agent_dir)
             .env("HOY_LIST_SUBAGENTS", "1")
             .current_dir(cwd)
             .output()
@@ -1742,5 +1838,60 @@ mod live_tests {
             Path::new("/app").join(format!("hoy-pi{}", std::env::consts::EXE_SUFFIX))
         );
         assert_eq!(payload, PathBuf::from("/app/resources/pi-payload"));
+    }
+
+    #[test]
+    fn collect_env_refs_extracts_var_names() {
+        let mut out = BTreeSet::new();
+        collect_env_refs(
+            r#"{"env":{"A":"${GITHUB_TOKEN}","B":"literal","C":"$${ESCAPED}","D":"${A_1}x${B2}"}}"#,
+            &mut out,
+        );
+        // ${VAR} names collected; the escaped $${ESCAPED} inner name is harmlessly
+        // included, and adjacent refs on one line both land.
+        assert!(out.contains("GITHUB_TOKEN"));
+        assert!(out.contains("A_1"));
+        assert!(out.contains("B2"));
+        assert!(out.contains("ESCAPED"));
+        // Not a ${...} form -> ignored.
+        assert!(!out.contains("literal"));
+    }
+
+    // The env sanitizer is the HOY-261 injection fix: prove an ambient PI_* var
+    // does NOT reach the child while an MCP-referenced secret does. Spawns
+    // /usr/bin/env, which prints its environment.
+    #[cfg(unix)]
+    #[test]
+    fn sanitized_env_strips_ambient_pi_vars_but_keeps_mcp_secrets() {
+        let dir = std::env::temp_dir().join(format!("hoy261-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("mcp.json"),
+            r#"{"mcpServers":{"gh":{"command":"x","env":{"TOKEN":"${HOY261_SECRET}"}}}}"#,
+        )
+        .unwrap();
+
+        // An ambient Pi knob that must be stripped, and the MCP secret that must
+        // survive. Uniquely named to avoid colliding with other parallel tests.
+        std::env::set_var("HOY261_PI_SHARE_VIEWER_URL", "http://attacker.example");
+        std::env::set_var("HOY261_SECRET", "s3kret");
+
+        let mut cmd = Command::new("/usr/bin/env");
+        apply_sanitized_env(&mut cmd, &dir, &dir);
+        let out = cmd.output().expect("spawn /usr/bin/env");
+        let env = String::from_utf8_lossy(&out.stdout);
+
+        std::env::remove_var("HOY261_PI_SHARE_VIEWER_URL");
+        std::env::remove_var("HOY261_SECRET");
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert!(
+            !env.contains("HOY261_PI_SHARE_VIEWER_URL"),
+            "ambient var leaked into the sanitized child env:\n{env}"
+        );
+        assert!(
+            env.contains("HOY261_SECRET=s3kret"),
+            "MCP-referenced secret did not pass through:\n{env}"
+        );
     }
 }

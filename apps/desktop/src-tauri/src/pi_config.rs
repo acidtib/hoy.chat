@@ -11,8 +11,9 @@
 // one level from the inherited ~/.hoy/agent nesting (pi's default is ~/.pi/agent,
 // where the extra segment keeps the agent dir out of ~/.pi; for Hoy ~/.hoy is only
 // the agent's home, so the segment was redundant). Rust writes auth.json here; the
-// sidecar reads the same dir because sidecar.rs passes it as PI_CODING_AGENT_DIR
-// (the env our SDK entry honors). Override with HOY_AGENT_DIR (tests / power users).
+// sidecar reads the same dir because sidecar.rs passes it as HOY_CODING_AGENT_DIR
+// (HOY-261; the env both Pi and our SDK entry honor, since the payload sets
+// piConfig.name="hoy"). Override which dir with HOY_AGENT_DIR (tests / power users).
 //
 // Schema (verified against pi-coding-agent 0.78.0 core/auth-storage.d.ts):
 //   auth.json = Record<provider, {type:"api_key", key} | {type:"oauth", ...tokens}>
