@@ -259,6 +259,39 @@ mod tests {
     }
 
     #[test]
+    fn aggregates_across_days_and_sessions_in_order() {
+        let root = tmp("multi");
+        let sessions = root.join("sessions");
+        let early = "2026-07-01T12:00:00.000Z";
+        let late = "2026-07-03T12:00:00.000Z";
+        write_session(
+            &sessions,
+            "sess-a",
+            &[
+                r#"{"type":"session","id":"sess-a","timestamp":"2026-07-01T12:00:00.000Z","cwd":"/x"}"#,
+                &format!(r#"{{"type":"message","timestamp":"{early}","message":{{"role":"assistant","model":"opus","usage":{{"totalTokens":100,"cost":{{"total":1.0}}}}}}}}"#),
+            ],
+        );
+        write_session(
+            &sessions,
+            "sess-b",
+            &[
+                r#"{"type":"session","id":"sess-b","timestamp":"2026-07-03T12:00:00.000Z","cwd":"/y"}"#,
+                &format!(r#"{{"type":"message","timestamp":"{late}","message":{{"role":"assistant","model":"deepseek","usage":{{"totalTokens":40,"cost":{{"total":0.2}}}}}}}}"#),
+            ],
+        );
+        let report = compute_usage_from(&sessions);
+        assert_eq!(report.days.len(), 2);
+        assert!(report.days[0].date < report.days[1].date, "days ascending");
+        assert_eq!(report.meta.session_count, 2);
+        assert_eq!(report.meta.first_day.as_deref(), Some(report.days[0].date.as_str()));
+        assert_eq!(report.meta.last_day.as_deref(), Some(report.days[1].date.as_str()));
+        let grand: u64 = report.days.iter().map(|d| d.tokens.total).sum();
+        assert_eq!(grand, 140);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn missing_sessions_dir_yields_empty_report() {
         let dir = tmp("missing").join("sessions");
         let report = compute_usage_from(&dir);
