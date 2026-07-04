@@ -95,7 +95,11 @@ describe("/hoy_mode over RPC", () => {
     cwd,
     env: {
       ...process.env,
+      // Under `bun` the real Pi package.json (name absent) makes Pi read
+      // PI_CODING_AGENT_DIR, while our entry reads HOY_CODING_AGENT_DIR
+      // (HOY-261); set both so the whole run stays in the temp dir.
       PI_CODING_AGENT_DIR: agentDir,
+      HOY_CODING_AGENT_DIR: agentDir,
       HOY_PERMISSION_MODE: "default",
     },
     stdin: "pipe",
@@ -182,7 +186,9 @@ describe("child factory fails closed on unknown subagent type (HOY-234)", () => 
       cwd,
       env: {
         ...process.env,
+        // See note above: set both dir vars so bun-run + our entry agree (HOY-261).
         PI_CODING_AGENT_DIR: agentDir,
+        HOY_CODING_AGENT_DIR: agentDir,
         HOY_PERMISSION_MODE: "default",
         HOY_SUBAGENT_TYPE: "definitely-not-a-real-type",
       },

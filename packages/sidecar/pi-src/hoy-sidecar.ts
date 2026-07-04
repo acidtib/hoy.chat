@@ -36,10 +36,12 @@ const envMode = process.env.HOY_PERMISSION_MODE ?? "default";
 const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "default";
 
 // Branded agent dir, set by Rust (pi_config::agent_dir, default ~/.hoy/agent).
-// auth.json, models.json, and settings.json all resolve from here.
-const agentDir = process.env.PI_CODING_AGENT_DIR;
+// auth.json, models.json, and settings.json all resolve from here. HOY_-prefixed
+// because the payload package.json sets piConfig.name="hoy", so Pi's own
+// getAgentDir() derives and reads this same HOY_CODING_AGENT_DIR (HOY-261).
+const agentDir = process.env.HOY_CODING_AGENT_DIR;
 if (!agentDir) {
-  console.error("hoy-sidecar: PI_CODING_AGENT_DIR is required");
+  console.error("hoy-sidecar: HOY_CODING_AGENT_DIR is required");
   process.exit(1);
 }
 
