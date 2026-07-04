@@ -71,9 +71,9 @@ A short-lived sidecar invocation that judges the transcript against the conditio
 
 **Files:**
 - Create: `packages/sidecar/pi-src/hoy-goal-eval.ts`
-- Modify: `packages/sidecar/pi-src/hoy-sidecar.ts` (add the one-shot branch near `:76`)
-- Modify: `apps/desktop/src-tauri/src/commands.rs` (new `evaluate_goal` command) and `apps/desktop/src-tauri/src/lib.rs` (register in `generate_handler!`, `:98`)
-- Modify: `apps/desktop/src-tauri/src/sidecar.rs` (a helper to spawn the one-shot and capture stdout, mirroring the list-subagents spawn path ~`:962`)
+- Modify: `packages/sidecar/pi-src/hoy-sidecar.ts` (add the one-shot branch near `:77`, next to the `HOY_LIST_SUBAGENTS` branch)
+- Modify: `apps/desktop/src-tauri/src/commands.rs` (new `evaluate_goal` command) and `apps/desktop/src-tauri/src/lib.rs` (register in `generate_handler!`, `:99`)
+- Modify: `apps/desktop/src-tauri/src/sidecar.rs` (a helper to spawn the one-shot and capture stdout, mirroring the `list_subagents` spawn path at `:1080` - `.env("HOY_LIST_SUBAGENTS","1")` at `:1092`, stdout parsed at `:1098-1103`)
 - Modify: `apps/desktop/src/lib/ipc.ts` (typed `evaluateGoal` wrapper)
 
 **Interfaces:**
@@ -88,7 +88,7 @@ Read `packages/sidecar/pi-src/node_modules/@earendil-works/pi-coding-agent/dist/
 
 `hoy-goal-eval.ts` reads `HOY_GOAL_CONDITION`, opens the transcript via `SessionManager.open(process.env.HOY_SESSION_FILE)`, takes the last N messages (cap total tokens), builds the strict-evaluator prompt (judge ONLY from surfaced evidence, no tools, return `{ met, reason }` JSON, treat uncertainty as not met), runs the chosen model (honoring `HOY_GOAL_EVAL_MODEL` if set), parses `{ met, reason }` (JSON with a regex fallback), writes the JSON to stdout, and exits 0.
 
-In `hoy-sidecar.ts`, next to the `HOY_LIST_SUBAGENTS` block (`:76`), add:
+In `hoy-sidecar.ts`, next to the `HOY_LIST_SUBAGENTS` block (`:77`), add:
 ```ts
 if (process.env.HOY_GOAL_EVAL) {
   await runGoalEval(agentDir, process.cwd());
@@ -99,7 +99,7 @@ Import `runGoalEval` from `./hoy-goal-eval`. Keep it before `createAgentSessionR
 
 - [ ] **Step 3: Rust command that spawns the one-shot**
 
-In `sidecar.rs`, add a helper mirroring the list-subagents spawn (`~:962`): build the sidecar `Command` with `apply_sanitized_env`, set `HOY_GOAL_EVAL=1`, `HOY_GOAL_CONDITION=<condition>`, `HOY_SESSION_FILE=<thread session file>`, `HOY_CODING_AGENT_DIR`, and (if provided) `HOY_GOAL_EVAL_MODEL`; capture stdout; parse the JSON into a `GoalEvaluation { met: bool, reason: String }`. In `commands.rs`, add `#[tauri::command] async fn evaluate_goal(state, session_id, condition, evaluator_model: Option<String>) -> Result<GoalEvaluation, String>` that resolves the session's file and calls the helper. Register `evaluate_goal` in `lib.rs` `generate_handler!` (`:98`).
+In `sidecar.rs`, add a helper mirroring the `list_subagents` spawn (`fn list_subagents` at `:1080`): build the sidecar `Command` with `apply_sanitized_env`, set `HOY_GOAL_EVAL=1`, `HOY_GOAL_CONDITION=<condition>`, `HOY_SESSION_FILE=<thread session file>`, `HOY_CODING_AGENT_DIR`, and (if provided) `HOY_GOAL_EVAL_MODEL`; capture stdout; parse the JSON into a `GoalEvaluation { met: bool, reason: String }`. In `commands.rs`, add `#[tauri::command] async fn evaluate_goal(state, session_id, condition, evaluator_model: Option<String>) -> Result<GoalEvaluation, String>` that resolves the session's file and calls the helper. Register `evaluate_goal` in `lib.rs` `generate_handler!` (`:99`).
 
 - [ ] **Step 4: ipc wrapper**
 
@@ -127,8 +127,8 @@ git commit -m "HOY-263: one-shot transcript evaluator and evaluate_goal command"
 Make a goal survive restart/reopen so the card renders before a sidecar spawns and resume can restore the condition.
 
 **Files:**
-- Modify: `apps/desktop/src/lib/types.ts` (`Thread`, `:375`)
-- Modify: `apps/desktop/src-tauri/src/workspace.rs` (the `Thread` mirror)
+- Modify: `apps/desktop/src/lib/types.ts` (`Thread`, `:376`)
+- Modify: `apps/desktop/src-tauri/src/workspace.rs` (the `WsThread` mirror, `:41`, inside `WsProject.threads`)
 - Modify: `apps/desktop/src/state/store.ts` (partialize/serialize the goal; reset counters on load)
 
 **Interfaces:**
@@ -136,7 +136,7 @@ Make a goal survive restart/reopen so the card renders before a sidecar spawns a
 
 - [ ] **Step 1: Add the field both sides**
 
-Add `goal?: ThreadGoal` to the TS `Thread` and a matching optional field to the Rust `Workspace` `Thread` struct (serde camelCase). Keep the shapes in sync (AGENTS.md).
+Add `goal?: ThreadGoal` to the TS `Thread` and a matching optional field to the Rust `WsThread` struct (`workspace.rs:41`, serde camelCase). Keep the shapes in sync (AGENTS.md).
 
 - [ ] **Step 2: Load semantics**
 
@@ -157,16 +157,16 @@ git commit -m "HOY-263: persist Thread.goal, reset counters and pause on resume"
 Intercept `/goal` in the composer and route to the store, so it never sends as an agent prompt.
 
 **Files:**
-- Modify: the composer submit path (search `apps/desktop/src/components` for the prompt-submit handler that calls `submitPrompt`/`streamPromptOnThread`)
-- Modify: `apps/desktop/src/state/store.ts` (new actions: `setGoal`, `pauseGoal`, `resumeGoal`, `clearGoal`, `showGoalStatus`)
+- Modify: `apps/desktop/src/state/store.ts` - the `submitPrompt` action (declared `:511`, impl `:1211`) is where slash interception already happens: `/compact` is caught by a regex at `:1229-1234` before the prompt path, and every other `/` flows to Pi. Add the `/goal` interception here, following the `/compact` precedent exactly. Also add the new actions: `setGoal`, `pauseGoal`, `resumeGoal`, `clearGoal`, `showGoalStatus`.
+- Reference only (no change required for interception): `apps/desktop/src/components/Composer.tsx` owns the `/` autocomplete picker (`detectSlash` import `:37`, `SLASH_BUILTINS` `:59`, `insertSlash` `:485`); `apps/desktop/src/lib/slash.ts` (`detectSlash` `:15`) is the caret detection primitive. Add `goal` to the picker's builtin list so it autocompletes, but the authoritative interception is in `store.submitPrompt`.
 
 **Interfaces:**
 - Consumes: `parseGoalCommand` (Task 1).
 - Produces: goal store actions; `/goal ...` handled locally.
 
-- [ ] **Step 1: Intercept in the composer**
+- [ ] **Step 1: Intercept in `store.submitPrompt`**
 
-Before sending a prompt, run `parseGoalCommand(input)`. If non-null, dispatch the matching store action and clear the composer instead of calling the prompt path.
+In `submitPrompt` (`store.ts:1211`), alongside the `/compact` intercept (`:1229-1234`), run `parseGoalCommand(input)`. If non-null, dispatch the matching store action and return before the prompt path (do not send it to Pi). This is the same shape as the existing `/compact` branch, so it inherits the correct composer-clear/turn-serialization behavior.
 
 - [ ] **Step 2: Store actions**
 
@@ -176,8 +176,8 @@ Before sending a prompt, run `parseGoalCommand(input)`. If non-null, dispatch th
 
 Run: `cd apps/desktop && bun run check:ts && bun run build && bun test`.
 ```bash
-git add apps/desktop/src/state/store.ts apps/desktop/src/components/<composer>.tsx
-git commit -m "HOY-263: intercept /goal in the composer and add goal store actions"
+git add apps/desktop/src/state/store.ts apps/desktop/src/components/Composer.tsx
+git commit -m "HOY-263: intercept /goal in submitPrompt and add goal store actions"
 ```
 
 ---
@@ -187,7 +187,7 @@ git commit -m "HOY-263: intercept /goal in the composer and add goal store actio
 Wire the reducer into the `done` handler so an active goal drives the next turn.
 
 **Files:**
-- Modify: `apps/desktop/src/state/store.ts` (the `done` branch at `:1859`)
+- Modify: `apps/desktop/src/state/store.ts` (the `done` branch at `:1996`)
 
 **Interfaces:**
 - Consumes: `nextGoalAction`/`applyEvaluation` (Task 1), `evaluateGoal` (Task 2).
@@ -195,7 +195,7 @@ Wire the reducer into the `done` handler so an active goal drives the next turn.
 
 - [ ] **Step 1: Hook the done handler**
 
-In the `done` branch (`store.ts:1859`), after the existing `stopStreaming`/cleanup, if the thread has a `goal.status === "active"`:
+In the `done` branch (`store.ts:1996`, `else if (event.kind === "done")`), after the existing `stopStreaming`/cleanup, if the thread has a `goal.status === "active"`:
 1. Build `turnOutcome` from the finished turn (`aborted` from `turn.aborted` / any `Error` this turn; `hasPendingUserPrompt` from the thread's queued input; `tokensNow` from refreshed stats).
 2. Call `nextGoalAction(goal, turnOutcome)` and switch:
    - `none|yield`: do nothing (yield leaves the goal active).
@@ -227,7 +227,7 @@ Render goal status and an active indicator from `Thread.goal`.
 
 **Files:**
 - Create: `apps/desktop/src/components/GoalCard.tsx` (or an ai-elements card)
-- Modify: `apps/desktop/src/components/ThreadView.tsx` (mount the card; reconcile the "working" indicator with HOY-258 at `:484-491`)
+- Modify: `apps/desktop/src/components/ThreadView.tsx` (mount the card near the thread footer). NOTE: there is no existing working/streaming indicator in `ThreadView.tsx` to reconcile against - `:484-491` is an `ApprovalCard`, and HOY-258 is not merged. Mount the card by locating the thread footer/composer region at implementation time, not a fixed line. If HOY-258 has landed by then, fold the goal indicator into it (see design doc, "Note on HOY-258"); otherwise ship the card's own compact active indicator.
 
 **Interfaces:**
 - Consumes: `Thread.goal` store state.
@@ -237,9 +237,9 @@ Render goal status and an active indicator from `Thread.goal`.
 
 Match the square theme and existing card styling (shadcn/ui + AI Elements). Live-tick elapsed with a single interval while `status === "active"`. Wire pause/resume/clear buttons to the Task 4 actions.
 
-- [ ] **Step 2: Reconcile HOY-258**
+- [ ] **Step 2: Reconcile HOY-258 (only if it has landed)**
 
-The goal active indicator and the HOY-258 "working" indicator must be one coherent surface, not two competing spinners. When a goal is active, the working indicator reads as "working toward goal"; otherwise it is the plain HOY-258 indicator. Keep the pulsing-dot/shimmer style consistent.
+HOY-258 is a sibling ticket and may not be merged when this ships. If it is NOT merged, skip reconciliation and ship the goal card's own compact active indicator (pulsing-dot/shimmer). If it IS merged, the goal active indicator and the HOY-258 "working" indicator must be one coherent surface, not two competing spinners: when a goal is active the working indicator reads as "working toward goal"; otherwise it is the plain HOY-258 indicator. Keep the style consistent.
 
 - [ ] **Step 3: Typecheck, build, screenshot, commit**
 

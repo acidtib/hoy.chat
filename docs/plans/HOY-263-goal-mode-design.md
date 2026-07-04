@@ -21,12 +21,12 @@ Two layers, split along a hard constraint in our RPC bridge.
 
 ### The constraint
 
-`apps/desktop/src-tauri/src/sidecar.rs::route_message` (`:553-568`): on `agent_end`, unless Pi is auto-retrying (`willRetry`), Rust does `guard.take()` and emits `AgentEvent::Done`, which detaches the renderer sink. Subsequent events map to `None` sink and are dropped (`:571-575`). So a continuation injected from inside the sidecar after `agent_end` would stream into a detached sink and the renderer would go dark.
+`apps/desktop/src-tauri/src/sidecar.rs::route_message` (fn at `:497`; `agent_end` block `:559-575`): on `agent_end`, unless Pi is auto-retrying (`willRetry`, checked `:560-563`), Rust does `guard.take()` and emits `AgentEvent::Done` (`:571-572`), which detaches the renderer sink. Subsequent events map to a `None` sink and are dropped (`:577-581`). So a continuation injected from inside the sidecar after `agent_end` would stream into a detached sink and the renderer would go dark.
 
 ### Decision: renderer-owned loop, sidecar-owned evaluator
 
-- **Continuation is renderer-owned.** On `done` for a thread with an active goal (store `done` handler, `apps/desktop/src/state/store.ts:1859`), the store runs the evaluator and, if not met, sends the next turn as an ordinary prompt via the existing `sendPrompt` path. Each iteration therefore gets a fresh per-prompt sink; `route_message` is untouched. Idle-gating, interrupt-to-pause, and turn serialization fall out of the renderer's existing machinery.
-- **The evaluator is a one-shot sidecar invocation.** Rust spawns the same sidecar binary with `HOY_GOAL_EVAL=1` plus the condition, mirroring the existing `HOY_LIST_SUBAGENTS` (`packages/sidecar/pi-src/hoy-sidecar.ts:76`) and OAuth (`:68`) one-shots. It opens the session transcript (`HOY_SESSION_FILE`), runs a cheap tool-less model, prints `{ met, reason }` JSON to stdout, and exits. Not a new or persistent process; the same short-lived pattern already in the tree. It can use a cheaper model than the main session for free.
+- **Continuation is renderer-owned.** On `done` for a thread with an active goal (store `done` handler, `apps/desktop/src/state/store.ts:1996`), the store runs the evaluator and, if not met, sends the next turn as an ordinary prompt via the existing `sendPrompt` path. Each iteration therefore gets a fresh per-prompt sink; `route_message` is untouched. Idle-gating, interrupt-to-pause, and turn serialization fall out of the renderer's existing machinery.
+- **The evaluator is a one-shot sidecar invocation.** Rust spawns the same sidecar binary with `HOY_GOAL_EVAL=1` plus the condition, mirroring the existing `HOY_LIST_SUBAGENTS` (`packages/sidecar/pi-src/hoy-sidecar.ts:77`) and OAuth (`:69`) one-shots. It opens the session transcript (`HOY_SESSION_FILE`), runs a cheap tool-less model, prints `{ met, reason }` JSON to stdout, and exits. Not a new or persistent process; the same short-lived pattern already in the tree. It can use a cheaper model than the main session for free.
 
 ### Alternative considered (deferred): sidecar-extension-owned loop
 
@@ -61,13 +61,13 @@ A one-shot judge, tool-less, over the transcript (Claude Code's design):
 - Input: the condition and the session transcript (last N messages; cap the token size).
 - Prompt: strict completion evaluator. Judge ONLY from evidence the agent surfaced in the transcript; you cannot run tools or read files. Return a JSON object `{ met: boolean, reason: string }`. Treat uncertainty as not met.
 - Output: parse `{ met, reason }` (JSON, with a regex/marker fallback). Any parse failure or model error is treated as not met with a diagnostic reason (fail open to "keep working", never falsely "met").
-- Model selection: `goal.evaluatorModel` if configured, else a heuristic pick over available models whose id/name matches `haiku|mini|flash|small|lite|nano`, else fall back to the session's main model. Resolve via `resolveModelRef` (`store.ts:2285`). No native "cheap" flag exists on `ModelInfo`.
+- Model selection: `goal.evaluatorModel` if configured, else a heuristic pick over available models whose id/name matches `haiku|mini|flash|small|lite|nano`, else fall back to the session's main model. Resolve via `resolveModelRef` (`store.ts:2459`). No native "cheap" flag exists on `ModelInfo`.
 
 The exact SDK call to run a one-off completion in the one-shot invocation is the one open spike (Task 2, Step 1): read `packages/sidecar/pi-src/node_modules/@earendil-works/pi-coding-agent/dist/core/{model-registry,sdk,agent-session}.d.ts` and pick between a direct `modelRegistry` completion and a throwaway in-memory `SessionManager.inMemory` session prompted once with no tools (the `tmonk` auditor uses the latter shape).
 
 ## State and persistence
 
-- **UI-durable**: add `goal?: ThreadGoal` to `Thread` (`apps/desktop/src/lib/types.ts:375`) and mirror it in the Rust `Workspace` (`apps/desktop/src-tauri/src/workspace.rs`), persisted through `saveWorkspace`. This is what lets the goal card render on restart/reopen before any sidecar spawns, and is what "resume restores the condition, resets counters" reads from (reset `turns`/`startedAt`/`tokensBaseline` on load, per Claude Code's semantics).
+- **UI-durable**: add `goal?: ThreadGoal` to `Thread` (`apps/desktop/src/lib/types.ts:376`) and mirror it on the Rust persistence struct `WsThread` (`apps/desktop/src-tauri/src/workspace.rs:41`, inside `WsProject.threads`), persisted through `workspace::save` (the `save_workspace` command, `commands.rs:443`). This is what lets the goal card render on restart/reopen before any sidecar spawns, and is what "resume restores the condition, resets counters" reads from (reset `turns`/`startedAt`/`tokensBaseline` on load, per Claude Code's semantics).
 - **Transient**: `turns`, `tokensUsed`, `lastReason`, and the continuation-pending guard live in the store and are recomputed; they do not need to persist beyond the workspace snapshot.
 - No sidecar session `appendEntry` is required for v1 (the renderer owns state). It stays available if we later move to the extension-owned architecture.
 
@@ -84,7 +84,9 @@ The composer already has slash handling for the `@`/`/` pickers (HOY-220/HOY-223
 
 ## UI
 
-A goal card (condition, running state, elapsed, turns, tokens, last evaluator reason) rendered from the renderer's `Thread.goal` state, plus a compact active indicator. Because the renderer owns goal state, no new `AgentEvent` variant is needed for the card (this supersedes the ticket's earlier "new GoalUpdate event" phrasing). Build it together with HOY-258: the goal card is the goal-scoped version of that "still working" indicator, and the two must not render as competing spinners.
+A goal card (condition, running state, elapsed, turns, tokens, last evaluator reason) rendered from the renderer's `Thread.goal` state, plus a compact active indicator. Because the renderer owns goal state, no new `AgentEvent` variant is needed for the card (this supersedes the ticket's earlier "new GoalUpdate event" phrasing).
+
+Note on HOY-258: as of this writing there is **no** persistent working/streaming indicator in `ThreadView.tsx` yet (HOY-258 is a sibling, not merged; `ThreadView.tsx:484-491` is an `ApprovalCard`, not an indicator). So this ticket does not have an existing indicator to "reconcile" with. Two orderings are acceptable: (a) if HOY-258 lands first, the goal card becomes the goal-scoped form of that indicator and the two must not render as competing spinners; (b) if this lands first, the goal card ships its own compact active indicator and HOY-258 later subsumes it. Either way the card renders purely from `Thread.goal` and mounts in `ThreadView.tsx` near the thread footer, not at a fixed line.
 
 ## Verification-strength roadmap
 
