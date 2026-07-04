@@ -10,6 +10,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { ThreadHistory } from "@/components/ThreadHistory";
 import { FleetBoard } from "@/components/fleet/FleetBoard";
 import { HomePage } from "@/components/HomePage";
+import { UsageView } from "@/components/UsageView";
 import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
 import { ConfirmCloseDialog } from "@/components/ConfirmCloseDialog";
@@ -178,7 +179,9 @@ function App() {
               ref={bodyRef}
               className="relative flex min-h-0 flex-1 overflow-hidden"
             >
-              {bodyView === "fleet" ? (
+              {bodyView === "usage" ? (
+                <UsageView />
+              ) : bodyView === "fleet" ? (
                 <FleetBoard />
               ) : panels.length === 0 ? (
                 <HomePage />

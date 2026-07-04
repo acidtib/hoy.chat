@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Clock,
   FolderPlus,
   PanelLeftClose,
@@ -116,6 +117,13 @@ export function ContextBar({
           main body between the panel strip and the full-body FleetView. Kept
           out of the sidebar cell so it survives a collapsed sidebar. */}
       <div className="flex shrink-0 items-center border-l border-border px-1.5">
+        <FooterIconButton
+          label={bodyView === "usage" ? "Show Panels" : "Show Usage"}
+          onClick={() => setBodyView(bodyView === "usage" ? "panels" : "usage")}
+          active={bodyView === "usage"}
+        >
+          <BarChart3 className="size-4" />
+        </FooterIconButton>
         <FooterIconButton
           label={bodyView === "fleet" ? "Show Panels" : "Show FleetView"}
           onClick={() => setBodyView(bodyView === "fleet" ? "panels" : "fleet")}
