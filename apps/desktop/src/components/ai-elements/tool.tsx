@@ -32,6 +32,10 @@ export type ToolHeaderProps = {
   state: ToolUIPart["state"];
   icon?: ReactNode;
   className?: string;
+  // When false, the header is not a toggle: the chevron and hover/pointer
+  // affordances are dropped and the trigger is disabled so the tool stays in
+  // whatever open state it was given (HOY-288, e.g. always-expanded Bash).
+  collapsible?: boolean;
 };
 
 const getStatusBadge = (status: ToolUIPart["state"]) => {
@@ -75,11 +79,16 @@ export const ToolHeader = ({
   type,
   state,
   icon,
+  collapsible = true,
   ...props
 }: ToolHeaderProps) => (
   <CollapsibleTrigger
+    disabled={!collapsible}
     className={cn(
-      "flex w-full cursor-pointer items-center justify-between gap-4 py-1 text-left text-muted-foreground transition-colors hover:text-foreground",
+      "flex w-full items-center justify-between gap-4 py-1 text-left transition-colors",
+      collapsible
+        ? "cursor-pointer text-muted-foreground hover:text-foreground"
+        : "cursor-default",
       className
     )}
     {...props}
@@ -93,7 +102,9 @@ export const ToolHeader = ({
       </span>
       {getStatusBadge(state)}
     </div>
-    <ChevronDownIcon className="size-3.5 shrink-0 opacity-0 transition group-hover:opacity-60 group-data-[state=open]:rotate-180 group-data-[state=open]:opacity-60" />
+    {collapsible && (
+      <ChevronDownIcon className="size-3.5 shrink-0 opacity-0 transition group-hover:opacity-60 group-data-[state=open]:rotate-180 group-data-[state=open]:opacity-60" />
+    )}
   </CollapsibleTrigger>
 );
 

@@ -1253,12 +1253,16 @@ function TurnStatus({
 function ToolCall({ tool }: { tool: ToolUI }) {
   const kind = toolKind(tool.name);
   const expandToolDetails = usePrefsStore((s) => s.expandToolDetails);
+  // Terminal tools (Bash/exec) are never collapsed: the command it's running is
+  // the point, so the card stays open with no accordion affordance (HOY-288).
+  const collapsible = kind !== "terminal";
   // Each tool renders as a bordered card. Collapsed by default (HOY-251) to a
   // header row; the user clicks it to reveal the body (diff, command + output,
   // or result). Expanded when the pref is on, or when the tool needs attention:
   // an approval-pending tool shows a diff the user must see to approve, and an
   // errored tool surfaces its failure without a hunt.
-  const defaultOpen = expandToolDetails || tool.pending || tool.isError;
+  const defaultOpen =
+    !collapsible || expandToolDetails || tool.pending || tool.isError;
   // The terminal body already shows the command ($ ...), so the header stays a
   // generic tool label (lowercase, like the other tools) instead of repeating it.
   const headerTitle = kind === "terminal" ? tool.name : tool.title;
@@ -1281,6 +1285,7 @@ function ToolCall({ tool }: { tool: ToolUI }) {
                 : "output-available"
         }
         icon={toolIcon(kind)}
+        collapsible={collapsible}
         className="bg-muted/25 px-2 py-1.5 text-foreground"
       />
       <ToolContent className="border-t border-border/70">
