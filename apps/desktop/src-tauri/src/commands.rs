@@ -526,6 +526,15 @@ pub async fn get_session_stats(
     serde_json::from_value(data).map_err(|e| format!("decode SessionStats: {e}"))
 }
 
+// HOY-262: aggregate local usage stats from pi's session transcripts. Pure disk
+// read, so it runs on the blocking pool rather than tying up an async worker.
+#[tauri::command]
+pub async fn get_usage_stats() -> Result<crate::usage_stats::UsageReport, String> {
+    tauri::async_runtime::spawn_blocking(crate::usage_stats::compute_usage)
+        .await
+        .map_err(|e| format!("usage stats task failed: {e}"))
+}
+
 #[tauri::command]
 pub async fn abort(session_id: String, manager: State<'_, SidecarManager>) -> Result<(), String> {
     let process = manager.get(&session_id)?;
