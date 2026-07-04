@@ -86,10 +86,10 @@ export function TitleBar() {
         <TitleBarButton
           label="Settings"
           onClick={() => setSettingsOpen(true)}
-          className="mr-1"
         >
           <Settings className="size-4" />
         </TitleBarButton>
+        <div aria-hidden className="mx-1.5 h-4 w-px bg-border/60" />
         <WindowControls />
       </div>
     </header>
