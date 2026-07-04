@@ -16,6 +16,7 @@ import {
   Maximize2,
   MessageSquare,
   Minimize2,
+  Minus,
   MoreHorizontal,
   Plus,
   Search,
@@ -378,7 +379,7 @@ export function ThreadView({
                 onClick={onClose}
                 aria-label="Close panel"
               >
-                <X className="size-4" />
+                <Minus className="size-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Close panel</TooltipContent>

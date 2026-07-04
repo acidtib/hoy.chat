@@ -1076,15 +1076,20 @@ export function Composer({
               <Plus className="size-4" />
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground"
-            aria-label="Mention context"
-            onClick={openPickerFromButton}
-          >
-            <AtSign className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
+                aria-label="Mention context"
+                onClick={openPickerFromButton}
+              >
+                <AtSign className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Add Context</TooltipContent>
+          </Tooltip>
         </div>
 
         <div className="flex items-center gap-0.5">
