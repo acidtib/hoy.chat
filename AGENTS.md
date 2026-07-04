@@ -5,7 +5,15 @@ Project conventions and guardrails. Open work is tracked in `TODO.md` and Linear
 ## What we're building
 A native desktop GUI for the **Pi coding agent** (`@earendil-works/pi-coding-agent`). Tauri v2 shell + React/TS webview + Pi running as a **spawned sidecar** over its RPC (JSONL-over-stdio) protocol. The sidecar is our own thin SDK entry running Pi's `runRpcMode` (see below), not the stock CLI. Same three-layer architecture as OpenAI's Codex desktop app (renderer → Rust main → spawned agent process), deliberately.
 
-Repo is a Bun-workspaces monorepo (HOY-227): `hoy.chat` at the root, the desktop app under `apps/desktop/` (`src/` renderer, `src-tauri/` Rust core), the Pi sidecar under `packages/sidecar/` (`pi-src/` + `build.sh`). Run everything from the root via delegating scripts (`bun run tauri:dev`, `bun run check`, `bun run test`). More apps land under `apps/` (a landing site is planned).
+Repo is a Bun-workspaces monorepo (HOY-227): `hoy.chat` at the root, the desktop app under `apps/desktop/` (`src/` renderer, `src-tauri/` Rust core), the Pi sidecar under `packages/sidecar/` (`pi-src/` + `build.sh`), and the marketing site under `apps/site/` (Next.js, separate stack from the Tauri app). Run everything from the root via delegating scripts (`bun run tauri:dev`, `bun run check`, `bun run test`).
+
+## Commands (run from repo root)
+- `bun run tauri:dev` — the ONLY dev entry (see landmines: enables `withGlobalTauri` + hoyd namespace for dev).
+- `bun run check` — desktop TS + Rust (`check:ts`, `check:rust`, `clippy`, `check:fmt`) plus sidecar TS. Does NOT cover `apps/site`.
+- `bun run test` — desktop `bun test` (includes sidecar `*.test.ts` factories).
+- `bun run lint` — `oxlint src` + rust clippy.
+- `bash packages/sidecar/build.sh` — rebuild the Pi sidecar binary. Required after ANY `packages/sidecar/pi-src` change, before live-verify (a stale binary runs old prompt/gate code, HOY-200).
+- `apps/site`: `cd apps/site && bun run dev` (Next.js); not wired into root scripts.
 
 ## Non-negotiable decisions (do NOT re-litigate)
 - **Stack is fixed:** Tauri v2 (Rust core), React + TypeScript + Vite, Bun as the frontend package manager/bundler. Do not propose Electron, swap frameworks, or "simplify" by changing this. The tradeoffs were already worked through.
