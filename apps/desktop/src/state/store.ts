@@ -2444,6 +2444,9 @@ function persistProjects(
           permissionMode: t.permissionMode ?? null,
           parentThreadId: t.parentThreadId ?? null,
           spawnedBy: t.spawnedBy ?? null,
+          // Cached so the sidebar shows the thread's model glyph on load without
+          // spawning the session; reconciled against get_state on open (HOY-267).
+          model: t.model ?? null,
         })),
     })),
   };
