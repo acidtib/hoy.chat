@@ -96,7 +96,7 @@ describe("handler mode selection", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].content).toContain("Create an AGENTS.md");
     expect(messages[0].content).not.toContain("already has an AGENTS.md");
-    expect(notes[0]).toEqual({ message: "Writing AGENTS.md...", type: "info" });
+    expect(notes[0]).toEqual({ message: "Drafting an AGENTS.md proposal...", type: "info" });
   });
 
   test("a real AGENTS.md picks update mode and asks to preserve human content", async () => {
@@ -105,7 +105,7 @@ describe("handler mode selection", () => {
     );
     expect(messages[0].content).toContain("already has an AGENTS.md");
     expect(messages[0].content).toContain("Preserve human-authored content");
-    expect(notes[0]).toEqual({ message: "Refreshing AGENTS.md...", type: "info" });
+    expect(notes[0]).toEqual({ message: "Reviewing AGENTS.md for updates...", type: "info" });
   });
 
   test("a heading-only AGENTS.md still picks create mode", async () => {
@@ -142,8 +142,46 @@ describe("buildInitPrompt", () => {
   });
 
   test("only the update prompt names the edit tool for targeted changes", () => {
-    expect(buildInitPrompt("update", cwd)).toContain("Use the edit tool");
-    expect(buildInitPrompt("create", cwd)).not.toContain("Use the edit tool");
+    expect(buildInitPrompt("update", cwd)).toContain("the edit tool for targeted changes");
+    expect(buildInitPrompt("create", cwd)).not.toContain("the edit tool");
+  });
+
+  // HOY-296: report-first flow. Both variants must explore read-only, report a
+  // proposal, and confirm via ask_question before touching disk.
+  test.each<InitMode>(["create", "update"])("%s prompt gates the write behind ask_question", (mode) => {
+    const prompt = buildInitPrompt(mode, cwd);
+    expect(prompt).toContain("ask_question");
+    expect(prompt).toContain("read-only");
+    expect(prompt).toMatch(/do not (write any file|change the file) until the user approves/);
+    expect(prompt).toContain("cancel");
+  });
+
+  test("the create prompt asks for a findings report and the proposed file", () => {
+    const prompt = buildInitPrompt("create", cwd);
+    expect(prompt).toContain("Report and propose");
+    expect(prompt).toContain("findings summary");
+    expect(prompt).toContain("proposed AGENTS.md");
+  });
+
+  test("the update prompt asks for an assessment and a diff", () => {
+    const prompt = buildInitPrompt("update", cwd);
+    expect(prompt).toContain("Report and propose");
+    expect(prompt).toContain("assessment");
+    expect(prompt).toContain("diff");
+    // HOY-296: fold in the claude-md skill's common-issues checklist + minimality.
+    expect(prompt).toContain("stale or broken commands");
+    expect(prompt).toContain("do not restate what is obvious");
+    expect(prompt).toContain("generic best practices");
+  });
+
+  test.each<InitMode>(["create", "update"])("%s prompt hunts for environment and setup", (mode) => {
+    expect(buildInitPrompt(mode, cwd)).toContain("environment variables and setup");
+  });
+
+  test("the create prompt bars placeholders and generic filler", () => {
+    const prompt = buildInitPrompt("create", cwd);
+    expect(prompt).toContain("project-specific rather than generic");
+    expect(prompt).toContain("Leave no placeholders");
   });
 });
 
