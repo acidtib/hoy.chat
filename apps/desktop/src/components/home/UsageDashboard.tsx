@@ -52,18 +52,17 @@ export function UsageDashboard() {
   }
   const v = view!;
   return (
-    <section className="space-y-5">
+    <section className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-foreground">Usage</h2>
         <RangeSwitch value={range} onChange={setRange} />
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Tokens" value={formatTokens(v.totals.tokens)} />
         <StatCard label="Sessions" value={String(v.totals.sessions)} />
         <StatCard label="Messages" value={String(v.totals.messages)} />
         <StatCard label="Active days" value={String(v.totals.activeDays)} />
-      </div>
-      <div className="grid grid-cols-2 gap-2">
         <StatCard
           label="Current streak"
           value={`${v.streaks.current}d`}
@@ -71,17 +70,21 @@ export function UsageDashboard() {
         />
         <StatCard label="Peak hour" value={v.peak != null ? formatHour(v.peak) : "-"} />
       </div>
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground">Daily tokens</p>
-        <TokenTrendChart days={v.days} />
+
+      <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Daily tokens</p>
+          <TokenTrendChart days={v.days} />
+        </div>
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Models</p>
+          <ModelRanking rows={v.models} />
+        </div>
       </div>
+
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Activity</p>
         <ActivityHeatmap days={report.days} />
-      </div>
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground">Models</p>
-        <ModelRanking rows={v.models} />
       </div>
     </section>
   );
