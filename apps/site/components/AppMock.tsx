@@ -234,7 +234,7 @@ export function AppWindow() {
                 <Ic name="more" size={14} />
               </span>
               <span className="aw-winbtn">
-                <Ic name="x" size={14} />
+                <Ic name="minus" size={14} />
               </span>
             </div>
           </div>
