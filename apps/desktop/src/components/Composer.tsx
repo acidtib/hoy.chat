@@ -14,8 +14,8 @@ import {
   MessageSquare,
   Plus,
   SendHorizontal,
-  Sparkles,
   Square,
+  SquareSlash,
   TextCursor,
   X,
 } from "lucide-react";
@@ -33,7 +33,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { detectMention } from "@/lib/mention";
+import { detectMention, parseToken, filterCommands } from "@/lib/mention";
 import { detectSlash } from "@/lib/slash";
 import {
   draftIsEmpty,
@@ -152,30 +152,6 @@ function pathToRef(entry: PathEntry): ContextRef {
     path: entry.path,
     name: entry.name,
   };
-}
-
-// Parse the raw @token (text after the @, or null when button-opened) into the
-// picker view (HOY-220). "@file:q" / "@thread:q" scope to a category; a bare @ or
-// button-open is the root menu; anything else is a fuzzy search over files+threads.
-type ParsedToken = {
-  view: "root" | "file" | "thread" | "search";
-  q: string;
-  wantFiles: boolean;
-};
-function parseToken(token: string | null): ParsedToken {
-  if (token === null || token === "") {
-    return { view: "root", q: "", wantFiles: false };
-  }
-  const typed = /^(file|thread):(.*)$/i.exec(token);
-  if (typed) {
-    const kind = typed[1].toLowerCase();
-    return {
-      view: kind === "thread" ? "thread" : "file",
-      q: typed[2],
-      wantFiles: kind !== "thread",
-    };
-  }
-  return { view: "search", q: token, wantFiles: true };
 }
 
 // Zed-style agent composer. The message editor is a contenteditable surface so @
@@ -529,6 +505,31 @@ export function Composer({
     root.focus();
   }
 
+  // Pick a command from the "@" Commands category (HOY-286): replace the whole
+  // "@command:query" token with "/name " plain text, so it dispatches through the
+  // exact same send path as a typed "/" command. An action, not a context chip.
+  function insertCommand(command: SlashCommand) {
+    const root = editorRef.current;
+    const range = mentionOrCaretRange();
+    if (!root || !range) {
+      dismissPicker();
+      return;
+    }
+    range.deleteContents();
+    const node = document.createTextNode(`/${command.name} `);
+    range.insertNode(node);
+    const after = document.createRange();
+    after.setStart(node, node.data.length);
+    after.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(after);
+    setPicker(null);
+    setPathResults([]);
+    emit();
+    root.focus();
+  }
+
   // Close the menu, leaving any typed @token or "/" text in place (Escape / blur).
   function dismissPicker() {
     setPicker(null);
@@ -643,19 +644,21 @@ export function Composer({
       : threads
   ).slice(0, 8);
 
-  // The "/" command list (HOY-223): built-ins plus Pi's commands, deduped by name
-  // (a built-in wins), filtered by the typed query. Skills carry a "skill:" name
-  // prefix; the query matches the full name so "/skill:x" still filters.
-  const builtinNames = new Set(SLASH_BUILTINS.map((c) => c.name));
-  const slashQuery = slash?.query.toLowerCase() ?? "";
+  // The "/" command list (HOY-223): built-ins plus Pi's commands, deduped and
+  // filtered by the typed query (shared with the "@" Commands category, HOY-286).
   const slashItems = slash
-    ? [
-        ...SLASH_BUILTINS,
-        ...slashCommands.filter((c) => !builtinNames.has(c.name)),
-      ].filter((c) => c.name.toLowerCase().includes(slashQuery))
+    ? filterCommands(SLASH_BUILTINS, slashCommands, slash.query)
     : [];
   const slashOpen = slash !== null && slashItems.length > 0;
   const slashIndex = Math.min(slash?.index ?? 0, Math.max(0, slashItems.length - 1));
+
+  // The "@" Commands category (HOY-286): the same list, filtered by the @command
+  // query, surfaced as an alternate discovery path for slash commands. Capped like
+  // the file/thread views; picking one inserts "/name " (an action, not a chip).
+  const shownCommands =
+    parsed.view === "command"
+      ? filterCommands(SLASH_BUILTINS, slashCommands, parsed.q).slice(0, 8)
+      : [];
 
   const renderFileRows = () =>
     shownPaths.length === 0 ? (
@@ -697,6 +700,20 @@ export function Composer({
           <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
           <span className="truncate">{thread.title}</span>
         </PickerRow>
+      ))
+    );
+
+  const renderCommandRows = () =>
+    shownCommands.length === 0 ? (
+      <PickerEmpty>No commands</PickerEmpty>
+    ) : (
+      shownCommands.map((command) => (
+        <SlashRow
+          key={command.name}
+          command={command}
+          active={false}
+          onSelect={() => insertCommand(command)}
+        />
       ))
     );
 
@@ -749,6 +766,9 @@ export function Composer({
         e.preventDefault();
         if (parsed.view === "root") {
           dismissPicker();
+        } else if (parsed.view === "command") {
+          if (shownCommands.length > 0) insertCommand(shownCommands[0]);
+          else dismissPicker();
         } else if (parsed.view === "thread") {
           if (shownThreads.length > 0) {
             const t = shownThreads[0];
@@ -957,6 +977,8 @@ export function Composer({
             </PickerSection>
           ) : parsed.view === "thread" ? (
             <PickerSection label="Threads">{renderThreadRows()}</PickerSection>
+          ) : parsed.view === "command" ? (
+            <PickerSection label="Commands">{renderCommandRows()}</PickerSection>
           ) : (
             <>
               {recents.length > 0 && (
@@ -994,9 +1016,12 @@ export function Composer({
                   onSelect={() => setToken("@thread:")}
                 />
                 <CategoryRow
-                  icon={<Sparkles className="size-4 shrink-0" />}
-                  label="Skills"
-                  disabled
+                  icon={
+                    <SquareSlash className="size-4 shrink-0 text-muted-foreground" />
+                  }
+                  label="Commands"
+                  chevron
+                  onSelect={() => setToken("@command:")}
                 />
                 <CategoryRow
                   icon={

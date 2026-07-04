@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { detectMention } from "@/lib/mention";
+import { detectMention, parseToken, filterCommands } from "@/lib/mention";
+import type { SlashCommand } from "@/lib/types";
 
 describe("detectMention (HOY-220)", () => {
   test("at the start of the value", () => {
@@ -29,5 +30,86 @@ describe("detectMention (HOY-220)", () => {
 
   test("query stops at the cursor, not the end of the value", () => {
     expect(detectMention("@abcd", 2)).toEqual({ at: 0, query: "a" });
+  });
+});
+
+describe("parseToken (HOY-220, HOY-286)", () => {
+  test("null / empty is the root menu, no file search", () => {
+    expect(parseToken(null)).toEqual({ view: "root", q: "", wantFiles: false });
+    expect(parseToken("")).toEqual({ view: "root", q: "", wantFiles: false });
+  });
+
+  test("@command: routes to the command view and skips the file search", () => {
+    expect(parseToken("command:")).toEqual({
+      view: "command",
+      q: "",
+      wantFiles: false,
+    });
+    expect(parseToken("command:git")).toEqual({
+      view: "command",
+      q: "git",
+      wantFiles: false,
+    });
+  });
+
+  test("category prefix is case-insensitive", () => {
+    expect(parseToken("Command:X").view).toBe("command");
+  });
+
+  test("file and thread views are unchanged", () => {
+    expect(parseToken("file:src")).toEqual({
+      view: "file",
+      q: "src",
+      wantFiles: true,
+    });
+    expect(parseToken("thread:foo")).toEqual({
+      view: "thread",
+      q: "foo",
+      wantFiles: false,
+    });
+  });
+
+  test("an untyped token is a free search", () => {
+    expect(parseToken("foo")).toEqual({
+      view: "search",
+      q: "foo",
+      wantFiles: true,
+    });
+  });
+});
+
+describe("filterCommands (HOY-286)", () => {
+  const builtins: SlashCommand[] = [
+    { name: "compact", source: "hoy" },
+    { name: "init", source: "hoy" },
+  ];
+  const session: SlashCommand[] = [
+    { name: "deploy", source: "extension" },
+    { name: "skill:review", source: "skill" },
+    // Collides with a built-in name: the built-in wins, this is dropped.
+    { name: "init", source: "prompt" },
+  ];
+
+  test("merges built-ins and session commands, deduped by name", () => {
+    const names = filterCommands(builtins, session, "").map((c) => c.name);
+    expect(names).toEqual(["compact", "init", "deploy", "skill:review"]);
+    // The built-in "init" survives, not the session "prompt" one.
+    expect(filterCommands(builtins, session, "init")[0].source).toBe("hoy");
+  });
+
+  test("filters by a case-insensitive substring of the name", () => {
+    expect(filterCommands(builtins, session, "DEP").map((c) => c.name)).toEqual([
+      "deploy",
+    ]);
+  });
+
+  test("query matches the full skill: prefixed name", () => {
+    expect(
+      filterCommands(builtins, session, "skill:rev").map((c) => c.name),
+    ).toEqual(["skill:review"]);
+  });
+
+  test("no match yields an empty list", () => {
+    expect(filterCommands(builtins, session, "zzz")).toEqual([]);
   });
 });
