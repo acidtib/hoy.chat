@@ -136,3 +136,82 @@ export function heatmapGrid(
   }
   return cols;
 }
+
+// Stable, distinct colors for the model charts (trend stacks, donut, legend,
+// ranking). Assigned by descending token rank; models past the palette fold
+// into "Other models" with the last color.
+export const MODEL_PALETTE = [
+  "#4c9dff", // blue
+  "#3ecf8e", // green
+  "#8b7cf6", // purple
+  "#ff6b6b", // red
+  "#ffa94d", // orange
+  "#38d9c9", // teal (also "Other models")
+];
+const OTHER_COLOR = MODEL_PALETTE[MODEL_PALETTE.length - 1];
+const OTHER_LABEL = "Other models";
+
+export interface RankedModel {
+  model: string;
+  tokens: number;
+  share: number;
+  color: string;
+}
+
+// One day's stacked segments in ranked order (top models, then "Other").
+export interface DaySegment {
+  model: string;
+  color: string;
+  tokens: number;
+}
+
+export interface ModelBreakdown {
+  ranked: RankedModel[]; // top models + a folded "Other models" row
+  total: number;
+  daySegments: (day: UsageDay) => DaySegment[];
+}
+
+// Rank models by tokens across `days`, keep the top `topN` with palette colors,
+// fold the rest into "Other models". Returns the ranking plus a per-day
+// stacked-segment builder that reuses the same colors.
+export function modelBreakdown(days: UsageDay[], topN = 5): ModelBreakdown {
+  const base = modelRanking(days);
+  const top = base.slice(0, topN);
+  const topNames = new Set(top.map((r) => r.model));
+  const colorByName = new Map(top.map((r, i) => [r.model, MODEL_PALETTE[i]]));
+  const hasOther = base.length > top.length;
+
+  const ranked: RankedModel[] = top.map((r, i) => ({
+    ...r,
+    color: MODEL_PALETTE[i],
+  }));
+  if (hasOther) {
+    const rest = base.slice(topN);
+    ranked.push({
+      model: OTHER_LABEL,
+      tokens: rest.reduce((a, b) => a + b.tokens, 0),
+      share: rest.reduce((a, b) => a + b.share, 0),
+      color: OTHER_COLOR,
+    });
+  }
+
+  const total = base.reduce((a, b) => a + b.tokens, 0);
+
+  const daySegments = (day: UsageDay): DaySegment[] => {
+    const segs: DaySegment[] = top.map((r) => ({
+      model: r.model,
+      color: colorByName.get(r.model) ?? OTHER_COLOR,
+      tokens: day.byModel[r.model] ?? 0,
+    }));
+    if (hasOther) {
+      let other = 0;
+      for (const [m, t] of Object.entries(day.byModel)) {
+        if (!topNames.has(m)) other += t;
+      }
+      segs.push({ model: OTHER_LABEL, color: OTHER_COLOR, tokens: other });
+    }
+    return segs;
+  };
+
+  return { ranked, total, daySegments };
+}
