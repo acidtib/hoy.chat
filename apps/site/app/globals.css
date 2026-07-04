@@ -989,6 +989,10 @@ h3.heading {
   border-radius: 6px;
   color: var(--muted-2);
 }
+.aw-tb-divider {
+  width: 7px;
+  flex: none;
+}
 
 /* Per-thread header below the title bar. */
 .aw-threadbar {
