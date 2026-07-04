@@ -29,6 +29,9 @@ pub struct DayBucket {
     pub tokens: TokenBreakdown,
     pub cost: f64,
     pub messages: u64,
+    // Sessions started on this local day, so a range-scoped session count is a
+    // sum over the days in range rather than the all-time meta.session_count.
+    pub sessions: u64,
     pub by_model: BTreeMap<String, u64>,
     pub by_hour: [u64; 24],
 }
@@ -55,6 +58,7 @@ struct DayAcc {
     tokens: TokenBreakdown,
     cost: f64,
     messages: u64,
+    sessions: u64,
     by_model: BTreeMap<String, u64>,
     by_hour: [u64; 24],
 }
@@ -115,12 +119,26 @@ fn fold_file(content: &str, acc: &mut BTreeMap<String, DayAcc>) -> (u64, u64) {
             continue;
         };
         match v.get("type").and_then(Value::as_str) {
-            Some("session") => sessions += 1,
+            Some("session") if fold_session(&v, acc) => sessions += 1,
             Some("message") if fold_message(&v, acc) => messages += 1,
             _ => {}
         }
     }
     (messages, sessions)
+}
+
+// Bucket a session record onto its local start day. Returns true iff it had a
+// parseable timestamp and was counted.
+fn fold_session(v: &Value, acc: &mut BTreeMap<String, DayAcc>) -> bool {
+    let Some(ts) = v.get("timestamp").and_then(Value::as_str) else {
+        return false;
+    };
+    let Ok(parsed) = DateTime::parse_from_rfc3339(ts) else {
+        return false;
+    };
+    let date = parsed.with_timezone(&Local).format("%Y-%m-%d").to_string();
+    acc.entry(date).or_default().sessions += 1;
+    true
 }
 
 // Fold one message record. Counts user/assistant messages (toolResult excluded)
@@ -192,6 +210,7 @@ fn finalize(acc: BTreeMap<String, DayAcc>, session_count: u64, total_messages: u
             tokens: a.tokens,
             cost: a.cost,
             messages: a.messages,
+            sessions: a.sessions,
             by_model: a.by_model,
             by_hour: a.by_hour,
         })
@@ -255,6 +274,7 @@ mod tests {
         assert_eq!(d.tokens.total, 38);
         assert_eq!(d.tokens.input, 11);
         assert_eq!(d.messages, 3, "1 user + 2 assistant, toolResult excluded");
+        assert_eq!(d.sessions, 1, "one session started that day");
         assert_eq!(*d.by_model.get("opus").unwrap(), 38);
         assert!((d.cost - 0.6).abs() < 1e-9);
         assert_eq!(
@@ -300,6 +320,8 @@ mod tests {
         let report = compute_usage_from(&sessions);
         assert_eq!(report.days.len(), 2);
         assert!(report.days[0].date < report.days[1].date, "days ascending");
+        assert_eq!(report.days[0].sessions, 1);
+        assert_eq!(report.days[1].sessions, 1);
         assert_eq!(report.meta.session_count, 2);
         assert_eq!(
             report.meta.first_day.as_deref(),

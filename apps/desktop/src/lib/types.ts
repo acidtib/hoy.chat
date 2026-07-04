@@ -123,6 +123,7 @@ export interface UsageDay {
   tokens: UsageTokenBreakdown;
   cost: number;
   messages: number;
+  sessions: number; // sessions started this day (range-scoped session count)
   byModel: Record<string, number>;
   byHour: number[]; // length 24, tokens per local hour
 }
