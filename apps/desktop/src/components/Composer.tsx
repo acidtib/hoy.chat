@@ -830,7 +830,11 @@ export function Composer({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="absolute right-1.5 top-1.5 size-7 text-muted-foreground"
+              // z-20 lifts the button above the contenteditable editor below it:
+              // both sit in the composer's `relative` stacking context, and the
+              // later-in-DOM editor wrapper (also positioned) would otherwise
+              // paint over the button and swallow real mouse clicks (HOY-268).
+              className="absolute right-1.5 top-1.5 z-20 size-7 text-muted-foreground"
               onClick={onToggleExpand}
               aria-label={
                 expanded ? "Minimize Message Editor" : "Expand Message Editor"
