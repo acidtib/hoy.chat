@@ -12,6 +12,7 @@ import {
   getMessages,
   getSessionStats,
   getState,
+  getUsageStats,
   listProjectPaths,
   listSubagents,
   loadWorkspace,
@@ -68,6 +69,7 @@ import type {
   ThinkingLevel,
   Thread,
   Turn,
+  UsageReport,
 } from "@/lib/types";
 import { isThinkingLevel } from "@/lib/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -304,6 +306,10 @@ interface SessionStore {
   turns: Record<string, Turn[]>;
   streaming: Record<string, boolean>;
   stats: Record<string, SessionStats | null>;
+  // HOY-262: aggregate local usage stats for the home dashboard. Loaded lazily
+  // when the dashboard mounts; null until the first fetch resolves.
+  usageReport: UsageReport | null;
+  usageLoading: boolean;
   threadErrors: Record<string, string | null>;
   // Plan-mode handoff (HOY-213): a plan-mode turn that finished carrying a
   // proposed_plan block sets planReady[threadId] to the extracted plan text.
@@ -505,6 +511,7 @@ interface SessionStore {
   // arrive over the channel as usual; no state is flipped here.
   stopStreaming: (threadId: string) => Promise<void>;
   refreshStats: (threadId: string) => Promise<void>;
+  refreshUsage: () => Promise<void>;
   // Pull the session's slash commands into the store (HOY-223). No-op without a
   // live session; a failure degrades quietly to the built-ins.
   refreshSlashCommands: (threadId: string) => Promise<void>;
@@ -540,6 +547,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   turns: {},
   streaming: {},
   stats: {},
+  usageReport: null,
+  usageLoading: false,
   threadErrors: {},
   planReady: {},
   compacting: {},
@@ -1337,6 +1346,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       }
     } catch {
       // Stats are best-effort; a failure leaves the bar on its last value.
+    }
+  },
+
+  refreshUsage: async () => {
+    set({ usageLoading: true });
+    try {
+      const report = await getUsageStats();
+      set({ usageReport: report, usageLoading: false });
+    } catch {
+      // Best-effort: leave the last report in place and drop the spinner.
+      set({ usageLoading: false });
     }
   },
 
