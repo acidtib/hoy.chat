@@ -89,7 +89,7 @@ export function TitleBar() {
         >
           <Settings className="size-4" />
         </TitleBarButton>
-        <div aria-hidden className="mx-1.5 h-4 w-px bg-border/60" />
+        <div aria-hidden className="w-3" />
         <WindowControls />
       </div>
     </header>
