@@ -12,8 +12,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { listMcpServers } from "@/lib/ipc";
+import { parseMcpServersJson } from "@/lib/mcpImport";
 import type { McpScope, McpServerEntry, McpServerList } from "@/lib/types";
 import { useSessionStore } from "@/state/store";
+import { cn } from "@/lib/utils";
 import { PanelHeader, Section, StatusDot } from "./panels";
 
 // Split a command line into args on whitespace, ignoring empty runs. Good enough
@@ -108,15 +110,20 @@ function AddServerForm({
   busy: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"form" | "json">("form");
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<"stdio" | "http">("stdio");
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [url, setUrl] = useState("");
   const [extra, setExtra] = useState(""); // env (stdio) or headers (http), KEY=value lines
+  const [json, setJson] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const valid = name.trim() && (transport === "stdio" ? command.trim() : url.trim());
+  const valid =
+    mode === "json"
+      ? json.trim().length > 0
+      : name.trim() && (transport === "stdio" ? command.trim() : url.trim());
 
   function reset() {
     setName("");
@@ -124,12 +131,35 @@ function AddServerForm({
     setArgs("");
     setUrl("");
     setExtra("");
+    setJson("");
     setError(null);
     setTransport("stdio");
+    setMode("form");
   }
 
   async function submit() {
     if (!valid) return;
+    // JSON-paste path (HOY-273): parse the standard mcpServers config into one or
+    // more (name, spec) pairs and add each; the typed Name is the fallback for a
+    // single unnamed server. Parse errors surface before any server is added.
+    if (mode === "json") {
+      let servers;
+      try {
+        servers = parseMcpServersJson(json, name);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return;
+      }
+      try {
+        setError(null);
+        for (const s of servers) await onAdd(s.name, s.spec);
+        reset();
+        setOpen(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
     const spec: Record<string, unknown> =
       transport === "stdio"
         ? { command: command.trim(), ...(splitArgs(args).length ? { args: splitArgs(args) } : {}) }
@@ -160,6 +190,57 @@ function AddServerForm({
 
   return (
     <div className="space-y-4 border border-border bg-card/40 p-4">
+      <div className="inline-flex rounded-md border border-border p-0.5">
+        {(["form", "json"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => {
+              setMode(m);
+              setError(null);
+            }}
+            className={cn(
+              "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
+              mode === m
+                ? "bg-secondary text-secondary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {m === "form" ? "Form" : "Paste JSON"}
+          </button>
+        ))}
+      </div>
+
+      {mode === "json" ? (
+        <>
+          <div className="space-y-2">
+            <Label>Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="linear" />
+            <p className="text-xs text-muted-foreground">
+              Optional — only used when the JSON is a single server with no name.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Config JSON</Label>
+            <textarea
+              value={json}
+              onChange={(e) => setJson(e.target.value)}
+              rows={9}
+              spellCheck={false}
+              autoFocus
+              className="w-full resize-y border border-input bg-transparent px-3 py-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              placeholder={
+                '{\n  "mcpServers": {\n    "linear": {\n      "command": "bunx",\n      "args": ["-y", "mcp-remote", "https://mcp.linear.app/mcp"]\n    }\n  }\n}'
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Paste a standard MCP config. Accepts the <code>mcpServers</code> wrapper, a
+              name→server map, or a single server object; adds every server it finds.
+            </p>
+          </div>
+        </>
+      ) : (
+        <>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label>Name</Label>
@@ -216,6 +297,8 @@ function AddServerForm({
           One KEY=value per line. Use ${"{VAR}"} to reference an environment variable instead of inlining a secret.
         </p>
       </div>
+        </>
+      )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
