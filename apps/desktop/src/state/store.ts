@@ -2060,14 +2060,27 @@ function flagPlanReadyIfPresent(threadId: string): void {
   const thread = findThread(s.projects, threadId)?.thread;
   if (!thread || thread.permissionMode !== "plan") return;
   const turns = s.turns[threadId];
-  const last = turns?.[turns.length - 1];
-  if (!last || last.role !== "assistant") return;
-  const text = last.blocks.map((b) => (b.kind === "text" ? b.content : "")).join("");
-  const plan = extractProposedPlan(text);
-  if (plan) {
-    useSessionStore.setState((st) => ({
-      planReady: { ...st.planReady, [threadId]: plan },
-    }));
+  if (!turns) return;
+  // Scan newest-first rather than only the last turn: a plan-mode turn that
+  // spawns explore subagents writes its proposed_plan block before those
+  // subagents finish, and each delivered result appends a trailing
+  // user+assistant turn (HOY-233). The plan is therefore usually NOT the last
+  // turn, so we check every assistant turn and take the most recent one that
+  // carries a complete proposed_plan block. Only the last-turn check here meant
+  // subagent-assisted plans never raised the handoff card.
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i];
+    if (turn.role !== "assistant") continue;
+    const text = turn.blocks
+      .map((b) => (b.kind === "text" ? b.content : ""))
+      .join("");
+    const plan = extractProposedPlan(text);
+    if (plan) {
+      useSessionStore.setState((st) => ({
+        planReady: { ...st.planReady, [threadId]: plan },
+      }));
+      return;
+    }
   }
 }
 

@@ -64,10 +64,19 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
+import {
+  Plan,
+  PlanContent,
+  PlanFooter,
+  PlanHeader,
+  PlanTitle,
+  PlanTrigger,
+} from "@/components/ai-elements/plan";
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Composer } from "@/components/Composer";
 import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
+import { splitPlanSegments } from "@/lib/plan";
 import { findThread, useSessionStore } from "@/state/store";
 import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
 import { usePrefsStore } from "@/state/prefs";
@@ -482,7 +491,15 @@ export function ThreadView({
                       )}
                       {turn.blocks.map((block, bi) =>
                         block.kind === "text" ? (
-                          <MessageResponse key={bi}>{block.content}</MessageResponse>
+                          <AssistantTextBlock
+                            key={bi}
+                            content={block.content}
+                            planReady={planReady}
+                            onImplement={(mode) =>
+                              void implementPlan(threadId, mode)
+                            }
+                            onDismiss={() => dismissPlanReady(threadId)}
+                          />
                         ) : (
                           <ToolCall tool={block.tool} key={block.tool.id} />
                         ),
@@ -524,13 +541,6 @@ export function ThreadView({
                 />
               ))}
             </div>
-          )}
-
-          {planReady !== undefined && (
-            <PlanReadyCard
-              onImplement={(mode) => void implementPlan(threadId, mode)}
-              onDismiss={() => dismissPlanReady(threadId)}
-            />
           )}
 
           {pendingPermissions.length > 0 && (
@@ -885,59 +895,117 @@ function QuestionnaireCard({
   );
 }
 
-// Plan-mode handoff card (HOY-213). Shown when a plan-mode turn produced a
-// proposed_plan block. The two Implement actions pick the execute mode to land
-// in (default reviews each edit; acceptEdits auto-approves file edits), so the
-// user chooses oversight at approval time. Keep planning dismisses and stays in
-// plan mode. The plan stays in the transcript either way.
-function PlanReadyCard({
+// Renders an assistant text block, splitting out any <proposed_plan> block so its
+// body draws as a card (ProposedPlanCard) instead of leaking the raw tag inline
+// (HOY-259). Surrounding prose stays inline markdown; segmentation memoized on
+// the block content so streaming appends don't rebuild settled segments.
+function AssistantTextBlock({
+  content,
+  planReady,
   onImplement,
   onDismiss,
 }: {
+  content: string;
+  // The thread's ready plan text (store planReady[threadId]) or undefined. When
+  // it matches a completed plan segment, that plan's card shows the handoff
+  // actions in its footer (HOY-259).
+  planReady: string | undefined;
   onImplement: (mode: PermissionMode) => void;
   onDismiss: () => void;
 }) {
+  const segments = useMemo(() => splitPlanSegments(content), [content]);
   return (
-    <div className="mx-3 mb-2 shrink-0 rounded-lg border border-agent/40 bg-card/70 px-3 py-2.5">
-      <div className="flex items-start gap-2.5">
-        <ClipboardCheck className="mt-0.5 size-4 shrink-0 text-agent" />
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium leading-relaxed text-foreground">
-            Plan ready
-          </div>
-          <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Approve to leave plan mode and start implementing, or keep planning to
-            refine it first.
-          </div>
+    <>
+      {segments.map((seg, i) =>
+        seg.kind === "plan" ? (
+          <ProposedPlanCard
+            key={i}
+            text={seg.text}
+            streaming={seg.streaming}
+            ready={
+              !seg.streaming &&
+              planReady !== undefined &&
+              planReady === seg.text.trim()
+            }
+            onImplement={onImplement}
+            onDismiss={onDismiss}
+          />
+        ) : (
+          <MessageResponse key={i}>{seg.text}</MessageResponse>
+        ),
+      )}
+    </>
+  );
+}
+
+// The proposed plan rendered in the transcript as an AI Elements Plan card
+// (HOY-259): a "Proposed plan" header + the plan body as formatted markdown,
+// collapsible for a long plan. The Implement / Keep-planning handoff is folded
+// into the card footer (PlanFooter) once the plan is ready, so the plan and its
+// decision are one coherent surface rather than a separate sticky card. While
+// the block still streams, the title shimmers, a pulse shows, and the (possibly
+// empty) body fills in live; `ready` gates the footer to a completed plan the
+// store has flagged as the thread's active plan.
+function ProposedPlanCard({
+  text,
+  streaming,
+  ready,
+  onImplement,
+  onDismiss,
+}: {
+  text: string;
+  streaming: boolean;
+  ready: boolean;
+  onImplement: (mode: PermissionMode) => void;
+  onDismiss: () => void;
+}) {
+  const body = text.trim();
+  return (
+    <Plan defaultOpen isStreaming={streaming}>
+      <PlanHeader>
+        <ClipboardCheck className="size-3.5 shrink-0 text-agent" />
+        <PlanTitle>Proposed plan</PlanTitle>
+        <div className="ml-auto flex items-center gap-2">
+          {streaming && (
+            <span className="size-1.5 animate-pulse rounded-full bg-agent motion-reduce:animate-none" />
+          )}
+          <PlanTrigger />
         </div>
-      </div>
-      <div className="mt-2 flex flex-wrap items-center justify-end gap-1.5">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs text-muted-foreground"
-          onClick={onDismiss}
-        >
-          Keep planning
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
-          onClick={() => onImplement("default")}
-        >
-          Implement (review each edit)
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
-          onClick={() => onImplement("acceptEdits")}
-        >
-          Implement (auto-approve edits)
-        </Button>
-      </div>
-    </div>
+      </PlanHeader>
+      {body.length > 0 && (
+        <PlanContent>
+          <MessageResponse>{body}</MessageResponse>
+        </PlanContent>
+      )}
+      {ready && (
+        <PlanFooter>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground"
+            onClick={onDismiss}
+          >
+            Keep planning
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
+            onClick={() => onImplement("default")}
+          >
+            Implement (review each edit)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
+            onClick={() => onImplement("acceptEdits")}
+          >
+            Implement (auto-approve edits)
+          </Button>
+        </PlanFooter>
+      )}
+    </Plan>
   );
 }
 
