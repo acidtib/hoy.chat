@@ -70,6 +70,14 @@ pub struct WsThread {
     // and pre-HOY-267 files.
     #[serde(default)]
     pub model: Option<WsModelRef>,
+    // Goal Mode (HOY-263): the thread's goal loop state, if any. Absent for
+    // threads with no goal and pre-HOY-263 files. On load, the frontend
+    // (store.ts initWorkspace) demotes a restored "active" goal to "paused"
+    // and resets its counters so it does not auto-run; a "met"/"cleared"
+    // goal is dropped rather than restored. Persisted as-is here; the reset
+    // is a load-time frontend concern, not a workspace.rs one.
+    #[serde(default)]
+    pub goal: Option<WsGoal>,
 }
 
 // A provider/model identity pair, mirroring the frontend ModelRef. Cached on the
@@ -79,6 +87,24 @@ pub struct WsThread {
 pub struct WsModelRef {
     pub provider: String,
     pub id: String,
+}
+
+// Mirror of the frontend ThreadGoal (src/state/goal.ts). Keep the two in sync
+// (AGENTS.md): same fields, same camelCase names.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsGoal {
+    pub condition: String,
+    pub status: String,
+    pub turns: u32,
+    pub tokens_baseline: u64,
+    pub tokens_used: u64,
+    pub started_at: u64,
+    pub cap_turns: u32,
+    #[serde(default)]
+    pub evaluator_model: Option<WsModelRef>,
+    #[serde(default)]
+    pub last_reason: Option<String>,
 }
 
 // Which agent spawned this thread and under what role, for child threads
@@ -169,6 +195,20 @@ mod tests {
                         provider: "anthropic".into(),
                         id: "claude-opus-4-8".into(),
                     }),
+                    goal: Some(WsGoal {
+                        condition: "tests pass".into(),
+                        status: "active".into(),
+                        turns: 3,
+                        tokens_baseline: 100,
+                        tokens_used: 250,
+                        started_at: 1_717_000_000_000,
+                        cap_turns: 25,
+                        evaluator_model: Some(WsModelRef {
+                            provider: "anthropic".into(),
+                            id: "claude-haiku".into(),
+                        }),
+                        last_reason: Some("still working".into()),
+                    }),
                 }],
             }],
         }
@@ -200,6 +240,37 @@ mod tests {
         let m = t.model.as_ref().expect("model persists");
         assert_eq!(m.provider, "anthropic");
         assert_eq!(m.id, "claude-opus-4-8");
+        let g = t.goal.as_ref().expect("goal persists");
+        assert_eq!(g.condition, "tests pass");
+        assert_eq!(g.status, "active");
+        assert_eq!(g.turns, 3);
+        assert_eq!(g.tokens_baseline, 100);
+        assert_eq!(g.tokens_used, 250);
+        assert_eq!(g.cap_turns, 25);
+        assert_eq!(g.last_reason.as_deref(), Some("still working"));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn goal_serializes_camel_case_and_omits_when_absent() {
+        let path = temp_path("goal");
+        save_at(&path, &sample()).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("\"goal\""));
+        assert!(raw.contains("\"tokensBaseline\": 100"));
+        assert!(raw.contains("\"tokensUsed\": 250"));
+        assert!(raw.contains("\"capTurns\": 25"));
+        assert!(raw.contains("\"lastReason\": \"still working\""));
+        assert!(!raw.contains("tokens_baseline"));
+
+        // Pre-HOY-263 files (no goal key) load with None rather than failing.
+        std::fs::write(
+            &path,
+            r#"{"projects":[{"id":"p1","name":"hoy","threads":[{"id":"t1","title":"T","updatedAt":1}]}]}"#,
+        )
+        .unwrap();
+        let loaded = load_at(&path).unwrap();
+        assert!(loaded.projects[0].threads[0].goal.is_none());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -290,6 +361,7 @@ mod tests {
                         agent_id: "a1".into(),
                     }),
                     model: None,
+                    goal: None,
                 }],
             }],
             active_project_id: None,

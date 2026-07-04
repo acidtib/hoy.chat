@@ -1,5 +1,11 @@
 // Mirror of src-tauri/src/events.rs. Change both together.
 
+// Type-only import: goal.ts imports `ModelRef` from this module the same way
+// (also type-only), so this is a type-level cycle only. Both sides are erased
+// at compile time (verbatimModuleSyntax / isolatedModules strip `import type`),
+// so no runtime import cycle exists.
+import type { ThreadGoal } from "../state/goal";
+
 export type ToolPhase = "start" | "update" | "end";
 
 export type AgentEvent =
@@ -425,6 +431,11 @@ export interface Thread {
   // Thinking level (HOY-204). Session-local only, not persisted; workspace.rs
   // knows nothing of this field. Hydrated from get_state on session open.
   thinkingLevel?: ThinkingLevel | null;
+  // Goal Mode (HOY-263): the thread's active/paused goal loop, if any. Persisted
+  // through workspace.json (see workspace.rs WsThread.goal) so the goal card
+  // renders before a sidecar spawns; loadWorkspace resets counters and demotes
+  // "active" to "paused" on restore (see store.ts initWorkspace).
+  goal?: ThreadGoal;
 }
 
 // Mirror of workspace.rs Workspace: the persisted projects -> threads tree.

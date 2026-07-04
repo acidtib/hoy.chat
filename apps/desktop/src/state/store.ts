@@ -48,6 +48,7 @@ import {
   type Delivery,
 } from "./delivery";
 import { MAX_SUBAGENT_DEPTH, MAX_CONCURRENT_AGENTS } from "./limits";
+import type { ThreadGoal } from "./goal";
 import type {
   AgentEvent,
   ContextRef,
@@ -1503,11 +1504,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         ...p,
         threads: p.threads.map((t) => {
           // Drafts live in the drafts slice, not on the in-memory thread.
-          const { draft, ...rest } = t;
+          const { draft, goal, ...rest } = t;
           if (draft) drafts[rest.id] = draft;
-          return !rest.renamed && !rest.sessionFile && rest.title !== "New thread"
-            ? { ...rest, renamed: true }
-            : rest;
+          const restoredGoal = restoreGoal(goal);
+          const withGoal = restoredGoal ? { ...rest, goal: restoredGoal } : rest;
+          return !withGoal.renamed && !withGoal.sessionFile && withGoal.title !== "New thread"
+            ? { ...withGoal, renamed: true }
+            : withGoal;
         }),
       }));
       // Restore the last worked-in project only if it still exists.
@@ -2594,6 +2597,12 @@ function persistProjects(
           // Cached so the sidebar shows the thread's model glyph on load without
           // spawning the session; reconciled against get_state on open (HOY-267).
           model: t.model ?? null,
+          // Goal Mode (HOY-263): persisted as-is (omitted entirely, rather than
+          // null, when absent -- the brief's `goal?: ThreadGoal` has no null
+          // arm). loadWorkspace resets counters and demotes "active" to
+          // "paused" on the way back in, so a running loop never auto-resumes
+          // just from reopening the app.
+          goal: t.goal,
         })),
     })),
   };
@@ -2678,6 +2687,29 @@ function patchThread(
     ...p,
     threads: p.threads.map((t) => (t.id === threadId ? patch(t) : t)),
   }));
+}
+
+// Goal Mode (HOY-263) load semantics: a persisted goal must never auto-run
+// just because the app reopened. "met"/"cleared" goals are done, so they are
+// dropped rather than restored. An "active" goal is demoted to "paused" and
+// its per-run counters reset -- turns and startedAt start over, and the
+// baseline absorbs whatever was already used so the next evaluate() call (once
+// the user explicitly resumes and a sidecar is live again) measures a fresh
+// delta instead of replaying stale usage against a since-restarted session.
+// "paused" and "capped" goals already do not auto-run, so they pass through
+// unchanged.
+function restoreGoal(goal: ThreadGoal | undefined): ThreadGoal | undefined {
+  if (!goal) return undefined;
+  if (goal.status === "met" || goal.status === "cleared") return undefined;
+  if (goal.status !== "active") return goal;
+  return {
+    ...goal,
+    status: "paused",
+    turns: 0,
+    startedAt: Date.now(),
+    tokensBaseline: goal.tokensBaseline + goal.tokensUsed,
+    tokensUsed: 0,
+  };
 }
 
 function truncateTitle(text: string): string {
