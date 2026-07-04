@@ -97,13 +97,20 @@ from Pi over a Tauri Channel).
   `link`. Sizes `xs`/`sm`/`default`/`lg` + icon variants. Active state nudges
   `translate-y-px`; focus shows a 3px brand ring. `cursor-pointer`, `font-medium`.
 - **AI Elements**: Conversation, Message, Tool, Reasoning (with live thinking
-  timer), Code Block (Shiki), Model Selector, Shimmer. These render the transcript.
+  timer), Code Block (Shiki), Model Selector, Shimmer, Plan (the proposed-plan
+  handoff card, HOY-259). These render the transcript.
 - **Primitives in use**: Dialog, AlertDialog (destructive confirms), DropdownMenu,
   Select, Command (cmdk, slash-command palette), Collapsible, Switch, Tooltip,
-  ScrollArea, Badge, Input/Textarea/InputGroup, Button/ButtonGroup, Separator.
+  ScrollArea, Badge, Input/Textarea/InputGroup, Button/ButtonGroup, Separator,
+  Card (`ui/card.tsx`, added with the AI Elements Plan component in HOY-259).
 - **Markdown**: Streamdown renders streamed assistant markdown.
-- Cards are used only as genuine elevated surfaces (panels), never as a decorative
-  grid. No nested cards.
+- Cards are genuine elevated surfaces (panels / the plan handoff), never a
+  decorative grid, and never nested. There is now a real `ui/card` primitive (an
+  elevated `bg-card` surface with a hairline ring); the Plan component builds on
+  it, and new card-shaped surfaces should reach for it rather than hand-rolling
+  another bordered div. Several older surfaces (ApprovalCard, QuestionnaireCard,
+  notice rows) predate it and remain styled divs — fair game for a later
+  consolidation pass.
 
 ## Layout
 
