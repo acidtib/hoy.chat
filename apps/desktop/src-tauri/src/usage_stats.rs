@@ -116,11 +116,7 @@ fn fold_file(content: &str, acc: &mut BTreeMap<String, DayAcc>) -> (u64, u64) {
         };
         match v.get("type").and_then(Value::as_str) {
             Some("session") => sessions += 1,
-            Some("message") => {
-                if fold_message(&v, acc) {
-                    messages += 1;
-                }
-            }
+            Some("message") if fold_message(&v, acc) => messages += 1,
             _ => {}
         }
     }
@@ -237,24 +233,41 @@ mod tests {
             "sess-a",
             &[
                 r#"{"type":"session","id":"sess-a","timestamp":"2026-07-03T18:00:00.000Z","cwd":"/x"}"#,
-                &format!(r#"{{"type":"message","timestamp":"{ts}","message":{{"role":"user","timestamp":"{ts}"}}}}"#),
-                &format!(r#"{{"type":"message","timestamp":"{ts}","message":{{"role":"assistant","model":"opus","timestamp":"{ts}","usage":{{"input":10,"output":20,"cacheRead":5,"cacheWrite":0,"totalTokens":35,"cost":{{"total":0.5}}}}}}}}"#),
-                &format!(r#"{{"type":"message","timestamp":"{ts}","message":{{"role":"assistant","model":"opus","timestamp":"{ts}","usage":{{"input":1,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{{"total":0.1}}}}}}}}"#),
+                &format!(
+                    r#"{{"type":"message","timestamp":"{ts}","message":{{"role":"user","timestamp":"{ts}"}}}}"#
+                ),
+                &format!(
+                    r#"{{"type":"message","timestamp":"{ts}","message":{{"role":"assistant","model":"opus","timestamp":"{ts}","usage":{{"input":10,"output":20,"cacheRead":5,"cacheWrite":0,"totalTokens":35,"cost":{{"total":0.5}}}}}}}}"#
+                ),
+                &format!(
+                    r#"{{"type":"message","timestamp":"{ts}","message":{{"role":"assistant","model":"opus","timestamp":"{ts}","usage":{{"input":1,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{{"total":0.1}}}}}}}}"#
+                ),
                 r#"{"type":"toolResult","timestamp":"2026-07-03T18:00:01.000Z"}"#,
             ],
         );
         let report = compute_usage_from(&sessions);
-        assert_eq!(report.days.len(), 1, "all messages share one instant -> one local day");
+        assert_eq!(
+            report.days.len(),
+            1,
+            "all messages share one instant -> one local day"
+        );
         let d = &report.days[0];
         assert_eq!(d.tokens.total, 38);
         assert_eq!(d.tokens.input, 11);
         assert_eq!(d.messages, 3, "1 user + 2 assistant, toolResult excluded");
         assert_eq!(*d.by_model.get("opus").unwrap(), 38);
         assert!((d.cost - 0.6).abs() < 1e-9);
-        assert_eq!(d.by_hour.iter().sum::<u64>(), 38, "hour histogram totals equal token total");
+        assert_eq!(
+            d.by_hour.iter().sum::<u64>(),
+            38,
+            "hour histogram totals equal token total"
+        );
         assert_eq!(report.meta.session_count, 1);
         assert_eq!(report.meta.total_messages, 3);
-        assert_eq!(report.meta.first_day.as_deref(), report.meta.last_day.as_deref());
+        assert_eq!(
+            report.meta.first_day.as_deref(),
+            report.meta.last_day.as_deref()
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -269,7 +282,9 @@ mod tests {
             "sess-a",
             &[
                 r#"{"type":"session","id":"sess-a","timestamp":"2026-07-01T12:00:00.000Z","cwd":"/x"}"#,
-                &format!(r#"{{"type":"message","timestamp":"{early}","message":{{"role":"assistant","model":"opus","usage":{{"totalTokens":100,"cost":{{"total":1.0}}}}}}}}"#),
+                &format!(
+                    r#"{{"type":"message","timestamp":"{early}","message":{{"role":"assistant","model":"opus","usage":{{"totalTokens":100,"cost":{{"total":1.0}}}}}}}}"#
+                ),
             ],
         );
         write_session(
@@ -277,15 +292,23 @@ mod tests {
             "sess-b",
             &[
                 r#"{"type":"session","id":"sess-b","timestamp":"2026-07-03T12:00:00.000Z","cwd":"/y"}"#,
-                &format!(r#"{{"type":"message","timestamp":"{late}","message":{{"role":"assistant","model":"deepseek","usage":{{"totalTokens":40,"cost":{{"total":0.2}}}}}}}}"#),
+                &format!(
+                    r#"{{"type":"message","timestamp":"{late}","message":{{"role":"assistant","model":"deepseek","usage":{{"totalTokens":40,"cost":{{"total":0.2}}}}}}}}"#
+                ),
             ],
         );
         let report = compute_usage_from(&sessions);
         assert_eq!(report.days.len(), 2);
         assert!(report.days[0].date < report.days[1].date, "days ascending");
         assert_eq!(report.meta.session_count, 2);
-        assert_eq!(report.meta.first_day.as_deref(), Some(report.days[0].date.as_str()));
-        assert_eq!(report.meta.last_day.as_deref(), Some(report.days[1].date.as_str()));
+        assert_eq!(
+            report.meta.first_day.as_deref(),
+            Some(report.days[0].date.as_str())
+        );
+        assert_eq!(
+            report.meta.last_day.as_deref(),
+            Some(report.days[1].date.as_str())
+        );
         let grand: u64 = report.days.iter().map(|d| d.tokens.total).sum();
         assert_eq!(grand, 140);
         let _ = std::fs::remove_dir_all(&root);

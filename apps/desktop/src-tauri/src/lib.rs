@@ -120,6 +120,7 @@ pub fn run() {
             commands::send_prompt,
             commands::enqueue_prompt,
             commands::get_session_stats,
+            commands::get_usage_stats,
             commands::abort,
             commands::respond_permission,
             commands::set_permission_mode,
