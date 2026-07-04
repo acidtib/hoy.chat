@@ -1,9 +1,17 @@
-import { beforeEach, expect, test, mock } from "bun:test";
+import { afterEach, beforeEach, expect, test, mock } from "bun:test";
 import { mockIpcModule } from "./ipcMock";
 
 mockIpcModule();
 
 const { useSessionStore } = await import("@/state/store");
+
+// These tests stub submitPrompt to isolate startThread's orchestration. The
+// store is a module singleton shared across every test file, so the stub must
+// be restored or it leaks into later files and silently no-ops their sends.
+const realSubmitPrompt = useSessionStore.getState().submitPrompt;
+afterEach(() => {
+  useSessionStore.setState({ submitPrompt: realSubmitPrompt });
+});
 
 function seed() {
   useSessionStore.setState({
