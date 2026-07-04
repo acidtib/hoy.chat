@@ -72,8 +72,8 @@ export function TokenTrendChart({
           })}
         </div>
 
-        {/* On-chart hover tooltip. */}
-        {active && hover != null && (
+        {/* On-chart hover tooltip (skipped for empty days). */}
+        {active && hover != null && active.tokens.total > 0 && (
           <div
             className="pointer-events-none absolute top-0 z-10 w-56 -translate-x-1/2 border border-border bg-popover p-2 text-xs shadow-md"
             style={{

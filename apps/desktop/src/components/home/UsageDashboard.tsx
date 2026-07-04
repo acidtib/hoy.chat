@@ -6,6 +6,7 @@ import {
   peakHour,
   streaks,
   totals,
+  trendDays,
   type UsageRange,
 } from "@/lib/usage";
 import { formatTokens } from "@/lib/utils";
@@ -22,7 +23,7 @@ export function UsageDashboard() {
   const report = useSessionStore((s) => s.usageReport);
   const loading = useSessionStore((s) => s.usageLoading);
   const refreshUsage = useSessionStore((s) => s.refreshUsage);
-  const [range, setRange] = useState<UsageRange>("all");
+  const [range, setRange] = useState<UsageRange>("30d");
 
   useEffect(() => {
     void refreshUsage();
@@ -37,7 +38,7 @@ export function UsageDashboard() {
       totals: totals(report.days),
       streaks: streaks(report.days),
       peak: peakHour(report.days),
-      rangeDays,
+      trend: trendDays(report.days, range),
       breakdown: modelBreakdown(rangeDays),
     };
   }, [report, range]);
@@ -83,7 +84,7 @@ export function UsageDashboard() {
           <h3 className="text-sm font-medium text-foreground">Daily Token Trend</h3>
           <RangeSwitch value={range} onChange={setRange} />
         </div>
-        <TokenTrendChart days={v.rangeDays} breakdown={v.breakdown} />
+        <TokenTrendChart days={v.trend} breakdown={v.breakdown} />
       </div>
 
       <div className="space-y-3">
