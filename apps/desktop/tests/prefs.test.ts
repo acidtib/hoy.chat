@@ -22,6 +22,7 @@ describe("usePrefsStore", () => {
       requireSubagentApproval: false,
       maxConcurrentAgents: 4,
       keepAwakeWhileStreaming: true,
+      autoCompaction: true,
     });
   });
 

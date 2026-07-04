@@ -544,10 +544,11 @@ interface SessionStore {
   // Trigger a manual compaction on the thread's session, optionally with custom
   // summarization instructions (HOY-229). Gated on an idle, live session.
   compact: (threadId: string, customInstructions?: string) => Promise<void>;
-  // Toggle per-session auto-compaction and re-sync from get_state (HOY-229).
+  // Push auto-compaction to the active live session so a mid-conversation
+  // toggle takes effect at once (HOY-275); the persisted default is a renderer
+  // pref (autoCompaction) applied to every session on spawn. Optimistic on the
+  // per-session mirror, reverted on failure.
   setAutoCompaction: (threadId: string, enabled: boolean) => Promise<void>;
-  // Pull the session's current autoCompactionEnabled into the store.
-  refreshAutoCompaction: (threadId: string) => Promise<void>;
   setThreadSessionIdInternal: (threadId: string, sessionId: string) => void;
 }
 
@@ -1332,6 +1333,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Same for a deferred permission mode (HOY-186): the gate must be in
       // place before the prompt streams.
       await applyThreadPermissionMode(threadId, sessionId);
+      // Push the global auto-compaction default to the new sidecar (HOY-275).
+      // Best-effort inside the helper, so it never blocks the prompt.
+      await applyAutoCompaction(sessionId);
 
       await streamPromptOnThread(threadId, sessionId, outbound, images);
     } catch (e) {
@@ -1483,20 +1487,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
 
-  refreshAutoCompaction: async (threadId) => {
-    const sessionId = findThread(get().projects, threadId)?.thread.sessionId;
-    if (!sessionId) return;
-    const synced = await getState(sessionId).catch(() => null);
-    if (synced) {
-      set((s) => ({
-        autoCompaction: {
-          ...s.autoCompaction,
-          [threadId]: synced.autoCompactionEnabled,
-        },
-      }));
-    }
-  },
-
   // Internal: pin a thread to the sidecar session it spawned. Not part of the
   // public action surface, just shared between submitPrompt and (later) restore.
   setThreadSessionIdInternal: (threadId: string, sessionId: string) =>
@@ -1599,6 +1589,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           threadErrors: { ...s.threadErrors, [threadId]: String(e) },
         }));
       });
+      // Push the global auto-compaction default to the restored session
+      // (HOY-275), off the critical path; the helper is best-effort.
+      void applyAutoCompaction(sessionId);
       // A concurrent submitPrompt may have populated turns and sent a prompt
       // while we were spawning; don't clobber it with the restored transcript.
       // The disk render we painted is ours to replace, so only bail when turns
@@ -1804,6 +1797,8 @@ async function startChildRun(
     // permission mode before the prompt streams.
     await applyThreadModel(childId, sessionId);
     await applyThreadPermissionMode(childId, sessionId);
+    // Subagents honor the same global auto-compaction default (HOY-275).
+    await applyAutoCompaction(sessionId);
     await streamPromptOnThread(childId, sessionId, payload.task);
   } catch (e) {
     useSessionStore.setState((s) => ({
@@ -2404,6 +2399,7 @@ const modelApplied = new Set<string>();
 function releaseSession(sessionId: string): void {
   modelApplied.delete(sessionId);
   permissionModeApplied.delete(sessionId);
+  autoCompactionApplied.delete(sessionId);
   void closeSession(sessionId);
 }
 
@@ -2429,6 +2425,29 @@ async function applyThreadPermissionMode(
   } catch (e) {
     permissionModeApplied.delete(sessionId);
     throw e;
+  }
+}
+
+// Sessions already told the global auto-compaction default, so repeat prompts
+// to a live session skip the redundant set_auto_compaction. Same lifecycle as
+// modelApplied / permissionModeApplied above.
+const autoCompactionApplied = new Set<string>();
+
+// Apply the user's global auto-compaction default (HOY-275) to a freshly
+// available session. Pi persists compaction globally and defaults it on, but
+// that persisted value is unreachable when the toggle is set from Settings with
+// no session open, so the renderer pref is authoritative and pushed to every
+// session on spawn. Best-effort: a settings RPC hiccup must never block a
+// prompt, so it swallows its own error (and clears the guard to retry) rather
+// than throwing into the caller.
+async function applyAutoCompaction(sessionId: string): Promise<void> {
+  if (autoCompactionApplied.has(sessionId)) return;
+  autoCompactionApplied.add(sessionId);
+  try {
+    await ipcSetAutoCompaction(sessionId, usePrefsStore.getState().autoCompaction);
+  } catch {
+    // Non-fatal; retry on the next spawn. Pi's persisted global still applies.
+    autoCompactionApplied.delete(sessionId);
   }
 }
 

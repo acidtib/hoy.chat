@@ -46,6 +46,13 @@ export interface AppPrefs {
   // Synced to the Rust keep-awake owner thread via the set_keep_awake command;
   // when off, the wake lock is never taken and the machine may idle-sleep.
   keepAwakeWhileStreaming: boolean;
+  // Global default for Pi's auto-compaction (HOY-275): when a thread's context
+  // approaches the window, Pi summarizes older turns instead of overflowing. On
+  // by default, matching Pi's own default. Unlike other Pi settings this one is
+  // a renderer-authoritative default (Pi persists it globally, but that is
+  // unreachable with no session open), applied to every session on spawn via
+  // set_auto_compaction and pushed to the active session when toggled.
+  autoCompaction: boolean;
 }
 
 interface PrefsStore extends AppPrefs {
@@ -70,6 +77,7 @@ export const PREFS_DEFAULTS: AppPrefs = {
   requireSubagentApproval: false,
   maxConcurrentAgents: MAX_CONCURRENT_AGENTS,
   keepAwakeWhileStreaming: true,
+  autoCompaction: true,
 };
 
 export const usePrefsStore = create<PrefsStore>()(
@@ -99,6 +107,7 @@ export const usePrefsStore = create<PrefsStore>()(
         requireSubagentApproval: s.requireSubagentApproval,
         maxConcurrentAgents: s.maxConcurrentAgents,
         keepAwakeWhileStreaming: s.keepAwakeWhileStreaming,
+        autoCompaction: s.autoCompaction,
       }),
     },
   ),

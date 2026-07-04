@@ -483,47 +483,40 @@ function WorkspacePanel() {
   );
 }
 
-// The Auto-compaction toggle is per-session (Pi's set_auto_compaction), so it
-// targets the active thread and reflects its get_state (HOY-229). Disabled until
-// a thread with a live session is open.
+// Auto-compaction is a global default (HOY-275): Pi persists it per its own
+// settings and defaults it on, but that value is unreachable when the toggle is
+// set from Settings with no thread open, so the renderer pref is the source of
+// truth. Every session adopts it on spawn (store.applyAutoCompaction); toggling
+// also pushes to the active live session so the current conversation reflects
+// the change at once. The control is therefore always enabled.
 function AutoCompactionRow() {
+  const autoCompaction = usePrefsStore((s) => s.autoCompaction);
+  const setPref = usePrefsStore((s) => s.setPref);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
-  const enabled = useSessionStore((s) =>
-    activeThreadId ? s.autoCompaction[activeThreadId] : undefined,
-  );
-  const hasSession = useSessionStore((s) => {
-    if (!activeThreadId) return false;
+  const activeSessionId = useSessionStore((s) => {
+    if (!activeThreadId) return null;
     for (const p of s.projects) {
       const t = p.threads.find((th) => th.id === activeThreadId);
-      if (t) return Boolean(t.sessionId);
+      if (t) return t.sessionId ?? null;
     }
-    return false;
+    return null;
   });
   const setAutoCompaction = useSessionStore((s) => s.setAutoCompaction);
-  const refreshAutoCompaction = useSessionStore((s) => s.refreshAutoCompaction);
-
-  useEffect(() => {
-    if (activeThreadId && hasSession) void refreshAutoCompaction(activeThreadId);
-  }, [activeThreadId, hasSession, refreshAutoCompaction]);
 
   return (
-    <div className="flex items-center justify-between gap-4 py-2">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">Auto-compaction</p>
-        <p className="text-xs text-muted-foreground">
-          {hasSession
-            ? "Compress context automatically as it fills."
-            : "Open a thread to configure auto-compaction."}
-        </p>
-      </div>
-      <Switch
-        checked={enabled ?? false}
-        disabled={!activeThreadId || !hasSession}
-        onCheckedChange={(v) =>
-          activeThreadId && setAutoCompaction(activeThreadId, v)
+    <ToggleRow
+      label="Auto-compaction"
+      description="Automatically summarize older turns as the context window fills, instead of stalling on overflow. Applies to new conversations and the one you're in."
+      checked={autoCompaction}
+      onChange={(v) => {
+        setPref("autoCompaction", v);
+        // Live session: apply now so the open conversation honors it without a
+        // reopen. New sessions pick it up on spawn.
+        if (activeThreadId && activeSessionId) {
+          void setAutoCompaction(activeThreadId, v);
         }
-      />
-    </div>
+      }}
+    />
   );
 }
 
