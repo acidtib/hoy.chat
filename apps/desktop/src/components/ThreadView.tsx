@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertCircle,
@@ -213,6 +213,20 @@ export function ThreadView({
 
   const hasMessages = turns.length > 0;
   const shownError = threadError ?? error;
+
+  // Stable per-thread handlers + flags so memoized assistant turns don't
+  // re-render on each streamed token (HOY-292). implementPlan/dismissPlanReady
+  // are stable store references; wrapping them keeps the closures identity-stable
+  // across the per-token re-renders of this component.
+  const awaitingApproval = pendingPermissions.length > 0;
+  const handleImplement = useCallback(
+    (mode: PermissionMode) => void implementPlan(threadId, mode),
+    [implementPlan, threadId],
+  );
+  const handleDismissPlan = useCallback(
+    () => dismissPlanReady(threadId),
+    [dismissPlanReady, threadId],
+  );
 
   // Vision gating for the attachment UI (HOY-205). Resolve the active ModelRef to
   // its full ModelInfo (which carries `input`); fail soft when unknown.
@@ -436,97 +450,17 @@ export function ThreadView({
 
               {turns.map((turn, i) =>
                 turn.role === "user" ? (
-                  turn.origin === "subagentResult" ? (
-                    <div
-                      key={i}
-                      className="rounded-md border border-agent/40 bg-agent/5 px-3 py-2 text-sm leading-relaxed text-muted-foreground"
-                    >
-                      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-agent">
-                        Subagent result{turn.subagent ? ` -- ${turn.subagent.type}` : ""}
-                      </div>
-                      <div className="whitespace-pre-wrap">{turn.text}</div>
-                    </div>
-                  ) : (
-                    <div
-                      key={i}
-                      className="rounded-md border border-border/60 bg-card/40 px-3 py-2 text-sm leading-relaxed text-foreground"
-                    >
-                      {turn.images && turn.images.length > 0 && (
-                        <div className="mb-2 flex flex-wrap gap-2">
-                          {turn.images.map((img, ii) => (
-                            <img
-                              key={ii}
-                              src={`data:${img.mimeType};base64,${img.data}`}
-                              alt="attachment"
-                              className="size-20 rounded-md border border-border/60 object-cover"
-                            />
-                          ))}
-                        </div>
-                      )}
-                      {turn.contexts && turn.contexts.length > 0 && (
-                        <div className="mb-2 flex flex-wrap gap-1.5">
-                          {turn.contexts.map((ref) => (
-                            <TurnContextPill key={contextKey(ref)} contextRef={ref} />
-                          ))}
-                        </div>
-                      )}
-                      {turn.text && (
-                        <div className="whitespace-pre-wrap">{turn.text}</div>
-                      )}
-                    </div>
-                  )
+                  <UserTurn key={i} turn={turn} />
                 ) : (
-                  <Message from="assistant" key={i} className="max-w-full">
-                    <MessageContent className="w-full">
-                      {turn.reasoning && (
-                        <Reasoning
-                          defaultOpen={expandReasoning}
-                          autoCloseOnStreamEnd={!expandReasoning}
-                          isStreaming={turn.reasoning.active ?? false}
-                          duration={turn.reasoning.seconds}
-                        >
-                          <ReasoningTrigger />
-                          <ReasoningContent>
-                            {turn.reasoning.text}
-                          </ReasoningContent>
-                        </Reasoning>
-                      )}
-                      {turn.blocks.map((block, bi) =>
-                        block.kind === "text" ? (
-                          <AssistantTextBlock
-                            key={bi}
-                            content={block.content}
-                            planReady={planReady}
-                            onImplement={(mode) =>
-                              void implementPlan(threadId, mode)
-                            }
-                            onDismiss={() => dismissPlanReady(threadId)}
-                          />
-                        ) : (
-                          <ToolCall tool={block.tool} key={block.tool.id} />
-                        ),
-                      )}
-                      {turn.streaming && !turn.aborted && (
-                        <TurnStatus
-                          blocks={turn.blocks}
-                          reasoningActive={turn.reasoning?.active ?? false}
-                          awaitingApproval={pendingPermissions.length > 0}
-                        />
-                      )}
-                      {turn.aborted && (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <CircleStop className="size-3.5" />
-                          Stopped
-                        </span>
-                      )}
-                      {turn.error && (
-                        <div className="mt-1 flex items-start gap-1.5 text-xs text-destructive">
-                          <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-                          <span className="leading-relaxed">{turn.error}</span>
-                        </div>
-                      )}
-                    </MessageContent>
-                  </Message>
+                  <AssistantTurn
+                    key={i}
+                    turn={turn}
+                    expandReasoning={expandReasoning}
+                    planReady={planReady}
+                    awaitingApproval={awaitingApproval}
+                    onImplement={handleImplement}
+                    onDismiss={handleDismissPlan}
+                  />
                 ),
               )}
             </ConversationContent>
@@ -578,6 +512,123 @@ export function ThreadView({
     </div>
   );
 }
+
+type UserTurnData = Extract<Turn, { role: "user" }>;
+type AssistantTurnData = Extract<Turn, { role: "assistant" }>;
+
+// A single user turn. Memoized (HOY-292) so that while a later turn streams,
+// settled turns don't re-render on every token — applyEvent preserves the object
+// identity of every completed turn, so referential equality on `turn` lets the
+// whole subtree bail out.
+const UserTurn = memo(function UserTurn({ turn }: { turn: UserTurnData }) {
+  if (turn.origin === "subagentResult") {
+    return (
+      <div className="rounded-md border border-agent/40 bg-agent/5 px-3 py-2 text-sm leading-relaxed text-muted-foreground">
+        <div className="mb-1 text-xs font-medium uppercase tracking-wide text-agent">
+          Subagent result{turn.subagent ? ` -- ${turn.subagent.type}` : ""}
+        </div>
+        <div className="whitespace-pre-wrap">{turn.text}</div>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-md border border-border/60 bg-card/40 px-3 py-2 text-sm leading-relaxed text-foreground">
+      {turn.images && turn.images.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {turn.images.map((img, ii) => (
+            <img
+              key={ii}
+              src={`data:${img.mimeType};base64,${img.data}`}
+              alt="attachment"
+              className="size-20 rounded-md border border-border/60 object-cover"
+            />
+          ))}
+        </div>
+      )}
+      {turn.contexts && turn.contexts.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {turn.contexts.map((ref) => (
+            <TurnContextPill key={contextKey(ref)} contextRef={ref} />
+          ))}
+        </div>
+      )}
+      {turn.text && <div className="whitespace-pre-wrap">{turn.text}</div>}
+    </div>
+  );
+});
+
+// A single assistant turn. Memoized (HOY-292) on the same principle as UserTurn:
+// only the in-flight turn (whose `turn` object is replaced per token by
+// applyEvent) re-renders while streaming; settled turns above it are skipped.
+// The handler/flag props are kept referentially stable by the parent so the memo
+// holds. Completed tool/text blocks inside a re-rendering turn are themselves
+// memoized (ToolCall / MessageResponse), so even the streaming turn only re-parses
+// its growing tail block.
+const AssistantTurn = memo(function AssistantTurn({
+  turn,
+  expandReasoning,
+  planReady,
+  awaitingApproval,
+  onImplement,
+  onDismiss,
+}: {
+  turn: AssistantTurnData;
+  expandReasoning: boolean;
+  planReady: string | undefined;
+  awaitingApproval: boolean;
+  onImplement: (mode: PermissionMode) => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <Message from="assistant" className="max-w-full">
+      <MessageContent className="w-full">
+        {turn.reasoning && (
+          <Reasoning
+            defaultOpen={expandReasoning}
+            autoCloseOnStreamEnd={!expandReasoning}
+            isStreaming={turn.reasoning.active ?? false}
+            duration={turn.reasoning.seconds}
+          >
+            <ReasoningTrigger />
+            <ReasoningContent>{turn.reasoning.text}</ReasoningContent>
+          </Reasoning>
+        )}
+        {turn.blocks.map((block, bi) =>
+          block.kind === "text" ? (
+            <AssistantTextBlock
+              key={bi}
+              content={block.content}
+              planReady={planReady}
+              onImplement={onImplement}
+              onDismiss={onDismiss}
+            />
+          ) : (
+            <ToolCall tool={block.tool} key={block.tool.id} />
+          ),
+        )}
+        {turn.streaming && !turn.aborted && (
+          <TurnStatus
+            blocks={turn.blocks}
+            reasoningActive={turn.reasoning?.active ?? false}
+            awaitingApproval={awaitingApproval}
+          />
+        )}
+        {turn.aborted && (
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <CircleStop className="size-3.5" />
+            Stopped
+          </span>
+        )}
+        {turn.error && (
+          <div className="mt-1 flex items-start gap-1.5 text-xs text-destructive">
+            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+            <span className="leading-relaxed">{turn.error}</span>
+          </div>
+        )}
+      </MessageContent>
+    </Message>
+  );
+});
 
 // Inline approval/dialog card for a blocked extension UI request (HOY-186).
 // confirm -> Yes/No; select -> option buttons; input/editor -> a text field with
@@ -1250,8 +1301,10 @@ function TurnStatus({
 
 // Zed splits tool calls by kind: edit and execute render as bordered cards
 // (diff / command + output), everything else is a bare muted row whose output
-// shows on expand.
-function ToolCall({ tool }: { tool: ToolUI }) {
+// shows on expand. Memoized (HOY-292): a completed tool block keeps the same
+// `tool` object across streaming tokens (applyEvent only replaces the block it
+// touches), so settled tool cards skip re-render while the turn's tail streams.
+const ToolCall = memo(function ToolCall({ tool }: { tool: ToolUI }) {
   const kind = toolKind(tool.name);
   const expandToolDetails = usePrefsStore((s) => s.expandToolDetails);
   // Terminal tools (Bash/exec) are never collapsed: the command it's running is
@@ -1315,4 +1368,4 @@ function ToolCall({ tool }: { tool: ToolUI }) {
       </ToolContent>
     </Tool>
   );
-}
+});

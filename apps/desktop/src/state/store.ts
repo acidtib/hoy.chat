@@ -661,6 +661,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // Abandon the streaming channel so the killed sidecar's trailing error/done
     // events are ignored rather than re-populating this thread's state.
     activeChannels.delete(id);
+    // Drop any buffered (not-yet-flushed) streaming deltas for this thread so a
+    // pending rAF flush can't re-populate the transcript we just dropped (HOY-292).
+    streamDeltaBuffers.delete(id);
     // Manually closing a RUNNING subagent kills its sidecar above, so its
     // trailing done is dropped by the activeChannels guard and the done-path
     // slot release never fires. Purge it from the limiter and pump so the slot
@@ -1649,6 +1652,39 @@ const pendingSessions = new Map<string, Promise<string>>();
 // started). Entry is dropped on done / close / send failure.
 const activeChannels = new Map<string, Channel<AgentEvent>>();
 
+// HOY-292: coalesce high-frequency streaming deltas (text + reasoning) into one
+// state write per animation frame instead of one per token. Pi emits these many
+// times a second; a setState per token re-renders the streaming turn (and, before
+// this ticket's memoization, the whole transcript) on every token, and makes the
+// markdown renderer re-parse the growing tail block O(n) times per turn. Buffering
+// per rAF collapses a burst of tokens into a single render/parse while keeping the
+// stream visually live. Only text/reasoning are buffered; every structural event
+// (tool, permission, done, ...) flushes the buffer first so ordering is exact.
+const streamDeltaBuffers = new Map<string, AgentEvent[]>();
+const streamFlushScheduled = new Set<string>();
+
+function flushStreamDeltas(threadId: string): void {
+  const buffered = streamDeltaBuffers.get(threadId);
+  if (!buffered || buffered.length === 0) return;
+  streamDeltaBuffers.set(threadId, []);
+  useSessionStore.setState((s) => {
+    const current = s.turns[threadId];
+    if (!current) return {};
+    let next = current;
+    for (const event of buffered) next = applyEvent(next, event);
+    return { turns: { ...s.turns, [threadId]: next } };
+  });
+}
+
+function scheduleStreamFlush(threadId: string): void {
+  if (streamFlushScheduled.has(threadId)) return;
+  streamFlushScheduled.add(threadId);
+  requestAnimationFrame(() => {
+    streamFlushScheduled.delete(threadId);
+    flushStreamDeltas(threadId);
+  });
+}
+
 // The run body of a subagent's INITIAL spawn (HOY-245). Split out of
 // spawnChildThread so both the immediate-start path (a free slot) and the pump
 // path (a slot freed later) drive an identical run: seed the in-flight assistant
@@ -1844,6 +1880,21 @@ async function streamPromptOnThread(
     // this channel. Without this guard that stale error would resurface as a
     // banner and orphaned turns when the thread is reopened.
     if (activeChannels.get(threadId) !== channel) return;
+    // HOY-292: buffer the high-frequency text/reasoning deltas and apply them on
+    // the next animation frame (one render per frame instead of one per token).
+    // These carry no side effects beyond folding into the transcript, so batching
+    // is safe; the visual delay is at most a frame.
+    if (event.kind === "text" || event.kind === "reasoning") {
+      const buffered = streamDeltaBuffers.get(threadId) ?? [];
+      buffered.push(event);
+      streamDeltaBuffers.set(threadId, buffered);
+      scheduleStreamFlush(threadId);
+      return;
+    }
+    // Every other event is structural (tool, permission, done, ...) and its
+    // handling below reads the transcript, so flush any buffered deltas first to
+    // preserve exact event ordering before this event folds in.
+    flushStreamDeltas(threadId);
     // A subagent spawn (HOY-231): create the child thread and drive it
     // through this same helper, rather than folding it into this thread's
     // transcript.
