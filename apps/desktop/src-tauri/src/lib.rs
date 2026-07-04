@@ -62,6 +62,11 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            // HOY-255: migrate the pre-flatten ~/.hoy/agent layout up to ~/.hoy
+            // before anything reads the agent dir (the sidecar spawn below is the
+            // first consumer). Best effort; it logs and continues on failure.
+            pi_config::migrate_flatten_agent_dir();
+
             // Debug builds run in the hoyd namespace (HOY-206): retitle the OS
             // window so taskbar/alt-tab tells the dev instance from production.
             #[cfg(debug_assertions)]

@@ -8,7 +8,7 @@
 #   ~/.local/bin/hoy              launcher (env pins below)
 #   ~/.local/share/applications/hoy-desktop.desktop
 #
-# The launcher exports PI_SIDECAR_BIN / PI_SIDECAR_PAYLOAD because
+# The launcher exports HOY_SIDECAR_BIN / HOY_SIDECAR_PAYLOAD because
 # resolve_sidecar_paths (sidecar.rs) prefers the repo's packages/sidecar dev
 # artifacts over next-to-exe whenever the repo exists; without the pin the
 # installed release would run whatever sidecar dev last built.
@@ -42,8 +42,8 @@ cat > "$BIN_DIR/hoy" <<EOF
 #!/usr/bin/env bash
 # Installed by scripts/local-install.sh (HOY-207). Env pins keep the installed
 # release on its own sidecar instead of the repo's dev artifacts.
-export PI_SIDECAR_BIN="$APP_DIR/hoy-pi-$TRIPLE"
-export PI_SIDECAR_PAYLOAD="$APP_DIR/pi-payload"
+export HOY_SIDECAR_BIN="$APP_DIR/hoy-pi-$TRIPLE"
+export HOY_SIDECAR_PAYLOAD="$APP_DIR/pi-payload"
 export GDK_BACKEND=x11
 # webkit2gtk's DMABUF renderer fails on this GPU ("Failed to create GBM
 # buffer"), leaving the webview black; fall back to shared-memory rendering.

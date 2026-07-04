@@ -786,7 +786,7 @@ pub struct SidecarManager {
     handle_counter: AtomicUsize,
     bin: PathBuf,
     payload: PathBuf,
-    // Branded agent dir (~/.hoy/agent by default), passed to each sidecar as
+    // Branded agent dir (~/.hoy by default, HOY-255), passed to each sidecar as
     // PI_CODING_AGENT_DIR. Resolved once here; the same dir Rust writes auth.json
     // to in pi_config, so Rust and the sidecar agree on credentials.
     agent_dir: PathBuf,
@@ -1090,8 +1090,8 @@ impl Default for SidecarManager {
 fn resolve_sidecar_paths(resource_payload: Option<PathBuf>) -> (PathBuf, PathBuf) {
     let triple = env!("TARGET_TRIPLE");
 
-    let env_bin = std::env::var_os("PI_SIDECAR_BIN").map(PathBuf::from);
-    let env_payload = std::env::var_os("PI_SIDECAR_PAYLOAD").map(PathBuf::from);
+    let env_bin = std::env::var_os("HOY_SIDECAR_BIN").map(PathBuf::from);
+    let env_payload = std::env::var_os("HOY_SIDECAR_PAYLOAD").map(PathBuf::from);
 
     // CARGO_MANIFEST_DIR is apps/desktop/src-tauri; the sidecar lives at
     // packages/sidecar off the repo root, three levels up (src-tauri -> desktop
@@ -1183,7 +1183,7 @@ mod live_tests {
     // Drives the full M3 streaming path: spawn a sidecar, attach a real Channel
     // (the renderer boundary), send a prompt, and confirm route_message/map_pi_event
     // forward text deltas and a terminal done. Needs the sidecar binary AND a
-    // configured credential in ~/.hoy/agent (model from settings.json). Run with:
+    // configured credential in ~/.hoy (model from settings.json). Run with:
     //   cargo test live_send_prompt_streams -- --ignored --nocapture
     #[tokio::test]
     #[ignore]
