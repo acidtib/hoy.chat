@@ -24,6 +24,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     listSubagents: mock(),
     loadWorkspace: mock(),
     readContextFile: mock(),
+    readSessionTranscript: mock(),
     pickDirectory: mock(),
     providerStatuses: mock(),
     removeMcpServer: mock(),
