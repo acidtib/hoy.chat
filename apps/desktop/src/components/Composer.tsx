@@ -89,7 +89,7 @@ const THINKING_LABELS: Record<ThinkingLevel, string> = {
 const MODE_LABELS: Array<{ value: PermissionMode; label: string }> = [
   { value: "default", label: "Default" },
   { value: "acceptEdits", label: "Accept Edits" },
-  { value: "plan", label: "Plan" },
+  { value: "plan", label: "Plan Mode" },
   { value: "autonomous", label: "Autonomous" },
 ];
 
