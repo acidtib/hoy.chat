@@ -33,7 +33,7 @@ export function UsageDashboard() {
     const days = daysInRange(report.days, range);
     return {
       days,
-      totals: totals(days, report.meta.sessionCount),
+      totals: totals(days),
       streaks: streaks(report.days),
       peak: peakHour(days),
       models: modelRanking(days),

@@ -7,12 +7,14 @@ function day(
   total: number,
   byModel: Record<string, number> = {},
   byHour?: number[],
+  sessions = 1,
 ): UsageDay {
   return {
     date,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total },
     cost: 0,
     messages: 1,
+    sessions,
     byModel,
     byHour: byHour ?? new Array(24).fill(0),
   };
@@ -27,12 +29,15 @@ test("daysInRange filters by trailing window", () => {
   expect(daysInRange(days, "30d", today).length).toBe(2);
 });
 
-test("totals sums tokens/messages and counts active days", () => {
-  const t = totals([day("2026-07-01", 100), day("2026-07-02", 40)], 3);
+test("totals sums tokens/messages/sessions and counts active days", () => {
+  const t = totals([
+    day("2026-07-01", 100, {}, undefined, 2),
+    day("2026-07-02", 40, {}, undefined, 1),
+  ]);
   expect(t.tokens).toBe(140);
   expect(t.messages).toBe(2);
   expect(t.activeDays).toBe(2);
-  expect(t.sessions).toBe(3);
+  expect(t.sessions).toBe(3); // 2 + 1, range-scoped
 });
 
 test("streaks: current counts back from today, longest finds the longest run", () => {

@@ -32,16 +32,18 @@ export interface UsageTotals {
   activeDays: number;
   sessions: number;
 }
-export function totals(days: UsageDay[], sessionCount: number): UsageTotals {
+export function totals(days: UsageDay[]): UsageTotals {
   let tokens = 0;
   let cost = 0;
   let messages = 0;
+  let sessions = 0;
   for (const d of days) {
     tokens += d.tokens.total;
     cost += d.cost;
     messages += d.messages;
+    sessions += d.sessions;
   }
-  return { tokens, cost, messages, activeDays: days.length, sessions: sessionCount };
+  return { tokens, cost, messages, activeDays: days.length, sessions };
 }
 
 export interface Streaks {
