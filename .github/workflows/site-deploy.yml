@@ -1,16 +1,22 @@
 name: Site deploy
 
 # hoy.chat bakes the changelog and download version from GitHub Releases at build
-# time, but Cloudflare Pages only rebuilds on a push to main. Publishing a release
-# does not touch main, so the live site would keep showing the old version until
-# an unrelated commit. This pings a Cloudflare Pages deploy hook so a release
-# rebuilds the site and picks itself up.
+# time. Publishing a release does not touch main, so the live site would keep
+# showing the old version until an unrelated commit. This pings a Cloudflare Pages
+# deploy hook so a release rebuilds the site and picks itself up. It also fires on
+# a push to main that touches the site (apps/site) so site changes go live without
+# waiting for a release.
 #
 # Inert until this repo secret exists:
 #   CLOUDFLARE_DEPLOY_HOOK_URL   Pages > Settings > Builds & deployments > Deploy hooks
 on:
   release:
     types: [published]
+  push:
+    branches: [main]
+    paths:
+      - "apps/site/**"
+      - ".github/workflows/site-deploy.yml"
   workflow_dispatch:
 
 jobs:
