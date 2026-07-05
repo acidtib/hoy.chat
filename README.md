@@ -35,7 +35,7 @@ apps/
   desktop/          Hoy Desktop: Tauri v2 shell + React/TypeScript webview
     src/            renderer (React)
     src-tauri/      Rust core (spawns and talks to Pi)
-  site/             marketing site (Next.js; separate stack, not wired into root scripts)
+  site/             marketing site (Next.js; run from root with bun run site:dev)
 packages/
   sidecar/          Pi SDK entry, compiled to a self-contained binary
     pi-src/         pinned Pi install + our branded entry (hoy-sidecar.ts)
@@ -67,17 +67,18 @@ the sidecar's `npm ci`), and the Tauri Linux system dependencies
 (`libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev`, `patchelf`) on Linux.
 
 ```
-bun install                     # wire the workspace
-bash packages/sidecar/build.sh  # build the Pi sidecar binary + payload
-bun run tauri:dev               # launch the app in development
+bun install            # wire the workspace
+bun run sidecar:build  # build the Pi sidecar binary + payload
+bun run tauri:dev      # launch the app in development
 ```
 
-Other tasks (run from the repo root):
+Other tasks, all from the repo root:
 
 ```
-bun run check     # tsc + cargo check + clippy + rustfmt
-bun run lint      # oxlint + clippy
-bun run test      # frontend tests (bun test)
+bun run check      # tsc + cargo check + clippy + rustfmt
+bun run lint       # oxlint + clippy
+bun run test       # frontend tests (bun test)
+bun run site:dev   # run the marketing site (also site:build, site:start, site:lint)
 ```
 
 `bun run tauri:dev` is the only supported dev entry; it runs in an isolated `hoyd`

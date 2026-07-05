@@ -10,7 +10,7 @@ short, from the repo root:
 
 ```
 bun install
-bash packages/sidecar/build.sh
+bun run sidecar:build
 bun run tauri:dev            # runs in the isolated hoyd dev namespace
 ```
 

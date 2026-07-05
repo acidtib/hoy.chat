@@ -12,8 +12,8 @@ Repo is a Bun-workspaces monorepo (HOY-227): `hoy.chat` at the root, the desktop
 - `bun run check` — desktop TS + Rust (`check:ts`, `check:rust`, `clippy`, `check:fmt`) plus sidecar TS. Does NOT cover `apps/site`.
 - `bun run test` — desktop `bun test` (includes sidecar `*.test.ts` factories).
 - `bun run lint` — `oxlint src` + rust clippy.
-- `bash packages/sidecar/build.sh` — rebuild the Pi sidecar binary. Required after ANY `packages/sidecar/pi-src` change, before live-verify (a stale binary runs old prompt/gate code, HOY-200).
-- `apps/site`: `cd apps/site && bun run dev` (Next.js); not wired into root scripts.
+- `bun run sidecar:build` — rebuild the Pi sidecar binary (delegates to `packages/sidecar/build.sh`). Required after ANY `packages/sidecar/pi-src` change, before live-verify (a stale binary runs old prompt/gate code, HOY-200).
+- `bun run site:dev` — the marketing site (Next.js; also `site:build`, `site:start`, `site:lint`). All root scripts delegate to a workspace via `bun run --filter`.
 
 ## Non-negotiable decisions (do NOT re-litigate)
 - **Stack is fixed:** Tauri v2 (Rust core), React + TypeScript + Vite, Bun as the frontend package manager/bundler. Do not propose Electron, swap frameworks, or "simplify" by changing this. The tradeoffs were already worked through.
@@ -36,7 +36,7 @@ Repo is a Bun-workspaces monorepo (HOY-227): `hoy.chat` at the root, the desktop
 
 ## Working process
 - **The MVP milestones (M0-M4) are done.** Post-MVP work flows through Linear tickets: assign, In Progress, design note, implement, test, live-verify via the tauri MCP bridge, commit to main with a `HOY-NNN:` prefix, Done with evidence.
-- **Rebuild the sidecar binary (`packages/sidecar/build.sh`) whenever `packages/sidecar/pi-src` changes**, before any live verification, then open a **new session/thread** to pick it up: a running session keeps the sidecar it already spawned, so prompt/gate edits only reach freshly-spawned sessions. A stale binary, or a still-running old session, silently runs old prompt and gate code (HOY-200).
+- **Rebuild the sidecar binary (`bun run sidecar:build`) whenever `packages/sidecar/pi-src` changes**, before any live verification, then open a **new session/thread** to pick it up: a running session keeps the sidecar it already spawned, so prompt/gate edits only reach freshly-spawned sessions. A stale binary, or a still-running old session, silently runs old prompt and gate code (HOY-200).
 - **Keep frontend and backend contracts in sync.** The `AgentEvent` union and command signatures are the source of truth shared between Rust `events.rs` and TS `types.ts`. Change both together.
 
 ## Code conventions
