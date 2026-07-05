@@ -80,7 +80,7 @@ export default async function Home() {
             <Image
               className="hero-shot"
               src={appMock}
-              alt="The Hoy desktop app, a sidebar of threads on the left each marked with its model's provider icon, an open thread adding a health-check endpoint, an inline Edit diff on server.ts, and a composer at the bottom with the DeepSeek V4 Flash model selected."
+              alt="The Hoy desktop app, a sidebar of threads on the left each marked with its model's provider icon, an open thread adding a health-check endpoint, an inline Edit diff on server.ts, a composer at the bottom with the DeepSeek V4 Flash model selected, and the Tree navigator open on the right."
               sizes="(max-width: 720px) 92vw, 940px"
             />
           </div>
