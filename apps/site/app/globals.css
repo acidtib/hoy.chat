@@ -931,6 +931,21 @@ h3.heading {
   font-variant-numeric: tabular-nums;
 }
 
+/* Main body beside the left sidebar: the title bar spans this whole width
+   (panels + right dock), then a content row holds the panel column and the
+   dock. So the dock sits below the title bar, not up in the top-right corner. */
+.aw-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.aw-body-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
 .aw-col {
   display: flex;
   flex-direction: column;
@@ -1251,6 +1266,8 @@ h3.heading {
 .aw-status-main {
   display: flex;
   align-items: center;
+  flex: 1;
+  min-width: 0;
   gap: 12px;
   padding: 0 14px;
   font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
@@ -1260,6 +1277,17 @@ h3.heading {
   width: 1px;
   height: 12px;
   background: var(--border-strong);
+}
+/* Right-dock toggle, pinned to the footer's bottom-right (brand-on = tree open). */
+.aw-status-right {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  border-left: 1px solid var(--border);
+}
+.aw-statbtn-on {
+  color: var(--brand);
 }
 
 .caret {
@@ -1500,20 +1528,6 @@ h3.heading {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.aw-tnode-branchbtn {
-  flex: none;
-  align-self: flex-start;
-  margin-top: 1px;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 5px;
-  border: 1px solid color-mix(in srgb, var(--brand) 40%, transparent);
-  background: color-mix(in srgb, var(--brand) 10%, transparent);
-  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
-  font-size: 9.5px;
-  color: var(--brand);
 }
 /* A branched child line: indented with an elbow connector, like the app. */
 .aw-tbranch {

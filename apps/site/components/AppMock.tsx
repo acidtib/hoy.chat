@@ -42,10 +42,6 @@ const PATHS: Record<string, string> = {
   check: '<path d="M20 6 9 17l-5-5"/>',
   listTree:
     '<path d="M21 12h-8"/><path d="M21 6H8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/>',
-  split:
-    '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/>',
-  wrench:
-    '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
   user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
 };
 
@@ -141,9 +137,10 @@ type TreeNodeData = {
 };
 
 const TREE_NODES: TreeNodeData[] = [
-  { role: "user", label: "User", preview: "Add a health-check endpoint to the server" },
-  { role: "bot", label: "Agent", preview: "Adding a GET /healthz route", tools: true },
-  { role: "wrench", label: "Tool", preview: "Edit  server.ts" },
+  { role: "user", label: "You", preview: "Add a health-check endpoint to the server" },
+  { role: "bot", label: "Agent", preview: "Planning the route and where to wire it in" },
+  { role: "bot", label: "Agent", preview: "Editing server.ts", tools: true },
+  { role: "bot", label: "Agent", preview: "Running the test suite", tools: true },
   { role: "bot", label: "Agent", preview: "Endpoint is live, returns { ok: true }", active: true },
 ];
 
@@ -166,12 +163,6 @@ function TreeNode({ node }: { node: TreeNodeData }) {
         </span>
         <span className="aw-tnode-preview">{node.preview}</span>
       </span>
-      {node.active && (
-        <span className="aw-tnode-branchbtn">
-          <Ic name="split" size={11} />
-          Branch
-        </span>
-      )}
     </div>
   );
 }
@@ -293,7 +284,10 @@ export function AppWindow() {
       <div className="aw-main" aria-hidden="true">
         <Sidebar />
 
-        <div className="aw-col">
+        <div className="aw-body">
+          {/* Title bar spans the main body AND the right dock (Zed-style): the
+              left threads sidebar keeps the top-left corner, but the tree dock
+              sits below this bar, so the window controls own the top-right. */}
           <div className="aw-titlebar">
             <div className="aw-tb-left">
               <span className="aw-tb-project">hoy</span>
@@ -325,54 +319,58 @@ export function AppWindow() {
             </div>
           </div>
 
-          <div className="aw-threadbar">
-            <div className="aw-tb-left">
-              <Sparkle size={14} className="aw-threadbar-spark" />
-              <span className="aw-threadbar-title">Add /healthz endpoint</span>
-            </div>
-            <div className="aw-actions">
-              <span className="aw-winbtn">
-                <Ic name="plus" size={14} />
-              </span>
-              <span className="aw-winbtn">
-                <Ic name="maximize" size={13} />
-              </span>
-              <span className="aw-winbtn">
-                <Ic name="more" size={14} />
-              </span>
-              <span className="aw-winbtn">
-                <Ic name="minus" size={14} />
-              </span>
-            </div>
-          </div>
-
-          <div className="aw-transcript">
-            <div className="aw-msg-user">
-              Add a health-check endpoint to the server.
-            </div>
-
-            <div className="aw-msg">
-              <div className="aw-reason">
-                <Ic name="chevronRight" size={13} />
-                Thought for 2s
+          <div className="aw-body-row">
+            <div className="aw-col">
+              <div className="aw-threadbar">
+                <div className="aw-tb-left">
+                  <Sparkle size={14} className="aw-threadbar-spark" />
+                  <span className="aw-threadbar-title">Add /healthz endpoint</span>
+                </div>
+                <div className="aw-actions">
+                  <span className="aw-winbtn">
+                    <Ic name="plus" size={14} />
+                  </span>
+                  <span className="aw-winbtn">
+                    <Ic name="maximize" size={13} />
+                  </span>
+                  <span className="aw-winbtn">
+                    <Ic name="more" size={14} />
+                  </span>
+                  <span className="aw-winbtn">
+                    <Ic name="minus" size={14} />
+                  </span>
+                </div>
               </div>
-              <p className="aw-msg-text">
-                Adding a <code>GET /healthz</code> route that returns 200, then
-                wiring it into the router:
-              </p>
-              <EditToolCard />
-              <p className="aw-msg-text">
-                Done, the endpoint is live and returns{" "}
-                <code>{`{ ok: true }`}</code>
-                <span className="caret" />
-              </p>
+
+              <div className="aw-transcript">
+                <div className="aw-msg-user">
+                  Add a health-check endpoint to the server.
+                </div>
+
+                <div className="aw-msg">
+                  <div className="aw-reason">
+                    <Ic name="chevronRight" size={13} />
+                    Thought for 2s
+                  </div>
+                  <p className="aw-msg-text">
+                    Adding a <code>GET /healthz</code> route that returns 200, then
+                    wiring it into the router:
+                  </p>
+                  <EditToolCard />
+                  <p className="aw-msg-text">
+                    Done, the endpoint is live and returns{" "}
+                    <code>{`{ ok: true }`}</code>
+                    <span className="caret" />
+                  </p>
+                </div>
+              </div>
+
+              <Composer />
             </div>
+
+            <TreeDock />
           </div>
-
-          <Composer />
         </div>
-
-        <TreeDock />
       </div>
 
       <div className="aw-status" aria-hidden="true">
@@ -391,6 +389,11 @@ export function AppWindow() {
           <span>ctx 18.2k/200k &middot; 9%</span>
           <span className="aw-status-div" />
           <span>$0.0042</span>
+        </div>
+        <div className="aw-status-right">
+          <span className="aw-statbtn aw-statbtn-on">
+            <Ic name="listTree" size={14} />
+          </span>
         </div>
       </div>
     </div>
