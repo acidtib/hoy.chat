@@ -48,6 +48,7 @@ import { usePrefsStore } from "@/state/prefs";
 import {
   buildDelivery,
   childThreadIdsOf,
+  extractResultText,
   queueDelivery,
   shouldDecrementParentOnTeardown,
   shouldDeferUpDelivery,
@@ -57,7 +58,11 @@ import {
   type Delivery,
 } from "./delivery";
 import { MAX_SUBAGENT_DEPTH, MAX_CONCURRENT_AGENTS } from "./limits";
-import { recordSubagentRequest } from "./subagent-requests";
+import {
+  frameSubagentResult,
+  recordSubagentRequest,
+  takeSubagentRequest,
+} from "./subagent-requests";
 import {
   applyEvaluation,
   GOAL_DEFAULT_CAP_TURNS,
@@ -2260,9 +2265,9 @@ async function streamPromptOnThread(
         });
         useSessionStore.getState().pumpAgentQueue();
       }
-      // HOY-233: push this child's result up to its parent, and drain any
-      // deliveries queued for this thread while it streamed.
-      void deliverAndDrain(threadId);
+      // HOY-300: a finished child answers its parent's blocked agent-tool
+      // request in-band (replacing the HOY-233 turn-injection delivery below).
+      respondSubagentResult(threadId);
       // HOY-213: a plan-mode turn that produced a proposed_plan block raises the
       // "Plan ready" handoff card.
       flagPlanReadyIfPresent(threadId);
@@ -2760,6 +2765,30 @@ function flagPlanReadyIfPresent(threadId: string): void {
       return;
     }
   }
+}
+
+// HOY-300: a finished child answers its parent's blocked agent-tool request with
+// its result (in-band), replacing HOY-233's turn-injection delivery. The parent's
+// ctx.ui.input resolves to this value and its turn continues with the result in
+// context. The child stays a watchable thread; its panel auto-closes.
+export function respondSubagentResult(childThreadId: string): void {
+  const req = takeSubagentRequest(childThreadId);
+  if (!req) return; // not a sync child (or already answered)
+  const state = useSessionStore.getState();
+  const childTurns = state.turns[childThreadId] ?? [];
+  const value = frameSubagentResult(
+    findThread(state.projects, childThreadId)?.thread.spawnedBy?.type ?? "subagent",
+    extractResultText(childTurns),
+  );
+  void ipcRespondPermission(req.parentSessionId, req.requestId, { value });
+  // Stamp terminal + auto-close the child panel (parity with the old flow).
+  useSessionStore.setState((s) => ({
+    projects: patchThread(s.projects, childThreadId, (th) => ({
+      ...th,
+      completedAt: th.completedAt ?? Date.now(),
+    })),
+  }));
+  useSessionStore.getState().closePanel(childThreadId);
 }
 
 // HOY-233: on a thread's `done`, push a finished child's result up to its parent

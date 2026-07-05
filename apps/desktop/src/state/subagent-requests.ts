@@ -20,7 +20,6 @@ export function takeSubagentRequest(childThreadId: string): SubagentRequest | un
   return req;
 }
 
-// The literal double-hyphen is an ASCII separator, not an em-dash.
 export function frameSubagentResult(subagentType: string, resultText: string): string {
   return `[${subagentType} subagent result]\n\n${resultText}`;
 }
