@@ -54,6 +54,7 @@ import { MAX_SUBAGENT_DEPTH, MAX_CONCURRENT_AGENTS } from "./limits";
 import {
   frameSubagentResult,
   recordSubagentRequest,
+  takeChildRequestsForParent,
   takeSubagentRequest,
 } from "./subagent-requests";
 import {
@@ -1471,6 +1472,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       set((s) => ({
         threadErrors: { ...s.threadErrors, [threadId]: String(e) },
       }));
+    }
+    // HOY-300: Rust's cancel_pending_ui already answers *this* thread's own
+    // blocked ctx.ui.input as cancelled (the agent tool returns the "stopped"
+    // note), but a synchronous child it spawned keeps running independently.
+    // Drop the pending-request mapping for any such child and stop it too, so
+    // a late child `done` has no live request to answer.
+    for (const childId of takeChildRequestsForParent(threadId)) {
+      if (get().streaming[childId]) {
+        void get().stopStreaming(childId);
+      }
     }
   },
 

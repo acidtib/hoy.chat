@@ -23,3 +23,16 @@ export function takeSubagentRequest(childThreadId: string): SubagentRequest | un
 export function frameSubagentResult(subagentType: string, resultText: string): string {
   return `[${subagentType} subagent result]\n\n${resultText}`;
 }
+
+// HOY-300: drop and return the child thread ids whose pending request belongs to
+// this parent (used when the parent is stopped/torn down: its blocked tool is
+// already cancelled by Rust, so its outstanding children must be stopped and
+// their mappings cleared, or a late child done answers a dead request).
+export function takeChildRequestsForParent(parentThreadId: string): string[] {
+  const ids: string[] = [];
+  for (const [childId, req] of subagentRequests) {
+    if (req.parentThreadId === parentThreadId) ids.push(childId);
+  }
+  for (const id of ids) subagentRequests.delete(id);
+  return ids;
+}
