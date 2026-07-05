@@ -14,6 +14,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     createSession: mock(),
     deleteSessionFile: mock(),
     enqueuePrompt: mock(),
+    evaluateGoal: mock(),
     getCommands: mock(),
     getMessages: mock(),
     getSessionStats: mock(),

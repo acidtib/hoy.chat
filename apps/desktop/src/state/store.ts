@@ -8,6 +8,7 @@ import {
   createSession,
   deleteSessionFile,
   enqueuePrompt,
+  evaluateGoal,
   getCommands,
   getMessages,
   getSessionStats,
@@ -48,8 +49,13 @@ import {
   type Delivery,
 } from "./delivery";
 import { MAX_SUBAGENT_DEPTH, MAX_CONCURRENT_AGENTS } from "./limits";
-import { GOAL_DEFAULT_CAP_TURNS, parseGoalCommand } from "./goal";
-import type { ThreadGoal } from "./goal";
+import {
+  applyEvaluation,
+  GOAL_DEFAULT_CAP_TURNS,
+  nextGoalAction,
+  parseGoalCommand,
+} from "./goal";
+import type { EvaluationResult, ThreadGoal } from "./goal";
 import type {
   AgentEvent,
   ContextRef,
@@ -1562,14 +1568,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       ),
     }));
     pushNotice(threadId, "Goal resumed.", "info");
-    // Task 5 refines the continuation text/loop: the done handler there drives
-    // the full evaluate/continue cycle (evaluator call, re-arming on
-    // "continue", capping on turn limit). For now, re-arm to active above and
-    // send a short continuation prompt through the normal path so resume
-    // visibly continues the work; Task 5 can replace this prompt text.
-    await get().submitPrompt(
+    // Re-arm to active above and send the continuation prompt through the same
+    // helper the done-handler loop uses, so a user resume and an auto-continue
+    // read identically in the transcript. A capped/paused goal may carry a
+    // lastReason from a prior evaluation; fall back to a manual-resume note when
+    // it does not. The done handler drives the rest of the evaluate/continue
+    // cycle once this continuation turn ends.
+    await sendGoalContinuation(
       threadId,
-      `Continue working toward the goal: ${goal.condition}`,
+      goal.condition,
+      goal.lastReason ?? "resumed by user",
     );
   },
 
@@ -1832,6 +1840,13 @@ const pendingSessions = new Map<string, Promise<string>>();
 // events from a channel whose thread has moved on (panel closed, or a newer turn
 // started). Entry is dropped on done / close / send failure.
 const activeChannels = new Map<string, Channel<AgentEvent>>();
+
+// HOY-263: threads with a goal continuation in flight (the evaluate -> continue
+// step of the done-handler loop). At most one per thread: a double `done`
+// (which can arrive for one turn) must not start two evaluators or two
+// continuation sends. Added at the top of maybeContinueGoal before any await,
+// cleared in its finally.
+const continuationPending = new Set<string>();
 
 // HOY-292: coalesce high-frequency streaming deltas (text + reasoning) into one
 // state write per animation frame instead of one per token. Pi emits these many
@@ -2174,6 +2189,11 @@ async function streamPromptOnThread(
       // HOY-213: a plan-mode turn that produced a proposed_plan block raises the
       // "Plan ready" handoff card.
       flagPlanReadyIfPresent(threadId);
+      // HOY-263: if this thread is running an active goal, decide the next step
+      // (pause/cap/evaluate-and-continue) now that the turn has ended. Fire and
+      // forget: its evaluator call is async and every failure is handled inside,
+      // so it must never block or throw back into this event handler.
+      void maybeContinueGoal(threadId, sessionId);
     } else if (event.kind === "queueUpdate") {
       // Pi sends the full queue arrays each time; replace, don't append. The
       // chips reflect what is still queued; anything that left the queue was
@@ -2283,6 +2303,175 @@ async function streamPromptOnThread(
   };
 
   await sendPrompt(sessionId, message, channel, images);
+}
+
+// HOY-263: the message that re-drives an active goal for another turn. Kept
+// short and visually distinct so the transcript shows why the loop kept going,
+// and deliberately does NOT begin with "/goal", so even a condition that starts
+// with "/goal" cannot bounce this continuation back into the /goal intercept.
+function goalContinuationPrompt(condition: string, reason: string): string {
+  return (
+    `Keep working toward the goal: ${condition}.\n` +
+    `Evaluator (not yet met): ${reason}.\n` +
+    "Continue with the next concrete step; do not stop until it is demonstrably met."
+  );
+}
+
+// HOY-263: send the continuation through the normal submitPrompt path (a fresh
+// per-prompt sink), shared by resumeGoal (a user resume) and the done-handler
+// loop (an auto-continue) so both read identically in the transcript. A second
+// sendPrompt on a still-live channel would orphan delivery, so this must go via
+// submitPrompt, which opens a new turn.
+async function sendGoalContinuation(
+  threadId: string,
+  condition: string,
+  reason: string,
+): Promise<void> {
+  await useSessionStore
+    .getState()
+    .submitPrompt(threadId, goalContinuationPrompt(condition, reason));
+}
+
+// HOY-263: immutably patch the live thread's goal. No-op if the goal is gone.
+function patchGoal(threadId: string, patch: Partial<ThreadGoal>): void {
+  useSessionStore.setState((s) => ({
+    projects: patchThread(s.projects, threadId, (th) =>
+      th.goal ? { ...th, goal: { ...th.goal, ...patch } } : th,
+    ),
+  }));
+}
+
+// HOY-263: the renderer-owned goal continuation loop. Runs after a turn's `done`
+// cleanup: if the finished thread is running an active goal, the pure
+// nextGoalAction reducer decides the next step from the turn outcome, and only
+// the evaluate branch does anything async/effectful. Fire-and-forget from the
+// done handler; every failure (including a rejected evaluator) is contained here
+// so nothing throws back into the event stream and the loop never falsely stops.
+async function maybeContinueGoal(
+  threadId: string,
+  sessionId: string,
+): Promise<void> {
+  // Idempotency against a double `done` for one turn: at most one continuation
+  // in flight per thread. Set-and-check straddles the awaits below, so a second
+  // done that arrives before this one resolves is dropped rather than starting a
+  // second evaluate / continuation send.
+  if (continuationPending.has(threadId)) return;
+
+  const goal = findThread(useSessionStore.getState().projects, threadId)?.thread
+    .goal;
+  if (!goal || goal.status !== "active") return;
+
+  // Reserve the single-continuation slot before the first await (refreshStats),
+  // so a done arriving during that await sees it and bails. Held across the
+  // whole decision, including the evaluator call, and cleared in the finally.
+  continuationPending.add(threadId);
+  try {
+    // Turn outcome (Task 1 TurnOutcome). `aborted`/`errored` come from the
+    // finished turn's last assistant bubble (the done cleanup keeps its
+    // aborted/error flags); `hasPendingUserPrompt` from Pi's steer/follow-up
+    // queue for this thread, so a message the user typed mid-turn runs before
+    // the next auto-continuation (nextGoalAction yields).
+    const state = useSessionStore.getState();
+    const turns = state.turns[threadId] ?? [];
+    let aborted = false;
+    let errored = false;
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const t = turns[i];
+      if (t.role === "assistant") {
+        aborted = !!t.aborted;
+        errored = !!t.error;
+        break;
+      }
+    }
+    const q = state.queued[threadId];
+    const hasPendingUserPrompt =
+      !!q && (q.steering.length > 0 || q.followUp.length > 0);
+    // Refresh stats so tokensNow reflects this turn's usage: the done handler's
+    // own refreshStats is fire-and-forget, so await a fresh read here. Falls
+    // back to the goal's last known total if the read yields nothing.
+    await useSessionStore.getState().refreshStats(threadId);
+    const tokensNow =
+      useSessionStore.getState().stats[threadId]?.tokens.total ??
+      goal.tokensBaseline + goal.tokensUsed;
+
+    const action = nextGoalAction(goal, {
+      aborted,
+      errored,
+      hasPendingUserPrompt,
+      tokensNow,
+    });
+
+    switch (action.type) {
+      case "none":
+      case "yield":
+        // none: not our turn to act. yield: leave the goal active so the
+        // queued user prompt runs; the loop re-checks after that turn ends.
+        return;
+      case "pause":
+        // An aborted/errored turn parks the goal until the user resumes.
+        patchGoal(threadId, { status: "paused" });
+        pushNotice(threadId, "Goal paused (turn stopped).", "info");
+        return;
+      case "cap":
+        patchGoal(threadId, { status: "capped", turns: action.turns });
+        pushNotice(
+          threadId,
+          `Goal hit its ${goal.capTurns}-turn cap; resume to keep going.`,
+          "info",
+        );
+        return;
+      case "evaluate": {
+        let res: EvaluationResult;
+        try {
+          res = await evaluateGoal(
+            sessionId,
+            goal.condition,
+            goal.evaluatorModel,
+          );
+        } catch (e) {
+          // Fail-open across the IPC seam (Task 2 review): evaluateGoal fails
+          // open to met:false INSIDE the sidecar, but the Rust command still
+          // REJECTS on infrastructure failure (no live sidecar, spawn failure,
+          // non-zero exit, unparseable stdout). Treat a rejection exactly like
+          // an unmet verdict so the loop keeps working rather than throwing or
+          // falsely stopping the goal.
+          res = { met: false, reason: `evaluator error: ${String(e)}` };
+        }
+        // Re-read the goal after the await: it may have been cleared, paused,
+        // replaced, or had its condition changed while the evaluator ran. Abort
+        // the continuation unless it is still active with the SAME condition, so
+        // a stale verdict never steers a goal the user has since changed.
+        const current = findThread(
+          useSessionStore.getState().projects,
+          threadId,
+        )?.thread.goal;
+        if (
+          !current ||
+          current.status !== "active" ||
+          current.condition !== goal.condition
+        ) {
+          return;
+        }
+        const outcome = applyEvaluation(current, res);
+        if (outcome.type === "met") {
+          patchGoal(threadId, { status: "met", lastReason: outcome.reason });
+          pushNotice(threadId, `Goal met: ${outcome.reason}`, "info");
+          return;
+        }
+        // continue: record this turn's progress on the goal (reason, turn
+        // count, token delta from the reducer), then re-drive the work.
+        patchGoal(threadId, {
+          lastReason: outcome.reason,
+          turns: action.turns,
+          tokensUsed: action.tokensUsed,
+        });
+        await sendGoalContinuation(threadId, current.condition, outcome.reason);
+        return;
+      }
+    }
+  } finally {
+    continuationPending.delete(threadId);
+  }
 }
 
 // HOY-213: after a plan-mode turn finishes, surface the "Plan ready" handoff card
