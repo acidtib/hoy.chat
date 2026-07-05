@@ -3,6 +3,7 @@ import {
   detectPlanIntent,
   extractProposedPlan,
   planKickoffPrompt,
+  planSubagentKickoffPrompt,
   splitPlanSegments,
 } from "@/lib/plan";
 
@@ -40,6 +41,32 @@ describe("planKickoffPrompt", () => {
   test("still returns an instruction when the plan is missing", () => {
     const p = planKickoffPrompt(undefined);
     expect(p).toContain("Implement this approved plan now");
+  });
+});
+
+describe("planSubagentKickoffPrompt (HOY-295)", () => {
+  test("embeds the plan and instructs task-by-task subagent orchestration", () => {
+    const p = planSubagentKickoffPrompt("# Do X");
+    expect(p).toContain("task-by-task using subagents");
+    expect(p).toContain("# Do X");
+    // One subagent at a time, ending the turn so the delivered result auto-wakes
+    // the parent for the next step (rides HOY-231/233).
+    expect(p).toContain("one subagent at a time");
+    expect(p).toContain("review it");
+  });
+
+  test("still returns an instruction when the plan is missing", () => {
+    expect(planSubagentKickoffPrompt(undefined)).toContain(
+      "task-by-task using subagents",
+    );
+  });
+
+  test("does not fire the plan-intent auto-switch", () => {
+    // Like the inline kickoff, executing an approved plan must not bounce the
+    // thread back into plan mode.
+    expect(detectPlanIntent(planSubagentKickoffPrompt("# Step 1\nDo it."))).toBe(
+      false,
+    );
   });
 });
 

@@ -79,7 +79,7 @@ import { GoalCard } from "@/components/GoalCard";
 import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
 import { threadIconColorClass } from "@/lib/threadColor";
-import { splitPlanSegments } from "@/lib/plan";
+import { splitPlanSegments, type PlanExecution } from "@/lib/plan";
 import { findThread, useSessionStore } from "@/state/store";
 import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
 import { usePrefsStore } from "@/state/prefs";
@@ -222,7 +222,8 @@ export function ThreadView({
   // across the per-token re-renders of this component.
   const awaitingApproval = pendingPermissions.length > 0;
   const handleImplement = useCallback(
-    (mode: PermissionMode) => void implementPlan(threadId, mode),
+    (mode: PermissionMode, execution: PlanExecution) =>
+      void implementPlan(threadId, mode, execution),
     [implementPlan, threadId],
   );
   const handleDismissPlan = useCallback(
@@ -581,7 +582,7 @@ const AssistantTurn = memo(function AssistantTurn({
   expandReasoning: boolean;
   planReady: string | undefined;
   awaitingApproval: boolean;
-  onImplement: (mode: PermissionMode) => void;
+  onImplement: (mode: PermissionMode, execution: PlanExecution) => void;
   onDismiss: () => void;
 }) {
   return (
@@ -968,7 +969,7 @@ function AssistantTextBlock({
   // it matches a completed plan segment, that plan's card shows the handoff
   // actions in its footer (HOY-259).
   planReady: string | undefined;
-  onImplement: (mode: PermissionMode) => void;
+  onImplement: (mode: PermissionMode, execution: PlanExecution) => void;
   onDismiss: () => void;
 }) {
   const segments = useMemo(() => splitPlanSegments(content), [content]);
@@ -1014,7 +1015,7 @@ function ProposedPlanCard({
   text: string;
   streaming: boolean;
   ready: boolean;
-  onImplement: (mode: PermissionMode) => void;
+  onImplement: (mode: PermissionMode, execution: PlanExecution) => void;
   onDismiss: () => void;
 }) {
   const body = text.trim();
@@ -1055,7 +1056,7 @@ function ProposedPlanCard({
             variant="outline"
             size="sm"
             className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
-            onClick={() => onImplement("default")}
+            onClick={() => onImplement("default", "inline")}
           >
             Implement (review each edit)
           </Button>
@@ -1063,9 +1064,17 @@ function ProposedPlanCard({
             variant="outline"
             size="sm"
             className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
-            onClick={() => onImplement("acceptEdits")}
+            onClick={() => onImplement("acceptEdits", "inline")}
           >
             Implement (auto-approve edits)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
+            onClick={() => onImplement("default", "subagent")}
+          >
+            Implement task-by-task
           </Button>
         </PlanFooter>
       )}

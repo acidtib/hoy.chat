@@ -36,7 +36,13 @@ import {
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
-import { detectPlanIntent, extractProposedPlan, planKickoffPrompt } from "@/lib/plan";
+import {
+  detectPlanIntent,
+  extractProposedPlan,
+  planKickoffPrompt,
+  planSubagentKickoffPrompt,
+  type PlanExecution,
+} from "@/lib/plan";
 import { formatElapsed, shortId } from "@/lib/utils";
 import { usePrefsStore } from "@/state/prefs";
 import {
@@ -493,8 +499,13 @@ interface SessionStore {
   setPermissionMode: (threadId: string, mode: PermissionMode) => Promise<void>;
   // Plan-mode handoff (HOY-213): approve the ready plan into execution by
   // switching the thread to `mode` and sending the kickoff prompt, or dismiss
-  // the card (keep planning / discard) without executing.
-  implementPlan: (threadId: string, mode: PermissionMode) => Promise<void>;
+  // the card (keep planning / discard) without executing. `execution` picks
+  // inline execution (default) or task-by-task subagent orchestration (HOY-295).
+  implementPlan: (
+    threadId: string,
+    mode: PermissionMode,
+    execution?: PlanExecution,
+  ) => Promise<void>;
   dismissPlanReady: (threadId: string) => void;
   // Answer the thread's oldest pending approval card.
   answerPermission: (
@@ -1201,16 +1212,23 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     });
   },
 
-  implementPlan: async (threadId, mode) => {
+  implementPlan: async (threadId, mode, execution = "inline") => {
     const plan = get().planReady[threadId];
     // Clear the card first so a double click cannot fire two kickoffs.
     get().dismissPlanReady(threadId);
-    // Switch out of plan mode so the kickoff turn has full tool access, then
+    // Switch out of plan mode so the kickoff turn has full tool access (and, for
+    // subagent execution, so the agent tool is advertised to the parent), then
     // send the plan as the opening instruction of the execution turn.
     await get().setPermissionMode(threadId, mode);
+    // HOY-295: inline execution implements in this thread; subagent execution
+    // orchestrates the plan one step per dispatched subagent.
+    const kickoff =
+      execution === "subagent"
+        ? planSubagentKickoffPrompt(plan)
+        : planKickoffPrompt(plan);
     // autoPlanMode: false — the kickoff instruction says "implement this approved
     // plan", which must not bounce the freshly-restored mode back into plan.
-    await get().submitPrompt(threadId, planKickoffPrompt(plan), undefined, undefined, {
+    await get().submitPrompt(threadId, kickoff, undefined, undefined, {
       autoPlanMode: false,
     });
   },

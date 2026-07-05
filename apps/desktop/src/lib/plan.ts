@@ -92,6 +92,33 @@ export function planKickoffPrompt(plan: string | undefined): string {
   return plan ? `${head}\n\n${plan}` : head;
 }
 
+// How an approved plan is executed (HOY-295): inline in this thread (the
+// classic handoff), or task-by-task by dispatching a fresh subagent per step.
+export type PlanExecution = "inline" | "subagent";
+
+// HOY-295: the subagent-driven variant of the execution handoff. Instead of
+// implementing inline, the parent orchestrates the plan one step per general-
+// purpose subagent, sequentially and self-reviewing: it hands each step (and its
+// Consumes/Produces contract, when the plan carries one) to a subagent, ends its
+// turn, is auto-woken when that subagent's result is delivered back, reviews it,
+// then dispatches the next step. The human watches each subagent thread live and
+// can steer or stop it. Rides the existing spawn + result-delivery infra
+// (HOY-231/233); no new plumbing beyond this instruction.
+export function planSubagentKickoffPrompt(plan: string | undefined): string {
+  const head = [
+    "Plan mode is now disabled. Full tool access is restored. Implement this approved plan task-by-task using subagents, not inline.",
+    "",
+    "Execute the plan one step at a time, in order:",
+    "1. Dispatch exactly one general-purpose subagent (the agent tool) for the current step. Hand it that step's full instructions, its Consumes/Produces contract if the plan gives one, and any Global Constraints, so it can work independently.",
+    "2. Dispatch only one subagent at a time, then end your turn. The subagent runs in its own thread and its result is delivered back to you when it finishes; you will resume automatically — do not spawn the next step's subagent in the same turn.",
+    "3. When the result arrives, review it: confirm the step was completed and its Produces contract is satisfied. If it is wrong or incomplete, fix it or re-dispatch that step before continuing.",
+    "4. Once the step is verified, dispatch the next step's subagent. Repeat until every step is done, then run the plan's Test plan yourself and report the outcome.",
+    "",
+    "The approved plan:",
+  ].join("\n");
+  return plan ? `${head}\n\n${plan}` : head;
+}
+
 // HOY-291: auto-switch to Plan Mode when a message asks for a plan. Detects, on
 // the human text of an outbound message, whether the user is asking Hoy to
 // *produce* a plan (so submitPrompt can flip a non-plan thread into plan mode
