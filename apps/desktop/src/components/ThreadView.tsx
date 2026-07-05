@@ -3,6 +3,7 @@ import {
   Activity,
   AlertCircle,
   Archive,
+  Bot,
   Check,
   ChevronDown,
   Circle,
@@ -1108,7 +1109,7 @@ function ProposedPlanCard({
                   className="bg-agent text-background hover:bg-agent/90"
                   onClick={() => onImplement("autonomous", "subagent")}
                 >
-                  <Sparkle />
+                  <Bot />
                   Build with agents
                 </Button>
               </TooltipTrigger>
