@@ -69,9 +69,12 @@ const MAX_AUDIT_MAX_TURNS = 50;
 // inexpensive auditor when the caller did not pin HOY_GOAL_AUDIT_MODEL.
 const CHEAP_MODEL_RE = /(haiku|mini|flash|small|lite|nano)/i;
 
-// Tools that mutate state or spawn further agents. The auditor must never hold
-// any of these; we strip them from the resolved toolset defensively.
-const MUTATE_TOOLS = new Set(["bash", "edit", "write", "agent"]);
+// Tools that mutate state, reach external systems, or spawn further agents. The
+// auditor must never hold any of these; we strip them from the resolved toolset
+// defensively. "mcp" is included so a project Explore override that added an MCP
+// tool cannot survive into the read-only auditor even if such a tool were ever
+// registered in this one-shot.
+const MUTATE_TOOLS = new Set(["bash", "edit", "write", "agent", "mcp"]);
 // If the registry cannot be read (or yields nothing usable), fall back to the
 // canonical Explore read-only set so the auditor still runs read-only.
 const FALLBACK_READONLY_TOOLS = ["read", "grep", "find", "ls"];
