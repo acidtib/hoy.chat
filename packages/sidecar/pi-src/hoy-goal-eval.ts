@@ -129,9 +129,15 @@ function emit(result: GoalEvaluation): never {
 }
 
 // Pick the judge model. Order: an explicit HOY_GOAL_EVAL_MODEL ("provider/id"),
-// then the cheapest available model matching the cheap-tier heuristic, then the
-// thread's own main model, then any available model. Returns undefined only when
-// no model has usable auth at all.
+// then a cheap-tier model FROM THE SESSION'S OWN PROVIDER, then the thread's own
+// main model, then any cheap-tier model from another provider, then any available
+// model. Returns undefined only when no model has usable auth at all.
+//
+// The session-provider preference is deliberate: a bare cross-provider cheap-tier
+// match can resolve to a decommissioned id (e.g. an old anthropic haiku) that
+// still lists as "available" but returns empty output, which would fail the goal
+// open ("not met") every turn and never let it complete. The session's provider
+// shares the thread's working credentials, so its cheap model is the safe default.
 function pickModel(
   registry: ModelRegistry,
   available: ReturnType<ModelRegistry["getAvailable"]>,
@@ -145,12 +151,16 @@ function pickModel(
       if (found) return found;
     }
   }
-  const cheap = available.find((m) => CHEAP_MODEL_RE.test(m.id));
-  if (cheap) return cheap;
   if (sessionModel) {
+    const providerCheap = available.find(
+      (m) => m.provider === sessionModel.provider && CHEAP_MODEL_RE.test(m.id),
+    );
+    if (providerCheap) return providerCheap;
     const main = registry.find(sessionModel.provider, sessionModel.modelId);
     if (main) return main;
   }
+  const cheap = available.find((m) => CHEAP_MODEL_RE.test(m.id));
+  if (cheap) return cheap;
   return available[0];
 }
 
