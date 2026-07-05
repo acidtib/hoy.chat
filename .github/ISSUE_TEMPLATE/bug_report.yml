@@ -1,0 +1,62 @@
+name: Bug report
+description: Something in Hoy Desktop broke or behaved unexpectedly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping test the beta. A few details make bugs far faster to fix.
+        Please do not paste API keys, auth tokens, or the contents of your `~/.hoy`
+        directory into this report.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: I selected a model and sent a message, and the transcript stayed empty.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Launch Hoy
+        2. Enter my API key
+        3. Type a message
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Hoy version
+      description: From the app's settings, or the installer filename.
+      placeholder: 0.1.1
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Model provider and model
+      description: Which provider and model you were using, if relevant.
+      placeholder: OpenRouter, DeepSeek
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Anything from the console or a screenshot helps. Redact keys first.
+    validations:
+      required: false

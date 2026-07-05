@@ -7,6 +7,25 @@ keys on your own disk.
 > Beta. Pre-1.0, so expect bugs and breaking changes. Bring your own model API
 > key.
 
+## Install
+
+Signed builds ship for macOS (Apple Silicon and Intel), Windows, and Linux on
+every release. You bring your own model API key, the app writes it to disk on your
+own machine and never sends it anywhere but the model provider you pick.
+
+- **Any platform:** [hoy.chat](https://hoy.chat) offers the right build for your
+  OS, or grab an installer straight from the
+  [latest release](https://github.com/acidtib/hoy.chat/releases/latest)
+  (`.dmg`, `.msi` / `.exe`, `.AppImage`, `.deb`, `.rpm`).
+- **Arch Linux:** install from our own signed pacman repo, not the AUR. One-time
+  setup adds the key and repo, then it upgrades like any package. See
+  [packaging/pacman-repo/README.md](packaging/pacman-repo/README.md) for the
+  copy-paste steps.
+
+Hit a bug? That is expected in beta, please
+[open an issue](https://github.com/acidtib/hoy.chat/issues/new/choose). To build
+from source instead, see below.
+
 ## Repository layout
 
 Bun-workspaces monorepo:
