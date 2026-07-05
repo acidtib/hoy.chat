@@ -283,6 +283,37 @@ pub async fn set_subagent_enabled(
     Ok(())
 }
 
+// HOY-254 (Slice 1): author a custom subagent type. Rust serializes `def` into a
+// .md in the scope's agents dir (the single writer; the sidecar registry stays the
+// only reader), rejecting an unsafe/duplicate name or one that shadows a built-in.
+// Respawns idle sidecars afterward, like set_subagent_enabled, so live sessions
+// reload the registry and pick up the new type.
+#[tauri::command]
+pub async fn write_subagent(
+    def: subagents_config::SubagentDef,
+    scope: SubagentScope,
+    project_path: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    subagents_config::write_subagent(scope, project_path.as_deref(), &def)?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
+}
+
+// HOY-254 (Slice 1): delete a custom subagent type's .md. Idempotent; respawns
+// idle sidecars so live sessions drop the removed type from their registry.
+#[tauri::command]
+pub async fn delete_subagent(
+    scope: SubagentScope,
+    name: String,
+    project_path: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    subagents_config::delete_subagent(scope, project_path.as_deref(), &name)?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn active_session_id(manager: State<'_, SidecarManager>) -> Option<String> {
     manager.active_session_id()
@@ -442,7 +473,9 @@ pub async fn get_fork_messages(
     manager: State<'_, SidecarManager>,
 ) -> Result<Value, String> {
     let process = manager.get(&session_id)?;
-    let response = process.request(json!({ "type": "get_fork_messages" })).await?;
+    let response = process
+        .request(json!({ "type": "get_fork_messages" }))
+        .await?;
     unwrap_response(response, "get_fork_messages")
 }
 

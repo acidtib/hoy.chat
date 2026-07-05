@@ -129,6 +129,43 @@ test("malformed frontmatter is skipped, others still load", () => {
   expect(reg["general-purpose"]).toBeDefined();
 });
 
+test("round-trips a .md as Rust's render_agent_md writes it (HOY-254 Slice 1)", () => {
+  const cwd = tmp();
+  // Byte-for-byte the frontmatter shape subagents_config.rs render_agent_md emits:
+  // double-quoted string scalars, flow-style tools, bare bool/int, minimal keys
+  // (no thinking/enabled here, since those were unset). This proves the Rust
+  // write -> sidecar parse round-trip by construction, so the single-parser
+  // invariant holds: Rust only serializes, this registry is the only reader.
+  const md = [
+    "---",
+    'description: "A red-team reviewer: finds bugs."',
+    'tools: ["read", "grep"]',
+    'prompt_mode: "append"',
+    'model: "sonnet"',
+    "inherit_context: true",
+    "max_turns: 5",
+    "---",
+    "You are a reviewer.",
+    "",
+  ].join("\n");
+  mkdirSync(join(cwd, ".hoy", "agents"), { recursive: true });
+  writeFileSync(join(cwd, ".hoy", "agents", "Reviewer.md"), md);
+
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  const t = reg["Reviewer"];
+  expect(t.scope).toBe("project");
+  expect(t.description).toBe("A red-team reviewer: finds bugs.");
+  expect(t.tools).toEqual(["read", "grep"]);
+  expect(t.promptMode).toBe("append");
+  expect(t.model).toBe("sonnet");
+  expect(t.thinking).toBeUndefined();
+  expect(t.inheritContext).toBe(true);
+  expect(t.maxTurns).toBe(5);
+  // Omitted `enabled` means the registry default (on).
+  expect(t.enabled).toBe(true);
+  expect(t.body).toBe("You are a reviewer.");
+});
+
 test("effectiveChildPrompt: replace uses the body, append concatenates, none uses base", () => {
   const base = "BASE";
   expect(effectiveChildPrompt({ name: "a", scope: "builtin", tools: [], promptMode: "replace", body: "BODY", enabled: true }, base)).toBe("BODY");

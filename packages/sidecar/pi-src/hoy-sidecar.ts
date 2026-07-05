@@ -85,6 +85,10 @@ if (process.env.HOY_LIST_SUBAGENTS) {
     description: t.description ?? null,
     tools: t.tools,
     promptMode: t.promptMode,
+    // The system prompt body (HOY-254), so an edit form can pre-fill it. Present
+    // for global/project types and for built-ins with a static body (Explore,
+    // Plan); null for general-purpose, which inherits the base prompt (no body).
+    body: t.body ?? null,
     model: t.model ?? null,
     thinking: t.thinking ?? null,
     source: t.source ?? null,

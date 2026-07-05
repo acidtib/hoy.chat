@@ -30,6 +30,7 @@ import type {
   StreamingBehavior,
   SubagentDef,
   SubagentScope,
+  SubagentWrite,
   ThinkingLevel,
   UsageReport,
   Workspace,
@@ -159,6 +160,40 @@ export function setSubagentEnabled(
     scope,
     name,
     enabled,
+    projectPath: projectPath ?? null,
+  });
+}
+
+// Author a custom subagent type (HOY-254). Rust serializes `def` into a .md in the
+// scope's agents dir (global agent dir or <project>/.hoy/agents) — the single
+// writer; the sidecar registry stays the only reader — then respawns idle sidecars
+// so live sessions reload the registry. Rejects a name that is unsafe, duplicate
+// in-scope, or shadows a built-in (general-purpose/Explore/Plan). `scope` is
+// "global" or "project"; project scope needs `projectPath`. Editing an existing
+// type is deleteSubagent(oldName) + writeSubagent, since this is create-only.
+export function writeSubagent(
+  def: SubagentWrite,
+  scope: Exclude<SubagentScope, "builtin">,
+  projectPath?: string | null,
+): Promise<void> {
+  return invoke<void>("write_subagent", {
+    def,
+    scope,
+    projectPath: projectPath ?? null,
+  });
+}
+
+// Delete a custom subagent type's .md (HOY-254). Idempotent; respawns idle
+// sidecars so live sessions drop it from their registry. Only global/project
+// types are deletable (built-ins have no file).
+export function deleteSubagent(
+  scope: Exclude<SubagentScope, "builtin">,
+  name: string,
+  projectPath?: string | null,
+): Promise<void> {
+  return invoke<void>("delete_subagent", {
+    scope,
+    name,
     projectPath: projectPath ?? null,
   });
 }

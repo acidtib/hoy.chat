@@ -580,6 +580,28 @@ export interface SubagentDef {
   inheritContext?: boolean;
   // HOY-244: per-type turn budget; the run is aborted once it is spent.
   maxTurns?: number | null;
+  // HOY-254: the system prompt body, emitted by the list one-shot so an edit
+  // form can pre-fill it. Present for global/project types and built-ins with a
+  // static body (Explore, Plan); null for general-purpose (no body, inherits base).
+  body?: string | null;
+}
+
+// HOY-254: the payload for authoring a custom subagent type (writeSubagent). Rust
+// serializes these fields into the type's .md frontmatter + body; the field names
+// mirror SubagentDef, and Rust omits any null/empty ones so the file stays minimal
+// and the sidecar registry applies its own defaults on read. `enabled` is not part
+// of this write: a new type is enabled by default and the on/off state is owned by
+// the separate two-sided override (setSubagentEnabled), not the .md.
+export interface SubagentWrite {
+  name: string;
+  description?: string | null;
+  tools: string[];
+  promptMode: "replace" | "append";
+  model?: string | null;
+  thinking?: string | null;
+  inheritContext?: boolean | null;
+  maxTurns?: number | null;
+  body: string;
 }
 
 // Mirror of events::OAuthSelectOption.

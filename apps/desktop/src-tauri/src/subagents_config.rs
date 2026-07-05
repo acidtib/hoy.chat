@@ -173,6 +173,255 @@ pub fn set_enabled(
     set_enabled_at(&path_for(scope, project)?, name.trim(), enabled)
 }
 
+// HOY-254 (Slice 1): the write path for custom subagent types. Rust serializes a
+// type into a `<scope>/agents/<name>.md` (global agent dir or <project>/.hoy/
+// agents); the sidecar's hoy-agents-registry.ts is the single READER. This is the
+// single-parser invariant: because Rust only ever SERIALIZES and never parses a
+// .md, the two sides can never drift on precedence, tool validation, or defaults.
+
+// The built-in type names (hoy-agents-registry.ts BUILTIN_SUBAGENTS), lowercased.
+// A custom .md must not reuse one of these case-insensitively: the registry keys
+// types by name, so a file named e.g. Explore.md would shadow the built-in. Rust
+// rejects the write so a built-in can never be masked by a user file.
+const BUILTIN_NAMES: [&str; 3] = ["general-purpose", "explore", "plan"];
+
+// The fields a custom type carries, deserialized from the write command's `def`
+// arg (camelCase from the renderer). Mirrors SubagentDef/SubagentWrite on the TS
+// side. `enabled` is absent by design: a new type is enabled by default and the
+// on/off state is owned by the two-sided override in subagents.json (set_enabled),
+// not the .md. The Option is kept so a caller CAN ship a type disabled, but the
+// renderer does not.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentDef {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    pub prompt_mode: String,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub thinking: Option<String>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub inherit_context: Option<bool>,
+    #[serde(default)]
+    pub max_turns: Option<u32>,
+    #[serde(default)]
+    pub body: String,
+}
+
+fn scope_label(scope: SubagentScope) -> &'static str {
+    match scope {
+        SubagentScope::Global => "global",
+        SubagentScope::Project => "project",
+    }
+}
+
+// The agents dir a scope's .md files live in: <agent_dir>/agents for global,
+// <project>/.hoy/agents for project. Mirrors how the registry loader resolves the
+// same two layers (hoy-agents-registry.ts loadSubagentRegistry).
+fn agents_dir(scope: SubagentScope, project: Option<&str>) -> Result<PathBuf, String> {
+    match scope {
+        SubagentScope::Global => Ok(agent_dir()?.join("agents")),
+        SubagentScope::Project => {
+            let p = project.unwrap_or("");
+            if p.trim().is_empty() {
+                return Err("project path is required for project scope".to_string());
+            }
+            Ok(PathBuf::from(p).join(PROJECT_CONFIG_DIR).join("agents"))
+        }
+    }
+}
+
+// A type's name becomes its `<name>.md` file AND its registry key, so it must be a
+// safe slug: letters, digits, hyphen, underscore only. This rejects path
+// separators, dots, and spaces, so a name can never traverse out of the agents
+// dir or shadow another file. "general-purpose" (a built-in) is a valid slug, so
+// the built-in check below is separate.
+fn is_safe_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn validate_name(name: &str) -> Result<(), String> {
+    if !is_safe_name(name) {
+        return Err(format!(
+            "subagent name must be 1-64 characters of letters, digits, hyphen, or underscore: {name:?}"
+        ));
+    }
+    if BUILTIN_NAMES.contains(&name.to_ascii_lowercase().as_str()) {
+        return Err(format!(
+            "{name:?} is a built-in subagent name and cannot be reused"
+        ));
+    }
+    Ok(())
+}
+
+// A YAML double-quoted scalar, escaping the characters the `yaml` parser the
+// sidecar uses (via parseFrontmatter) treats specially. Double-quoting keeps an
+// arbitrary description/model/thinking value from breaking the frontmatter (a
+// colon, a leading special char), and escaping keeps quotes/backslashes/newlines
+// intact through the round-trip.
+fn yaml_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+// Serialize a custom type to its .md text: a YAML frontmatter block carrying ONLY
+// the keys the user set, then the body (the system prompt). The keys mirror
+// EXACTLY what hoy-agents-registry.ts parseAgentFile reads: description, tools,
+// prompt_mode, model, thinking, enabled, inherit_context, max_turns. Omitted /
+// null / default fields are left out so the file stays minimal and the sidecar
+// applies its own defaults on read (enabled defaults true, prompt_mode replace,
+// inherit_context false). Body follows the closing `---`.
+fn render_agent_md(def: &SubagentDef) -> String {
+    let mut fm = String::new();
+    if let Some(desc) = def.description.as_deref() {
+        if !desc.trim().is_empty() {
+            fm.push_str(&format!("description: {}\n", yaml_string(desc)));
+        }
+    }
+    if !def.tools.is_empty() {
+        let items: Vec<String> = def.tools.iter().map(|t| yaml_string(t)).collect();
+        fm.push_str(&format!("tools: [{}]\n", items.join(", ")));
+    }
+    // prompt_mode is a tiny required selector (replace|append); written always so
+    // the mode a form chose is explicit in the file.
+    fm.push_str(&format!("prompt_mode: {}\n", yaml_string(&def.prompt_mode)));
+    if let Some(model) = def.model.as_deref() {
+        if !model.trim().is_empty() {
+            fm.push_str(&format!("model: {}\n", yaml_string(model)));
+        }
+    }
+    if let Some(thinking) = def.thinking.as_deref() {
+        if !thinking.trim().is_empty() {
+            fm.push_str(&format!("thinking: {}\n", yaml_string(thinking)));
+        }
+    }
+    // enabled defaults true in the registry (enabled !== false), so only a
+    // disabled type needs the key; writing `enabled: true` would be redundant.
+    if def.enabled == Some(false) {
+        fm.push_str("enabled: false\n");
+    }
+    // inherit_context defaults false in the registry (=== true), so only write it on.
+    if def.inherit_context == Some(true) {
+        fm.push_str("inherit_context: true\n");
+    }
+    if let Some(mt) = def.max_turns {
+        if mt > 0 {
+            fm.push_str(&format!("max_turns: {mt}\n"));
+        }
+    }
+    // The parser trims the body, so a single trailing newline is harmless and
+    // leaves the file ending cleanly.
+    format!("---\n{fm}---\n{}\n", def.body.trim_end())
+}
+
+// Atomic replace for a subagent .md, tmp-then-rename so a crash mid-write never
+// leaves a half-written file the sidecar would try to parse. Mirrors
+// write_config_atomic_at; 0600/0700 for the same reason (the body is user content
+// kept private).
+fn write_md_atomic_at(path: &Path, contents: &str) -> Result<(), String> {
+    let dir = path.parent().ok_or("agent .md path has no parent")?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+    }
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("agent .md path has no file name")?;
+    let tmp = dir.join(format!("{file_name}.tmp-{}", std::process::id()));
+    {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&tmp)
+            .map_err(|e| format!("open {}: {e}", tmp.display()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+        }
+        f.write_all(contents.as_bytes())
+            .and_then(|_| f.flush())
+            .and_then(|_| f.sync_all())
+            .map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    }
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("replace {}: {e}", path.display())
+    })
+}
+
+// Author a custom type: validate the name, then serialize it to
+// <scope>/agents/<name>.md. Create-only: an existing name in the same scope is a
+// duplicate and rejected, so a write never silently clobbers another type (an
+// edit that keeps the name is delete_subagent + write_subagent).
+pub fn write_subagent(
+    scope: SubagentScope,
+    project: Option<&str>,
+    def: &SubagentDef,
+) -> Result<(), String> {
+    let name = def.name.trim();
+    validate_name(name)?;
+    let _guard = SUBAGENTS_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let path = agents_dir(scope, project)?.join(format!("{name}.md"));
+    if path.exists() {
+        return Err(format!(
+            "a {} subagent named {name:?} already exists",
+            scope_label(scope)
+        ));
+    }
+    write_md_atomic_at(&path, &render_agent_md(def))
+}
+
+// Remove a custom type's .md. Idempotent (a missing file is not an error), same
+// tolerance as the MCP remove path. Built-in names are rejected by validate_name;
+// they have no file to delete anyway.
+pub fn delete_subagent(
+    scope: SubagentScope,
+    project: Option<&str>,
+    name: &str,
+) -> Result<(), String> {
+    let name = name.trim();
+    validate_name(name)?;
+    let _guard = SUBAGENTS_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let path = agents_dir(scope, project)?.join(format!("{name}.md"));
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("remove {}: {e}", path.display())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,5 +455,85 @@ mod tests {
         assert!(after2.get("disabled").is_none());
         assert_eq!(after2["enabled"], json!(["Reviewer"]));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // A def with the advanced fields set but thinking/enabled left unset, so the
+    // test can assert both that set fields serialize and that unset ones do not.
+    fn sample_def(name: &str) -> SubagentDef {
+        SubagentDef {
+            name: name.to_string(),
+            description: Some("A red-team reviewer: finds bugs.".to_string()),
+            tools: vec!["read".to_string(), "grep".to_string()],
+            prompt_mode: "append".to_string(),
+            model: Some("sonnet".to_string()),
+            thinking: None,
+            enabled: None,
+            inherit_context: Some(true),
+            max_turns: Some(5),
+            body: "You are a reviewer.".to_string(),
+        }
+    }
+
+    #[test]
+    fn write_subagent_serializes_expected_frontmatter_and_omits_unset() {
+        let proj = std::env::temp_dir().join(format!("hoy-agent-write-{}", std::process::id()));
+        std::fs::remove_dir_all(&proj).ok();
+        write_subagent(
+            SubagentScope::Project,
+            Some(proj.to_str().unwrap()),
+            &sample_def("Reviewer"),
+        )
+        .unwrap();
+        let md =
+            std::fs::read_to_string(proj.join(".hoy").join("agents").join("Reviewer.md")).unwrap();
+
+        // The keys the sidecar parser reads, with the values as set.
+        assert!(md.contains("description: \"A red-team reviewer: finds bugs.\""));
+        assert!(md.contains("tools: [\"read\", \"grep\"]"));
+        assert!(md.contains("prompt_mode: \"append\""));
+        assert!(md.contains("model: \"sonnet\""));
+        assert!(md.contains("inherit_context: true"));
+        assert!(md.contains("max_turns: 5"));
+        // Body follows the closing delimiter.
+        assert!(md.trim_end().ends_with("You are a reviewer."));
+        // Unset (None) fields must not be serialized at all.
+        assert!(!md.contains("thinking:"));
+        assert!(!md.contains("enabled:"));
+
+        std::fs::remove_dir_all(&proj).ok();
+    }
+
+    #[test]
+    fn write_subagent_rejects_builtin_bad_slug_and_duplicate() {
+        let proj = std::env::temp_dir().join(format!("hoy-agent-reject-{}", std::process::id()));
+        std::fs::remove_dir_all(&proj).ok();
+        let p = proj.to_str().unwrap();
+
+        // Built-in names, case-insensitively, cannot be reused (no shadowing).
+        assert!(write_subagent(SubagentScope::Project, Some(p), &sample_def("explore")).is_err());
+        assert!(write_subagent(
+            SubagentScope::Project,
+            Some(p),
+            &sample_def("General-Purpose")
+        )
+        .is_err());
+        // Unsafe slugs (path traversal, spaces) are rejected.
+        assert!(write_subagent(SubagentScope::Project, Some(p), &sample_def("../evil")).is_err());
+        assert!(write_subagent(SubagentScope::Project, Some(p), &sample_def("has space")).is_err());
+
+        // A fresh name writes; the same name again is a duplicate (create-only).
+        assert!(write_subagent(SubagentScope::Project, Some(p), &sample_def("Reviewer")).is_ok());
+        assert!(write_subagent(SubagentScope::Project, Some(p), &sample_def("Reviewer")).is_err());
+
+        // delete_subagent removes the file and is idempotent.
+        delete_subagent(SubagentScope::Project, Some(p), "Reviewer").unwrap();
+        assert!(!proj
+            .join(".hoy")
+            .join("agents")
+            .join("Reviewer.md")
+            .exists());
+        delete_subagent(SubagentScope::Project, Some(p), "Reviewer").unwrap();
+
+        std::fs::remove_dir_all(&proj).ok();
     }
 }
