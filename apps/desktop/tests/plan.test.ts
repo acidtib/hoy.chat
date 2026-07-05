@@ -49,10 +49,12 @@ describe("planSubagentKickoffPrompt (HOY-295)", () => {
     const p = planSubagentKickoffPrompt("# Do X");
     expect(p).toContain("task-by-task using subagents");
     expect(p).toContain("# Do X");
-    // One subagent at a time, ending the turn so the delivered result auto-wakes
-    // the parent for the next step (rides HOY-231/233).
-    expect(p).toContain("one subagent at a time");
-    expect(p).toContain("review it");
+    // HOY-300: subagents are synchronous — the agent call blocks and returns the
+    // result in-band, so the parent reviews between steps in one turn (NOT the old
+    // "end your turn / auto-woken" async framing).
+    expect(p).toContain("blocks and returns the subagent's result");
+    expect(p).toContain("Review it");
+    expect(p).not.toContain("end your turn");
   });
 
   test("still returns an instruction when the plan is missing", () => {

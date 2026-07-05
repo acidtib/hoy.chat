@@ -99,20 +99,20 @@ export type PlanExecution = "inline" | "subagent";
 // HOY-295: the subagent-driven variant of the execution handoff. Instead of
 // implementing inline, the parent orchestrates the plan one step per general-
 // purpose subagent, sequentially and self-reviewing: it hands each step (and its
-// Consumes/Produces contract, when the plan carries one) to a subagent, ends its
-// turn, is auto-woken when that subagent's result is delivered back, reviews it,
-// then dispatches the next step. The human watches each subagent thread live and
-// can steer or stop it. Rides the existing spawn + result-delivery infra
-// (HOY-231/233); no new plumbing beyond this instruction.
+// Consumes/Produces contract, when the plan carries one) to a subagent, waits for
+// that subagent's result, reviews it, then dispatches the next step. Subagents are
+// synchronous (HOY-300): the agent tool blocks and returns the result in-band, so
+// the parent reviews between steps in one continuous turn. Each subagent is a
+// watchable thread the human can steer or stop.
 export function planSubagentKickoffPrompt(plan: string | undefined): string {
   const head = [
     "Plan mode is now disabled. Full tool access is restored. Implement this approved plan task-by-task using subagents, not inline.",
     "",
-    "Execute the plan one step at a time, in order:",
-    "1. Dispatch exactly one general-purpose subagent (the agent tool) for the current step. Hand it that step's full instructions, its Consumes/Produces contract if the plan gives one, and any Global Constraints, so it can work independently.",
-    "2. Dispatch only one subagent at a time, then end your turn. The subagent runs in its own thread and its result is delivered back to you when it finishes; you will resume automatically — do not spawn the next step's subagent in the same turn.",
-    "3. When the result arrives, review it: confirm the step was completed and its Produces contract is satisfied. If it is wrong or incomplete, fix it or re-dispatch that step before continuing.",
-    "4. Once the step is verified, dispatch the next step's subagent. Repeat until every step is done, then run the plan's Test plan yourself and report the outcome.",
+    "Work through the plan one step at a time, in order:",
+    "1. Call the agent tool with a general-purpose subagent for the current step. Hand it that step's full instructions, its Consumes/Produces contract if the plan gives one, and any Global Constraints, so it can work independently.",
+    "2. The agent call blocks and returns the subagent's result to you directly. Review it: confirm the step was completed and its Produces contract is satisfied. If it is wrong or incomplete, fix it or re-run that step before continuing.",
+    "3. Only once the step is verified, call the agent tool for the next step. Keep the steps in dependency order so each subagent has what the earlier steps produced.",
+    "4. When every step is done, run the plan's Test plan yourself and report the outcome.",
     "",
     "The approved plan:",
   ].join("\n");
