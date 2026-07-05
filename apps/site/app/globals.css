@@ -1353,6 +1353,267 @@ h3.heading {
   margin-left: 0;
 }
 
+/* Right dock: the /tree session-tree navigator, open beside the thread. */
+.aw-dock {
+  width: 200px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-side);
+  border-left: 1px solid var(--border);
+}
+@media (max-width: 900px) {
+  .aw-dock {
+    display: none;
+  }
+}
+.aw-dock-head {
+  padding: 8px 8px 9px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.aw-dock-titlerow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.aw-dock-icon {
+  flex: none;
+  color: var(--brand);
+}
+.aw-dock-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.aw-dock-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.aw-dock-sub {
+  margin: 7px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted-2);
+}
+.aw-dock-sub-lead {
+  color: var(--app-ink);
+}
+.aw-dock-filters {
+  display: flex;
+  margin-top: 9px;
+  border: 1px solid var(--border);
+}
+.aw-dfilter {
+  flex: 1;
+  padding: 3px 2px;
+  text-align: center;
+  border-right: 1px solid var(--border);
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--muted-2);
+}
+.aw-dfilter:last-child {
+  border-right: none;
+}
+.aw-dfilter-active {
+  background: color-mix(in srgb, var(--brand) 15%, transparent);
+  color: var(--brand);
+}
+
+/* Tree rows: role-labeled entries; the active leaf carries a brand bar + badge. */
+.aw-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+  min-width: 0;
+}
+.aw-tnode {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  min-width: 0;
+}
+.aw-tnode-active {
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+.aw-tnode-bar {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--brand);
+}
+.aw-tnode-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--muted-2);
+}
+.aw-tnode-active .aw-tnode-icon {
+  color: var(--brand);
+}
+.aw-tnode-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aw-tnode-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.aw-tnode-role {
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-2);
+}
+.aw-tnode-tools {
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 9px;
+  color: var(--muted-2);
+}
+.aw-tnode-badge {
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--brand) 45%, transparent);
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--brand);
+}
+.aw-tnode-preview {
+  font-size: 11.5px;
+  line-height: 1.25;
+  color: var(--app-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aw-tnode-branchbtn {
+  flex: none;
+  align-self: flex-start;
+  margin-top: 1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border: 1px solid color-mix(in srgb, var(--brand) 40%, transparent);
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 9.5px;
+  color: var(--brand);
+}
+/* A branched child line: indented with an elbow connector, like the app. */
+.aw-tbranch {
+  position: relative;
+  margin-left: 14px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-strong);
+}
+.aw-tbranch::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -1px;
+  width: 12px;
+  height: 12px;
+  border-left: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+  border-bottom-left-radius: 3px;
+}
+
+/* Tree beat: the tree rows on their own, a touch larger. */
+.aw-beat-tree {
+  padding: 8px;
+}
+.aw-beat-tree .aw-tnode-preview {
+  font-size: 12.5px;
+}
+.aw-cap-tree-icon {
+  color: var(--brand);
+}
+
+/* FleetView beat: agents running in parallel, one row each with a status. */
+.aw-fleet-spark {
+  flex: none;
+  color: var(--brand);
+}
+.aw-fleet-roll {
+  margin-left: auto;
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--muted-2);
+}
+.aw-fleet-list {
+  list-style: none;
+  margin: 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aw-fleet-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, #ffffff 2%, transparent);
+}
+.aw-fleet-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+.aw-fleet-running {
+  background: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent);
+}
+.aw-fleet-done {
+  background: var(--app-ok);
+}
+.aw-fleet-queued {
+  background: var(--muted-2);
+}
+.aw-fleet-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--app-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aw-fleet-tag {
+  flex: none;
+  font-family: ui-monospace, "SF Mono", "Geist Mono", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-2);
+}
+.aw-fleet-tag-running {
+  color: var(--brand);
+}
+.aw-fleet-tag-done {
+  color: var(--app-ok);
+}
+
 /* Scroll beats layout: alternating copy + visual */
 .beats-head {
   text-align: center;

@@ -40,6 +40,13 @@ const PATHS: Record<string, string> = {
     '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
   chevronRight: '<path d="m9 18 6-6-6-6"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  listTree:
+    '<path d="M21 12h-8"/><path d="M21 6H8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/>',
+  split:
+    '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/>',
+  wrench:
+    '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
 };
 
 // Sparkle is filled, so it lives apart from the stroked set.
@@ -123,6 +130,106 @@ function Sidebar() {
   );
 }
 
+// Session-tree rows for the `/tree` navigator (right dock). A linear spine of the
+// current thread, ending on the active leaf, plus one forked line branched off it.
+type TreeNodeData = {
+  role: keyof typeof PATHS;
+  label: string;
+  preview: string;
+  tools?: boolean;
+  active?: boolean;
+};
+
+const TREE_NODES: TreeNodeData[] = [
+  { role: "user", label: "User", preview: "Add a health-check endpoint to the server" },
+  { role: "bot", label: "Agent", preview: "Adding a GET /healthz route", tools: true },
+  { role: "wrench", label: "Tool", preview: "Edit  server.ts" },
+  { role: "bot", label: "Agent", preview: "Endpoint is live, returns { ok: true }", active: true },
+];
+
+const TREE_BRANCH: TreeNodeData = {
+  role: "bot",
+  label: "Agent",
+  preview: "Explore: add rate limiting",
+};
+
+function TreeNode({ node }: { node: TreeNodeData }) {
+  return (
+    <div className={node.active ? "aw-tnode aw-tnode-active" : "aw-tnode"}>
+      {node.active && <span className="aw-tnode-bar" aria-hidden />}
+      <Ic name={node.role} size={13} className="aw-tnode-icon" />
+      <span className="aw-tnode-body">
+        <span className="aw-tnode-top">
+          <span className="aw-tnode-role">{node.label}</span>
+          {node.tools && <span className="aw-tnode-tools">+tools</span>}
+          {node.active && <span className="aw-tnode-badge">active</span>}
+        </span>
+        <span className="aw-tnode-preview">{node.preview}</span>
+      </span>
+      {node.active && (
+        <span className="aw-tnode-branchbtn">
+          <Ic name="split" size={11} />
+          Branch
+        </span>
+      )}
+    </div>
+  );
+}
+
+// The tree spine + one branched child (indented, with a connector), shared by the
+// hero dock and the standalone beat.
+function TreeList() {
+  return (
+    <div className="aw-tree">
+      {TREE_NODES.map((n) => (
+        <TreeNode key={n.preview} node={n} />
+      ))}
+      <div className="aw-tbranch">
+        <TreeNode node={TREE_BRANCH} />
+      </div>
+    </div>
+  );
+}
+
+const TREE_FILTERS = ["Default", "No tools", "User", "Labeled", "All"];
+
+// The right-side `/tree` dock as it sits open beside a thread in the hero window.
+function TreeDock() {
+  return (
+    <aside className="aw-dock" aria-hidden="true">
+      <div className="aw-dock-head">
+        <div className="aw-dock-titlerow">
+          <Ic name="listTree" size={14} className="aw-dock-icon" />
+          <span className="aw-dock-title">Tree</span>
+          <span className="aw-dock-tools">
+            <span className="aw-winbtn">
+              <Ic name="maximize" size={13} />
+            </span>
+            <span className="aw-winbtn">
+              <Ic name="x" size={14} />
+            </span>
+          </span>
+        </div>
+        <p className="aw-dock-sub">
+          <span className="aw-dock-sub-lead">Branch a new line of thought</span> from
+          any point.
+        </p>
+        <div className="aw-dock-filters">
+          {TREE_FILTERS.map((f, i) => (
+            <span
+              key={f}
+              className={i === 0 ? "aw-dfilter aw-dfilter-active" : "aw-dfilter"}
+            >
+              {f}
+            </span>
+          ))}
+        </div>
+      </div>
+      <TreeList />
+    </aside>
+  );
+}
+
 // The composer's bottom pill row, where the model selector actually lives.
 function Composer() {
   return (
@@ -181,7 +288,7 @@ export function AppWindow() {
     <div
       className="appwin appwin-hero"
       role="img"
-      aria-label="The Hoy desktop app: a project sidebar of threads on the left, a title bar showing the hoy project on the main branch, and an open thread where the user asks to add a health-check endpoint. The agent shows a collapsed reasoning line, streams a reply with an inline Edit tool call and diff on server.ts, and a composer at the bottom with the deepseek-v4 model selected. A status bar shows context usage and cost."
+      aria-label="The Hoy desktop app: a project sidebar of threads on the left, a title bar showing the hoy project on the main branch, and an open thread where the user asks to add a health-check endpoint. The agent shows a collapsed reasoning line, streams a reply with an inline Edit tool call and diff on server.ts, and a composer at the bottom with the deepseek-v4 model selected. On the right, the Tree navigator is open, listing the thread's turns with the active leaf highlighted and a branched line below it. A status bar shows context usage and cost."
     >
       <div className="aw-main" aria-hidden="true">
         <Sidebar />
@@ -264,6 +371,8 @@ export function AppWindow() {
 
           <Composer />
         </div>
+
+        <TreeDock />
       </div>
 
       <div className="aw-status" aria-hidden="true">
@@ -336,6 +445,64 @@ export function ToolCallsBeat() {
           <span className="caret" />
         </p>
       </div>
+    </div>
+  );
+}
+
+export function TreeBeat() {
+  return (
+    <div
+      className="appwin appwin-beat"
+      role="img"
+      aria-label="Hoy's Tree navigator: the thread's turns listed as a spine, each labeled by role, with the active leaf highlighted and one line branched off it into a separate exploration."
+    >
+      <div className="aw-cap" aria-hidden="true">
+        <Ic name="listTree" size={14} className="aw-cap-tree-icon" />
+        Tree
+      </div>
+      <div className="aw-beat-body aw-beat-tree" aria-hidden="true">
+        <TreeList />
+      </div>
+    </div>
+  );
+}
+
+const FLEET: { title: string; status: "done" | "running" | "queued" }[] = [
+  { title: "Explore: map the auth flow", status: "done" },
+  { title: "Edit: extract the route guard", status: "running" },
+  { title: "Test: cover the new guard", status: "running" },
+  { title: "Review: read the final diff", status: "queued" },
+];
+
+const FLEET_STATUS: Record<(typeof FLEET)[number]["status"], string> = {
+  done: "done",
+  running: "running",
+  queued: "queued",
+};
+
+export function FleetBeat() {
+  return (
+    <div
+      className="appwin appwin-beat"
+      role="img"
+      aria-label="Hoy's FleetView: a plan handed off to a team of agents running in parallel. One has finished mapping the auth flow, two are editing and testing, and one is queued to review the diff."
+    >
+      <div className="aw-cap aw-cap-thread" aria-hidden="true">
+        <Sparkle size={13} className="aw-fleet-spark" />
+        FleetView
+        <span className="aw-fleet-roll">2 running &middot; 1 done &middot; 1 queued</span>
+      </div>
+      <ul className="aw-fleet-list" aria-hidden="true">
+        {FLEET.map((m) => (
+          <li key={m.title} className="aw-fleet-item">
+            <span className={`aw-fleet-dot aw-fleet-${m.status}`} />
+            <span className="aw-fleet-title">{m.title}</span>
+            <span className={`aw-fleet-tag aw-fleet-tag-${m.status}`}>
+              {FLEET_STATUS[m.status]}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

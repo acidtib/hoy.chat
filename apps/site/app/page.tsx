@@ -11,6 +11,8 @@ import {
   AppWindow,
   SidebarBeat,
   ToolCallsBeat,
+  TreeBeat,
+  FleetBeat,
   ModelBeat,
 } from "@/components/AppMock";
 import { getLatestVersion } from "@/lib/releases";
@@ -108,9 +110,9 @@ export default async function Home() {
               <p className="lead">
                 No cloud account, no sign-up, no middleman. Hoy drives the Pi
                 agent right on your machine, your API key never leaves your disk,
-                and nothing routes through a server we run. And it is built to go
-                further: hand off long-running goals, steer from anywhere, run
-                more than one agent at once.
+                and nothing routes through a server we run. And it goes further:
+                branch any turn into a new line of thought, or hand a goal to a
+                whole team of agents working at once.
               </p>
             </div>
 
@@ -139,6 +141,35 @@ export default async function Home() {
               </div>
               <RevealOnScroll className="beat-visual">
                 <ToolCallsBeat />
+              </RevealOnScroll>
+            </div>
+
+            <div className="beat">
+              <div className="beat-copy">
+                <h3 className="heading">Changed your mind? Branch it.</h3>
+                <p className="lead">
+                  Every turn is a fork in the road. Open the tree, pick any point,
+                  and start a fresh line from there, the original thread untouched.
+                  Try a different approach without losing the one you had.
+                </p>
+              </div>
+              <RevealOnScroll className="beat-visual">
+                <TreeBeat />
+              </RevealOnScroll>
+            </div>
+
+            <div className="beat beat-reverse">
+              <div className="beat-copy">
+                <h3 className="heading">One agent, or a whole team.</h3>
+                <p className="lead">
+                  Hand off a plan and Hoy fans it out across agents that work in
+                  parallel, one exploring, one editing, one testing, while
+                  FleetView tracks every one of them in a single view. Steer, or
+                  let them run.
+                </p>
+              </div>
+              <RevealOnScroll className="beat-visual">
+                <FleetBeat />
               </RevealOnScroll>
             </div>
 
