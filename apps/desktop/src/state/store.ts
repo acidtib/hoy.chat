@@ -48,6 +48,7 @@ import {
   type Delivery,
 } from "./delivery";
 import { MAX_SUBAGENT_DEPTH, MAX_CONCURRENT_AGENTS } from "./limits";
+import { GOAL_DEFAULT_CAP_TURNS, parseGoalCommand } from "./goal";
 import type { ThreadGoal } from "./goal";
 import type {
   AgentEvent,
@@ -544,6 +545,22 @@ interface SessionStore {
   // (usePrefsStore.autoCompaction) is the source of truth, applied to each
   // session on spawn; this only reaches sessions that are already live.
   setAutoCompaction: (enabled: boolean) => Promise<void>;
+  // Goal Mode (HOY-263): builtin /goal commands, intercepted in submitPrompt the
+  // same way /compact is, so none of these ever round-trip through Pi.
+  // Starts (or replaces) the thread's goal and kicks off the loop by sending
+  // `condition` as a normal prompt (spawns the session, applies permission
+  // mode/auto-compaction as usual).
+  setGoal: (threadId: string, condition: string) => Promise<void>;
+  // Flips an active goal to paused. Does not abort an in-flight turn.
+  pauseGoal: (threadId: string) => void;
+  // Re-arms a paused/capped goal to active and sends a continuation prompt.
+  resumeGoal: (threadId: string) => Promise<void>;
+  // Marks the goal cleared and removes it from the thread. Does not abort an
+  // in-flight turn.
+  clearGoal: (threadId: string) => void;
+  // Surfaces the goal's condition/status/turns/tokens/elapsed/lastReason as a
+  // notice (the same transient notice mechanism /compact's result uses).
+  showGoalStatus: (threadId: string) => void;
   setThreadSessionIdInternal: (threadId: string, sessionId: string) => void;
 }
 
@@ -1230,6 +1247,33 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return;
     }
 
+    // Hoy built-in /goal (HOY-263): same shape as /compact above -- intercept
+    // before the prompt path so "/goal ...", "/goal pause", etc. never reach Pi
+    // and never append turns of their own. parseGoalCommand is the single
+    // source of truth for what counts as a /goal subcommand; a non-goal "/"
+    // message (including "/goalish" typos) falls through unchanged.
+    const goalCommand = parseGoalCommand(text);
+    if (goalCommand) {
+      switch (goalCommand.kind) {
+        case "set":
+          await get().setGoal(threadId, goalCommand.condition);
+          break;
+        case "pause":
+          get().pauseGoal(threadId);
+          break;
+        case "resume":
+          await get().resumeGoal(threadId);
+          break;
+        case "clear":
+          get().clearGoal(threadId);
+          break;
+        case "status":
+          get().showGoalStatus(threadId);
+          break;
+      }
+      return;
+    }
+
     const hasImages = !!images && images.length > 0;
     if (!text && !hasImages && contexts.length === 0) return;
 
@@ -1466,6 +1510,97 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     } finally {
       set((s) => ({ compacting: { ...s.compacting, [threadId]: false } }));
     }
+  },
+
+  // Goal Mode (HOY-263) command actions. Dispatched from submitPrompt's /goal
+  // intercept above; none of these send anything to Pi except via the normal
+  // submitPrompt path (setGoal's kickoff prompt, resumeGoal's continuation).
+  setGoal: async (threadId, condition) => {
+    if (!findThread(get().projects, threadId)) return;
+    // tokensBaseline anchors the goal's usage delta to the thread's current
+    // token total (the same per-thread counter the context bar reads via
+    // stats[threadId].tokens.total, kept fresh by refreshStats/getSessionStats)
+    // so nextGoalAction's tokensUsed reflects only usage since the goal started.
+    const tokensBaseline = get().stats[threadId]?.tokens.total ?? 0;
+    const goal: ThreadGoal = {
+      condition,
+      status: "active",
+      turns: 0,
+      tokensBaseline,
+      tokensUsed: 0,
+      startedAt: Date.now(),
+      capTurns: GOAL_DEFAULT_CAP_TURNS,
+    };
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({ ...th, goal })),
+    }));
+    pushNotice(threadId, `Goal set: "${condition}"`, "info");
+    // Sent through the normal path so session spawn, permission mode, and
+    // auto-compaction all apply exactly as they would for any other prompt.
+    // Awaited so submitPrompt's own promise (and thus the /goal intercept
+    // above) only resolves once this kickoff turn is actually underway.
+    await get().submitPrompt(threadId, condition);
+  },
+
+  pauseGoal: (threadId) => {
+    const goal = findThread(get().projects, threadId)?.thread.goal;
+    if (!goal) return;
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) =>
+        th.goal ? { ...th, goal: { ...th.goal, status: "paused" } } : th,
+      ),
+    }));
+    pushNotice(threadId, "Goal paused.", "info");
+  },
+
+  resumeGoal: async (threadId) => {
+    const goal = findThread(get().projects, threadId)?.thread.goal;
+    if (!goal || (goal.status !== "paused" && goal.status !== "capped")) return;
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) =>
+        th.goal ? { ...th, goal: { ...th.goal, status: "active" } } : th,
+      ),
+    }));
+    pushNotice(threadId, "Goal resumed.", "info");
+    // Task 5 refines the continuation text/loop: the done handler there drives
+    // the full evaluate/continue cycle (evaluator call, re-arming on
+    // "continue", capping on turn limit). For now, re-arm to active above and
+    // send a short continuation prompt through the normal path so resume
+    // visibly continues the work; Task 5 can replace this prompt text.
+    await get().submitPrompt(
+      threadId,
+      `Continue working toward the goal: ${goal.condition}`,
+    );
+  },
+
+  clearGoal: (threadId) => {
+    const goal = findThread(get().projects, threadId)?.thread.goal;
+    if (!goal) return;
+    // status: "cleared" mirrors restoreGoal's drop semantics (a cleared goal
+    // is never restored), so removing the field outright is equivalent to,
+    // and simpler than, persisting a cleared goal.
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({
+        ...th,
+        goal: undefined,
+      })),
+    }));
+    pushNotice(threadId, "Goal cleared.", "info");
+  },
+
+  showGoalStatus: (threadId) => {
+    const goal = findThread(get().projects, threadId)?.thread.goal;
+    if (!goal) {
+      pushNotice(threadId, "No goal set for this thread.", "info");
+      return;
+    }
+    const elapsed = formatElapsed(Date.now() - goal.startedAt);
+    const reason = goal.lastReason ? ` - ${goal.lastReason}` : "";
+    pushNotice(
+      threadId,
+      `Goal (${goal.status}): "${goal.condition}" - turn ${goal.turns}/${goal.capTurns}, ${goal.tokensUsed.toLocaleString()} tokens, ${elapsed}${reason}`,
+      "info",
+    );
   },
 
   setAutoCompaction: async (enabled) => {
@@ -2710,6 +2845,17 @@ function restoreGoal(goal: ThreadGoal | undefined): ThreadGoal | undefined {
     tokensBaseline: goal.tokensBaseline + goal.tokensUsed,
     tokensUsed: 0,
   };
+}
+
+// Formats a millisecond duration for the /goal status notice, e.g. "3m 12s".
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  const hours = Math.floor(minutes / 60);
+  if (hours === 0) return `${minutes}m ${seconds}s`;
+  return `${hours}h ${minutes % 60}m`;
 }
 
 function truncateTitle(text: string): string {
