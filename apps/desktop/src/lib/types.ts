@@ -47,6 +47,10 @@ export type AgentEvent =
       estimatedTokensAfter?: number;
     }
   | { kind: "error"; message: string }
+  // HOY-282: the sidecar rebound to a new session file (fork/clone). The new file
+  // path is not carried; read it via getSessionStats. Only arrives when a
+  // streaming sink is attached (a mid-turn switch).
+  | { kind: "sessionStart"; reason: string; previousSessionFile?: string }
   | { kind: "aborted" }
   // HOY-300: the agent tool blocked on ctx.ui.input for a synchronous subagent
   // spawn. The renderer spawns the child and remembers requestId so it can

@@ -133,6 +133,7 @@ follow-up.
 | `auto_retry_end` | unused | |
 | `agent_start`, `turn_start/end`, `message_start` | unused | |
 | `queue_update` | used (HOY-205) | Mapped to the `QueueUpdate` AgentEvent; the queued-message chips consume it (HOY-218) |
+| `session_start` | used (HOY-282) | Mapped to `SessionStart` (reason + previousSessionFile) when the sidecar rebinds after fork/clone; the store refreshes stats to repoint `Thread.sessionFile`. Only over the streaming sink (a mid-turn switch); a fork RPC issued while idle has no sink, so the branch action reads the new file via `get_session_stats` instead. The new file path is not in the event |
 | `extension_error` | unused | |
 | `project_trust` | n/a | Extension event only (0.79.0), not in the RPC stream; trust defaults to trusted since the sidecar sets no `projectTrustContextFactory` |
 | `session_info_changed` | n/a | Extension event only (0.80.3), not in the RPC stream; would fire on session name changes |

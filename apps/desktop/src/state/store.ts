@@ -2412,6 +2412,16 @@ async function streamPromptOnThread(
         pushNotice(threadId, `Compacted ${before}`, "info");
       }
       void useSessionStore.getState().refreshStats(threadId);
+    } else if (event.kind === "sessionStart") {
+      // The sidecar rebound to a new session file (fork/clone, HOY-282). The
+      // event omits the new path, so refresh stats to repoint Thread.sessionFile
+      // (getSessionStats carries it), and refresh the tree if this thread's
+      // navigator is open.
+      void useSessionStore.getState().refreshStats(threadId);
+      const s = useSessionStore.getState();
+      if (s.rightDock === "tree" && s.activeThreadId === threadId) {
+        void s.refreshSessionTree(threadId);
+      }
     }
   };
 

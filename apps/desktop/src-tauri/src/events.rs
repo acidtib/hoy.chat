@@ -130,6 +130,20 @@ pub enum AgentEvent {
         )]
         estimated_tokens_after: Option<u64>,
     },
+    // Pi's session_start: the sidecar rebound to a different session file, e.g.
+    // after a fork/clone branches to a new file (HOY-282). `reason` is Pi's
+    // ("fork" | "clone" | "resume" | "new" | ...); `previousSessionFile` is the
+    // file left behind. The NEW file path is NOT in this event; read it via
+    // get_session_stats. Only reaches the renderer when a streaming sink is
+    // attached (a mid-turn switch); a fork RPC issued while idle has no sink.
+    SessionStart {
+        reason: String,
+        #[serde(
+            rename = "previousSessionFile",
+            skip_serializing_if = "Option::is_none"
+        )]
+        previous_session_file: Option<String>,
+    },
     Error {
         message: String,
     },

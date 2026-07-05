@@ -845,6 +845,19 @@ fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
             steering: string_array(value.get("steering")),
             follow_up: string_array(value.get("followUp")),
         }),
+        // The sidecar rebound to a new session file (fork/clone, HOY-282). Carries
+        // reason + the previous file; the new file is read via get_session_stats.
+        "session_start" => Some(AgentEvent::SessionStart {
+            reason: value
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            previous_session_file: value
+                .get("previousSessionFile")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        }),
         _ => None,
     }
 }
@@ -1789,6 +1802,35 @@ mod live_tests {
                 assert_eq!(tokens_before, None);
             }
             other => panic!("expected CompactionEnd, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn session_start_maps_reason_and_previous_file() {
+        let value = json!({ "reason": "fork", "previousSessionFile": "/s/old.jsonl" });
+        match map_pi_event(Some("session_start"), &value) {
+            Some(AgentEvent::SessionStart {
+                reason,
+                previous_session_file,
+            }) => {
+                assert_eq!(reason, "fork");
+                assert_eq!(previous_session_file.as_deref(), Some("/s/old.jsonl"));
+            }
+            other => panic!("expected SessionStart, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn session_start_without_previous_file_is_none() {
+        match map_pi_event(Some("session_start"), &json!({ "reason": "new" })) {
+            Some(AgentEvent::SessionStart {
+                reason,
+                previous_session_file,
+            }) => {
+                assert_eq!(reason, "new");
+                assert!(previous_session_file.is_none());
+            }
+            other => panic!("expected SessionStart, got {other:?}"),
         }
     }
 
