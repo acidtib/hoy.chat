@@ -5,6 +5,7 @@ import { mockIpcModule } from "./ipcMock";
 import {
   recordSubagentRequest,
   takeSubagentRequest,
+  __resetSubagentRequests,
 } from "@/state/subagent-requests";
 
 // HOY-300 Task 4: on the child's `done`, the store answers the parent's
@@ -83,6 +84,7 @@ function child(): Thread {
 beforeEach(() => {
   respondPermission.mockReset();
   respondPermission.mockResolvedValue();
+  __resetSubagentRequests();
   seed();
 });
 

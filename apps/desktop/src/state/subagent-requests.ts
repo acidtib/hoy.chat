@@ -36,3 +36,10 @@ export function takeChildRequestsForParent(parentThreadId: string): string[] {
   for (const id of ids) subagentRequests.delete(id);
   return ids;
 }
+
+// Test-only: clear the module-level map between test files. The map is a real
+// singleton in production (one pending-request table per running app), so tests
+// that record entries must reset it in beforeEach to stay isolated (HOY-300).
+export function __resetSubagentRequests(): void {
+  subagentRequests.clear();
+}

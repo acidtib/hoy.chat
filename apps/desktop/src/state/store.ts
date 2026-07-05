@@ -2057,6 +2057,11 @@ function purgeFromLimiter(threadId: string): void {
     }
     return patch;
   });
+  // HOY-300: if this torn-down thread was a synchronous child still awaiting
+  // (closePanel/archive/delete killed its sidecar before its `done`), drop its
+  // pending-request mapping so it can't leak. Its blocked parent request is left
+  // for Rust's cancel_pending_ui / a stale-id no-op; nothing else reads the entry.
+  takeSubagentRequest(threadId);
 }
 
 // Wire a per-turn Channel to `threadId` and stream a prompt over it. Shared by

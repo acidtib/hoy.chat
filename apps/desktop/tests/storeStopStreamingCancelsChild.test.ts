@@ -2,7 +2,11 @@ import { beforeEach, expect, mock, test } from "bun:test";
 import type { Thread } from "@/lib/types";
 
 import { mockIpcModule } from "./ipcMock";
-import { recordSubagentRequest, takeSubagentRequest } from "@/state/subagent-requests";
+import {
+  recordSubagentRequest,
+  takeSubagentRequest,
+  __resetSubagentRequests,
+} from "@/state/subagent-requests";
 
 // HOY-300 Task 7: when a parent's turn is aborted, Rust's cancel_pending_ui
 // already answers the parent's blocked ctx.ui.input as cancelled, but the
@@ -57,6 +61,7 @@ function seed(): void {
 beforeEach(() => {
   abort.mockReset();
   abort.mockResolvedValue();
+  __resetSubagentRequests();
   seed();
 });
 
@@ -82,4 +87,19 @@ test("a parent with no live child requests is unaffected (no extra abort calls)"
 
   expect(abort).toHaveBeenCalledTimes(1);
   expect(abort).toHaveBeenCalledWith("sess_ps");
+});
+
+test("tearing down a sync child (closePanel) drops its leaked request mapping", () => {
+  // HOY-300 F1: a running sync child killed before its `done` (closePanel /
+  // archive / delete all route through purgeFromLimiter) must not leak its
+  // pending-request entry.
+  recordSubagentRequest("c1", {
+    parentThreadId: "ps",
+    parentSessionId: "sess_ps",
+    requestId: "req1",
+  });
+
+  useSessionStore.getState().closePanel("c1");
+
+  expect(takeSubagentRequest("c1")).toBeUndefined();
 });

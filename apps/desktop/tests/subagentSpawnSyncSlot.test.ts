@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentEvent, Thread } from "@/lib/types";
 
 import { mockIpcModule } from "./ipcMock";
+import { __resetSubagentRequests } from "@/state/subagent-requests";
 
 // HOY-300 Task 5: a parent that issues a synchronous spawn (subagentSpawnSync)
 // is about to block on ctx.ui.input awaiting its child. If that parent is
@@ -98,6 +99,7 @@ beforeEach(() => {
   getState.mockReset();
   getState.mockResolvedValue({ model: { provider: "p", id: "m" } });
   usePrefsStore.getState().setPref("maxConcurrentAgents", 1);
+  __resetSubagentRequests();
   seed();
 });
 

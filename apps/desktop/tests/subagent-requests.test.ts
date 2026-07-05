@@ -1,10 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, expect, test } from "bun:test";
 import {
   recordSubagentRequest,
   takeSubagentRequest,
   takeChildRequestsForParent,
   frameSubagentResult,
+  __resetSubagentRequests,
 } from "@/state/subagent-requests";
+
+beforeEach(__resetSubagentRequests);
 
 test("record then take returns once, then undefined", () => {
   recordSubagentRequest("c1", { parentThreadId: "p1", parentSessionId: "s1", requestId: "r1" });
