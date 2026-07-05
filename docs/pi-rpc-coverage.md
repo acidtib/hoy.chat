@@ -16,8 +16,8 @@ No breaking changes for Hoy. Verified against the installed 0.80.3 source:
   `rpc-types.d.ts` (absent from 0.80.2). Landed as a pure read surface this bump:
   Rust commands (`commands.rs`), typed `invoke` wrappers (`lib/ipc.ts`), and TS
   types (`lib/types.ts`) mirroring Pi's `SessionEntry` / `SessionTreeNode`. The
-  `/tree` navigator UI that consumes them is a follow-up; the `fork`/`clone`/
-  `get_fork_messages` write side stays unused.
+  `/tree` navigator UI (HOY-280) and the `fork`/`clone`/`get_fork_messages` write
+  side (HOY-281) are now wired on top of this read surface.
 - **Edit-tool promptGuidelines byte-identical** to 0.80.2 (`core/tools/{read,
   edit,write}.js`), so the verbatim block in `hoy-system-prompt.ts` is still
   accurate. Docs-block GitHub tag repointed to `v0.80.3`.
@@ -106,9 +106,9 @@ follow-up.
 | `abort_retry` | Cancel a pending retry | unused | |
 | `new_session` | Fresh session, optional `parentSession` | unused | Hoy respawns the sidecar per thread instead |
 | `switch_session` | Point the running agent at another session file | unused | Same reason |
-| `fork` | New session file from a previous entry (by `entryId`) | unused | Session tree/branching feature gap |
-| `clone` | Duplicate active branch into a new file | unused | |
-| `get_fork_messages` | Messages of a fork point | unused | |
+| `fork` | New session file from a previous entry (by `entryId`) | used (HOY-281) | `commands.rs` `fork_session`; typed `forkSession` wrapper -> `{text, cancelled}`. Rebinds the sidecar to the branch; read the new file via `get_session_stats` |
+| `clone` | Duplicate active branch into a new file | used (HOY-281) | `commands.rs` `clone_session`; `cloneSession` wrapper -> `{cancelled}` |
+| `get_fork_messages` | Messages of a fork point | used (HOY-281) | `commands.rs` `get_fork_messages`; `getForkMessages` wrapper -> `{messages:[{entryId,text}]}` |
 | `get_last_assistant_text` | Last assistant message text | unused | Would back a copy action |
 | `set_session_name` | Name/rename the session | unused | Backend for deferred rename polish |
 | `export_html` | Export session to static HTML | unused | Cheap win: one call plus a save dialog |

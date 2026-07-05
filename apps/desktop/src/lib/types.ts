@@ -372,6 +372,24 @@ export interface SessionTree {
   leafId: string | null;
 }
 
+// Branch RPC results (HOY-281). fork returns the forked user message text (for
+// composer prefill) and a cancelled flag; clone just a cancelled flag;
+// get_fork_messages the forkable user-message entries for a picker.
+export interface ForkResult {
+  text?: string;
+  cancelled: boolean;
+}
+export interface CloneResult {
+  cancelled: boolean;
+}
+export interface ForkMessage {
+  entryId: string;
+  text: string;
+}
+export interface ForkMessages {
+  messages: ForkMessage[];
+}
+
 // Which view the ThreadView's right-side dock is showing (HOY-280). The dock is
 // a reusable right-sidebar host, Zed-style; the `/tree` navigator is the first
 // tenant. A git tooling panel is a planned second view, so this is a union, not

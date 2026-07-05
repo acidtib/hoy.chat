@@ -402,6 +402,50 @@ pub async fn get_tree(
     unwrap_response(response, "get_tree")
 }
 
+// Branch a new session from an earlier entry (HOY-281). `entry_id` must be a user
+// message entry; Pi truncates before it, writes a NEW session file (the original
+// is preserved on disk with `parentSession` set), and rebinds THIS sidecar to the
+// branch. So after this returns, the session's file has changed (read it back with
+// get_session_stats). Returns `{ text, cancelled }` where `text` is the forked
+// user message (for composer prefill).
+#[tauri::command]
+pub async fn fork_session(
+    session_id: String,
+    entry_id: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<Value, String> {
+    let process = manager.get(&session_id)?;
+    let response = process
+        .request(json!({ "type": "fork", "entryId": entry_id }))
+        .await?;
+    unwrap_response(response, "fork")
+}
+
+// Duplicate the active branch into a new session file (HOY-281). Like fork but at
+// the current leaf (`position: "at"`), so the clone includes the leaf entry.
+// Rebinds this sidecar to the clone. Returns `{ cancelled }`.
+#[tauri::command]
+pub async fn clone_session(
+    session_id: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<Value, String> {
+    let process = manager.get(&session_id)?;
+    let response = process.request(json!({ "type": "clone" })).await?;
+    unwrap_response(response, "clone")
+}
+
+// List the session's forkable user messages (HOY-281): `{ messages: [{ entryId,
+// text }] }`. Backs a Pi-native fork picker; feed a chosen `entryId` to fork.
+#[tauri::command]
+pub async fn get_fork_messages(
+    session_id: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<Value, String> {
+    let process = manager.get(&session_id)?;
+    let response = process.request(json!({ "type": "get_fork_messages" })).await?;
+    unwrap_response(response, "get_fork_messages")
+}
+
 // Permanently delete a thread's transcript JSONL (thread delete). Guarded to the
 // branded sessions dir so a stray path can never remove arbitrary files. A
 // missing file is treated as success (already gone).
@@ -821,6 +865,62 @@ mod tests {
         assert_eq!(
             unwrap_response(response, "get_entries"),
             Err("no session".into())
+        );
+    }
+
+    // fork / clone / get_fork_messages (HOY-281) are pure passthroughs like
+    // get_tree: pin the response `data` shapes and the error path, since the
+    // commands themselves need a live sidecar to exercise.
+    #[test]
+    fn unwrap_response_passes_fork_text_and_cancelled() {
+        let response = json!({
+            "type": "response",
+            "command": "fork",
+            "success": true,
+            "data": { "text": "make it faster", "cancelled": false },
+        });
+        let data = unwrap_response(response, "fork").unwrap();
+        assert_eq!(data.get("text").unwrap(), "make it faster");
+        assert_eq!(data.get("cancelled").unwrap(), false);
+    }
+
+    #[test]
+    fn unwrap_response_passes_clone_cancelled() {
+        let response = json!({
+            "type": "response",
+            "command": "clone",
+            "success": true,
+            "data": { "cancelled": true },
+        });
+        let data = unwrap_response(response, "clone").unwrap();
+        assert_eq!(data.get("cancelled").unwrap(), true);
+    }
+
+    #[test]
+    fn unwrap_response_passes_fork_messages_list() {
+        let response = json!({
+            "type": "response",
+            "command": "get_fork_messages",
+            "success": true,
+            "data": { "messages": [{ "entryId": "e1", "text": "hi" }] },
+        });
+        let data = unwrap_response(response, "get_fork_messages").unwrap();
+        let messages = data.get("messages").unwrap().as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].get("entryId").unwrap(), "e1");
+    }
+
+    #[test]
+    fn unwrap_response_surfaces_fork_error() {
+        let response = json!({
+            "type": "response",
+            "command": "fork",
+            "success": false,
+            "error": "Invalid entry ID for forking",
+        });
+        assert_eq!(
+            unwrap_response(response, "fork"),
+            Err("Invalid entry ID for forking".into())
         );
     }
 

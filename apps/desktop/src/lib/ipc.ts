@@ -15,6 +15,9 @@ import type {
   ModelInfo,
   ModelRef,
   OAuthEvent,
+  CloneResult,
+  ForkMessages,
+  ForkResult,
   PathEntry,
   PermissionMode,
   PiState,
@@ -226,6 +229,29 @@ export function getEntries(
 // the current leafId. Pairs with getEntries for the future /tree navigator.
 export function getTree(sessionId: string): Promise<SessionTree> {
   return invoke<SessionTree>("get_tree", { sessionId });
+}
+
+// Branch a new session from a user-message entry (HOY-281). Pi writes a new
+// session file (original preserved, `parentSession` set) and rebinds THIS
+// sidecar to the branch, so the session's file changes — read it back with
+// getSessionStats afterwards. `text` is the forked user message (composer
+// prefill); `cancelled` is true if the user aborted a confirm.
+export function forkSession(
+  sessionId: string,
+  entryId: string,
+): Promise<ForkResult> {
+  return invoke<ForkResult>("fork_session", { sessionId, entryId });
+}
+
+// Duplicate the active branch into a new session file (HOY-281). Like fork at
+// the current leaf. Rebinds this sidecar to the clone.
+export function cloneSession(sessionId: string): Promise<CloneResult> {
+  return invoke<CloneResult>("clone_session", { sessionId });
+}
+
+// List the session's forkable user messages (HOY-281), for a fork picker.
+export function getForkMessages(sessionId: string): Promise<ForkMessages> {
+  return invoke<ForkMessages>("get_fork_messages", { sessionId });
 }
 
 export function deleteSessionFile(sessionFile: string): Promise<void> {
