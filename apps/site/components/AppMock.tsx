@@ -429,9 +429,9 @@ export function AppWindow() {
           </span>
         </div>
         <div className="aw-status-main">
-          <span>ctx 18.2k/200k &middot; 9%</span>
+          <span>ctx 40k/1000k &middot; 4%</span>
           <span className="aw-status-div" />
-          <span>$0.0042</span>
+          <span>$0.0070</span>
         </div>
         <div className="aw-status-right">
           <span className="aw-statbtn aw-statbtn-on">
