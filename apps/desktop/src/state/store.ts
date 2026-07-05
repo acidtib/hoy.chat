@@ -2439,14 +2439,22 @@ async function maybeContinueGoal(
         }
         // Re-read the goal after the await: it may have been cleared, paused,
         // replaced, or had its condition changed while the evaluator ran. Abort
-        // the continuation unless it is still active with the SAME condition, so
-        // a stale verdict never steers a goal the user has since changed.
+        // the continuation unless it is the SAME goal object we captured at the
+        // top of this call. Object identity is the load-bearing check: every
+        // user pause/resume/clear/replace goes through patchThread's immutable
+        // goal-patch path, which produces a NEW goal object, so identity catches
+        // a pause+resume interleaving (resume already sent its own continuation)
+        // that field equality would miss -- the resumed goal is active with the
+        // same condition, yet a different object. An uninterrupted loop keeps the
+        // same reference and proceeds. The field checks are kept for clarity and
+        // to short-circuit the cleared/paused cases readably.
         const current = findThread(
           useSessionStore.getState().projects,
           threadId,
         )?.thread.goal;
         if (
           !current ||
+          current !== goal ||
           current.status !== "active" ||
           current.condition !== goal.condition
         ) {
@@ -2454,7 +2462,14 @@ async function maybeContinueGoal(
         }
         const outcome = applyEvaluation(current, res);
         if (outcome.type === "met") {
-          patchGoal(threadId, { status: "met", lastReason: outcome.reason });
+          // Bump turns onto the met transition too (Fix 3): a goal met on its
+          // Nth turn should read `turn N/cap`, not `N-1/cap`. Same action.turns
+          // the continue arm below persists; met termination is unchanged.
+          patchGoal(threadId, {
+            status: "met",
+            turns: action.turns,
+            lastReason: outcome.reason,
+          });
           pushNotice(threadId, `Goal met: ${outcome.reason}`, "info");
           return;
         }

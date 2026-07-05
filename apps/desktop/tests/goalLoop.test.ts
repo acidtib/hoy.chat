@@ -117,8 +117,9 @@ beforeEach(() => {
 });
 
 describe("goal continuation loop in the done handler (HOY-263)", () => {
-  test("evaluate -> met: goal goes met and no continuation is sent", async () => {
-    seed({ status: "active" });
+  test("evaluate -> met: goal goes met, turns is bumped, and no continuation is sent", async () => {
+    // Met on its first turn: turns must read 1, not 0 (Fix 3).
+    seed({ status: "active", turns: 0 });
     evaluateGoal.mockResolvedValue({ met: true, reason: "all green" });
     const emit = await startTurn();
 
@@ -128,6 +129,7 @@ describe("goal continuation loop in the done handler (HOY-263)", () => {
 
     expect(evaluateGoal).toHaveBeenCalledTimes(1);
     expect(goalOf()?.status).toBe("met");
+    expect(goalOf()?.turns).toBe(1);
     expect(goalOf()?.lastReason).toBe("all green");
     expect(continuationSends()).toEqual([]);
   });
@@ -264,6 +266,41 @@ describe("goal continuation loop in the done handler (HOY-263)", () => {
     await flush();
 
     // Exactly one continuation reached the send path.
+    expect(continuationSends()).toHaveLength(1);
+  });
+
+  test("pause+resume during a held evaluator sends exactly one continuation (identity guard)", async () => {
+    seed({ status: "active", condition: "tests pass" });
+    // Hold the evaluator open so the loop parks mid-continuation with
+    // continuationPending held and the goal still active (the pausable window).
+    let resolveEval: (v: GoalEvaluation) => void = () => {};
+    evaluateGoal.mockReturnValue(
+      new Promise<GoalEvaluation>((r) => {
+        resolveEval = r;
+      }),
+    );
+    const emit = await startTurn();
+
+    // Drive the turn's done: the loop reaches the held-open evaluator and parks.
+    emit({ kind: "done" });
+    await flush();
+    expect(evaluateGoal).toHaveBeenCalledTimes(1);
+
+    // User pauses then resumes inside that window. resumeGoal re-arms the goal
+    // to active and sends continuation A itself (through a NEW goal object).
+    useSessionStore.getState().pauseGoal("t1");
+    await useSessionStore.getState().resumeGoal("t1");
+    expect(goalOf()?.status).toBe("active");
+    expect(continuationSends()).toHaveLength(1);
+
+    // The parked evaluator now resolves. Its verdict targets the ORIGINAL goal
+    // object, which pause+resume replaced (a new object per immutable patch), so
+    // the loop's identity guard suppresses continuation B rather than double-send.
+    resolveEval({ met: false, reason: "not yet" });
+    await flush();
+    await flush();
+
+    // Still exactly one continuation: B was suppressed, no throw escaped.
     expect(continuationSends()).toHaveLength(1);
   });
 
