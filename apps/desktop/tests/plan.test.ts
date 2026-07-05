@@ -149,6 +149,9 @@ describe("detectPlanIntent", () => {
     "plan this out before coding",
     "switch to plan mode",
     "Plan the auth system end to end",
+    // "directly"/"direction" must not be swallowed by the plan-dir(ectory) guard.
+    "make a plan for the refactor and give the plan directly",
+    "plan the migration directly",
   ])("fires on plan request: %j", (msg) => {
     expect(detectPlanIntent(msg)).toBe(true);
   });

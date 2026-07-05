@@ -149,7 +149,13 @@ export function detectPlanIntent(raw: string): boolean {
   )
     return false;
   // Negative — the plan artifact itself (the file/dir/document), not a request.
-  if (/\bplans?\s+(file|files|dir\w*|folder|document|doc|\.md)\b/.test(text))
+  // dir(ectory/ectories/s) is spelled out rather than `dir\w*` so it doesn't also
+  // swallow "plan directly"/"plan direction" and suppress a real plan request.
+  if (
+    /\bplans?\s+(file|files|dir(?:ectory|ectories|s)?|folder|document|doc|\.md)\b/.test(
+      text,
+    )
+  )
     return false;
 
   // Positive — explicit requests to produce a plan.
