@@ -57,6 +57,7 @@ import {
   type Delivery,
 } from "./delivery";
 import { MAX_SUBAGENT_DEPTH, MAX_CONCURRENT_AGENTS } from "./limits";
+import { recordSubagentRequest } from "./subagent-requests";
 import {
   applyEvaluation,
   GOAL_DEFAULT_CAP_TURNS,
@@ -273,7 +274,15 @@ function attr(value: string): string {
 
 // The spawn notify payload for a subagent (HOY-231), carried through
 // spawnChildThread and stashed in queuedPayloads while a child waits for a slot.
-type SpawnPayload = { agentId: string; subagentType: string; task: string };
+// `requestId` (HOY-300) is set for a synchronous spawn (subagentSpawnSync): the
+// parent's agent tool is blocked on this request id and expects the child's
+// result routed back to it on done.
+type SpawnPayload = {
+  agentId: string;
+  subagentType: string;
+  task: string;
+  requestId: string;
+};
 
 // Session list is keyed by sessionId from the start so multi-session is a data
 // change, not a redesign. Models, supported providers, and provider auth status
@@ -947,6 +956,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return;
     }
     const childId = shortId("t");
+    // HOY-300: remember which blocked parent request this child answers. Only a
+    // synchronous spawn (subagentSpawnSync) carries a non-empty requestId; the
+    // fire-and-forget async spawn (subagentSpawned) has nothing to answer.
+    if (payload.requestId) {
+      recordSubagentRequest(childId, {
+        parentThreadId,
+        parentSessionId: parent.sessionId!,
+        requestId: payload.requestId,
+      });
+    }
     const def = get().subagents.find((d) => d.name === payload.subagentType);
     // A type with no model inherits the parent's (closes HOY-237); thinking
     // likewise. A type with a model that fails to resolve also falls back to
@@ -2134,10 +2153,31 @@ async function streamPromptOnThread(
     // through this same helper, rather than folding it into this thread's
     // transcript.
     if (event.kind === "subagentSpawned") {
+      // Fire-and-forget spawn (async delivery, HOY-231): no blocked parent
+      // request to answer, so requestId is the empty sentinel; spawnChildThread
+      // only records a mapping when requestId is non-empty (see below).
       void useSessionStore.getState().spawnChildThread(threadId, {
         agentId: event.agentId,
         subagentType: event.subagentType,
         task: event.task,
+        requestId: "",
+      });
+      return;
+    }
+    // HOY-300: the agent tool blocked on ctx.ui.input for a synchronous spawn.
+    // The child must be able to answer the parent's blocked request once it is
+    // done, so the parent must be live (have a sessionId) to have issued it.
+    if (event.kind === "subagentSpawnSync") {
+      const parentSessionId = findThread(
+        useSessionStore.getState().projects,
+        threadId,
+      )?.thread.sessionId;
+      if (!parentSessionId) return; // parent must be live to have issued the request
+      void useSessionStore.getState().spawnChildThread(threadId, {
+        agentId: event.agentId,
+        subagentType: event.subagentType,
+        task: event.task,
+        requestId: event.requestId,
       });
       return;
     }
