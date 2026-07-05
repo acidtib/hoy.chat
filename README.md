@@ -16,6 +16,7 @@ apps/
   desktop/          Hoy Desktop: Tauri v2 shell + React/TypeScript webview
     src/            renderer (React)
     src-tauri/      Rust core (spawns and talks to Pi)
+  site/             marketing site (Next.js; separate stack, not wired into root scripts)
 packages/
   sidecar/          Pi SDK entry, compiled to a self-contained binary
     pi-src/         pinned Pi install + our branded entry (hoy-sidecar.ts)
