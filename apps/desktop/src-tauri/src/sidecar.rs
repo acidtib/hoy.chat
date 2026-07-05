@@ -1187,6 +1187,10 @@ impl SidecarManager {
         };
         let mut command_proc = std::process::Command::new(&self.bin);
         apply_sanitized_env(&mut command_proc, &self.agent_dir, &verify_cwd);
+        // `.output()` has no timeout of its own (mirroring evaluate_goal): it relies
+        // on the one-shot's INTERNAL self-termination (hoy-verify-command.ts arms an
+        // absolute failsafe that always emits JSON and exits within timeout+grace),
+        // so a hung or fork-heavy verify command can never wedge us here.
         let out = command_proc
             .env("PI_PACKAGE_DIR", &self.payload)
             .env("HOY_CODING_AGENT_DIR", &self.agent_dir)

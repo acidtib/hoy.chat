@@ -21,6 +21,20 @@
 // introduce any new generic exec surface. getShellConfig also handles the legacy
 // WSL bash `commandTransport: "stdin"` case, which we mirror.
 //
+// TEARDOWN / SELF-TERMINATION: the command a user passes (`bun test`, `cargo
+// test`) forks grandchildren that inherit our stdout/stderr pipes, so killing
+// only the direct bash child leaves them holding the pipe write-ends open and
+// `'close'` never fires. We therefore spawn the child DETACHED (its own process
+// group) and, on timeout, signal the whole GROUP (`process.kill(-pid, ...)`) --
+// exactly like Pi's real bash tool. SIGTERM, then SIGKILL after a grace period,
+// escalated on ACTUAL exit state (child.exitCode/signalCode), never on
+// `child.killed` (which flips true the instant a signal is DISPATCHED, so a
+// TERM-trapping command would otherwise never be force-killed). Finally, an
+// ABSOLUTE failsafe timer emits a fail-soft result and exits UNCONDITIONALLY, so
+// the one-shot ALWAYS emits parseable JSON and exits within timeout+grace no
+// matter what the child does. This is what lets Rust's `.output()` (which has no
+// timeout of its own, mirroring evaluate_goal) safely rely on us exiting.
+//
 // FAIL-SOFT PROCESS, FAIL-CLOSED GATE: this runner ALWAYS writes a parseable
 // JSON object and exits 0. A spawn failure, a timeout, or a kill emits a
 // non-zero `code` (and, for timeout/kill, `killed: true`) rather than throwing
@@ -38,38 +52,72 @@ export interface GoalVerifyResult {
 }
 
 // Hard ceiling on how long a verify command may run before we kill it. A hung
-// command must never wedge the goal loop; a kill counts as a failed gate.
-const VERIFY_TIMEOUT_MS = 120_000;
+// command must never wedge the goal loop; a kill counts as a failed gate. The
+// default is 120s; HOY_VERIFY_TIMEOUT_MS overrides it (clamped to a sane range)
+// so tests can drive a short timeout without waiting two minutes.
+const DEFAULT_VERIFY_TIMEOUT_MS = 120_000;
+const MIN_VERIFY_TIMEOUT_MS = 1_000;
+const MAX_VERIFY_TIMEOUT_MS = 600_000;
+
+function resolveTimeoutMs(): number {
+  const raw = process.env.HOY_VERIFY_TIMEOUT_MS;
+  if (!raw) return DEFAULT_VERIFY_TIMEOUT_MS;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return DEFAULT_VERIFY_TIMEOUT_MS;
+  return Math.min(MAX_VERIFY_TIMEOUT_MS, Math.max(MIN_VERIFY_TIMEOUT_MS, n));
+}
+
+// Grace after SIGTERM before we escalate to SIGKILL (mirrors execCommand), plus
+// a small margin after which the absolute failsafe force-emits and exits.
+const KILL_GRACE_MS = 5_000;
+const FAILSAFE_MARGIN_MS = 1_000;
 
 // Bound each captured stream so a chatty command cannot balloon the RPC payload
 // or the persisted card. We keep the TAIL, where failures and final status
-// surface, and prefix a marker when we drop the head.
+// surface, and prefix a marker noting how many head chars were dropped. The cap
+// is applied WHILE reading (not once at the end) so a fork bomb of output cannot
+// grow the buffer unbounded before we truncate.
 const MAX_STREAM_CHARS = 8000;
 
-function truncateTail(s: string): string {
-  if (s.length <= MAX_STREAM_CHARS) return s;
-  const tail = s.slice(s.length - MAX_STREAM_CHARS);
-  return `[... truncated ${s.length - MAX_STREAM_CHARS} chars ...]\n${tail}`;
+function capTail(s: string): string {
+  return s.length <= MAX_STREAM_CHARS ? s : s.slice(s.length - MAX_STREAM_CHARS);
 }
 
+// `buf` is already tail-capped to MAX_STREAM_CHARS; `total` is the full number of
+// chars seen so we can report an accurate dropped-count marker.
+function formatStream(buf: string, total: number): string {
+  if (total <= MAX_STREAM_CHARS) return buf;
+  return `[... truncated ${total - MAX_STREAM_CHARS} chars ...]\n${buf}`;
+}
+
+// Write the JSON result and exit 0. Uses stdout.end (not write + immediate exit)
+// so the full payload flushes on a pipe before the process goes away, and guards
+// against a double emit (normal close vs. the absolute failsafe timer).
+let emitted = false;
 function emit(result: GoalVerifyResult): never {
-  process.stdout.write(
-    JSON.stringify({
+  if (!emitted) {
+    emitted = true;
+    const json = JSON.stringify({
       code: result.code,
-      stdout: truncateTail(result.stdout),
-      stderr: truncateTail(result.stderr),
+      stdout: result.stdout,
+      stderr: result.stderr,
       killed: result.killed,
-    }),
-  );
-  process.exit(0);
+    });
+    process.exitCode = 0;
+    process.stdout.end(json, () => process.exit(0));
+  }
+  // Already emitted: do NOT write again and do NOT process.exit here (that could
+  // truncate the still-flushing first write); the pending end() callback exits.
+  return undefined as never;
 }
 
 export async function runVerifyCommand(): Promise<never> {
   const command = process.env.HOY_VERIFY_COMMAND ?? "";
   const cwd = process.env.HOY_VERIFY_CWD?.trim() || process.cwd();
+  const timeoutMs = resolveTimeoutMs();
 
   if (!command.trim()) {
-    emit({ code: -1, stdout: "", stderr: "verify error: no command provided", killed: false });
+    return emit({ code: -1, stdout: "", stderr: "verify error: no command provided", killed: false });
   }
 
   // Resolve the shell exactly as Pi's bash tool does. getShellConfig may throw on
@@ -83,7 +131,7 @@ export async function runVerifyCommand(): Promise<never> {
     args = cfg.args;
     fromStdin = cfg.commandTransport === "stdin";
   } catch (e) {
-    emit({
+    return emit({
       code: -1,
       stdout: "",
       stderr: `verify error: could not resolve shell: ${e instanceof Error ? e.message : String(e)}`,
@@ -98,6 +146,10 @@ export async function runVerifyCommand(): Promise<never> {
         cwd,
         stdio: [fromStdin ? "pipe" : "ignore", "pipe", "pipe"],
         windowsHide: true,
+        // Own process group on Unix so we can signal the WHOLE tree (bash plus
+        // any grandchildren holding the pipes) on timeout. Windows has no groups
+        // here; we fall back to child.kill().
+        detached: process.platform !== "win32",
       });
     } catch (e) {
       resolve({
@@ -111,6 +163,8 @@ export async function runVerifyCommand(): Promise<never> {
 
     let stdout = "";
     let stderr = "";
+    let stdoutTotal = 0;
+    let stderrTotal = 0;
     let killed = false;
     let settled = false;
 
@@ -119,26 +173,73 @@ export async function runVerifyCommand(): Promise<never> {
       child.stdin?.end(command);
     }
 
+    // Signal the child's whole process group (negative pid) on Unix, so bash AND
+    // its grandchildren die and the pipes close. Windows falls back to the
+    // direct child. All wrapped in try/catch: the group may already be gone.
+    const killGroup = (signal: NodeJS.Signals) => {
+      try {
+        if (process.platform !== "win32" && typeof child.pid === "number") {
+          process.kill(-child.pid, signal);
+        } else {
+          child.kill(signal);
+        }
+      } catch {
+        // Group already reaped, or no permission; nothing to do.
+      }
+    };
+
+    // These two escalation timers are armed only AFTER the SIGTERM fires (inside
+    // the timeout callback below), never at spawn time -- otherwise, with a 120s
+    // timeout and a 5s grace, a legitimately long-running command would be
+    // SIGKILLed at 5s. Declared here so `finish` can clear whichever are pending.
+    let graceTimer: ReturnType<typeof setTimeout> | undefined;
+    let failsafeTimer: ReturnType<typeof setTimeout> | undefined;
+
     const timeoutId = setTimeout(() => {
       killed = true;
-      child.kill("SIGTERM");
-      // Escalate if SIGTERM is ignored, matching execCommand's grace period.
-      setTimeout(() => {
-        if (!child.killed) child.kill("SIGKILL");
-      }, 5000);
-    }, VERIFY_TIMEOUT_MS);
+      killGroup("SIGTERM");
+
+      // Escalate to SIGKILL after a grace period, but only if the child has NOT
+      // actually exited. We check real exit state (exitCode/signalCode), never
+      // child.killed -- that flips true the instant SIGTERM is DISPATCHED, so a
+      // TERM-trapping command would never be force-killed if we guarded on it.
+      graceTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) killGroup("SIGKILL");
+      }, KILL_GRACE_MS);
+      graceTimer.unref?.();
+
+      // Absolute failsafe: if the process still has not settled a hair after the
+      // SIGKILL grace, force a fail-soft result and exit UNCONDITIONALLY. Nothing
+      // (an unkillable child, a wedged pipe) can make the one-shot hang past here.
+      failsafeTimer = setTimeout(() => {
+        if (settled) return;
+        emit({
+          code: -1,
+          stdout: formatStream(stdout, stdoutTotal),
+          stderr: `${stderr ? `${stderr}\n` : ""}verify command timed out`,
+          killed: true,
+        });
+      }, KILL_GRACE_MS + FAILSAFE_MARGIN_MS);
+      failsafeTimer.unref?.();
+    }, timeoutMs);
 
     child.stdout?.on("data", (d) => {
-      stdout += d.toString();
+      const s = d.toString();
+      stdoutTotal += s.length;
+      stdout = capTail(stdout + s);
     });
     child.stderr?.on("data", (d) => {
-      stderr += d.toString();
+      const s = d.toString();
+      stderrTotal += s.length;
+      stderr = capTail(stderr + s);
     });
 
     const finish = (r: GoalVerifyResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
+      if (graceTimer) clearTimeout(graceTimer);
+      if (failsafeTimer) clearTimeout(failsafeTimer);
       resolve(r);
     };
 
@@ -146,8 +247,8 @@ export async function runVerifyCommand(): Promise<never> {
       // Spawn-level failure (e.g. shell not found): a failed gate, not a crash.
       finish({
         code: -1,
-        stdout,
-        stderr: stderr || `verify error: ${e instanceof Error ? e.message : String(e)}`,
+        stdout: formatStream(stdout, stdoutTotal),
+        stderr: formatStream(stderr, stderrTotal) || `verify error: ${e instanceof Error ? e.message : String(e)}`,
         killed,
       });
     });
@@ -156,9 +257,14 @@ export async function runVerifyCommand(): Promise<never> {
       // A killed (timeout) run has a null exit code; report a non-zero code so the
       // gate fails. Otherwise pass the real exit code straight through.
       const exit = code ?? (killed || signal ? -1 : 0);
-      finish({ code: exit, stdout, stderr, killed });
+      finish({
+        code: exit,
+        stdout: formatStream(stdout, stdoutTotal),
+        stderr: formatStream(stderr, stderrTotal),
+        killed,
+      });
     });
   });
 
-  emit(result);
+  return emit(result);
 }
