@@ -94,13 +94,15 @@ export const MCP_TOOLS_PROMPT = `MCP tools:
 - Search or describe before calling an unfamiliar tool so you pass the right arguments. Starting a server and each tool call may require user approval.`;
 
 // Built from the enabled registry types so the model sees exactly what it can
-// spawn. HOY-233 delivery contract retained: results come back.
+// spawn. HOY-300: the agent tool is synchronous — it blocks and returns the
+// subagent's result in-band, so the model must be told to wait, not keep working.
 export function agentToolsPrompt(agentTypes: Array<{ name: string; description?: string }>): string {
   const lines = agentTypes.map((t) => `  - ${t.name}${t.description ? `: ${t.description}` : ""}`).join("\n");
   return `Subagents:
 - The agent tool spawns a specialized child agent that runs in its own thread. Call agent({subagentType, task}) with a complete, self-contained task; the subagent does not see this conversation. Available types:
 ${lines}
-- Fire-and-forget: the call returns a handle immediately and the subagent runs independently. When it finishes, its result is delivered back into this conversation as a new message, so you may keep working; you will be resumed with the subagent's result when it arrives.
+- The call BLOCKS until the subagent finishes and returns its result directly to you, as the tool's result — you have the full result in your context before you continue. Do not try to keep working in parallel with it; just wait for the result and use it.
+- You may call agent several times in one turn to run subagents in parallel; you receive every result before you continue. Only after you have the results you dispatched for should you produce your final answer (in plan mode: write the plan only once the subagents you spawned have returned, so the plan is the last thing in the turn).
 - Spawning asks for user approval. A subagent may spawn its own subagents, up to a small nesting limit; keep the tree shallow and spawn only when it genuinely helps.`;
 }
 

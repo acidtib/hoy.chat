@@ -205,6 +205,9 @@ describe("mcp proxy tool (real stdio server)", () => {
     expect(enabled).toContain("Explore");
     expect(enabled).toContain("Reviewer");
     expect(enabled).toContain("reviews diffs");
-    expect(enabled).toContain("delivered back");
+    // HOY-300: the agent tool is synchronous — the prompt tells the model the
+    // call blocks and returns the subagent's result in-band (not "delivered back").
+    expect(enabled).toContain("BLOCKS until the subagent finishes and returns its result");
+    expect(enabled).not.toContain("Fire-and-forget");
   });
 });
