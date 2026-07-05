@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   Brain,
@@ -63,6 +63,75 @@ export function TreeNavigator() {
     if (threadId) branchFromEntry(threadId, entryId);
   };
 
+  // The full flat order (pre-filter) backs both the visible rows and the scroll
+  // fallback, which walks it to find a clicked meta node's nearest addressable
+  // neighbor.
+  const flatAll = useMemo<FlatNode[]>(
+    () => (tree ? flattenTree(tree.tree, tree.leafId) : []),
+    [tree],
+  );
+
+  // Scroll the active conversation panel to a clicked node and flash it (HOY-304).
+  // Restored turns/blocks carry a data-entry-id (store.entryIdsFor); a meta or
+  // tool-result node has none, so we fall back to the nearest addressable neighbor
+  // in tree order rather than doing nothing.
+  const scrollToEntry = useCallback(
+    (entryId: string) => {
+      if (!threadId) return;
+      const panel = document.querySelector(
+        `[data-thread-panel="${CSS.escape(threadId)}"]`,
+      );
+      if (!panel) return;
+      const reduce =
+        typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      const at = (id: string) =>
+        panel.querySelector(`[data-entry-id="${CSS.escape(id)}"]`);
+      const reveal = (el: Element) => {
+        el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+        // A brand wash that fades out. Driven by the Web Animations API, not a CSS
+        // class: React owns className on these turns and reconciles an imperatively
+        // added class away on the next render, but a WAAPI animation is untouched.
+        if (reduce) return;
+        const brand =
+          getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() ||
+          "oklch(0.62 0.17 274)";
+        (el as HTMLElement).animate(
+          [
+            { backgroundColor: `color-mix(in oklch, ${brand} 32%, transparent)` },
+            { backgroundColor: "transparent" },
+          ],
+          { duration: 1100, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+        );
+      };
+      const direct = at(entryId);
+      if (direct) return reveal(direct);
+      // No visible turn for this entry: search outward (back first, then forward)
+      // for the closest node that does render.
+      const order = flatAll.map((n) => n.id);
+      const idx = order.indexOf(entryId);
+      if (idx === -1) return;
+      for (let d = 1; d < order.length; d++) {
+        const back = idx - d >= 0 ? at(order[idx - d]) : null;
+        if (back) return reveal(back);
+        const fwd = idx + d < order.length ? at(order[idx + d]) : null;
+        if (fwd) return reveal(fwd);
+      }
+    },
+    [threadId, flatAll],
+  );
+
+  // Click a row: select it AND scroll the transcript to it. Keyboard navigation
+  // (moveSelection) only moves the tree's own selection, so arrowing through the
+  // list never yanks the transcript around.
+  const handleSelect = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      scrollToEntry(id);
+    },
+    [scrollToEntry],
+  );
+
   // Prime on open and whenever the active thread changes; the store keeps it
   // fresh on turn done while the dock is open on that thread.
   useEffect(() => {
@@ -77,10 +146,10 @@ export function TreeNavigator() {
 
   // The visible, ordered rows drive keyboard navigation; the recursive renderer
   // below reproduces the same order and filter.
-  const visible = useMemo<FlatNode[]>(() => {
-    if (!tree) return [];
-    return flattenTree(tree.tree, tree.leafId).filter((n) => matchesFilter(n, filter));
-  }, [tree, filter]);
+  const visible = useMemo<FlatNode[]>(
+    () => flatAll.filter((n) => matchesFilter(n, filter)),
+    [flatAll, filter],
+  );
 
   // Default the selection to the active leaf so a fresh open lands where you are.
   useEffect(() => {
@@ -218,7 +287,7 @@ export function TreeNavigator() {
             leafId={leafId}
             filter={filter}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={handleSelect}
             onBranch={onBranch}
           />
         )}

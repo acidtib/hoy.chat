@@ -309,7 +309,11 @@ export function ThreadView({
   );
 
   return (
-    <div ref={rootRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div
+      ref={rootRef}
+      data-thread-panel={threadId}
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+    >
       <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-0.5">
           <Sparkle
@@ -530,7 +534,10 @@ type AssistantTurnData = Extract<Turn, { role: "assistant" }>;
 // whole subtree bail out.
 const UserTurn = memo(function UserTurn({ turn }: { turn: UserTurnData }) {
   return (
-    <div className="rounded-md border border-border/60 bg-card/40 px-3 py-2 text-sm leading-relaxed text-foreground">
+    <div
+      data-entry-id={turn.entryId}
+      className="rounded-md border border-border/60 bg-card/40 px-3 py-2 text-sm leading-relaxed text-foreground"
+    >
       {turn.images && turn.images.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
           {turn.images.map((img, ii) => (
@@ -592,16 +599,26 @@ const AssistantTurn = memo(function AssistantTurn({
           </Reasoning>
         )}
         {turn.blocks.map((block, bi) =>
+          // A `flex flex-col gap-2` wrapper carries the entry id (HOY-304) for
+          // tree-node scroll targeting while reproducing MessageContent's own
+          // gap-2 so per-block spacing is unchanged.
           block.kind === "text" ? (
-            <AssistantTextBlock
-              key={bi}
-              content={block.content}
-              planReady={planReady}
-              onImplement={onImplement}
-              onDismiss={onDismiss}
-            />
+            <div key={bi} data-entry-id={block.entryId} className="flex min-w-0 flex-col gap-2">
+              <AssistantTextBlock
+                content={block.content}
+                planReady={planReady}
+                onImplement={onImplement}
+                onDismiss={onDismiss}
+              />
+            </div>
           ) : (
-            <ToolCall tool={block.tool} key={block.tool.id} />
+            <div
+              key={block.tool.id}
+              data-entry-id={block.entryId}
+              className="flex min-w-0 flex-col gap-2"
+            >
+              <ToolCall tool={block.tool} />
+            </div>
           ),
         )}
         {turn.streaming && !turn.aborted && (

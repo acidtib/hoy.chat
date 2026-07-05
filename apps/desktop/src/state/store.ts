@@ -12,6 +12,7 @@ import {
   evaluateGoal,
   forkSession,
   getCommands,
+  getEntries,
   getMessages,
   getSessionStats,
   getState,
@@ -36,6 +37,7 @@ import {
   verifyGoalCommand,
 } from "@/lib/ipc";
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
+import { leafChainMessageIds } from "@/lib/treeNode";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
 import {
@@ -1666,7 +1668,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
     let branchTurns: Turn[] = [];
     try {
-      branchTurns = messagesToTurns(await getMessages(branchSessionId));
+      const branchMessages = await getMessages(branchSessionId);
+      branchTurns = messagesToTurns(
+        branchMessages,
+        await entryIdsFor(branchSessionId, branchMessages.length),
+      );
     } catch {
       // Best-effort: a failed read leaves an empty transcript, repopulated live.
     }
@@ -1949,10 +1955,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         return;
       }
       const messages = await getMessages(sessionId);
+      // Align entry ids so tree-node clicks can scroll here (HOY-304). Best-effort
+      // and off the transcript's critical shape: undefined just means unaddressed.
+      const entryIds = await entryIdsFor(sessionId, messages.length);
       const beforeSet = get().turns[threadId];
       if (beforeSet && beforeSet !== diskTurns && beforeSet.length > 0) return;
       set((s) => ({
-        turns: { ...s.turns, [threadId]: messagesToTurns(messages) },
+        turns: { ...s.turns, [threadId]: messagesToTurns(messages, entryIds) },
       }));
       void get().refreshStats(threadId);
     } catch (e) {
@@ -3021,6 +3030,24 @@ async function applyAutoCompaction(sessionId: string): Promise<void> {
   } catch {
     // Non-fatal; retry on the next spawn. Pi's persisted global still applies.
     autoCompactionApplied.delete(sessionId);
+  }
+}
+
+// Entry ids aligned to a session's getMessages output (HOY-304), for
+// entry-addressable transcript restore. Fetches the tree entries and derives the
+// leaf chain's message ids; returns them ONLY when they align 1:1 with the
+// message count, so a divergence (or a get_entries failure) degrades to an
+// unaddressed transcript rather than mis-mapping tree clicks to wrong turns.
+async function entryIdsFor(
+  sessionId: string,
+  messageCount: number,
+): Promise<(string | undefined)[] | undefined> {
+  try {
+    const { entries, leafId } = await getEntries(sessionId);
+    const ids = leafChainMessageIds(entries, leafId);
+    return ids.length === messageCount ? ids : undefined;
+  } catch {
+    return undefined;
   }
 }
 

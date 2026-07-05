@@ -175,9 +175,12 @@ export interface ToolUI {
 // An ordered block in an assistant turn, rendered top to bottom. Text blocks
 // and tool blocks interleave naturally so each message's content stays in the
 // order the model produced it.
+// `entryId` (HOY-304) is the session entry this block was restored from, so the
+// /tree navigator can scroll the transcript to a clicked node. Present only on a
+// restored transcript (get_entries-aligned); undefined on live-streamed blocks.
 export type AssistantBlock =
-  | { kind: "text"; content: string }
-  | { kind: "tool"; tool: ToolUI };
+  | { kind: "text"; content: string; entryId?: string }
+  | { kind: "tool"; tool: ToolUI; entryId?: string };
 
 // The per-thread transcript model, keyed by threadId in the store. Replaces the
 // built live from streaming AgentEvents and restored transcripts (lib/turns.ts).
@@ -232,11 +235,16 @@ export type Turn =
       // @ context attached to this send (HOY-220), for display pills. Not
       // restored from disk (the content is inlined into the message text).
       contexts?: ContextRef[];
+      // Session entry this turn was restored from (HOY-304); undefined when live.
+      entryId?: string;
     }
   | {
       role: "assistant";
       reasoning?: { text: string; seconds?: number; active?: boolean };
       blocks: AssistantBlock[];
+      // Session entry of the first assistant message folded into this turn
+      // (HOY-304); the per-block entryId is the precise scroll target.
+      entryId?: string;
       streaming: boolean;
       // The user stopped this turn (HOY-197). Renders a subtle inline marker
       // after the turn's content instead of a thread-level error banner.

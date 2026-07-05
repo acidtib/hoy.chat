@@ -140,19 +140,30 @@ type RawMessage = {
 // natural interleaving (text -> toolCall -> text -> toolCall) is preserved.
 type AssistantTurn = Extract<Turn, { role: "assistant" }>;
 
-export function messagesToTurns(messages: unknown[]): Turn[] {
+// `entryIds`, when supplied, is a parallel array: entryIds[i] is the session
+// entry id of messages[i] (HOY-304). Stamped onto the produced turn/blocks so the
+// /tree navigator can scroll the transcript to a clicked node. The caller only
+// passes it when the ids align 1:1 with the messages (see store.entryIdsFor);
+// omitted, every turn/block is simply unaddressed and renders exactly as before.
+export function messagesToTurns(
+  messages: unknown[],
+  entryIds?: (string | undefined)[],
+): Turn[] {
   const turns: Turn[] = [];
 
-  for (const raw of messages) {
+  messages.forEach((raw, i) => {
+    const entryId = entryIds?.[i];
     const m = raw as RawMessage;
     if (m.role === "user") {
       turns.push({
         role: "user",
         text: stripContextBlock(contentText(m.content)),
         images: contentImages(m.content),
+        entryId,
       });
     } else if (m.role === "assistant") {
       const a = currentAssistantTurn(turns);
+      if (entryId && !a.entryId) a.entryId = entryId;
       if (m.stopReason === "aborted") a.aborted = true;
       if (m.stopReason === "error") {
         a.error = m.errorMessage ?? "the agent stopped unexpectedly";
@@ -167,11 +178,12 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
           if (lastBlock && lastBlock.kind === "text") {
             lastBlock.content += part.text;
           } else {
-            a.blocks.push({ kind: "text", content: part.text });
+            a.blocks.push({ kind: "text", content: part.text, entryId });
           }
         } else if (part.type === "toolCall" && typeof part.id === "string") {
           a.blocks.push({
             kind: "tool",
+            entryId,
             tool: {
               id: part.id,
               name: part.name ?? "tool",
@@ -198,7 +210,7 @@ export function messagesToTurns(messages: unknown[]): Turn[] {
         }
       }
     }
-  }
+  });
   return turns;
 }
 

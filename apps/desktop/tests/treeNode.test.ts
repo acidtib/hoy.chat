@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { SessionEntry, SessionTreeNode } from "@/lib/types";
 import {
   flattenTree,
+  leafChainMessageIds,
   matchesFilter,
   messageFacet,
   nodeRoleLabel,
@@ -109,6 +110,46 @@ describe("flattenTree", () => {
   test("carries the resolved label from the node", () => {
     const flat = flattenTree([node(msg("a", null, "user", { content: "x" }), [], "refactor")], "a");
     expect(flat[0].label).toBe("refactor");
+  });
+});
+
+describe("leafChainMessageIds (HOY-304 transcript alignment)", () => {
+  // A non-message meta entry (model change etc.) on the id/parent chain.
+  function meta(id: string, parentId: string | null): SessionEntry {
+    return { type: "model_change", id, parentId, timestamp: id, provider: "p", modelId: "m" } as SessionEntry;
+  }
+
+  test("returns the message ids from root to leaf, in order", () => {
+    const entries = [
+      msg("a", null, "user"),
+      msg("b", "a", "assistant"),
+      msg("c", "b", "user"),
+    ];
+    expect(leafChainMessageIds(entries, "c")).toEqual(["a", "b", "c"]);
+  });
+
+  test("excludes non-message meta entries on the chain", () => {
+    const entries = [
+      msg("a", null, "user"),
+      meta("m1", "a"),
+      msg("b", "m1", "assistant"),
+    ];
+    // The chain includes m1, but only message entries are returned.
+    expect(leafChainMessageIds(entries, "b")).toEqual(["a", "b"]);
+  });
+
+  test("excludes abandoned branches: only the leaf's ancestors count", () => {
+    const entries = [
+      msg("a", null, "user"),
+      msg("b", "a", "assistant"), // abandoned sibling of c
+      msg("c", "a", "assistant"), // the kept leaf's parent line
+      msg("d", "c", "user"),
+    ];
+    expect(leafChainMessageIds(entries, "d")).toEqual(["a", "c", "d"]);
+  });
+
+  test("no leaf yields an empty chain", () => {
+    expect(leafChainMessageIds([msg("a", null, "user")], null)).toEqual([]);
   });
 });
 

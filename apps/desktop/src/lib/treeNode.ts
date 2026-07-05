@@ -194,6 +194,30 @@ export function matchesFilter(node: FlatNode, mode: FilterMode): boolean {
   return true;
 }
 
+// The ordered ids of the `message` entries on the current leaf's parent chain —
+// the exact sequence get_messages returns (proven by session_transcript.rs, which
+// walks the same chain). Zipped positionally against getMessages output to make the
+// restored transcript entry-addressable for the /tree navigator (HOY-304). Walking
+// parentId up from the leaf naturally excludes abandoned fork branches and the
+// non-message meta entries (model/thinking changes, compaction, labels).
+export function leafChainMessageIds(
+  entries: SessionEntry[],
+  leafId: string | null,
+): string[] {
+  if (!leafId) return [];
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  const chain: SessionEntry[] = [];
+  const seen = new Set<string>();
+  let cur: SessionEntry | undefined = byId.get(leafId);
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    chain.push(cur);
+    cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+  }
+  chain.reverse();
+  return chain.filter((e) => e.type === "message").map((e) => e.id);
+}
+
 // A short human label for an entry row's role/kind eyebrow.
 export function nodeRoleLabel(node: FlatNode): string {
   if (node.entry.type === "message") {

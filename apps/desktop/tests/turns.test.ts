@@ -8,6 +8,52 @@ function assistantTurn(turns: Turn[], index = 0) {
   return turn;
 }
 
+describe("messagesToTurns entry ids (HOY-304)", () => {
+  test("stamps aligned entry ids onto the user turn and assistant blocks", () => {
+    const turns = messagesToTurns(
+      [
+        { role: "user", content: "hi" },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "on it" },
+            { type: "toolCall", id: "tc1", name: "read", arguments: {} },
+          ],
+        },
+        { role: "toolResult", toolCallId: "tc1", content: [{ type: "text", text: "ok" }] },
+        { role: "assistant", content: [{ type: "text", text: "done" }] },
+      ],
+      ["u1", "a1", "r1", "a2"],
+    );
+
+    // Two turns: user, then the merged assistant run (a1 + a2 fold together).
+    const user = turns[0];
+    if (user.role !== "user") throw new Error("expected user turn");
+    expect(user.entryId).toBe("u1");
+
+    const a = assistantTurn(turns, 1);
+    // Turn anchors to the first assistant entry; blocks carry their own entry.
+    expect(a.entryId).toBe("a1");
+    expect(a.blocks[0]).toMatchObject({ kind: "text", content: "on it", entryId: "a1" });
+    expect(a.blocks[1]).toMatchObject({ kind: "tool", entryId: "a1" });
+    // The second assistant message's text is a distinct block with its own id.
+    expect(a.blocks[2]).toMatchObject({ kind: "text", content: "done", entryId: "a2" });
+  });
+
+  test("omitting entry ids leaves turns and blocks unaddressed", () => {
+    const turns = messagesToTurns([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: [{ type: "text", text: "yo" }] },
+    ]);
+    const user = turns[0];
+    if (user.role !== "user") throw new Error("expected user turn");
+    expect(user.entryId).toBeUndefined();
+    const a = assistantTurn(turns, 1);
+    expect(a.entryId).toBeUndefined();
+    expect(a.blocks[0]).toMatchObject({ kind: "text", entryId: undefined });
+  });
+});
+
 describe("messagesToTurns reasoning", () => {
   test("thinking parts fold without inventing a zero duration", () => {
     const turns = messagesToTurns([
