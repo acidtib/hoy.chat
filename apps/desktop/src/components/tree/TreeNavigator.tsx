@@ -13,7 +13,6 @@ import {
   Tag,
   User,
   Wrench,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -217,20 +216,6 @@ export function TreeNavigator() {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Expand thread</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground"
-                  onClick={() => closeRightDock()}
-                  aria-label="Close Tree"
-                >
-                  <X className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Close Tree (Esc)</TooltipContent>
             </Tooltip>
           </div>
         </div>

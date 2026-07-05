@@ -242,9 +242,6 @@ function TreeDock() {
             <span className="aw-winbtn">
               <Ic name="maximize" size={13} />
             </span>
-            <span className="aw-winbtn">
-              <Ic name="x" size={14} />
-            </span>
           </span>
         </div>
         <p className="aw-dock-sub">
