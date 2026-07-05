@@ -218,7 +218,6 @@ function App() {
                     >
                       <ThreadView
                         threadId={expandedPanel.id}
-                        active={expandedPanel.id === activeThreadId}
                         onClose={() =>
                           requestTeardown("close", expandedPanel.id)
                         }
@@ -248,7 +247,6 @@ function App() {
                           >
                             <ThreadView
                               threadId={panel.id}
-                              active={panel.id === activeThreadId}
                               onClose={() =>
                                 requestTeardown("close", panel.id)
                               }

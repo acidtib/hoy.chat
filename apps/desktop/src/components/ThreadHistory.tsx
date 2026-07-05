@@ -29,8 +29,7 @@ import {
   type RecencyBucket,
 } from "@/lib/utils";
 import { threadIconColorClass } from "@/lib/threadColor";
-import { useSessionStore } from "@/state/store";
-import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
+import { useSessionStore, useThreadHasRunningSubagents } from "@/state/store";
 import type { Thread } from "@/lib/types";
 
 type HistoryItem = { thread: Thread; projectName: string; projectId: string };
@@ -163,10 +162,6 @@ export function ThreadHistory() {
                     thread={thread}
                     projectName={projectName}
                     active={thread.id === activeThreadId}
-                    isAgent={
-                      isSubagentThread(thread) ||
-                      childThreadIdsOf(projects, thread.id).length > 0
-                    }
                     archived={showArchived}
                     onSelect={() => openThread(thread.id)}
                     onArchive={() => requestTeardown("archive", thread.id)}
@@ -187,7 +182,6 @@ function HistoryRow({
   thread,
   projectName,
   active,
-  isAgent,
   archived,
   onSelect,
   onArchive,
@@ -197,13 +191,14 @@ function HistoryRow({
   thread: Thread;
   projectName: string;
   active: boolean;
-  isAgent: boolean;
   archived: boolean;
   onSelect: () => void;
   onArchive: () => void;
   onUnarchive: () => void;
   onDelete: () => void;
 }) {
+  // Teal glyph only while this thread has a live fleet running (HOY-302).
+  const hasRunningSubagents = useThreadHasRunningSubagents(thread.id);
   return (
     <li
       className={cn(
@@ -221,7 +216,7 @@ function HistoryRow({
           model={thread.model}
           className={cn(
             "mt-0.5 size-3.5 shrink-0",
-            threadIconColorClass({ id: thread.id, active, isAgent }),
+            threadIconColorClass({ hasRunningSubagents }),
           )}
         />
         <span className="min-w-0 flex-1">

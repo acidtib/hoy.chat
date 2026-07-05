@@ -36,7 +36,7 @@ import { cn, formatRelativeTime } from "@/lib/utils";
 import { threadIconColorClass } from "@/lib/threadColor";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
 import { pickDirectory } from "@/lib/ipc";
-import { useSessionStore } from "@/state/store";
+import { useSessionStore, useThreadHasRunningSubagents } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 import type { Project, Thread } from "@/lib/types";
 
@@ -365,12 +365,6 @@ function ProjectGroup({
                   active={thread.id === activeThreadId}
                   open={openIds.has(thread.id)}
                   onSelect={() => onSelectThread(thread.id)}
-                  // Spawned subagents are watched in FleetView, not nested here
-                  // (HOY-250); a teal marker just flags that this thread has a
-                  // fleet.
-                  isAgent={project.threads.some(
-                    (c) => c.parentThreadId === thread.id,
-                  )}
                 />
               ))}
               {hiddenCount > 0 && (
@@ -394,14 +388,14 @@ function ThreadRow({
   active,
   open,
   onSelect,
-  isAgent = false,
 }: {
   thread: Thread;
   active: boolean;
   open: boolean;
   onSelect: () => void;
-  isAgent?: boolean;
 }) {
+  // Teal glyph only while this thread has a live fleet running (HOY-302).
+  const hasRunningSubagents = useThreadHasRunningSubagents(thread.id);
   const renameThread = useSessionStore((s) => s.renameThread);
   const requestTeardown = useSessionStore((s) => s.requestTeardown);
   const defaultModel = useSessionStore((s) => s.defaultModel);
@@ -445,11 +439,7 @@ function ThreadRow({
         model={iconModel}
         className={cn(
           "mt-0.5 size-3.5 shrink-0",
-          threadIconColorClass({
-            id: thread.id,
-            active: active || open,
-            isAgent,
-          }),
+          threadIconColorClass({ hasRunningSubagents }),
         )}
       />
       <span className="min-w-0 flex-1">

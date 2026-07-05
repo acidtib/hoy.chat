@@ -83,8 +83,11 @@ import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
 import { threadIconColorClass } from "@/lib/threadColor";
 import { splitPlanSegments, type PlanExecution } from "@/lib/plan";
-import { findThread, useSessionStore } from "@/state/store";
-import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
+import {
+  findThread,
+  useSessionStore,
+  useThreadHasRunningSubagents,
+} from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 import { listProjectPaths } from "@/lib/ipc";
 import { contextKey, modelSupportsImages } from "@/lib/types";
@@ -116,7 +119,6 @@ const EMPTY_SLASH: SlashCommand[] = [];
 
 export function ThreadView({
   threadId,
-  active,
   onClose,
   onDebug,
   busy,
@@ -124,7 +126,6 @@ export function ThreadView({
   error,
 }: {
   threadId: string;
-  active: boolean;
   onClose: () => void;
   onDebug: (sessionId?: string | null) => void;
   busy: boolean;
@@ -190,14 +191,8 @@ export function ThreadView({
     };
   }, [projects, threadId]);
 
-  const threadIsAgent = (() => {
-    const found = findThread(projects, threadId);
-    if (!found) return false;
-    return (
-      isSubagentThread(found.thread) ||
-      childThreadIdsOf(projects, threadId).length > 0
-    );
-  })();
+  // The header glyph reads teal only while this thread has a live fleet (HOY-302).
+  const threadHasFleet = useThreadHasRunningSubagents(threadId);
 
   // @ context picker inputs (HOY-220): the gitignore-aware path search for this
   // project, and the other threads offered under the Threads section.
@@ -320,11 +315,7 @@ export function ThreadView({
           <Sparkle
             className={cn(
               "size-4 shrink-0",
-              threadIconColorClass({
-                id: threadId,
-                active,
-                isAgent: threadIsAgent,
-              }),
+              threadIconColorClass({ hasRunningSubagents: threadHasFleet }),
               // Breathe while this thread is generating so a working thread is
               // legible from the header even scrolled up, and background panels
               // that are still running stand out across the strip.

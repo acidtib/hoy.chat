@@ -46,6 +46,22 @@ export function childThreadIdsOf(projects: Project[], parentId: string): string[
     .map((t) => t.id);
 }
 
+// Whether a thread has a live fleet (HOY-302): any transitive descendant subagent
+// is currently running -- streaming, holding a concurrency slot (runningAgents),
+// or queued for one (agentQueue). Drives the model glyph's fleet color, so an idle
+// thread (even one that has spawned children in the past) reads neutral.
+export function threadHasRunningSubagents(
+  projects: Project[],
+  streaming: Record<string, boolean>,
+  runningAgents: Set<string>,
+  agentQueue: readonly string[],
+  threadId: string,
+): boolean {
+  return descendantThreadIdsOf(projects, threadId).some(
+    (id) => streaming[id] || runningAgents.has(id) || agentQueue.includes(id),
+  );
+}
+
 // Depth of a thread in the subagent tree: 0 for a root (user) thread, +1 per
 // ancestor. Walks parentThreadId up. Visited-guarded against corrupt data
 // (the parent link is a tree by construction, so cycles never arise normally).

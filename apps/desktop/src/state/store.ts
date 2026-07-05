@@ -55,6 +55,7 @@ import {
   childThreadIdsOf,
   extractResultText,
   threadDepth,
+  threadHasRunningSubagents,
 } from "./delivery";
 import { MAX_SUBAGENT_DEPTH, MAX_CONCURRENT_AGENTS } from "./limits";
 import {
@@ -2033,6 +2034,21 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     get().pumpAgentQueue();
   },
 }));
+
+// Reactive "does this thread have a live fleet" for the model glyph's fleet color
+// (HOY-302). Selector returns a boolean, so a row only re-renders when its fleet
+// flips between running and idle, not on every streaming token.
+export function useThreadHasRunningSubagents(threadId: string): boolean {
+  return useSessionStore((s) =>
+    threadHasRunningSubagents(
+      s.projects,
+      s.streaming,
+      s.runningAgents,
+      s.agentQueue,
+      threadId,
+    ),
+  );
+}
 
 // Dedup concurrent session spawns for one thread: openThread fires hydrateThread
 // while the user may submitPrompt before it resolves. Sharing the in-flight

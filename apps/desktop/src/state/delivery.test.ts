@@ -6,6 +6,7 @@ import {
   isSubagentThread,
   threadDepth,
   descendantThreadIdsOf,
+  threadHasRunningSubagents,
 } from "./delivery";
 
 const asst = (over: Partial<Extract<Turn, { role: "assistant" }>> = {}): Turn => ({
@@ -56,6 +57,27 @@ test("childThreadIdsOf: returns ids of threads whose parentThreadId matches", ()
   ] as any;
   expect(childThreadIdsOf(projects, "parent").sort()).toEqual(["kidA", "kidB"]);
   expect(childThreadIdsOf(projects, "parent-with-no-kids")).toEqual([]);
+});
+
+test("threadHasRunningSubagents: true only when a descendant is actually running (HOY-302)", () => {
+  const projects = [
+    { id: "p", name: "p", path: null, threads: [
+      { id: "parent", title: "", updatedAt: 0, sessionId: null },
+      { id: "kid", title: "", updatedAt: 0, sessionId: null, parentThreadId: "parent" },
+      { id: "grandkid", title: "", updatedAt: 0, sessionId: null, parentThreadId: "kid" },
+      { id: "lonely", title: "", updatedAt: 0, sessionId: null },
+    ] },
+  ] as any;
+  const none = threadHasRunningSubagents(projects, {}, new Set(), [], "parent");
+  expect(none).toBe(false);
+  // A streaming direct child -> live fleet.
+  expect(threadHasRunningSubagents(projects, { kid: true }, new Set(), [], "parent")).toBe(true);
+  // A running transitive descendant (grandchild) also counts.
+  expect(threadHasRunningSubagents(projects, {}, new Set(["grandkid"]), [], "parent")).toBe(true);
+  // A queued descendant counts (waiting for a concurrency slot).
+  expect(threadHasRunningSubagents(projects, {}, new Set(), ["kid"], "parent")).toBe(true);
+  // A thread with no descendants is never a fleet, even if it is itself running.
+  expect(threadHasRunningSubagents(projects, { lonely: true }, new Set(), [], "lonely")).toBe(false);
 });
 
 test("isSubagentThread is true when the thread has a parent", () => {
