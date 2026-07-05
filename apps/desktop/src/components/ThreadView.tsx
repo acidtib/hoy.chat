@@ -14,6 +14,7 @@ import {
   FilePen,
   Folder,
   Info,
+  ListTree,
   Maximize2,
   MessageSquare,
   Minimize2,
@@ -79,6 +80,7 @@ import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Composer } from "@/components/Composer";
 import { GoalCard } from "@/components/GoalCard";
 import { InlineRename } from "@/components/InlineRename";
+import { TreeNavigator } from "@/components/tree/TreeNavigator";
 import { cn } from "@/lib/utils";
 import { threadIconColorClass } from "@/lib/threadColor";
 import { splitPlanSegments, type PlanExecution } from "@/lib/plan";
@@ -172,6 +174,9 @@ export function ThreadView({
   const slashCommands = useSessionStore(
     (s) => s.slashCommands[threadId] ?? EMPTY_SLASH,
   );
+  const treeOpen = useSessionStore((s) => s.rightDock[threadId] === "tree");
+  const toggleRightDock = useSessionStore((s) => s.toggleRightDock);
+  const branchFromEntry = useSessionStore((s) => s.branchFromEntry);
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -366,6 +371,24 @@ export function ThreadView({
               <Button
                 variant="ghost"
                 size="icon-sm"
+                className={cn(
+                  "text-muted-foreground",
+                  treeOpen && "text-brand",
+                )}
+                onClick={() => toggleRightDock(threadId, "tree")}
+                aria-label="Toggle session tree"
+                aria-pressed={treeOpen}
+              >
+                <ListTree className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Session tree</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 className="text-muted-foreground"
                 onClick={() => toggleFullScreen(threadId)}
                 aria-label={fullScreen ? "Exit Full Screen" : "Full Screen"}
@@ -422,6 +445,8 @@ export function ThreadView({
         </div>
       </header>
 
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {shownError && (
         <div className="mx-3 mt-3 flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
@@ -517,6 +542,14 @@ export function ThreadView({
           {composer}
         </div>
       )}
+        </div>
+        {treeOpen && (
+          <TreeNavigator
+            threadId={threadId}
+            onBranch={(entryId) => branchFromEntry(threadId, entryId)}
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -70,6 +70,11 @@ const SLASH_BUILTINS: SlashCommand[] = [
     description: "Set, pause, resume, clear, or check a thread goal",
     source: "hoy",
   },
+  {
+    name: "tree",
+    description: "Open the session tree navigator",
+    source: "hoy",
+  },
 ];
 
 // The composer thread reference for the @ picker's Threads section (HOY-220).

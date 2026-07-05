@@ -372,6 +372,12 @@ export interface SessionTree {
   leafId: string | null;
 }
 
+// Which view the ThreadView's right-side dock is showing (HOY-280). The dock is
+// a reusable right-sidebar host, Zed-style; the `/tree` navigator is the first
+// tenant. A git tooling panel is a planned second view, so this is a union, not
+// a bool. `null` / absent means the dock is closed for that thread.
+export type RightDockView = "tree";
+
 // A provider/model pair as Pi's set_model takes it. Lighter than ModelInfo for
 // state that only needs identity, not capabilities.
 export interface ModelRef {

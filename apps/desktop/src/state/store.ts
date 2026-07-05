@@ -83,6 +83,7 @@ import type {
   Project,
   ProviderAuth,
   ProviderInfo,
+  RightDockView,
   SessionStats,
   SessionTree,
   SlashCommand,
@@ -369,6 +370,11 @@ interface SessionStore {
   // present entry means the tree is being observed, so refreshSessionTree keeps
   // only those fresh (turn done, fork). Session-scoped: dropped on panel close.
   sessionTree: Record<string, SessionTree | null>;
+  // Which view the ThreadView's right-side dock shows, keyed by threadId
+  // (HOY-280). Absent/null means closed. A reusable sidebar host (Zed-style);
+  // `/tree` is the first tenant, a git panel is a planned second. Session-scoped:
+  // dropped on panel close.
+  rightDock: Record<string, RightDockView | null>;
   // Composer drafts keyed by threadId. Store-held so hidden panels and app
   // restarts keep unsent text; persisted via the workspace autosave as each
   // thread's draft field. Never cleared on panel close.
@@ -571,6 +577,16 @@ interface SessionStore {
   // Pull the session's entry tree into the store for the `/tree` navigator
   // (HOY-279). No-op without a live session; a failure leaves the prior tree.
   refreshSessionTree: (threadId: string) => Promise<void>;
+  // Right-side dock host (HOY-280). toggleRightDock opens the view (and primes
+  // its data — for "tree", a getTree read) or closes it if already showing;
+  // closeRightDock closes it and stops the on-done tree refresh.
+  toggleRightDock: (threadId: string, view: RightDockView) => void;
+  closeRightDock: (threadId: string) => void;
+  // Branch a new line of conversation from a session entry (HOY-280 affordance).
+  // The fork RPC that turns this into a new thread is wired in HOY-283; until
+  // then it surfaces an honest notice so the navigator's action is discoverable
+  // without pretending to work.
+  branchFromEntry: (threadId: string, entryId: string) => void;
   // Trigger a manual compaction on the thread's session, optionally with custom
   // summarization instructions (HOY-229). Gated on an idle, live session.
   compact: (threadId: string, customInstructions?: string) => Promise<void>;
@@ -643,6 +659,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   widgets: {},
   slashCommands: {},
   sessionTree: {},
+  rightDock: {},
   drafts: {},
   composerAttachments: {},
   runningAgents: new Set<string>(),
@@ -787,6 +804,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // The session tree is session-scoped too; drop it so a reopen re-fetches
       // and a closed thread stops being refreshed on done (HOY-279).
       const { [id]: _tree, ...sessionTree } = s.sessionTree;
+      // The right dock is per-thread UI state; close it with the panel (HOY-280).
+      const { [id]: _dock, ...rightDock } = s.rightDock;
       return {
         panels,
         activeThreadId,
@@ -803,6 +822,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         queued,
         slashCommands,
         sessionTree,
+        rightDock,
         drafts: discard ? remainingDrafts : s.drafts,
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
         focusRequest: s.focusRequest?.threadId === id ? null : s.focusRequest,
@@ -1333,6 +1353,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return;
     }
 
+    // Hoy built-in /tree (HOY-280): toggle the session-tree navigator dock.
+    // Intercepted before the prompt path so it never reaches Pi. Bare "/tree"
+    // only; "/treeish" and "/tree foo" fall through unchanged.
+    if (/^\/tree$/.test(text)) {
+      get().toggleRightDock(threadId, "tree");
+      return;
+    }
+
     const hasImages = !!images && images.length > 0;
     if (!text && !hasImages && contexts.length === 0) return;
 
@@ -1565,6 +1593,38 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     } catch {
       // Best-effort: a failure leaves the navigator on its last tree.
     }
+  },
+
+  toggleRightDock: (threadId, view) => {
+    const showing = get().rightDock[threadId] === view;
+    if (showing) {
+      get().closeRightDock(threadId);
+      return;
+    }
+    set((s) => ({ rightDock: { ...s.rightDock, [threadId]: view } }));
+    // Opening the tree observes it: prime the slice so it renders now and the
+    // on-done refresh (self-gated on a present sessionTree entry) keeps it fresh.
+    if (view === "tree") void get().refreshSessionTree(threadId);
+  },
+
+  closeRightDock: (threadId) => {
+    set((s) => {
+      const { [threadId]: _dock, ...rightDock } = s.rightDock;
+      // Drop the observed tree so the on-done refresh stops for this thread.
+      const { [threadId]: _tree, ...sessionTree } = s.sessionTree;
+      return { rightDock, sessionTree };
+    });
+  },
+
+  branchFromEntry: (threadId, entryId) => {
+    // HOY-283 replaces this with a real fork(entryId) -> new thread. Until then,
+    // keep the affordance honest rather than silently doing nothing.
+    void entryId;
+    pushNotice(
+      threadId,
+      "Branching from an entry arrives with the fork action (HOY-283).",
+      "info",
+    );
   },
 
   compact: async (threadId, customInstructions) => {
