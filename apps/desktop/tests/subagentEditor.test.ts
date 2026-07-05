@@ -63,6 +63,27 @@ describe("validateDraft (HOY-254)", () => {
     expect(fields(base({ maxTurns: "4294967295" }))).not.toContain("maxTurns");
   });
 
+  test("edit mode skips the slug check on the locked name", () => {
+    // A hand-authored non-slug file (my.agent.md) must be editable: the backend's
+    // overwrite path accepts it, so the form must not block the save.
+    expect(
+      Object.keys(validateDraft(base({ name: "my.agent" }), { takenNames: new Set() })),
+    ).toContain("name");
+    expect(
+      Object.keys(
+        validateDraft(base({ name: "my.agent" }), { takenNames: new Set(), editing: true }),
+      ),
+    ).not.toContain("name");
+  });
+
+  test("edit mode still blocks a built-in name (no shadowing)", () => {
+    expect(
+      Object.keys(
+        validateDraft(base({ name: "explore" }), { takenNames: new Set(), editing: true }),
+      ),
+    ).toContain("name");
+  });
+
   test("emptyDraft seeds the example starter prompt", () => {
     expect(emptyDraft().body.length).toBeGreaterThan(0);
     expect(emptyDraft().tools).toContain("read");

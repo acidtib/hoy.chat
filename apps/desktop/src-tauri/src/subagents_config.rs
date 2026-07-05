@@ -133,6 +133,27 @@ fn ensure_absent(list: &mut Vec<String>, name: &str) -> bool {
     list.len() != before
 }
 
+// Read the override config, let `mutate` edit the (enabled, disabled) name lists,
+// and write back only if it reports a change. The single read-modify-write for the
+// two-sided override, shared by set_enabled_at and the delete override-clear so the
+// list maintenance lives in one place. The CALLER must already hold
+// SUBAGENTS_MUTATION_LOCK (this is lock-free so a caller can span it across other
+// file work in the same critical section).
+fn mutate_override_locked(
+    path: &Path,
+    mutate: impl FnOnce(&mut Vec<String>, &mut Vec<String>) -> bool,
+) -> Result<(), String> {
+    let mut config = read_config_at(path);
+    let mut enabled_list = name_vec(&config, "enabled");
+    let mut disabled_list = name_vec(&config, "disabled");
+    if !mutate(&mut enabled_list, &mut disabled_list) {
+        return Ok(());
+    }
+    put_list(&mut config, "enabled", enabled_list);
+    put_list(&mut config, "disabled", disabled_list);
+    write_config_atomic_at(path, &config)
+}
+
 // Two-sided override (HOY-244): a name lives in exactly one of `enabled` /
 // `disabled`, or neither (frontmatter default). Recording explicit intent in
 // both directions keeps the settings toggle authoritative even for a type that
@@ -141,24 +162,17 @@ fn set_enabled_at(path: &Path, name: &str, enabled: bool) -> Result<(), String> 
     let _guard = SUBAGENTS_MUTATION_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let mut config = read_config_at(path);
-    let mut enabled_list = name_vec(&config, "enabled");
-    let mut disabled_list = name_vec(&config, "disabled");
-    let changed = if enabled {
-        let added = ensure_present(&mut enabled_list, name);
-        let removed = ensure_absent(&mut disabled_list, name);
-        added || removed
-    } else {
-        let added = ensure_present(&mut disabled_list, name);
-        let removed = ensure_absent(&mut enabled_list, name);
-        added || removed
-    };
-    if !changed {
-        return Ok(());
-    }
-    put_list(&mut config, "enabled", enabled_list);
-    put_list(&mut config, "disabled", disabled_list);
-    write_config_atomic_at(path, &config)
+    mutate_override_locked(path, |enabled_list, disabled_list| {
+        if enabled {
+            let added = ensure_present(enabled_list, name);
+            let removed = ensure_absent(disabled_list, name);
+            added || removed
+        } else {
+            let added = ensure_present(disabled_list, name);
+            let removed = ensure_absent(enabled_list, name);
+            added || removed
+        }
+    })
 }
 
 pub fn set_enabled(
@@ -315,10 +329,12 @@ fn render_agent_md(def: &SubagentDef) -> String {
             fm.push_str(&format!("description: {}\n", yaml_string(desc)));
         }
     }
-    if !def.tools.is_empty() {
-        let items: Vec<String> = def.tools.iter().map(|t| yaml_string(t)).collect();
-        fm.push_str(&format!("tools: [{}]\n", items.join(", ")));
-    }
+    // Always write the tools key, even for an empty list. The registry reads an
+    // absent key as FULL access but an explicit `tools: []` as zero tools, so
+    // emitting the list verbatim keeps "what the form shows is what the agent gets":
+    // no selection means no tools, never a silent escalation to the full set.
+    let items: Vec<String> = def.tools.iter().map(|t| yaml_string(t)).collect();
+    fm.push_str(&format!("tools: [{}]\n", items.join(", ")));
     // prompt_mode is a tiny required selector (replace|append); written always so
     // the mode a form chose is explicit in the file.
     fm.push_str(&format!("prompt_mode: {}\n", yaml_string(&def.prompt_mode)));
@@ -392,24 +408,8 @@ fn write_md_atomic_at(path: &Path, contents: &str) -> Result<(), String> {
     })
 }
 
-// Remove a name from both override lists if present (returns whether anything
-// changed). Used when a type's .md is deleted so its enabled/disabled intent does
-// not outlive it and silently apply to a future same-named type.
-fn clear_override_at(path: &Path, name: &str) -> Result<(), String> {
-    let _guard = SUBAGENTS_MUTATION_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let mut config = read_config_at(path);
-    let mut enabled_list = name_vec(&config, "enabled");
-    let mut disabled_list = name_vec(&config, "disabled");
-    let removed_enabled = ensure_absent(&mut enabled_list, name);
-    let removed_disabled = ensure_absent(&mut disabled_list, name);
-    if !(removed_enabled || removed_disabled) {
-        return Ok(());
-    }
-    put_list(&mut config, "enabled", enabled_list);
-    put_list(&mut config, "disabled", disabled_list);
-    write_config_atomic_at(path, &config)
+fn is_builtin_name(name: &str) -> bool {
+    BUILTIN_NAMES.contains(&name.to_ascii_lowercase().as_str())
 }
 
 // Author a custom type: serialize it to <scope>/agents/<name>.md. With
@@ -434,6 +434,15 @@ pub fn write_subagent(
         if !is_path_component_safe(name) {
             return Err(format!("subagent name is not a safe filename: {name:?}"));
         }
+        // The no-shadowing invariant holds on the edit path too: even though a
+        // built-in-named file can only exist if hand-authored (create rejects it),
+        // the write command must never help maintain a shadow of general-purpose /
+        // explore / plan.
+        if is_builtin_name(name) {
+            return Err(format!(
+                "{name:?} is a built-in subagent name and cannot be reused"
+            ));
+        }
         if !path.exists() {
             return Err(format!(
                 "no {} subagent named {name:?} to overwrite",
@@ -454,9 +463,8 @@ pub fn write_subagent(
 
 // Remove a custom type's .md. Idempotent (a missing file is not an error), same
 // tolerance as the MCP remove path. Accepts any traversal-safe name so a
-// hand-authored non-slug file (e.g. my.agent.md, which the registry loads fine)
-// is still deletable from the UI. Also clears any stale enabled/disabled override
-// for the name so it does not silently apply to a future same-named type.
+// hand-authored non-slug file (e.g. my.agent.md, which the registry loads fine) is
+// still deletable from the UI.
 pub fn delete_subagent(
     scope: SubagentScope,
     project: Option<&str>,
@@ -467,19 +475,36 @@ pub fn delete_subagent(
         return Err(format!("subagent name is not a safe filename: {name:?}"));
     }
     let path = agents_dir(scope, project)?.join(format!("{name}.md"));
-    {
-        let _guard = SUBAGENTS_MUTATION_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        match std::fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(format!("remove {}: {e}", path.display())),
+    let override_path = path_for(scope, project)?;
+    // Hold the lock across both the file removal and the override clear so a
+    // concurrent create + set_enabled of the same name cannot slip in between and
+    // have its fresh override stripped.
+    let _guard = SUBAGENTS_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    match std::fs::remove_file(&path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("remove {}: {e}", path.display())),
+    }
+    // Clear a stale enabled/disabled override so it does not silently apply to a
+    // future same-named type -- but ONLY for a custom name. A built-in-named override
+    // belongs to the built-in (whose file, if any, was just a shadow), so wiping it
+    // would silently re-enable a built-in the user disabled. Best-effort: the file is
+    // already gone (the delete's contract), so an override-write hiccup must not
+    // report the whole delete as failed.
+    if !is_builtin_name(name) {
+        if let Err(e) = mutate_override_locked(&override_path, |enabled_list, disabled_list| {
+            let removed_enabled = ensure_absent(enabled_list, name);
+            let removed_disabled = ensure_absent(disabled_list, name);
+            removed_enabled || removed_disabled
+        }) {
+            eprintln!(
+                "[hoy] delete_subagent removed {name:?} but failed to clear its override: {e}"
+            );
         }
     }
-    // Drop the override outside the file-removal guard: clear_override_at takes the
-    // same (non-reentrant) mutation lock.
-    clear_override_at(&path_for(scope, project)?, name)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -689,6 +714,59 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&json_path).unwrap()).unwrap();
         assert!(after.get("disabled").is_none());
 
+        std::fs::remove_dir_all(&proj).ok();
+    }
+
+    #[test]
+    fn write_subagent_always_serializes_tools_key_even_when_empty() {
+        let proj = std::env::temp_dir().join(format!("hoy-agent-empty-{}", std::process::id()));
+        std::fs::remove_dir_all(&proj).ok();
+        let p = proj.to_str().unwrap();
+        let mut def = sample_def("no-tools");
+        def.tools = vec![];
+        write_subagent(SubagentScope::Project, Some(p), &def, false).unwrap();
+        let md =
+            std::fs::read_to_string(proj.join(".hoy").join("agents").join("no-tools.md")).unwrap();
+        // An explicit empty list (zero tools), never an omitted key that the registry
+        // would read as full access.
+        assert!(md.contains("tools: []"));
+        std::fs::remove_dir_all(&proj).ok();
+    }
+
+    #[test]
+    fn overwrite_rejects_a_builtin_shadow_name() {
+        let proj = std::env::temp_dir().join(format!("hoy-agent-shadow-{}", std::process::id()));
+        std::fs::remove_dir_all(&proj).ok();
+        let p = proj.to_str().unwrap();
+        // Simulate a hand-authored shadow file the create path could never make.
+        let dir = proj.join(".hoy").join("agents");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Explore.md"), "---\n---\nhand authored\n").unwrap();
+        // Overwrite must still refuse to rewrite a built-in-named file.
+        assert!(write_subagent(
+            SubagentScope::Project,
+            Some(p),
+            &sample_def("Explore"),
+            true
+        )
+        .is_err());
+        std::fs::remove_dir_all(&proj).ok();
+    }
+
+    #[test]
+    fn delete_preserves_a_builtin_override() {
+        let proj = std::env::temp_dir().join(format!("hoy-agent-bi-{}", std::process::id()));
+        std::fs::remove_dir_all(&proj).ok();
+        let p = proj.to_str().unwrap();
+        let json_path = proj.join(".hoy").join("subagents.json");
+        // The user disabled the built-in "explore" (no .md file involved).
+        set_enabled(SubagentScope::Project, Some(p), "explore", false).unwrap();
+        // Deleting a same-named file (none here) must NOT wipe the built-in's
+        // override, or it would silently re-enable a built-in the user turned off.
+        delete_subagent(SubagentScope::Project, Some(p), "explore").unwrap();
+        let after: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&json_path).unwrap()).unwrap();
+        assert_eq!(after["disabled"], json!(["explore"]));
         std::fs::remove_dir_all(&proj).ok();
     }
 }

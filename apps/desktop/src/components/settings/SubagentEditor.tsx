@@ -106,15 +106,23 @@ const SLUG = /^[a-z0-9][a-z0-9-]*$/;
 // Field-keyed validation errors; an empty object means the draft is saveable.
 export function validateDraft(
   draft: SubagentDraft,
-  opts: { takenNames: Set<string> },
+  opts: { takenNames: Set<string>; editing?: boolean },
 ): Partial<Record<keyof SubagentDraft, string>> {
   const errors: Partial<Record<keyof SubagentDraft, string>> = {};
-  // The name is the filename, so validate the raw input as a lowercase slug (an
-  // uppercase entry is rejected, not silently normalized). Builtin/uniqueness
-  // checks compare lower-cased so a collision is caught regardless of case.
   const raw = draft.name.trim();
   const name = raw.toLowerCase();
-  if (!raw) {
+  if (opts.editing) {
+    // In edit mode the name is locked to an existing file (possibly a hand-authored
+    // non-slug like "my.agent" that the backend's overwrite path accepts), so the
+    // slug/uniqueness rules for new names do not apply. Only the invariant the
+    // backend also enforces on overwrite survives: never shadow a built-in.
+    if (BUILTIN_SUBAGENT_NAMES.includes(name)) {
+      errors.name = "That name is reserved by a built-in agent.";
+    }
+  } else if (!raw) {
+    // A new name is the filename, so validate the raw input as a lowercase slug (an
+    // uppercase entry is rejected, not silently normalized). Builtin/uniqueness
+    // checks compare lower-cased so a collision is caught regardless of case.
     errors.name = "A name is required.";
   } else if (!SLUG.test(raw)) {
     errors.name = "Use a lowercase slug: letters, digits, and dashes.";
@@ -193,7 +201,10 @@ export function SubagentEditor({
 }) {
   const [draft, setDraft] = useState<SubagentDraft>(initial);
   const [showErrors, setShowErrors] = useState(false);
-  const errors = useMemo(() => validateDraft(draft, { takenNames }), [draft, takenNames]);
+  const errors = useMemo(
+    () => validateDraft(draft, { takenNames, editing: mode === "edit" }),
+    [draft, takenNames, mode],
+  );
   const patch = (p: Partial<SubagentDraft>) => setDraft((d) => ({ ...d, ...p }));
 
   const toggleTool = (tool: string) =>
@@ -274,8 +285,8 @@ export function SubagentEditor({
               })}
             </div>
             <p className="text-[11px] text-muted-foreground">
-              The tools this agent may use. With none selected it gets the default working
-              set: read, grep, find, ls, bash, edit, write.
+              The tools this agent may use. Deselect any it should not have; with none
+              selected, it runs with no tools.
             </p>
           </div>
 

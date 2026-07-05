@@ -19,7 +19,6 @@ import type { SubagentDef, SubagentScope, SubagentWrite } from "@/lib/types";
 import { useSessionStore } from "@/state/store";
 import { PanelHeader, StatusDot } from "./panels";
 import {
-  DEFAULT_TOOLS,
   emptyDraft,
   EXAMPLE_STARTER_PROMPT,
   SubagentEditor,
@@ -60,9 +59,11 @@ function draftToWrite(draft: SubagentDraft): SubagentWrite {
   return {
     name: draft.name.trim(),
     description: draft.description.trim() || null,
-    // An empty tools list in a .md reads back as FULL access (incl mcp), so write
-    // the explicit default working set the form advertises when nothing is picked.
-    tools: draft.tools.length ? draft.tools : [...DEFAULT_TOOLS],
+    // Tools pass through verbatim, empty list included. Rust always serializes the
+    // key (`tools: []` for none), which the registry reads as zero tools -- so an
+    // empty selection stays zero, never a silent escalation to a default set, and a
+    // hand-authored zero-tool agent survives an edit unchanged.
+    tools: draft.tools,
     promptMode: draft.promptMode,
     model: draft.model.trim() || null,
     thinking: draft.thinking.trim() || null,
