@@ -39,8 +39,14 @@ export const SUBAGENT_TOOLS = [
 ] as const;
 
 // A sensible default allowlist for a fresh agent: the full working set minus mcp
-// (which most custom agents will not need). The user edits from here.
-const DEFAULT_TOOLS: string[] = ["read", "grep", "find", "ls", "bash", "edit", "write"];
+// (which most custom agents will not need). The user edits from here. Exported so
+// the panel can write this explicit set when the user selects no tools -- an empty
+// tools list in a .md is read as FULL access (incl mcp), the opposite of intent.
+export const DEFAULT_TOOLS: string[] = ["read", "grep", "find", "ls", "bash", "edit", "write"];
+
+// The largest value the Rust `max_turns: Option<u32>` field can hold; a larger
+// number fails serde deserialization at the write command, so reject it in the form.
+const MAX_TURNS_CEILING = 4294967295;
 
 // Built-in names a custom file must never take: precedence is builtin < global <
 // project, so a same-named file would silently shadow the built-in. Lower-cased.
@@ -123,6 +129,8 @@ export function validateDraft(
   const turns = draft.maxTurns.trim();
   if (turns && !/^[1-9][0-9]*$/.test(turns)) {
     errors.maxTurns = "Max turns must be a positive whole number.";
+  } else if (turns && Number(turns) > MAX_TURNS_CEILING) {
+    errors.maxTurns = "Max turns is too large.";
   }
   return errors;
 }
@@ -266,7 +274,8 @@ export function SubagentEditor({
               })}
             </div>
             <p className="text-[11px] text-muted-foreground">
-              The tools this agent may use. None selected falls back to the default set.
+              The tools this agent may use. With none selected it gets the default working
+              set: read, grep, find, ls, bash, edit, write.
             </p>
           </div>
 

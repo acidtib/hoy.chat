@@ -57,6 +57,12 @@ describe("validateDraft (HOY-254)", () => {
     expect(fields(base({ maxTurns: "12" }))).not.toContain("maxTurns");
   });
 
+  test("max turns above the u32 ceiling is rejected", () => {
+    // The Rust field is Option<u32>; a larger value fails serde at the write.
+    expect(fields(base({ maxTurns: "9999999999" }))).toContain("maxTurns");
+    expect(fields(base({ maxTurns: "4294967295" }))).not.toContain("maxTurns");
+  });
+
   test("emptyDraft seeds the example starter prompt", () => {
     expect(emptyDraft().body.length).toBeGreaterThan(0);
     expect(emptyDraft().tools).toContain("read");

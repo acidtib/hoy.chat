@@ -170,16 +170,20 @@ export function setSubagentEnabled(
 // so live sessions reload the registry. Rejects a name that is unsafe, duplicate
 // in-scope, or shadows a built-in (general-purpose/Explore/Plan). `scope` is
 // "global" or "project"; project scope needs `projectPath`. Editing an existing
-// type is deleteSubagent(oldName) + writeSubagent, since this is create-only.
+// type passes overwrite=true so the existing .md is replaced in a single atomic
+// write (no delete-then-write window); a new type passes overwrite=false (create-
+// only: rejects a duplicate or built-in name).
 export function writeSubagent(
   def: SubagentWrite,
   scope: Exclude<SubagentScope, "builtin">,
   projectPath?: string | null,
+  overwrite = false,
 ): Promise<void> {
   return invoke<void>("write_subagent", {
     def,
     scope,
     projectPath: projectPath ?? null,
+    overwrite,
   });
 }
 

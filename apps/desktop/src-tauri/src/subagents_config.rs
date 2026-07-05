@@ -250,6 +250,21 @@ fn is_safe_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
+// A name safe to use as a single filename component: non-empty, bounded, and free
+// of any path separator or traversal so it can never escape the agents dir. Laxer
+// than is_safe_name (it allows dots and spaces) so the UI can still delete or
+// overwrite a hand-authored file whose name is not a strict slug (the registry
+// reader keys types by raw filename and imposes no slug rule). New names still go
+// through the strict validate_name; this only gates operations on files that
+// already exist on disk.
+fn is_path_component_safe(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name != "."
+        && name != ".."
+        && !name.chars().any(|c| c == '/' || c == '\\' || c == '\0')
+}
+
 fn validate_name(name: &str) -> Result<(), String> {
     if !is_safe_name(name) {
         return Err(format!(
@@ -377,49 +392,94 @@ fn write_md_atomic_at(path: &Path, contents: &str) -> Result<(), String> {
     })
 }
 
-// Author a custom type: validate the name, then serialize it to
-// <scope>/agents/<name>.md. Create-only: an existing name in the same scope is a
-// duplicate and rejected, so a write never silently clobbers another type (an
-// edit that keeps the name is delete_subagent + write_subagent).
+// Remove a name from both override lists if present (returns whether anything
+// changed). Used when a type's .md is deleted so its enabled/disabled intent does
+// not outlive it and silently apply to a future same-named type.
+fn clear_override_at(path: &Path, name: &str) -> Result<(), String> {
+    let _guard = SUBAGENTS_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut config = read_config_at(path);
+    let mut enabled_list = name_vec(&config, "enabled");
+    let mut disabled_list = name_vec(&config, "disabled");
+    let removed_enabled = ensure_absent(&mut enabled_list, name);
+    let removed_disabled = ensure_absent(&mut disabled_list, name);
+    if !(removed_enabled || removed_disabled) {
+        return Ok(());
+    }
+    put_list(&mut config, "enabled", enabled_list);
+    put_list(&mut config, "disabled", disabled_list);
+    write_config_atomic_at(path, &config)
+}
+
+// Author a custom type: serialize it to <scope>/agents/<name>.md. With
+// overwrite=false (create) a new name must be a strict slug that is not a built-in
+// and does not already exist, so a create never clobbers another type. With
+// overwrite=true (edit) the file must already exist and is replaced atomically in a
+// single rename (write_md_atomic_at) -- no delete-then-write window that could lose
+// the agent if the write fails. An edit keeps the same filename, so it accepts any
+// existing traversal-safe name (including a hand-authored non-slug).
 pub fn write_subagent(
     scope: SubagentScope,
     project: Option<&str>,
     def: &SubagentDef,
+    overwrite: bool,
 ) -> Result<(), String> {
     let name = def.name.trim();
-    validate_name(name)?;
     let _guard = SUBAGENTS_MUTATION_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     let path = agents_dir(scope, project)?.join(format!("{name}.md"));
-    if path.exists() {
-        return Err(format!(
-            "a {} subagent named {name:?} already exists",
-            scope_label(scope)
-        ));
+    if overwrite {
+        if !is_path_component_safe(name) {
+            return Err(format!("subagent name is not a safe filename: {name:?}"));
+        }
+        if !path.exists() {
+            return Err(format!(
+                "no {} subagent named {name:?} to overwrite",
+                scope_label(scope)
+            ));
+        }
+    } else {
+        validate_name(name)?;
+        if path.exists() {
+            return Err(format!(
+                "a {} subagent named {name:?} already exists",
+                scope_label(scope)
+            ));
+        }
     }
     write_md_atomic_at(&path, &render_agent_md(def))
 }
 
 // Remove a custom type's .md. Idempotent (a missing file is not an error), same
-// tolerance as the MCP remove path. Built-in names are rejected by validate_name;
-// they have no file to delete anyway.
+// tolerance as the MCP remove path. Accepts any traversal-safe name so a
+// hand-authored non-slug file (e.g. my.agent.md, which the registry loads fine)
+// is still deletable from the UI. Also clears any stale enabled/disabled override
+// for the name so it does not silently apply to a future same-named type.
 pub fn delete_subagent(
     scope: SubagentScope,
     project: Option<&str>,
     name: &str,
 ) -> Result<(), String> {
     let name = name.trim();
-    validate_name(name)?;
-    let _guard = SUBAGENTS_MUTATION_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let path = agents_dir(scope, project)?.join(format!("{name}.md"));
-    match std::fs::remove_file(&path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("remove {}: {e}", path.display())),
+    if !is_path_component_safe(name) {
+        return Err(format!("subagent name is not a safe filename: {name:?}"));
     }
+    let path = agents_dir(scope, project)?.join(format!("{name}.md"));
+    {
+        let _guard = SUBAGENTS_MUTATION_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("remove {}: {e}", path.display())),
+        }
+    }
+    // Drop the override outside the file-removal guard: clear_override_at takes the
+    // same (non-reentrant) mutation lock.
+    clear_override_at(&path_for(scope, project)?, name)
 }
 
 #[cfg(test)]
@@ -482,6 +542,7 @@ mod tests {
             SubagentScope::Project,
             Some(proj.to_str().unwrap()),
             &sample_def("Reviewer"),
+            false,
         )
         .unwrap();
         let md =
@@ -510,20 +571,51 @@ mod tests {
         let p = proj.to_str().unwrap();
 
         // Built-in names, case-insensitively, cannot be reused (no shadowing).
-        assert!(write_subagent(SubagentScope::Project, Some(p), &sample_def("explore")).is_err());
         assert!(write_subagent(
             SubagentScope::Project,
             Some(p),
-            &sample_def("General-Purpose")
+            &sample_def("explore"),
+            false
         )
         .is_err());
-        // Unsafe slugs (path traversal, spaces) are rejected.
-        assert!(write_subagent(SubagentScope::Project, Some(p), &sample_def("../evil")).is_err());
-        assert!(write_subagent(SubagentScope::Project, Some(p), &sample_def("has space")).is_err());
+        assert!(write_subagent(
+            SubagentScope::Project,
+            Some(p),
+            &sample_def("General-Purpose"),
+            false
+        )
+        .is_err());
+        // Unsafe slugs (path traversal, spaces) are rejected on create.
+        assert!(write_subagent(
+            SubagentScope::Project,
+            Some(p),
+            &sample_def("../evil"),
+            false
+        )
+        .is_err());
+        assert!(write_subagent(
+            SubagentScope::Project,
+            Some(p),
+            &sample_def("has space"),
+            false
+        )
+        .is_err());
 
         // A fresh name writes; the same name again is a duplicate (create-only).
-        assert!(write_subagent(SubagentScope::Project, Some(p), &sample_def("Reviewer")).is_ok());
-        assert!(write_subagent(SubagentScope::Project, Some(p), &sample_def("Reviewer")).is_err());
+        assert!(write_subagent(
+            SubagentScope::Project,
+            Some(p),
+            &sample_def("Reviewer"),
+            false
+        )
+        .is_ok());
+        assert!(write_subagent(
+            SubagentScope::Project,
+            Some(p),
+            &sample_def("Reviewer"),
+            false
+        )
+        .is_err());
 
         // delete_subagent removes the file and is idempotent.
         delete_subagent(SubagentScope::Project, Some(p), "Reviewer").unwrap();
@@ -533,6 +625,69 @@ mod tests {
             .join("Reviewer.md")
             .exists());
         delete_subagent(SubagentScope::Project, Some(p), "Reviewer").unwrap();
+
+        std::fs::remove_dir_all(&proj).ok();
+    }
+
+    #[test]
+    fn overwrite_replaces_in_place_and_refuses_to_create() {
+        let proj = std::env::temp_dir().join(format!("hoy-agent-ow-{}", std::process::id()));
+        std::fs::remove_dir_all(&proj).ok();
+        let p = proj.to_str().unwrap();
+        let md_path = proj.join(".hoy").join("agents").join("Reviewer.md");
+
+        // overwrite=true on a name with no file is rejected (edit must not create).
+        assert!(write_subagent(
+            SubagentScope::Project,
+            Some(p),
+            &sample_def("Reviewer"),
+            true
+        )
+        .is_err());
+
+        // Create, then overwrite in place: a single atomic write, no delete needed.
+        write_subagent(
+            SubagentScope::Project,
+            Some(p),
+            &sample_def("Reviewer"),
+            false,
+        )
+        .unwrap();
+        let mut edited = sample_def("Reviewer");
+        edited.body = "Edited prompt.".to_string();
+        write_subagent(SubagentScope::Project, Some(p), &edited, true).unwrap();
+        let md = std::fs::read_to_string(&md_path).unwrap();
+        assert!(md.trim_end().ends_with("Edited prompt."));
+
+        std::fs::remove_dir_all(&proj).ok();
+    }
+
+    #[test]
+    fn delete_clears_stale_enabled_disabled_override() {
+        let proj = std::env::temp_dir().join(format!("hoy-agent-clr-{}", std::process::id()));
+        std::fs::remove_dir_all(&proj).ok();
+        let p = proj.to_str().unwrap();
+        let json_path = proj.join(".hoy").join("subagents.json");
+
+        write_subagent(
+            SubagentScope::Project,
+            Some(p),
+            &sample_def("Reviewer"),
+            false,
+        )
+        .unwrap();
+        // Toggle it off, which records "Reviewer" in the disabled override.
+        set_enabled(SubagentScope::Project, Some(p), "Reviewer", false).unwrap();
+        let before: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&json_path).unwrap()).unwrap();
+        assert_eq!(before["disabled"], json!(["Reviewer"]));
+
+        // Deleting the type must also purge its override so a future same-named
+        // type does not inherit the stale off state.
+        delete_subagent(SubagentScope::Project, Some(p), "Reviewer").unwrap();
+        let after: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&json_path).unwrap()).unwrap();
+        assert!(after.get("disabled").is_none());
 
         std::fs::remove_dir_all(&proj).ok();
     }

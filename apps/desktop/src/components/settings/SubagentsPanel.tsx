@@ -19,6 +19,7 @@ import type { SubagentDef, SubagentScope, SubagentWrite } from "@/lib/types";
 import { useSessionStore } from "@/state/store";
 import { PanelHeader, StatusDot } from "./panels";
 import {
+  DEFAULT_TOOLS,
   emptyDraft,
   EXAMPLE_STARTER_PROMPT,
   SubagentEditor,
@@ -59,7 +60,9 @@ function draftToWrite(draft: SubagentDraft): SubagentWrite {
   return {
     name: draft.name.trim(),
     description: draft.description.trim() || null,
-    tools: draft.tools,
+    // An empty tools list in a .md reads back as FULL access (incl mcp), so write
+    // the explicit default working set the form advertises when nothing is picked.
+    tools: draft.tools.length ? draft.tools : [...DEFAULT_TOOLS],
     promptMode: draft.promptMode,
     model: draft.model.trim() || null,
     thinking: draft.thinking.trim() || null,
@@ -69,8 +72,8 @@ function draftToWrite(draft: SubagentDraft): SubagentWrite {
   };
 }
 
-// What the editor is currently working on. `originalName` is set in edit mode so
-// the save path can delete the old file before the create-only write.
+// What the editor is currently working on. `originalName` is set in edit mode (the
+// name field is locked there) and feeds the uniqueness check's self-exclusion.
 interface EditorState {
   mode: "new" | "edit";
   scope: WriteScope;
@@ -147,7 +150,6 @@ export function SubagentsPanel() {
   const activeProjectId = useSessionStore((s) => s.activeProjectId);
   const projects = useSessionStore((s) => s.projects);
   const setSubagentEnabled = useSessionStore((s) => s.setSubagentEnabled);
-  const refreshSubagents = useSessionStore((s) => s.refreshSubagents);
   const models = useSessionStore((s) => s.models);
   const modelOptions = useMemo(() => models.map((m) => m.id), [models]);
   const projectPath = useMemo(() => projects.find((p) => p.id === activeProjectId)?.path ?? null, [projects, activeProjectId]);
@@ -219,20 +221,19 @@ export function SubagentsPanel() {
 
   const save = (draft: SubagentDraft) => {
     if (!editor) return;
-    const { scope, mode, originalName } = editor;
+    const { scope, mode } = editor;
     const proj = scope === "project" ? projectPath : null;
     setBusy(true);
     void (async () => {
       try {
-        // Editing keeps the same filename, but write_subagent is create-only:
-        // delete the old file first, then write the new content.
-        if (mode === "edit" && originalName) {
-          await deleteSubagent(scope, originalName, proj);
-        }
-        await writeSubagent(draftToWrite(draft), scope, proj);
+        // An edit replaces the existing .md in place (overwrite=true): one atomic
+        // write, so a failed write can never lose the agent. A new agent is a
+        // create-only write (overwrite=false).
+        await writeSubagent(draftToWrite(draft), scope, proj, mode === "edit");
         setEditor(null);
+        // refresh() re-lists and warms the store cache in one call, so there is no
+        // need for a second refreshSubagents(projectPath) here.
         await refresh();
-        if (projectPath) await refreshSubagents(projectPath);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -251,7 +252,6 @@ export function SubagentsPanel() {
         await deleteSubagent(scope, def.name, proj);
         setConfirmDelete(null);
         await refresh();
-        if (projectPath) await refreshSubagents(projectPath);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {

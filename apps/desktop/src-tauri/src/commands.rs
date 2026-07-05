@@ -285,17 +285,20 @@ pub async fn set_subagent_enabled(
 
 // HOY-254 (Slice 1): author a custom subagent type. Rust serializes `def` into a
 // .md in the scope's agents dir (the single writer; the sidecar registry stays the
-// only reader), rejecting an unsafe/duplicate name or one that shadows a built-in.
+// only reader). `overwrite=false` creates (rejecting an unsafe/duplicate name or
+// one that shadows a built-in); `overwrite=true` replaces an existing file in a
+// single atomic write, the path an edit takes so it never has to delete first.
 // Respawns idle sidecars afterward, like set_subagent_enabled, so live sessions
-// reload the registry and pick up the new type.
+// reload the registry and pick up the change.
 #[tauri::command]
 pub async fn write_subagent(
     def: subagents_config::SubagentDef,
     scope: SubagentScope,
     project_path: Option<String>,
+    overwrite: bool,
     manager: State<'_, SidecarManager>,
 ) -> Result<(), String> {
-    subagents_config::write_subagent(scope, project_path.as_deref(), &def)?;
+    subagents_config::write_subagent(scope, project_path.as_deref(), &def, overwrite)?;
     respawn_idle_sessions(&manager).await;
     Ok(())
 }
