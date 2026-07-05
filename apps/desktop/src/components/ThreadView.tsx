@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1044,57 +1045,59 @@ function ProposedPlanCard({
             Keep planning
           </Button>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
-            {/* Inline execution: this thread implements the plan directly. The
-                edit-oversight sub-choice (review each edit vs auto-approve) lives
-                in the menu so it doesn't compete with the recommended path. */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-agent/40 text-agent hover:text-agent"
-                >
-                  Implement inline
-                  <ChevronDown className="opacity-70" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-56">
-                <DropdownMenuItem
-                  className="flex-col items-start gap-0.5"
-                  onSelect={() => onImplement("default", "inline")}
-                >
-                  <span>Review each edit</span>
-                  <span className="text-xs text-muted-foreground">
-                    Approve every file change as it happens
-                  </span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="flex-col items-start gap-0.5"
-                  onSelect={() => onImplement("acceptEdits", "inline")}
-                >
-                  <span>Auto-approve edits</span>
-                  <span className="text-xs text-muted-foreground">
-                    Apply changes without stopping to confirm
-                  </span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {/* Recommended path (HOY-295/300): a fresh subagent per step, each
-                reviewed before the next. The one filled action, so it reads as
-                the default. */}
+            {/* Inline execution runs the plan in this thread. It runs hands-off
+                (autonomous) by default; the caret offers a review-each-edit run
+                for when the user wants to approve every change. */}
+            <ButtonGroup>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-agent/40 text-agent hover:text-agent"
+                onClick={() => onImplement("autonomous", "inline")}
+              >
+                Implement inline
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Inline options"
+                    className="border-agent/40 px-1.5 text-agent hover:text-agent"
+                  >
+                    <ChevronDown className="opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-56">
+                  <DropdownMenuItem
+                    className="flex-col items-start gap-0.5"
+                    onSelect={() => onImplement("default", "inline")}
+                  >
+                    <span>Review each edit</span>
+                    <span className="text-xs text-muted-foreground">
+                      Approve each change instead of running hands-off
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </ButtonGroup>
+            {/* Recommended path (HOY-295/300): a fresh subagent builds each step
+                autonomously, reviewed before the next. The one filled action, so
+                it reads as the default. */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   size="sm"
                   className="bg-agent text-background hover:bg-agent/90"
-                  onClick={() => onImplement("default", "subagent")}
+                  onClick={() => onImplement("autonomous", "subagent")}
                 >
                   <Sparkle />
-                  Implement task-by-task
+                  Build with agents
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                Recommended: a fresh subagent per step, reviewed before the next
+                Recommended: a fresh subagent builds each step autonomously,
+                reviewed before the next
               </TooltipContent>
             </Tooltip>
           </div>
