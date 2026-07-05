@@ -527,16 +527,6 @@ type AssistantTurnData = Extract<Turn, { role: "assistant" }>;
 // identity of every completed turn, so referential equality on `turn` lets the
 // whole subtree bail out.
 const UserTurn = memo(function UserTurn({ turn }: { turn: UserTurnData }) {
-  if (turn.origin === "subagentResult") {
-    return (
-      <div className="rounded-md border border-agent/40 bg-agent/5 px-3 py-2 text-sm leading-relaxed text-muted-foreground">
-        <div className="mb-1 text-xs font-medium uppercase tracking-wide text-agent">
-          Subagent result{turn.subagent ? ` -- ${turn.subagent.type}` : ""}
-        </div>
-        <div className="whitespace-pre-wrap">{turn.text}</div>
-      </div>
-    );
-  }
   return (
     <div className="rounded-md border border-border/60 bg-card/40 px-3 py-2 text-sm leading-relaxed text-foreground">
       {turn.images && turn.images.length > 0 && (

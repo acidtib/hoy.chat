@@ -91,15 +91,6 @@ pub enum AgentEvent {
     SetEditorText {
         text: String,
     },
-    // A subagent spawn request surfaced from the parent's agent tool (HOY-231).
-    // The renderer creates a child thread and drives it; not a transcript event.
-    SubagentSpawned {
-        #[serde(rename = "agentId")]
-        agent_id: String,
-        #[serde(rename = "subagentType")]
-        subagent_type: String,
-        task: String,
-    },
     // HOY-300: a SYNCHRONOUS subagent spawn. Carries the request id of the
     // parent's blocked agent-tool `ctx.ui.input`; the renderer answers it with
     // the child's result via respond_permission -> respond_ui when the child is
@@ -312,23 +303,7 @@ mod tests {
 
     // rename_all on the enum only renames the "kind" tag, not struct-variant
     // field names; multi-word fields need their own #[serde(rename)]. This
-    // caught SubagentSpawned shipping snake_case to the renderer (HOY-231).
-    #[test]
-    fn subagent_spawned_serializes_camel_case() {
-        let v = serde_json::to_value(AgentEvent::SubagentSpawned {
-            agent_id: "a1".into(),
-            subagent_type: "Explore".into(),
-            task: "read the README".into(),
-        })
-        .unwrap();
-        assert_eq!(v["kind"], "subagentSpawned");
-        assert_eq!(v["agentId"], "a1");
-        assert_eq!(v["subagentType"], "Explore");
-        assert_eq!(v["task"], "read the README");
-        assert!(v.get("agent_id").is_none());
-        assert!(v.get("subagent_type").is_none());
-    }
-
+    // caught SubagentSpawnSync shipping snake_case to the renderer (HOY-300).
     #[test]
     fn subagent_spawn_sync_serializes_camelcase() {
         let v = serde_json::to_value(AgentEvent::SubagentSpawnSync {

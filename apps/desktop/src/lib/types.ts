@@ -48,9 +48,6 @@ export type AgentEvent =
     }
   | { kind: "error"; message: string }
   | { kind: "aborted" }
-  // The agent tool spawned a subagent (HOY-231). The renderer creates a child
-  // thread and drives it through the same create_session + send_prompt path.
-  | { kind: "subagentSpawned"; agentId: string; subagentType: string; task: string }
   // HOY-300: the agent tool blocked on ctx.ui.input for a synchronous subagent
   // spawn. The renderer spawns the child and remembers requestId so it can
   // answer the parent's blocked request (via respondPermission) once the
@@ -231,11 +228,6 @@ export type Turn =
       // @ context attached to this send (HOY-220), for display pills. Not
       // restored from disk (the content is inlined into the message text).
       contexts?: ContextRef[];
-      // HOY-233: a turn injected by a finished subagent, not typed by the user.
-      // Rendered as a marked result note. Not persisted: on reload pi records it
-      // as a plain user message, so the framed text keeps it legible.
-      origin?: "subagentResult";
-      subagent?: { type: string; agentId: string };
     }
   | {
       role: "assistant";

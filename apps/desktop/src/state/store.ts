@@ -46,16 +46,9 @@ import {
 import { formatElapsed, shortId } from "@/lib/utils";
 import { usePrefsStore } from "@/state/prefs";
 import {
-  buildDelivery,
   childThreadIdsOf,
   extractResultText,
-  queueDelivery,
-  shouldDecrementParentOnTeardown,
-  shouldDeferUpDelivery,
-  shouldDeliverToParent,
-  takeNextDelivery,
   threadDepth,
-  type Delivery,
 } from "./delivery";
 import { MAX_SUBAGENT_DEPTH, MAX_CONCURRENT_AGENTS } from "./limits";
 import {
@@ -385,11 +378,6 @@ interface SessionStore {
   runningAgents: Set<string>;
   agentQueue: string[];
   queuedPayloads: Record<string, { payload: SpawnPayload; childDepth: number }>;
-  // Outstanding-children counter, keyed by parent thread id (HOY-245). Transient,
-  // never persisted. Incremented when a child is spawned, decremented when a
-  // child's result is applied to the parent. An intermediate agent defers its own
-  // up-delivery while this is > 0 so its result reflects its descendants' work.
-  outstandingChildren: Record<string, number>;
   // Pi's per-session steering/follow-up queues, keyed by threadId (HOY-218). Fed
   // by queueUpdate events (Pi sends full arrays, so we replace). Drives the
   // read-only queued-message chips. Cleared on panel close; abort leaves it
@@ -648,7 +636,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   runningAgents: new Set<string>(),
   agentQueue: [],
   queuedPayloads: {},
-  outstandingChildren: {},
   queued: {},
   expandedThreadId: null,
   focusRequest: null,
@@ -961,9 +948,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return;
     }
     const childId = shortId("t");
-    // HOY-300: remember which blocked parent request this child answers. Only a
-    // synchronous spawn (subagentSpawnSync) carries a non-empty requestId; the
-    // fire-and-forget async spawn (subagentSpawned) has nothing to answer.
+    // HOY-300: remember which blocked parent request this child answers. A
+    // synchronous spawn (subagentSpawnSync) carries the parent's requestId so the
+    // child can respond in-band once its run is done.
     if (payload.requestId) {
       recordSubagentRequest(childId, {
         parentThreadId,
@@ -1007,12 +994,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       turns: {
         ...s.turns,
         [childId]: [{ role: "user", text: payload.task }],
-      },
-      // HOY-245: count this child against its parent so the parent defers its own
-      // up-delivery until the child (run-now or queued) delivers back into it.
-      outstandingChildren: {
-        ...s.outstandingChildren,
-        [parentThreadId]: (s.outstandingChildren[parentThreadId] ?? 0) + 1,
       },
     }));
     // Auto-open the child so the user follows the run live instead of finding
@@ -2046,15 +2027,8 @@ function releaseAgentSlot(threadId: string): void {
   useSessionStore.getState().pumpAgentQueue();
 }
 
-// Child ids whose teardown has already decremented their parent's
-// outstandingChildren (HOY-245). archive/delete purge each thread twice (via
-// closePanel and then directly), so this guard makes the decrement once-per-child
-// and stops a second purge from over-counting a still-live parent.
-const teardownAccounted = new Set<string>();
-
 // Remove a torn-down thread from the concurrency limiter (HOY-245) so it never
-// starts and never leaks a slot. Callers pump after to fill a freed slot. Also
-// keeps outstandingChildren converging on teardown (see below).
+// starts and never leaks a slot. Callers pump after to fill a freed slot.
 function purgeFromLimiter(threadId: string): void {
   useSessionStore.setState((s) => {
     const patch: Partial<SessionStore> = {};
@@ -2070,46 +2044,6 @@ function purgeFromLimiter(threadId: string): void {
       patch.agentQueue = s.agentQueue.filter((id) => id !== threadId);
       patch.queuedPayloads = queuedPayloads;
     }
-
-    // HOY-245: a mid-flight child that has NOT yet delivered (no completedAt)
-    // still counts against its parent's outstandingChildren. Tearing it down here
-    // must decrement that count, otherwise an idle intermediate parent defers its
-    // own up-delivery to root forever. The decrement runs regardless of limiter
-    // membership because a deferring intermediate child (its slot already
-    // released, but still undelivered) is in none of the maps above. It is
-    // guarded once-per-child (teardownAccounted) so the double purge per
-    // archive/delete cannot decrement twice and over-count a still-live parent.
-    // We deliberately do NOT re-trigger the parent's delivery: a surgically
-    // torn-down subtree just will not auto-deliver to root until the parent next
-    // runs, the safe direction (a missing result from a subtree the user removed,
-    // never a wrong one reaching root).
-    const purged = findThread(s.projects, threadId)?.thread;
-    let outstanding = s.outstandingChildren;
-    if (
-      purged &&
-      shouldDecrementParentOnTeardown(purged) &&
-      !teardownAccounted.has(threadId) &&
-      (outstanding[purged.parentThreadId!] ?? 0) > 0
-    ) {
-      teardownAccounted.add(threadId);
-      const parentId = purged.parentThreadId!;
-      const next = Math.max(0, (outstanding[parentId] ?? 0) - 1);
-      outstanding = { ...outstanding };
-      if (next === 0) delete outstanding[parentId];
-      else outstanding[parentId] = next;
-    }
-    // Stale-key cleanup: drop the purged thread's own child-count entry.
-    if (threadId in outstanding) {
-      if (outstanding === s.outstandingChildren) outstanding = { ...outstanding };
-      delete outstanding[threadId];
-    }
-    if (outstanding !== s.outstandingChildren) patch.outstandingChildren = outstanding;
-    // HOY-247: once the thread is gone from projects (delete removes it before
-    // this purge, so `purged` is undefined) its once-per-teardown guard entry is
-    // dead weight; prune it so teardownAccounted does not grow unbounded across a
-    // session. Archive keeps the thread, so `purged` stays defined there and the
-    // guard correctly persists for the paired purge.
-    if (!purged) teardownAccounted.delete(threadId);
     return patch;
   });
 }
@@ -2154,21 +2088,6 @@ async function streamPromptOnThread(
     // handling below reads the transcript, so flush any buffered deltas first to
     // preserve exact event ordering before this event folds in.
     flushStreamDeltas(threadId);
-    // A subagent spawn (HOY-231): create the child thread and drive it
-    // through this same helper, rather than folding it into this thread's
-    // transcript.
-    if (event.kind === "subagentSpawned") {
-      // Fire-and-forget spawn (async delivery, HOY-231): no blocked parent
-      // request to answer, so requestId is the empty sentinel; spawnChildThread
-      // only records a mapping when requestId is non-empty (see below).
-      void useSessionStore.getState().spawnChildThread(threadId, {
-        agentId: event.agentId,
-        subagentType: event.subagentType,
-        task: event.task,
-        requestId: "",
-      });
-      return;
-    }
     // HOY-300: the agent tool blocked on ctx.ui.input for a synchronous spawn.
     // The child must be able to answer the parent's blocked request once it is
     // done, so the parent must be live (have a sessionId) to have issued it.
@@ -2789,172 +2708,6 @@ export function respondSubagentResult(childThreadId: string): void {
     })),
   }));
   useSessionStore.getState().closePanel(childThreadId);
-}
-
-// HOY-233: on a thread's `done`, push a finished child's result up to its parent
-// and drain any deliveries that queued for this thread while it was streaming.
-async function deliverAndDrain(finishedThreadId: string): Promise<void> {
-  const state = useSessionStore.getState();
-  const found = findThread(state.projects, finishedThreadId);
-  if (!found) return;
-  const { thread } = found;
-  // HOY-245: an intermediate agent (a subagent that is itself a parent) must not
-  // deliver its result up while it still has outstanding children; its result
-  // would be computed before their work lands. Defer until the counter is 0.
-  // Depth-1 leaves have no children (counter undefined -> 0), so they deliver
-  // immediately, exactly as before.
-  const outstanding = state.outstandingChildren[finishedThreadId] ?? 0;
-  const deferUp = shouldDeferUpDelivery(thread, outstanding);
-  if (!deferUp && shouldDeliverToParent(thread)) {
-    const childTurns = state.turns[finishedThreadId] ?? [];
-    const delivery = buildDelivery(
-      thread.spawnedBy?.type ?? "subagent",
-      thread.spawnedBy?.agentId ?? "",
-      childTurns,
-    );
-    await deliverToParent(thread.parentThreadId!, delivery);
-    // Stamp terminal so a later done (follow-up) does not re-deliver. HOY-239.
-    useSessionStore.setState((s) => ({
-      projects: patchThread(s.projects, finishedThreadId, (th) => ({
-        ...th,
-        completedAt: th.completedAt ?? Date.now(),
-      })),
-    }));
-    // Auto-close: a delivered child is terminal. closePanel kills its sidecar
-    // and drops the panel; the sessionFile persists so reopening rehydrates
-    // read-only. Reopen-to-continue is harmless (completedAt guard = no
-    // re-deliver). Runs AFTER deliverToParent, which read the child's turns.
-    useSessionStore.getState().closePanel(finishedThreadId);
-  }
-  // This thread may itself be a parent with a queued delivery: it just went idle,
-  // so deliver the next one now (deliverToParent handles the not-busy path).
-  const next = takeNextDelivery(finishedThreadId);
-  if (next) await deliverToParent(finishedThreadId, next);
-}
-
-// Parents with a delivery in flight but whose activeChannels slot is not yet
-// set (the acquireSession await window when the panel was closed). Guards the
-// check-then-act race so two children finishing back-to-back cannot both resume
-// a session-less parent and clobber each other's turn.
-const deliveringParents = new Set<string>();
-
-// Decrement a parent's outstanding-children counter, deleting the key at zero.
-// Shared by the deliverToParent paths that must account for a delivery the
-// caller (deliverAndDrain) already dequeued: the normal apply, a pre-seed error,
-// and the no-sessionFile bail-out. Skipping the decrement leaves the counter
-// inflated so shouldDeferUpDelivery never clears and the parent's own up-delivery
-// hangs the grandparent forever.
-function decrementOutstanding(
-  map: Record<string, number>,
-  parentThreadId: string,
-): Record<string, number> {
-  const cur = map[parentThreadId] ?? 0;
-  const next = Math.max(0, cur - 1);
-  const copy = { ...map };
-  if (next === 0) delete copy[parentThreadId];
-  else copy[parentThreadId] = next;
-  return copy;
-}
-
-// Inject `delivery` into `parentThreadId` as a marked subagent-result turn and
-// stream the parent's continuation. If the parent is mid-turn, queue instead and
-// let its next `done` drain it. Resumes the parent sidecar from its transcript
-// when the panel was closed.
-async function deliverToParent(parentThreadId: string, delivery: Delivery): Promise<void> {
-  if (activeChannels.has(parentThreadId) || deliveringParents.has(parentThreadId)) {
-    queueDelivery(parentThreadId, delivery);
-    return;
-  }
-  const found = findThread(useSessionStore.getState().projects, parentThreadId);
-  if (!found) return;
-  const { project, thread: parent } = found;
-  // Claim the slot synchronously, before any await, so a concurrent child's
-  // done handler queues instead of racing the acquireSession window. Handed off
-  // to activeChannels (set synchronously inside streamPromptOnThread) for the
-  // rest of the turn; released in finally.
-  deliveringParents.add(parentThreadId);
-  let seeded = false;
-  try {
-    let sessionId = parent.sessionId ?? null;
-    if (!sessionId) {
-      if (!parent.sessionFile) {
-        // Normally unreachable — a parent that queued a child has run a turn and
-        // has a sessionFile — but a deep parent that has not yet persisted a turn
-        // can land here. The caller already dequeued this delivery so we cannot
-        // re-run it; still decrement, or the parent defers its own up-delivery
-        // forever and the grandparent hangs.
-        useSessionStore.setState((s) => ({
-          outstandingChildren: decrementOutstanding(s.outstandingChildren, parentThreadId),
-        }));
-        return;
-      }
-      sessionId = await acquireSession(parentThreadId, project.path ?? "", parent.sessionFile);
-      useSessionStore.getState().setThreadSessionIdInternal(parentThreadId, sessionId);
-    }
-    useSessionStore.setState((s) => ({
-      turns: {
-        ...s.turns,
-        [parentThreadId]: [
-          ...(s.turns[parentThreadId] ?? []),
-          {
-            role: "user" as const,
-            text: delivery.message,
-            origin: "subagentResult" as const,
-            subagent: { type: delivery.subagentType, agentId: delivery.agentId },
-          },
-          { role: "assistant" as const, blocks: [], streaming: true },
-        ],
-      },
-      streaming: { ...s.streaming, [parentThreadId]: true },
-      threadErrors: { ...s.threadErrors, [parentThreadId]: null },
-      projects: patchThread(s.projects, parentThreadId, (th) => ({
-        ...th,
-        updatedAt: Date.now(),
-      })),
-      // HOY-245: this is the single point a child's result is APPLIED to the
-      // parent (the busy/queued early-return above does not reach here). One
-      // decrement per apply; when it hits 0 the parent stops deferring and its
-      // next done delivers its now-complete result up.
-      outstandingChildren: decrementOutstanding(s.outstandingChildren, parentThreadId),
-    }));
-    seeded = true;
-    await streamPromptOnThread(parentThreadId, sessionId, delivery.message);
-  } catch (e) {
-    // Mirror submitPrompt's catch: drop the channel so a failed delivery does
-    // not block every future one behind a stale busy-guard. Only rewrite the
-    // trailing turn when this call actually seeded the assistant shell; if
-    // acquireSession threw before seeding, the last turn is the parent's prior
-    // completed turn, so fall to the thread banner instead of corrupting it.
-    activeChannels.delete(parentThreadId);
-    useSessionStore.setState((s) => {
-      const list = s.turns[parentThreadId] ?? [];
-      const last = list[list.length - 1];
-      const streaming = { ...s.streaming, [parentThreadId]: false };
-      if (seeded && last && last.role === "assistant") {
-        return {
-          streaming,
-          turns: {
-            ...s.turns,
-            [parentThreadId]: [...list.slice(0, -1), { ...last, streaming: false, error: String(e) }],
-          },
-        };
-      }
-      // HOY-245: a pre-seed failure never ran the apply-path decrement, and the
-      // caller already took this delivery off the queue (takeNextDelivery), so
-      // without this the parent's counter stays inflated and it defers forever.
-      // Guarded strictly on !seeded: a post-seed error already decremented.
-      const outstandingChildren = !seeded
-        ? decrementOutstanding(s.outstandingChildren, parentThreadId)
-        : s.outstandingChildren;
-      return {
-        streaming,
-        threadErrors: { ...s.threadErrors, [parentThreadId]: String(e) },
-        ...(outstandingChildren !== s.outstandingChildren ? { outstandingChildren } : {}),
-      };
-    });
-  } finally {
-    deliveringParents.delete(parentThreadId);
-  }
 }
 
 // Monotonic id for transient extension `notify` notices, so each can be

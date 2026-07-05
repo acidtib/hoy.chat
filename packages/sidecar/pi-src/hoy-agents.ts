@@ -9,9 +9,6 @@ import { Type } from "typebox";
 import type { SubagentRegistry } from "./hoy-agents-registry";
 import { enabledTypes } from "./hoy-agents-registry";
 
-// HOY-300: superseded by SPAWN_SYNC_PREFIX below; kept exported because other
-// code still references it for now.
-export const SPAWN_NOTIFY_PREFIX = "@hoy/spawn-subagent:";
 export const SPAWN_SYNC_PREFIX = "@hoy/spawn-subagent-sync:";
 
 const ALLOW = "Allow";

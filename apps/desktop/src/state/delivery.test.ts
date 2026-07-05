@@ -1,14 +1,7 @@
-import { test, expect, beforeEach } from "bun:test";
+import { test, expect } from "bun:test";
 import type { Project, Turn } from "../lib/types";
 import {
   extractResultText,
-  buildDelivery,
-  queueDelivery,
-  takeNextDelivery,
-  pendingDeliveries,
-  shouldDeliverToParent,
-  shouldDecrementParentOnTeardown,
-  shouldDeferUpDelivery,
   childThreadIdsOf,
   isSubagentThread,
   threadDepth,
@@ -23,8 +16,6 @@ const asst = (over: Partial<Extract<Turn, { role: "assistant" }>> = {}): Turn =>
 });
 const text = (content: string): Turn =>
   asst({ blocks: [{ kind: "text", content }] });
-
-beforeEach(() => pendingDeliveries.clear());
 
 test("extractResultText joins the final assistant text blocks", () => {
   const turns: Turn[] = [
@@ -52,72 +43,6 @@ test("extractResultText handles empty output", () => {
   expect(extractResultText([{ role: "user", text: "go" }, asst()])).toBe(
     "(the subagent produced no output.)",
   );
-});
-
-test("buildDelivery frames the message with type and short id", () => {
-  const d = buildDelivery("Explore", "abcdef1234567890", [text("found it")]);
-  expect(d.subagentType).toBe("Explore");
-  expect(d.agentId).toBe("abcdef1234567890");
-  expect(d.message).toBe("[Subagent result -- Explore (abcdef12)]\n\nfound it");
-});
-
-test("queueDelivery / takeNextDelivery is FIFO per parent", () => {
-  const a = buildDelivery("Explore", "a1111111", [text("A")]);
-  const b = buildDelivery("Explore", "b2222222", [text("B")]);
-  queueDelivery("p", a);
-  queueDelivery("p", b);
-  expect(takeNextDelivery("p")).toBe(a);
-  expect(takeNextDelivery("p")).toBe(b);
-  expect(takeNextDelivery("p")).toBeUndefined();
-});
-
-test("takeNextDelivery on an unknown parent is undefined", () => {
-  expect(takeNextDelivery("nobody")).toBeUndefined();
-});
-
-test("shouldDeliverToParent: only a not-yet-completed child delivers", () => {
-  expect(shouldDeliverToParent({ parentThreadId: "p1", completedAt: null })).toBe(true);
-  expect(shouldDeliverToParent({ parentThreadId: "p1", completedAt: 123 })).toBe(false); // already delivered
-  expect(shouldDeliverToParent({ parentThreadId: null, completedAt: null })).toBe(false); // not a child
-  expect(shouldDeliverToParent({})).toBe(false);
-});
-
-test("shouldDecrementParentOnTeardown: only an undelivered child decrements its parent", () => {
-  // A mid-flight child (has a parent, no completedAt) still counts, so a teardown
-  // decrements the parent's outstandingChildren.
-  expect(shouldDecrementParentOnTeardown({ parentThreadId: "p1", completedAt: null })).toBe(true);
-  // Already delivered (completedAt stamped) decremented at apply time; skip to
-  // avoid a double-decrement.
-  expect(shouldDecrementParentOnTeardown({ parentThreadId: "p1", completedAt: 123 })).toBe(false);
-  // Not a subagent (no parent) and a root thread never decrement anything.
-  expect(shouldDecrementParentOnTeardown({ parentThreadId: null, completedAt: null })).toBe(false);
-  expect(shouldDecrementParentOnTeardown({})).toBe(false);
-});
-
-test("shouldDeferUpDelivery: a leaf child (no outstanding children) never defers", () => {
-  // Depth-1 behavior: an isSubagentThread with 0 outstanding delivers immediately.
-  expect(shouldDeferUpDelivery({ parentThreadId: "p1" }, 0)).toBe(false);
-  // Even a root with a stray count never defers (it has no parent to deliver to).
-  expect(shouldDeferUpDelivery({ parentThreadId: null }, 3)).toBe(false);
-  expect(shouldDeferUpDelivery({}, 3)).toBe(false);
-});
-
-test("shouldDeferUpDelivery: an intermediate agent with outstanding children defers", () => {
-  const c = { parentThreadId: "root" };
-  // One grandchild outstanding -> defer.
-  expect(shouldDeferUpDelivery(c, 1)).toBe(true);
-  // Two grandchildren outstanding -> still defer; only 0 clears it.
-  expect(shouldDeferUpDelivery(c, 2)).toBe(true);
-  // After both grandchildren applied (counter decremented to 0) -> delivers up.
-  expect(shouldDeferUpDelivery(c, 0)).toBe(false);
-});
-
-test("deliver-once across depths: completedAt gates a re-deliver even once undeferred", () => {
-  // After an intermediate agent finally delivers up, completedAt is stamped; a
-  // further done (outstanding now 0, so no defer) must not re-deliver.
-  const delivered = { parentThreadId: "root", completedAt: 999 };
-  expect(shouldDeferUpDelivery(delivered, 0)).toBe(false);
-  expect(shouldDeliverToParent(delivered)).toBe(false);
 });
 
 test("childThreadIdsOf: returns ids of threads whose parentThreadId matches", () => {

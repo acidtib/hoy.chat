@@ -1,9 +1,8 @@
-// HOY-233 Phase 2: pure helpers for delivering a finished subagent's result back
-// to its parent thread. No Tauri imports (import type only) so bun test can load
-// this module standalone. The side-effectful wiring lives in store.ts.
+// HOY-233 Phase 2: pure helpers around subagent threads. No Tauri imports (import
+// type only) so bun test can load this module standalone. The side-effectful
+// wiring lives in store.ts. HOY-300 removed the async-delivery layer (results now
+// return in-band via respondSubagentResult); the tree/identity helpers remain.
 import type { Project, Turn } from "../lib/types";
-
-export type Delivery = { message: string; subagentType: string; agentId: string };
 
 const NO_OUTPUT = "(the subagent produced no output.)";
 
@@ -26,72 +25,6 @@ export function extractResultText(turns: Turn[]): string {
     .join("")
     .trim();
   return body || NO_OUTPUT;
-}
-
-// The literal double-hyphen below is an ASCII separator in a label, not an em-dash.
-export function buildDelivery(
-  subagentType: string,
-  agentId: string,
-  childTurns: Turn[],
-): Delivery {
-  const shortId = agentId.slice(0, 8);
-  const message = `[Subagent result -- ${subagentType} (${shortId})]\n\n${extractResultText(childTurns)}`;
-  return { message, subagentType, agentId };
-}
-
-// Deliveries that arrived while the parent was mid-turn. Drained one per parent
-// `done`, so results stay ordered and individually attributable.
-export const pendingDeliveries = new Map<string, Delivery[]>();
-
-export function queueDelivery(parentThreadId: string, d: Delivery): void {
-  const q = pendingDeliveries.get(parentThreadId);
-  if (q) q.push(d);
-  else pendingDeliveries.set(parentThreadId, [d]);
-}
-
-export function takeNextDelivery(parentThreadId: string): Delivery | undefined {
-  const q = pendingDeliveries.get(parentThreadId);
-  if (!q || q.length === 0) return undefined;
-  const next = q.shift();
-  if (q.length === 0) pendingDeliveries.delete(parentThreadId);
-  return next;
-}
-
-// A child delivers its result to its parent exactly once, on first completion.
-// completedAt is set on that first delivery; a later done (e.g. a follow-up in
-// the child's own composer) sees it set and does not re-inject. HOY-239.
-export function shouldDeliverToParent(thread: {
-  parentThreadId?: string | null;
-  completedAt?: number | null;
-}): boolean {
-  return !!thread.parentThreadId && !thread.completedAt;
-}
-
-// On teardown of a subagent child, its parent's outstanding-children counter must
-// be decremented iff the child was still outstanding: it has a parent AND had not
-// yet delivered (no completedAt). A child that already delivered decremented the
-// counter at apply time and was stamped completedAt, so this returns false there,
-// avoiding a double-decrement (HOY-240 auto-close stamps completedAt BEFORE
-// closePanel). Same shape as shouldDeliverToParent, named for the teardown call
-// site. HOY-245.
-export function shouldDecrementParentOnTeardown(thread: {
-  parentThreadId?: string | null;
-  completedAt?: number | null;
-}): boolean {
-  return !!thread.parentThreadId && !thread.completedAt;
-}
-
-// An intermediate agent (a subagent that is itself a parent of live children)
-// must defer delivering its own result up until every child has delivered back
-// into it, otherwise its result is computed before its descendants' work lands
-// (a bug that only becomes reachable at depth >= 2). `outstanding` is the parent
-// thread's outstanding-children count. A leaf (no children -> 0) never defers, so
-// depth-1 delivery is unchanged. HOY-245.
-export function shouldDeferUpDelivery(
-  thread: { parentThreadId?: string | null },
-  outstanding: number,
-): boolean {
-  return isSubagentThread(thread) && outstanding > 0;
 }
 
 // A thread is a subagent thread iff it was spawned by a parent. Drives the
