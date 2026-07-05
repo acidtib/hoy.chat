@@ -75,6 +75,7 @@ import {
 } from "@/components/ai-elements/plan";
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Composer } from "@/components/Composer";
+import { GoalCard } from "@/components/GoalCard";
 import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
 import { threadIconColorClass } from "@/lib/threadColor";
@@ -172,7 +173,7 @@ export function ThreadView({
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const { title, projectId, projectPath, threadModel, permissionMode, thinkingLevel, sessionId } = useMemo(() => {
+  const { title, projectId, projectPath, threadModel, permissionMode, thinkingLevel, sessionId, goal } = useMemo(() => {
     const found = findThread(projects, threadId);
     return {
       title: found?.thread.title ?? "New thread",
@@ -182,6 +183,7 @@ export function ThreadView({
       permissionMode: found?.thread.permissionMode ?? ("default" as const),
       thinkingLevel: found?.thread.thinkingLevel ?? ("high" as const),
       sessionId: found?.thread.sessionId ?? null,
+      goal: found?.thread.goal,
     };
   }, [projects, threadId]);
 
@@ -495,6 +497,8 @@ export function ThreadView({
 
           <QueuedMessages queued={queued} streaming={streaming} />
 
+          {goal && <GoalCard threadId={threadId} goal={goal} />}
+
           <div
             className={cn(
               "shrink-0 border-t border-border",
@@ -506,6 +510,7 @@ export function ThreadView({
         </>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col px-3 pb-2 pt-1">
+          {goal && <GoalCard threadId={threadId} goal={goal} />}
           {composer}
         </div>
       )}
