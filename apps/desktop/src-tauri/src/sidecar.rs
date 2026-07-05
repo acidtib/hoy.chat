@@ -30,6 +30,12 @@ type EventSink = Arc<Mutex<Option<Channel<AgentEvent>>>>;
 // prefix is a spawn request, consumed here and never shown to the user (HOY-231).
 const SPAWN_NOTIFY_PREFIX: &str = "@hoy/spawn-subagent:";
 
+// Byte-identical to SPAWN_SYNC_PREFIX in hoy-agents.ts. An `input` request's
+// title with this prefix is a SYNCHRONOUS spawn request: the parent tool
+// blocks on ctx.ui.input until the renderer answers with the child's result
+// (HOY-300).
+const SPAWN_SYNC_PREFIX: &str = "@hoy/spawn-subagent-sync:";
+
 // Outcome of awaiting a correlated response, before it is mapped to the public
 // String error in request()/request_with_dialog_grace().
 enum RequestError {
@@ -654,10 +660,52 @@ fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome 
             })
         }
         // Text dialogs: input carries a placeholder hint, editor a seed value.
-        // Both answer with {value}, the same shape select uses.
-        "input" | "editor" => ExtUiOutcome::Dialog(AgentEvent::PermissionRequest {
+        // Both answer with {value}, the same shape select uses. An input whose
+        // title carries the sync-spawn sentinel is a HOY-300 synchronous
+        // subagent spawn, not a real text prompt.
+        "input" => {
+            let raw = str_field("title").unwrap_or_default();
+            match raw
+                .strip_prefix(SPAWN_SYNC_PREFIX)
+                .and_then(|j| serde_json::from_str::<Value>(j).ok())
+            {
+                // HOY-300: synchronous subagent spawn — a Dialog so route_message
+                // tracks request_id in pending_ui (abort cancels the blocked tool).
+                Some(p) => ExtUiOutcome::Dialog(AgentEvent::SubagentSpawnSync {
+                    request_id: id.to_string(),
+                    agent_id: p
+                        .get("agentId")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    subagent_type: p
+                        .get("subagentType")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    task: p
+                        .get("task")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                }),
+                None => ExtUiOutcome::Dialog(AgentEvent::PermissionRequest {
+                    request_id: id.to_string(),
+                    method: "input".to_string(),
+                    title: raw,
+                    message: None,
+                    options: None,
+                    placeholder: str_field("placeholder"),
+                    prefill: str_field("prefill"),
+                    tool_call_id: None,
+                    tool_name: None,
+                    tool_args: None,
+                }),
+            }
+        }
+        "editor" => ExtUiOutcome::Dialog(AgentEvent::PermissionRequest {
             request_id: id.to_string(),
-            method: method.to_string(),
+            method: "editor".to_string(),
             title: str_field("title").unwrap_or_default(),
             message: None,
             options: None,
@@ -1912,6 +1960,31 @@ mod live_tests {
                 assert_eq!(task, "read the README");
             }
             other => panic!("expected SubagentSpawned, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn spawn_sync_sentinel_input_maps_to_subagent_spawn_sync() {
+        let payload = r#"{"agentId":"a1","subagentType":"Explore","task":"read the README"}"#;
+        let value = serde_json::json!({
+            "type": "extension_ui_request",
+            "id": "u1",
+            "method": "input",
+            "title": format!("{SPAWN_SYNC_PREFIX}{payload}"),
+        });
+        match classify_extension_ui("u1", "input", &value) {
+            ExtUiOutcome::Dialog(AgentEvent::SubagentSpawnSync {
+                request_id,
+                agent_id,
+                subagent_type,
+                task,
+            }) => {
+                assert_eq!(request_id, "u1");
+                assert_eq!(agent_id, "a1");
+                assert_eq!(subagent_type, "Explore");
+                assert_eq!(task, "read the README");
+            }
+            other => panic!("expected SubagentSpawnSync, got {other:?}"),
         }
     }
 

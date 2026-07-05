@@ -100,6 +100,19 @@ pub enum AgentEvent {
         subagent_type: String,
         task: String,
     },
+    // HOY-300: a SYNCHRONOUS subagent spawn. Carries the request id of the
+    // parent's blocked agent-tool `ctx.ui.input`; the renderer answers it with
+    // the child's result via respond_permission -> respond_ui when the child is
+    // done. A Dialog outcome, so route_message abort-tracks request_id.
+    SubagentSpawnSync {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "agentId")]
+        agent_id: String,
+        #[serde(rename = "subagentType")]
+        subagent_type: String,
+        task: String,
+    },
     // Pi's queue_update: the current steering and follow-up queues for this
     // session, emitted on every enqueue/dequeue while a turn streams. Drives the
     // composer's queued-message chips (HOY-218). Session-level, not a turn block.
@@ -314,6 +327,21 @@ mod tests {
         assert_eq!(v["task"], "read the README");
         assert!(v.get("agent_id").is_none());
         assert!(v.get("subagent_type").is_none());
+    }
+
+    #[test]
+    fn subagent_spawn_sync_serializes_camelcase() {
+        let v = serde_json::to_value(AgentEvent::SubagentSpawnSync {
+            request_id: "r1".into(),
+            agent_id: "a1".into(),
+            subagent_type: "Explore".into(),
+            task: "look".into(),
+        })
+        .unwrap();
+        assert_eq!(v["kind"], "subagentSpawnSync");
+        assert_eq!(v["requestId"], "r1");
+        assert_eq!(v["agentId"], "a1");
+        assert_eq!(v["subagentType"], "Explore");
     }
 }
 
