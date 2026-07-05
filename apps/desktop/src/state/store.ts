@@ -2097,6 +2097,17 @@ async function streamPromptOnThread(
         threadId,
       )?.thread.sessionId;
       if (!parentSessionId) return; // parent must be live to have issued the request
+      // HOY-300: this parent is about to block on the child's result. If it holds
+      // a concurrency slot (it is itself a running subagent), release it so the
+      // child can start even under a full cap — a blocked agent isn't computing.
+      if (useSessionStore.getState().runningAgents.has(threadId)) {
+        useSessionStore.setState((s) => {
+          const runningAgents = new Set(s.runningAgents);
+          runningAgents.delete(threadId);
+          return { runningAgents };
+        });
+        useSessionStore.getState().pumpAgentQueue();
+      }
       void useSessionStore.getState().spawnChildThread(threadId, {
         agentId: event.agentId,
         subagentType: event.subagentType,
