@@ -10,6 +10,7 @@ import {
   deleteSessionFile,
   enqueuePrompt,
   evaluateGoal,
+  forkSession,
   getCommands,
   getMessages,
   getSessionStats,
@@ -582,11 +583,10 @@ interface SessionStore {
   // if already showing; closeRightDock just closes it.
   toggleRightDock: (view: RightDockView) => void;
   closeRightDock: () => void;
-  // Branch a new line of conversation from a session entry (HOY-280 affordance).
-  // The fork RPC that turns this into a new thread is wired in HOY-283; until
-  // then it surfaces an honest notice so the navigator's action is discoverable
-  // without pretending to work.
-  branchFromEntry: (threadId: string, entryId: string) => void;
+  // Branch a new thread from a session entry (HOY-283): opens a sidecar on the
+  // source file, forks it to a new branch file (source untouched), and surfaces
+  // the branch as a child thread seeded to that point.
+  branchFromEntry: (threadId: string, entryId: string) => Promise<void>;
   // Trigger a manual compaction on the thread's session, optionally with custom
   // summarization instructions (HOY-229). Gated on an idle, live session.
   compact: (threadId: string, customInstructions?: string) => Promise<void>;
@@ -1606,15 +1606,95 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   closeRightDock: () => set({ rightDock: null }),
 
-  branchFromEntry: (threadId, entryId) => {
-    // HOY-283 replaces this with a real fork(entryId) -> new thread. Until then,
-    // keep the affordance honest rather than silently doing nothing.
-    void entryId;
-    pushNotice(
-      threadId,
-      "Branching from an entry arrives with the fork action (HOY-283).",
-      "info",
-    );
+  branchFromEntry: async (threadId, entryId) => {
+    const found = findThread(get().projects, threadId);
+    if (!found) return;
+    const { project, thread: source } = found;
+    if (!source.sessionFile) {
+      pushNotice(threadId, "Can't branch yet: this thread has no saved session.", "error");
+      return;
+    }
+    // Fork reads the source file up to the entry; branching mid-write risks a
+    // torn read, so wait for a settled point (the spike's double-open note).
+    if (get().streaming[threadId]) {
+      pushNotice(threadId, "Finish the current turn before branching.", "info");
+      return;
+    }
+
+    const cwd = project.path ?? "";
+    const depth = threadDepth(get().projects, threadId);
+    // Open a fresh sidecar on the SOURCE file, then fork it: pi writes a new
+    // branch file and rebinds THIS sidecar to it, leaving the source untouched.
+    let branchSessionId: string;
+    try {
+      branchSessionId = await createSession(
+        cwd,
+        source.sessionFile,
+        null,
+        source.permissionMode ?? null,
+        depth,
+        usePrefsStore.getState().requireSubagentApproval,
+        null,
+      );
+    } catch (e) {
+      pushNotice(threadId, `Branch failed: ${String(e)}`, "error");
+      return;
+    }
+
+    let forkText: string | undefined;
+    try {
+      const result = await forkSession(branchSessionId, entryId);
+      if (result.cancelled) {
+        releaseSession(branchSessionId);
+        pushNotice(threadId, "Branch cancelled.", "info");
+        return;
+      }
+      forkText = result.text;
+    } catch (e) {
+      releaseSession(branchSessionId);
+      pushNotice(threadId, `Branch failed: ${String(e)}`, "error");
+      return;
+    }
+
+    // The sidecar now points at the branch; read its new file and transcript.
+    let branchFile: string | undefined;
+    try {
+      branchFile = (await getSessionStats(branchSessionId)).sessionFile ?? undefined;
+    } catch {
+      // Best-effort: without the file the thread still works live; a reopen
+      // after restart just can't restore it. Surfaced by the missing sessionFile.
+    }
+    let branchTurns: Turn[] = [];
+    try {
+      branchTurns = messagesToTurns(await getMessages(branchSessionId));
+    } catch {
+      // Best-effort: a failed read leaves an empty transcript, repopulated live.
+    }
+
+    const childId = shortId("t");
+    const seed = (forkText?.trim() || source.title).trim();
+    const child: Thread = {
+      id: childId,
+      title: `Branch: ${seed.length > 40 ? `${seed.slice(0, 40)}...` : seed}`,
+      updatedAt: Date.now(),
+      sessionId: branchSessionId,
+      sessionFile: branchFile,
+      parentThreadId: threadId,
+      ...(source.model ? { model: source.model } : {}),
+      ...(source.permissionMode ? { permissionMode: source.permissionMode } : {}),
+      ...(source.thinkingLevel ? { thinkingLevel: source.thinkingLevel } : {}),
+    };
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === project.id ? { ...p, threads: [...p.threads, child] } : p,
+      ),
+      turns: { ...s.turns, [childId]: branchTurns },
+    }));
+    // Open the branch (its sessionId is already live, so hydrateThread no-ops),
+    // and prefill the composer with the forked user message (pi's behavior).
+    get().openThread(childId);
+    if (forkText) get().setDraft(childId, forkText);
+    pushNotice(childId, `Branched from "${source.title}".`, "info");
   },
 
   compact: async (threadId, customInstructions) => {

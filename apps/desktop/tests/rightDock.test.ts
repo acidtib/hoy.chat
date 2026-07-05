@@ -93,11 +93,3 @@ describe("submitPrompt /tree interception (HOY-280)", () => {
   });
 });
 
-describe("branchFromEntry seam (HOY-280 -> HOY-283)", () => {
-  test("surfaces an honest notice until the fork action lands", () => {
-    useSessionStore.getState().branchFromEntry("t1", "entry-123");
-    const notices = useSessionStore.getState().notices.t1 ?? [];
-    expect(notices.length).toBe(1);
-    expect(notices[0].message).toMatch(/HOY-283/);
-  });
-});
