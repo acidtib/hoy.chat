@@ -30,6 +30,7 @@ import {
   setPermissionMode as ipcSetPermissionMode,
   setSubagentEnabled as ipcSetSubagentEnabled,
   setThinkingLevel,
+  verifyGoalCommand,
 } from "@/lib/ipc";
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { fileToImageAttachment } from "@/lib/images";
@@ -60,6 +61,7 @@ import type {
   AgentEvent,
   ContextRef,
   ExtWidget,
+  GoalVerifyResult,
   ImageAttachment,
   ImageContent,
   McpScope,
@@ -2317,6 +2319,32 @@ function goalContinuationPrompt(condition: string, reason: string): string {
   );
 }
 
+// HOY-298: cap on the verify-command output tail folded into a continuation
+// reason. Task A already tail-bounds each stream to ~8000 chars; this keeps the
+// combined snippet from bloating the transcript.
+const VERIFY_REASON_MAX_CHARS = 1500;
+
+// HOY-298: build the continuation reason for a FAILED verify gate. Leads with the
+// exit code and command, then a bounded tail of the combined stdout+stderr so the
+// model sees why the deterministic check failed without swamping the transcript.
+function buildVerifyFailReason(
+  command: string,
+  verify: GoalVerifyResult,
+): string {
+  const combined = [verify.stdout, verify.stderr]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join("\n");
+  const tail =
+    combined.length > VERIFY_REASON_MAX_CHARS
+      ? `...${combined.slice(combined.length - VERIFY_REASON_MAX_CHARS)}`
+      : combined;
+  return (
+    `Verify command failed (exit ${verify.code}): ${command}` +
+    (tail ? `\n${tail}` : "")
+  );
+}
+
 // HOY-263: send the continuation through the normal submitPrompt path (a fresh
 // per-prompt sink), shared by resumeGoal (a user resume) and the done-handler
 // loop (an auto-continue) so both read identically in the transcript. A second
@@ -2462,6 +2490,65 @@ async function maybeContinueGoal(
         }
         const outcome = applyEvaluation(current, res);
         if (outcome.type === "met") {
+          // HOY-298 verify gate: the transcript evaluator said met. If the goal
+          // pins a deterministic verify command, it must ALSO exit 0 before we
+          // declare the goal met; otherwise we fall through to continue and carry
+          // the command output forward. No verifyCommand => v1 behavior exactly.
+          if (current.verifyCommand) {
+            let verify: GoalVerifyResult;
+            try {
+              verify = await verifyGoalCommand(
+                sessionId,
+                current.verifyCommand,
+                current.verifyCwd,
+              );
+            } catch (e) {
+              // Same fail-open discipline as evaluateGoal, but here fail-open
+              // means "gate FAILED -> keep working", never a false met: a rejected
+              // IPC (no live sidecar, spawn failure) is a code:-1 failure, never a
+              // pass, and never an unhandled throw escaping the handler.
+              verify = {
+                code: -1,
+                stdout: "",
+                stderr: `verify command could not run: ${String(e)}`,
+                killed: false,
+              };
+            }
+            // CRITICAL second re-read (HOY-298): verifyGoalCommand is a SECOND
+            // await of up to 120s AFTER the evaluateGoal re-read. The goal may
+            // have been cleared/paused/replaced during the command run, so re-read
+            // and re-apply the exact object-identity guard against `current` (the
+            // object captured before this await). A since-changed goal aborts the
+            // transition cleanly: no met, no continuation.
+            const c2 = findThread(
+              useSessionStore.getState().projects,
+              threadId,
+            )?.thread.goal;
+            if (
+              !c2 ||
+              c2 !== current ||
+              c2.status !== "active" ||
+              c2.condition !== current.condition
+            ) {
+              return;
+            }
+            if (verify.code !== 0) {
+              // Gate failed: treat as continue. Record the failing exit code (for
+              // the card) and feed the command output forward as the reason.
+              const reason = buildVerifyFailReason(current.verifyCommand, verify);
+              patchGoal(threadId, {
+                lastReason: reason,
+                lastVerifyExit: verify.code,
+                turns: action.turns,
+                tokensUsed: action.tokensUsed,
+              });
+              await sendGoalContinuation(threadId, c2.condition, reason);
+              return;
+            }
+            // Gate passed (exit 0): record it, then fall through to the v1 met
+            // transition below.
+            patchGoal(threadId, { lastVerifyExit: 0 });
+          }
           // Bump turns onto the met transition too (Fix 3): a goal met on its
           // Nth turn should read `turn N/cap`, not `N-1/cap`. Same action.turns
           // the continue arm below persists; met termination is unchanged.

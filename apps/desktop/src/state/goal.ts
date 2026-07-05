@@ -21,6 +21,10 @@ export interface ThreadGoal {
   // gate survives restart. Task A plumbs these through; Task B wires the gate.
   verifyCommand?: string;
   verifyCwd?: string;
+  // HOY-298: exit code of the LAST verify-command run, for the card display.
+  // Transient and intentionally NOT persisted (no WsGoal mirror), so it is
+  // naturally dropped on save/restart like the continuation-pending state.
+  lastVerifyExit?: number;
 }
 
 export const GOAL_DEFAULT_CAP_TURNS = 25;

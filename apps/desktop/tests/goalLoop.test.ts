@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type {
   AgentEvent,
   GoalEvaluation,
+  GoalVerifyResult,
   SessionStats,
   ThreadGoal,
 } from "@/lib/types";
@@ -22,8 +23,18 @@ const evaluateGoal =
   mock<
     (s: string, condition: string, model?: unknown) => Promise<GoalEvaluation>
   >();
+const verifyGoalCommand =
+  mock<
+    (s: string, command: string, cwd?: string) => Promise<GoalVerifyResult>
+  >();
 
-mockIpcModule({ sendPrompt, getState, getSessionStats, evaluateGoal });
+mockIpcModule({
+  sendPrompt,
+  getState,
+  getSessionStats,
+  evaluateGoal,
+  verifyGoalCommand,
+});
 
 const { useSessionStore } = await import("@/state/store");
 
@@ -113,6 +124,7 @@ beforeEach(() => {
   getSessionStats.mockReset();
   getSessionStats.mockResolvedValue(makeStats(100));
   evaluateGoal.mockReset();
+  verifyGoalCommand.mockReset();
   seed();
 });
 
@@ -353,6 +365,145 @@ describe("goal continuation loop in the done handler (HOY-263)", () => {
     // The stale verdict must not drive the new condition's goal.
     expect(goalOf()?.condition).toBe("docs updated");
     expect(goalOf()?.lastReason).not.toBe("stale verdict");
+    expect(continuationSends()).toEqual([]);
+  });
+});
+
+describe("verify-command gate in the met branch (HOY-298)", () => {
+  test("met + verify exit 0: goal goes met, lastVerifyExit 0, no continuation", async () => {
+    seed({ status: "active", turns: 0, verifyCommand: "npm test" });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "all green" });
+    verifyGoalCommand.mockResolvedValue({
+      code: 0,
+      stdout: "ok",
+      stderr: "",
+      killed: false,
+    });
+    const emit = await startTurn();
+
+    emit({ kind: "done" });
+    await flush();
+    await flush();
+
+    expect(verifyGoalCommand).toHaveBeenCalledTimes(1);
+    expect(verifyGoalCommand).toHaveBeenCalledWith(
+      "sess_live",
+      "npm test",
+      undefined,
+    );
+    const goal = goalOf();
+    expect(goal?.status).toBe("met");
+    expect(goal?.lastVerifyExit).toBe(0);
+    expect(goal?.turns).toBe(1);
+    expect(continuationSends()).toEqual([]);
+  });
+
+  test("met + verify exit 1: goal stays active, lastVerifyExit 1, one continuation carries output", async () => {
+    seed({ status: "active", turns: 0, verifyCommand: "npm test" });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "looks done" });
+    verifyGoalCommand.mockResolvedValue({
+      code: 1,
+      stdout: "3 tests failed",
+      stderr: "AssertionError: expected true",
+      killed: false,
+    });
+    const emit = await startTurn();
+
+    emit({ kind: "done" });
+    await flush();
+    await flush();
+
+    expect(verifyGoalCommand).toHaveBeenCalledTimes(1);
+    const goal = goalOf();
+    expect(goal?.status).toBe("active");
+    expect(goal?.lastVerifyExit).toBe(1);
+    expect(goal?.turns).toBe(1);
+
+    const sends = continuationSends();
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toContain("Verify command failed (exit 1): npm test");
+    expect(sends[0]).toContain("3 tests failed");
+    expect(sends[0]).toContain("AssertionError: expected true");
+  });
+
+  test("met + verify REJECTS: gate-failed continue, no throw, one continuation", async () => {
+    seed({ status: "active", turns: 0, verifyCommand: "npm test" });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "looks done" });
+    verifyGoalCommand.mockRejectedValue(new Error("no live sidecar"));
+    const emit = await startTurn();
+
+    // Must not throw out of the handler.
+    emit({ kind: "done" });
+    await flush();
+    await flush();
+
+    const goal = goalOf();
+    expect(goal?.status).toBe("active");
+    expect(goal?.lastVerifyExit).toBe(-1);
+    expect(goal?.turns).toBe(1);
+    const sends = continuationSends();
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toContain("Verify command failed (exit -1): npm test");
+    expect(sends[0]).toContain("no live sidecar");
+  });
+
+  test("met + NO verifyCommand: v1 met, verifyGoalCommand not called", async () => {
+    seed({ status: "active", turns: 0 });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "all green" });
+    const emit = await startTurn();
+
+    emit({ kind: "done" });
+    await flush();
+    await flush();
+
+    expect(goalOf()?.status).toBe("met");
+    expect(goalOf()?.lastVerifyExit).toBeUndefined();
+    expect(verifyGoalCommand).not.toHaveBeenCalled();
+    expect(continuationSends()).toEqual([]);
+  });
+
+  test("transcript says continue + verifyCommand set: gate never runs", async () => {
+    seed({ status: "active", turns: 0, verifyCommand: "npm test" });
+    evaluateGoal.mockResolvedValue({ met: false, reason: "not yet" });
+    const emit = await startTurn();
+
+    emit({ kind: "done" });
+    await flush();
+    await flush();
+
+    expect(verifyGoalCommand).not.toHaveBeenCalled();
+    expect(goalOf()?.status).toBe("active");
+    expect(goalOf()?.lastVerifyExit).toBeUndefined();
+    expect(continuationSends()).toHaveLength(1);
+  });
+
+  test("goal cleared DURING the verify await: no met, no continuation (second re-read guard)", async () => {
+    seed({ status: "active", turns: 0, verifyCommand: "npm test" });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "all green" });
+    // Hold the verify command open so the loop parks after the transcript
+    // evaluator said met, mid-gate, with continuationPending held.
+    let resolveVerify: (v: GoalVerifyResult) => void = () => {};
+    verifyGoalCommand.mockReturnValue(
+      new Promise<GoalVerifyResult>((r) => {
+        resolveVerify = r;
+      }),
+    );
+    const emit = await startTurn();
+
+    emit({ kind: "done" });
+    await flush();
+    expect(verifyGoalCommand).toHaveBeenCalledTimes(1);
+
+    // User clears the goal while the verify command is running.
+    useSessionStore.getState().clearGoal("t1");
+
+    // The command now resolves exit 0. The second re-read identity guard must
+    // abort: no met transition, no continuation, on the since-removed goal.
+    resolveVerify({ code: 0, stdout: "ok", stderr: "", killed: false });
+    await flush();
+    await flush();
+
+    expect(goalOf()).toBeUndefined();
     expect(continuationSends()).toEqual([]);
   });
 });

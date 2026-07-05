@@ -84,6 +84,24 @@ export function GoalCard({
             </span>
             <span>{formatTokens(goal.tokensUsed)} tokens</span>
           </div>
+          {goal.verifyCommand && (
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+              <span className="min-w-0 truncate font-mono">
+                verify: {goal.verifyCommand}
+              </span>
+              {goal.lastVerifyExit !== undefined && (
+                <span
+                  className={
+                    goal.lastVerifyExit === 0
+                      ? "font-mono text-emerald-500"
+                      : "font-mono text-destructive"
+                  }
+                >
+                  exit {goal.lastVerifyExit}
+                </span>
+              )}
+            </div>
+          )}
           {goal.lastReason && (
             <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
               {goal.lastReason}

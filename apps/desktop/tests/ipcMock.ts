@@ -40,6 +40,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     setPermissionMode: mock(),
     setSubagentEnabled: mock(),
     setThinkingLevel: mock(),
+    verifyGoalCommand: mock(),
     supportedProviders: mock(),
     ...overrides,
   }));
