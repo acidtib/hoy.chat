@@ -105,6 +105,14 @@ pub struct WsGoal {
     pub evaluator_model: Option<WsModelRef>,
     #[serde(default)]
     pub last_reason: Option<String>,
+    // HOY-298 (Goal Mode v2): optional deterministic verify gate. Mirrors the
+    // ThreadGoal fields; #[serde(default)] so pre-v2 workspaces still load. Kept
+    // in sync with the frontend so a persisted verifyCommand/verifyCwd is not
+    // silently dropped on save/load.
+    #[serde(default)]
+    pub verify_command: Option<String>,
+    #[serde(default)]
+    pub verify_cwd: Option<String>,
 }
 
 // Which agent spawned this thread and under what role, for child threads
@@ -208,6 +216,8 @@ mod tests {
                             id: "claude-haiku".into(),
                         }),
                         last_reason: Some("still working".into()),
+                        verify_command: Some("bun test".into()),
+                        verify_cwd: None,
                     }),
                 }],
             }],
@@ -252,6 +262,8 @@ mod tests {
         assert_eq!(em.provider, "anthropic");
         assert_eq!(em.id, "claude-haiku");
         assert_eq!(g.last_reason.as_deref(), Some("still working"));
+        assert_eq!(g.verify_command.as_deref(), Some("bun test"));
+        assert_eq!(g.verify_cwd, None);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

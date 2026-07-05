@@ -252,6 +252,20 @@ pub struct GoalEvaluation {
     pub reason: String,
 }
 
+// Goal Mode v2 (HOY-298): the deterministic verify command's result. Mirrors
+// GoalVerifyResult in apps/desktop/src/lib/types.ts (serde camelCase). The
+// one-shot sidecar always emits this JSON and exits 0; a non-zero `code` (spawn
+// failure, timeout/kill with `killed:true`, or a real non-zero exit) means the
+// verify gate FAILED, which Task B treats as "not met, keep working".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalVerifyResult {
+    pub code: i32,
+    pub stdout: String,
+    pub stderr: String,
+    pub killed: bool,
+}
+
 // Mirror of Pi's ImageContent (pi-ai). Sent on the prompt command's images[].
 // `data` is raw base64 with NO data: URI prefix; the renderer strips it before
 // invoke.

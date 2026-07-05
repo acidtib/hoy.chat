@@ -29,6 +29,7 @@ import { loadSubagentRegistry, enabledTypes, effectiveChildPrompt } from "./hoy-
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
 import { runGoalEval } from "./hoy-goal-eval";
+import { runVerifyCommand } from "./hoy-verify-command";
 
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
@@ -101,6 +102,16 @@ if (process.env.HOY_LIST_SUBAGENTS) {
 if (process.env.HOY_GOAL_EVAL) {
   await runGoalEval(agentDir, process.cwd());
   // runGoalEval writes JSON to stdout and exits; this line is never reached.
+}
+
+// Goal Mode v2 (HOY-298): one-shot deterministic verify-command runner. Rust
+// spawns us with this env, captures the {code, stdout, stderr, killed} JSON on
+// stdout, and exits us. Runs before the runtime is built so it never touches
+// runRpcMode. Fail-soft lives inside runVerifyCommand, which always writes JSON
+// and exits 0 (a non-zero `code` means the gate failed).
+if (process.env.HOY_VERIFY_COMMAND) {
+  await runVerifyCommand();
+  // runVerifyCommand writes JSON to stdout and exits; this line is never reached.
 }
 
 const factory: CreateAgentSessionRuntimeFactory = async ({

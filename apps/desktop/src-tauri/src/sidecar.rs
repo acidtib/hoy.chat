@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use tauri::ipc::Channel;
 use tokio::sync::oneshot;
 
-use crate::events::{AgentEvent, GoalEvaluation, ModelRef, ToolPhase};
+use crate::events::{AgentEvent, GoalEvaluation, GoalVerifyResult, ModelRef, ToolPhase};
 use crate::reader::JsonlFramer;
 
 pub type SessionId = String;
@@ -1151,6 +1151,59 @@ impl SidecarManager {
         }
         serde_json::from_slice(&out.stdout)
             .map_err(|e| format!("parse evaluate_goal output: {e}"))
+    }
+
+    // Goal Mode v2 (HOY-298): run a goal's deterministic verify command via a
+    // one-shot sidecar run. Mirrors evaluate_goal: spawn self.bin with a mode env
+    // (HOY_VERIFY_COMMAND=<command>, HOY_VERIFY_CWD=<resolved cwd>), capture the
+    // {code, stdout, stderr, killed} JSON on stdout, exit. The verify cwd is the
+    // explicit `cwd` (a per-goal verifyCwd) when given, else the session's own cwd
+    // from the cwds map (same fallback respawn uses), else self.cwd. The sidecar
+    // always writes JSON and exits 0 (fail-soft), so a non-success process status
+    // here is a genuine spawn failure and surfaces as Err; Task B fails that open
+    // (gate not met) exactly as it does for evaluate_goal. A non-zero `code` inside
+    // the JSON (a failed command / timeout) is a clean result, not an Err.
+    pub fn verify_goal_command(
+        &self,
+        session_id: &str,
+        command: &str,
+        cwd: Option<&str>,
+    ) -> Result<GoalVerifyResult, String> {
+        if !self.bin.exists() {
+            return Err(format!(
+                "sidecar binary not found at {}. Run sidecar/build.sh.",
+                self.bin.display()
+            ));
+        }
+        let verify_cwd: PathBuf = match cwd {
+            Some(c) => PathBuf::from(c),
+            None => self
+                .cwds
+                .lock()
+                .unwrap()
+                .get(session_id)
+                .cloned()
+                .unwrap_or_else(|| self.cwd.clone()),
+        };
+        let mut command_proc = std::process::Command::new(&self.bin);
+        apply_sanitized_env(&mut command_proc, &self.agent_dir, &verify_cwd);
+        let out = command_proc
+            .env("PI_PACKAGE_DIR", &self.payload)
+            .env("HOY_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_VERIFY_COMMAND", command)
+            .env("HOY_VERIFY_CWD", &verify_cwd)
+            .current_dir(&verify_cwd)
+            .output()
+            .map_err(|e| format!("spawn sidecar for verify_goal_command: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "verify_goal_command exited {}: {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+        serde_json::from_slice(&out.stdout)
+            .map_err(|e| format!("parse verify_goal_command output: {e}"))
     }
 
     // Tear down a session's sidecar (panel close / thread delete). Dropping the

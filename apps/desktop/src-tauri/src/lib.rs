@@ -122,6 +122,7 @@ pub fn run() {
             commands::enqueue_prompt,
             commands::get_session_stats,
             commands::evaluate_goal,
+            commands::verify_goal_command,
             commands::get_usage_stats,
             commands::abort,
             commands::respond_permission,

@@ -7,6 +7,7 @@ import type {
   AgentEvent,
   CompactionResult,
   GoalEvaluation,
+  GoalVerifyResult,
   ImageContent,
   McpScope,
   McpServerList,
@@ -321,6 +322,24 @@ export function evaluateGoal(
     sessionId,
     condition,
     evaluatorModel: evaluatorModel ?? null,
+  });
+}
+
+// Goal Mode v2 (HOY-298): run a goal's deterministic verify command via a
+// one-shot sidecar. `cwd` overrides where the command runs (a per-goal
+// verifyCwd); omit to run in the session's own cwd. Always resolves to
+// { code, stdout, stderr, killed }: the sidecar fails soft, emitting a non-zero
+// `code` on any command failure or timeout, so Task B's gate treats a non-zero
+// result as "not met, keep working".
+export function verifyGoalCommand(
+  sessionId: string,
+  command: string,
+  cwd?: string,
+): Promise<GoalVerifyResult> {
+  return invoke<GoalVerifyResult>("verify_goal_command", {
+    sessionId,
+    command,
+    cwd: cwd ?? null,
   });
 }
 

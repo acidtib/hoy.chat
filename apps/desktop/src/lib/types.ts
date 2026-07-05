@@ -386,6 +386,18 @@ export interface GoalEvaluation {
   reason: string;
 }
 
+// Goal Mode v2 (HOY-298): the deterministic verify command's result. Mirrors
+// GoalVerifyResult in src-tauri/src/events.rs (serde camelCase). The one-shot
+// sidecar always emits this and exits 0; a non-zero `code` (spawn failure,
+// timeout/kill with `killed`, or a real non-zero exit) means the verify gate
+// FAILED, which Task B treats as "not met, keep working".
+export interface GoalVerifyResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+  killed: boolean;
+}
+
 // UI-only grouping. Not backed by Pi's RPC yet: a thread maps to a Pi session and
 // a project to a working directory once persistence lands (next milestone). Kept
 // here so the sidebar renders from typed state, not ad hoc shapes.

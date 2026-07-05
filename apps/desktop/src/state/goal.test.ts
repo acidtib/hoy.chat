@@ -79,6 +79,65 @@ describe("parseGoalCommand", () => {
   test("/goalish is not a /goal command", () => {
     expect(parseGoalCommand("/goalish thing")).toBeNull();
   });
+
+  // HOY-298: optional trailing --verify "<cmd>" gate.
+  test('/goal <text> --verify "<cmd>" captures the verify command', () => {
+    expect(parseGoalCommand('/goal do X --verify "bun test"')).toEqual({
+      kind: "set",
+      condition: "do X",
+      verifyCommand: "bun test",
+    });
+  });
+
+  test("/goal <text> without --verify has no verifyCommand", () => {
+    expect(parseGoalCommand("/goal do X")).toEqual({
+      kind: "set",
+      condition: "do X",
+    });
+  });
+
+  test("a condition containing the word 'verify' but not the flag is unaffected", () => {
+    expect(parseGoalCommand("/goal verify the deploy pipeline runs")).toEqual({
+      kind: "set",
+      condition: "verify the deploy pipeline runs",
+    });
+  });
+
+  test("a bare --verify with no quoted value stays part of the condition", () => {
+    expect(parseGoalCommand("/goal do X --verify bun test")).toEqual({
+      kind: "set",
+      condition: "do X --verify bun test",
+    });
+  });
+
+  test('an empty --verify "" is treated as no verify command', () => {
+    expect(parseGoalCommand('/goal do X --verify ""')).toEqual({
+      kind: "set",
+      condition: "do X",
+    });
+  });
+
+  test("--verify with only whitespace inside quotes yields no verify command", () => {
+    expect(parseGoalCommand('/goal do X --verify "   "')).toEqual({
+      kind: "set",
+      condition: "do X",
+    });
+  });
+
+  test("--verify with no remaining condition is rejected", () => {
+    expect(parseGoalCommand('/goal --verify "bun test"')).toBeNull();
+  });
+
+  test("the condition length cap applies after the --verify flag is stripped", () => {
+    const exact = "a".repeat(4000);
+    expect(parseGoalCommand(`/goal ${exact} --verify "bun test"`)).toEqual({
+      kind: "set",
+      condition: exact,
+      verifyCommand: "bun test",
+    });
+    const tooLong = "a".repeat(4001);
+    expect(parseGoalCommand(`/goal ${tooLong} --verify "bun test"`)).toBeNull();
+  });
 });
 
 describe("nextGoalAction", () => {

@@ -562,6 +562,24 @@ pub async fn evaluate_goal(
     manager.evaluate_goal(&session_file, &condition, evaluator_model.as_ref())
 }
 
+// Goal Mode v2 (HOY-298): run a goal's deterministic verify command via a
+// one-shot sidecar and return {code, stdout, stderr, killed}. Task A plumbing
+// only; Task B calls this from the loop after the transcript evaluator says met,
+// requiring exit 0 before actually declaring the goal met. `cwd` is a per-goal
+// verifyCwd override; when absent the manager runs the command in the session's
+// own cwd. Fail-soft is enforced sidecar-side: any command failure or timeout
+// still returns a JSON result with a non-zero `code` (a failed gate), and only a
+// genuine spawn/parse failure surfaces as Err.
+#[tauri::command]
+pub async fn verify_goal_command(
+    session_id: String,
+    command: String,
+    cwd: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<crate::events::GoalVerifyResult, String> {
+    manager.verify_goal_command(&session_id, &command, cwd.as_deref())
+}
+
 // HOY-262: aggregate local usage stats from pi's session transcripts. Pure disk
 // read, so it runs on the blocking pool rather than tying up an async worker.
 #[tauri::command]
