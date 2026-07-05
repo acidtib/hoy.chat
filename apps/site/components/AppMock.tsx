@@ -325,7 +325,7 @@ export function AppWindow() {
     <div
       className="appwin appwin-hero"
       role="img"
-      aria-label="The Hoy desktop app: a project sidebar of threads on the left, a title bar showing the hoy project on the main branch, and an open thread where the user asks to add a health-check endpoint. The agent shows a collapsed reasoning line, streams a reply with an inline Edit tool call and diff on server.ts, and a composer at the bottom with the deepseek-v4 model selected. On the right, the Tree navigator is open, listing the thread's turns with the active leaf highlighted and a branched line below it. A status bar shows context usage and cost."
+      aria-label="The Hoy desktop app, a project sidebar of threads on the left, a title bar showing the hoy project on the main branch, and an open thread where the user asks to add a health-check endpoint. The agent shows a collapsed reasoning line, streams a reply with an inline Edit tool call and diff on server.ts, and a composer at the bottom with the deepseek-v4 model selected. On the right, the Tree navigator is open, listing the thread's turns with the active leaf highlighted and a branched line below it. A status bar shows context usage and cost."
     >
       <div className="aw-main" aria-hidden="true">
         <Sidebar />

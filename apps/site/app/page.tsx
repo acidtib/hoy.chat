@@ -52,14 +52,14 @@ export default async function Home() {
             <div className="hero-lead">
               <span className="badge">
                 <span className="pulse" aria-hidden="true" />
-                Beta / Experimental
+                Beta / bugs included
               </span>
               <h1>Local. Fast. Yours.</h1>
               <p className="tagline">
-                Hoy is a desktop app for your coding agent, built on Pi and
-                wired to the models and tools you already use, so you can prompt,
-                watch, steer, and ship without friction, all on your machine, on
-                your keys.
+                Your coding agent has been living in a terminal. Hoy gives it a
+                real desktop app, it runs Pi on your machine, speaks to the models
+                and tools you already use, and lets you prompt, watch, and steer
+                every move, with your code never leaving your laptop.
               </p>
 
               <div className="cta-row cta-row-center">
@@ -80,7 +80,7 @@ export default async function Home() {
             <Image
               className="hero-shot"
               src={appMock}
-              alt="The Hoy desktop app: a sidebar of threads on the left, an open thread adding a health-check endpoint, an inline Edit diff on server.ts, and a composer at the bottom with the deepseek-v4 model selected."
+              alt="The Hoy desktop app, a sidebar of threads on the left, an open thread adding a health-check endpoint, an inline Edit diff on server.ts, and a composer at the bottom with the deepseek-v4 model selected."
               sizes="(max-width: 720px) 92vw, 940px"
             />
           </div>
@@ -92,9 +92,10 @@ export default async function Home() {
               <h2 className="heading">Get running</h2>
             </div>
             <p className="lead">
-              Grab the build for your platform. The direct downloads aren&apos;t
-              signed yet, so your OS warns you the first time; click through once
-              and you are in. On Arch, the pacman repo is signed end to end.
+              Grab the build for your platform. We haven&apos;t bought a
+              code signing certificate yet, so macOS and Windows will raise an
+              eyebrow the first time. On Arch,
+              the pacman repo is signed end to end, so no eyebrows at all.
             </p>
 
             <InstallPanel version={version} />
@@ -108,11 +109,11 @@ export default async function Home() {
                 <h2 className="heading">See everything. Send nothing.</h2>
               </div>
               <p className="lead">
-                No cloud account, no sign-up, no middleman. Hoy drives the Pi
-                agent right on your machine, your API key never leaves your disk,
-                and nothing routes through a server we run. And it goes further:
-                branch any turn into a new line of thought, or hand a goal to a
-                whole team of agents working at once.
+                It all runs on your machine. Your keys, your files, your model
+                calls, none of it takes a detour through us, because there is no
+                us in the loop. And Hoy does more than a chat box, branch any turn
+                into a new direction, or hand a goal to a whole team of agents at
+                once.
               </p>
             </div>
 
@@ -120,9 +121,9 @@ export default async function Home() {
               <div className="beat-copy">
                 <h3 className="heading">Close it. It&apos;s all still there.</h3>
                 <p className="lead">
-                  Quit Hoy, come back tomorrow, and every thread is exactly where
-                  you left it, on your disk, not a server we run. Pick up
-                  mid-thought and keep going.
+                  Quit Hoy, come back next week, and every thread is right where
+                  you left it, saved to your disk like any other file. Pick up
+                  mid thought and keep going.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">
@@ -134,9 +135,9 @@ export default async function Home() {
               <div className="beat-copy">
                 <h3 className="heading">It shows its work.</h3>
                 <p className="lead">
-                  Every file it reads, every edit, every command lands in the
-                  thread the moment it happens, result attached. No log
-                  spelunking to find out what changed.
+                  Every file it reads, every edit, every command shows up in the
+                  thread the moment it happens, result attached. No log spelunking
+                  to work out what your agent actually did.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">
@@ -148,9 +149,10 @@ export default async function Home() {
               <div className="beat-copy">
                 <h3 className="heading">Changed your mind? Branch it.</h3>
                 <p className="lead">
-                  Every turn is a fork in the road. Open the tree, pick any point,
-                  and start a fresh line from there, the original thread untouched.
-                  Try a different approach without losing the one you had.
+                  Every turn is a fork in the road. Open the tree, grab any point,
+                  and start a fresh line from there while the original sits
+                  untouched. Chase the risky idea, your good thread will be waiting
+                  when you get back.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">
@@ -162,10 +164,10 @@ export default async function Home() {
               <div className="beat-copy">
                 <h3 className="heading">One agent, or a whole team.</h3>
                 <p className="lead">
-                  Hand off a plan and Hoy fans it out across agents that work in
-                  parallel, one exploring, one editing, one testing, while
-                  FleetView tracks every one of them in a single view. Steer, or
-                  let them run.
+                  Hand off a plan and Hoy splits it across agents working in
+                  parallel, one exploring, one editing, one testing, with FleetView
+                  keeping the whole crew in a single view. Steer every step, or pour
+                  a coffee and let them run.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">
@@ -177,10 +179,10 @@ export default async function Home() {
               <div className="beat-copy">
                 <h3 className="heading">Your keys, your models.</h3>
                 <p className="lead">
-                  Drop in a key for any provider your agent supports, Anthropic,
-                  OpenAI, Google, Groq, Mistral, xAI, OpenRouter, Ollama, and
-                  more, and switch between them from one menu, mid-conversation,
-                  without losing the thread. No markup, no middleman.
+                  Bring a key for whichever provider you like, Anthropic, OpenAI,
+                  Google, Groq, xAI, OpenRouter, Ollama and beyond, then switch
+                  between them mid conversation without dropping the thread. You pay
+                  the provider directly, we never see the bill.
                 </p>
               </div>
               <RevealOnScroll className="beat-visual">

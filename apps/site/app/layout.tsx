@@ -8,7 +8,7 @@ import "./globals.css";
 import { SITE_URL, IS_PRODUCTION, canonical, PRODUCTION_URL } from "@/lib/site";
 
 const DESCRIPTION =
-  "Local. Fast. Yours. Hoy puts your coding agent in a real desktop app, wired to the models and tools you already use, on your machine, on your keys. Beta, expect rough edges.";
+  "Local. Fast. Yours. Hoy gives your coding agent a real desktop app, wired to the models and tools you already use, running on your own machine, on your keys. Beta, rough edges included.";
 
 export const metadata: Metadata = {
   title: "Hoy Chat, a desktop app for coding agents",
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     "desktop app for coding agents",
     "AI coding agent GUI",
     "local coding agent",
-    "bring your own API key",
+    "bring your own API keys",
   ],
   // Every deploy consolidates to the production apex; the beta stays out of the
   // index entirely until it becomes that apex.
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   robots: IS_PRODUCTION ? undefined : { index: false, follow: false },
   openGraph: {
     title: "Hoy Chat, a desktop app for coding agents",
-    description: "A desktop app for your coding agent. Runs locally, your keys. Beta.",
+    description: "Your coding agent in a real desktop app. Local, on your own keys, still in beta.",
     url: SITE_URL,
     siteName: "Hoy Chat",
     type: "website",
@@ -36,7 +36,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Hoy Chat, a desktop app for coding agents",
-    description: "A desktop app for your coding agent. Runs locally, your keys. Beta.",
+    description: "Your coding agent in a real desktop app. Local, on your own keys, still in beta.",
   },
 };
 

@@ -42,7 +42,7 @@ export const OS_DOWNLOADS: Record<OS, OSDownload> = {
       { label: "Apple Silicon", file: (v) => `Hoy.Desktop_${v}_aarch64.dmg` },
       { label: "Intel", file: (v) => `Hoy.Desktop_${v}_x64.dmg` },
     ],
-    note: "First launch: right-click Hoy, choose Open. Unsigned build, so Gatekeeper warns once.",
+    note: "First launch, right-click Hoy, choose Open. Unsigned build, so Gatekeeper warns once.",
   },
   windows: {
     os: "windows",
@@ -52,7 +52,7 @@ export const OS_DOWNLOADS: Record<OS, OSDownload> = {
       { label: "Installer", file: (v) => `Hoy.Desktop_${v}_x64-setup.exe` },
       { label: "MSI", file: (v) => `Hoy.Desktop_${v}_x64_en-US.msi` },
     ],
-    note: "SmartScreen warns on first run: choose More info, then Run anyway. Unsigned build.",
+    note: "SmartScreen warns on first run, choose More info, then Run anyway. Unsigned build.",
   },
   linux: {
     os: "linux",
@@ -63,7 +63,7 @@ export const OS_DOWNLOADS: Record<OS, OSDownload> = {
       { label: ".deb", file: (v) => `Hoy.Desktop_${v}_amd64.deb` },
       { label: ".rpm", file: (v) => `Hoy.Desktop-${v}-1.x86_64.rpm` },
     ],
-    note: "AppImage needs chmod +x before it runs; or install the .deb / .rpm. No apt repo yet.",
+    note: "AppImage needs chmod +x before it runs, or install the .deb / .rpm. No apt repo yet.",
   },
 };
 

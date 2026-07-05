@@ -42,7 +42,7 @@ function OSIcon({ os }: { os: OS }) {
 
 // The signed [hoy] pacman repo: trust the key over HTTPS, add the repo, install.
 // Unlike the .deb/.AppImage, these packages are signed with our key, so there is
-// no first-run warning and `pacman -Syu` keeps Hoy current.
+// no first run warning and `pacman -Syu` keeps Hoy current.
 const ARCH_SETUP = `curl -fsSL https://pkgs.hoy.chat/hoy-packages.pub | sudo pacman-key --add -
 sudo pacman-key --lsign-key DC196437C706CF3B2FE583FBCEEBA907B734C05F
 echo -e '\\n[hoy]\\nServer = https://pkgs.hoy.chat/arch/$arch' | sudo tee -a /etc/pacman.conf
@@ -98,7 +98,7 @@ export function InstallPanel({ version }: { version: string }) {
         <p className="dl-caption">
           {primaryAsset.label}
           {" · "}v{version}
-          {" · "}free, bring your own API key
+          {" · "}free, bring your own keys
         </p>
       </div>
 
@@ -131,15 +131,15 @@ export function InstallPanel({ version }: { version: string }) {
           Arch Linux <span className="dl-arch-sub">signed pacman repo</span>
         </div>
         <p className="dl-arch-lead">
-          Trust our key, add the repo, install. Signed end to end, so no first-run
+          Trust our key, add the repo, install. Signed end to end, so no first run
           warning and <code>pacman -Syu</code> keeps it current.
         </p>
         <CopyBlock code={ARCH_SETUP} />
       </div>
 
       <p className="dl-foot">
-        The .dmg, .msi, and .AppImage are unsigned until 1.0, so those show a
-        first-run warning.{" "}
+        The .dmg, .msi, and .AppImage stay unsigned until 1.0, so your OS grumbles
+        once on first run. Nothing is wrong.{" "}
         <a href={RELEASES_LIST_URL} target="_blank" rel="noreferrer">
           All releases and checksums
         </a>
