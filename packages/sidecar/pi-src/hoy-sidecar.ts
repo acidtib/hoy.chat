@@ -39,7 +39,7 @@ const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp",
 const envMode = process.env.HOY_PERMISSION_MODE ?? "default";
 const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "default";
 
-// Branded agent dir, set by Rust (pi_config::agent_dir, default ~/.hoy/agent).
+// Hoy's agent dir, set by Rust (pi_config::agent_dir, default ~/.hoy).
 // auth.json, models.json, and settings.json all resolve from here. HOY_-prefixed
 // because the payload package.json sets piConfig.name="hoy", so Pi's own
 // getAgentDir() derives and reads this same HOY_CODING_AGENT_DIR (HOY-261).
@@ -136,7 +136,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   sessionManager,
   sessionStartEvent,
 }) => {
-  // MCP servers from the branded global + project mcp.json, merged per session
+  // MCP servers from Hoy's global + project mcp.json, merged per session
   // (project cwd wins). createHoyMcp registers the `mcp` proxy tool; with no
   // servers configured it simply reports none available (HOY-232).
   const mcpConfig = loadMcpConfig(agentDir, cwd);
@@ -173,8 +173,8 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       },
       // Disk discovery of <agentDir>/{extensions,skills,prompts,themes} needs no
       // opt-in: DefaultResourceLoader.reload() auto-discovers user-scope resources
-      // from agentDir unconditionally, and agentDir here is the branded
-      // PI_CODING_AGENT_DIR Rust passes. Disk .ts extensions coexist with these
+      // from agentDir unconditionally, and agentDir here is Hoy's agent dir
+      // (the HOY_CODING_AGENT_DIR Rust passes). Disk .ts extensions coexist with these
       // in-process extensionFactories. Proven against the bun --compile binary in
       // HOY-228 (jiti + typebox resolve via Pi's virtualModules; an extension's
       // own node_modules deps resolve from disk). See docs/plans/HOY-228-*.
@@ -213,8 +213,8 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
 
 // M4 persistence: open the thread's existing session when Rust passes its file
 // (HOY_SESSION_FILE), else create a fresh one. create(cwd) resolves the session
-// dir under PI_CODING_AGENT_DIR (~/.hoy/agent/sessions/<encoded-cwd>/), so
-// transcripts stay in the branded dir. open() restores prior messages and keeps
+// dir under HOY_CODING_AGENT_DIR (~/.hoy/sessions/<encoded-cwd>/), so
+// transcripts stay in Hoy's agent dir. open() restores prior messages and keeps
 // appending to the same file (stable identity across restart and respawn); fall
 // back to a fresh session if the file is missing or unreadable.
 const sessionFile = process.env.HOY_SESSION_FILE;

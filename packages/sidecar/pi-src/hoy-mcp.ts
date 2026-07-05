@@ -2,7 +2,7 @@
 // proxy tool (search/describe/call) backed by the official
 // @modelcontextprotocol/sdk, instead of registering every server's tools up
 // front (~200 tokens vs 10k+ per server). Servers connect lazily and metadata
-// is cached. Config is our own branded mcp.json (global + per-project), loaded
+// is cached. Config is our own mcp.json (global + per-project), loaded
 // and merged by the entry (loadMcpConfig) and handed here as a plain object so
 // this module stays pure and testable.
 //
@@ -123,7 +123,7 @@ function readConfigFile(path: string): McpConfigFile {
 }
 
 // Three sources, low to high precedence:
-//   global      $PI_CODING_AGENT_DIR/mcp.json   (branded agent dir)
+//   global      $HOY_CODING_AGENT_DIR/mcp.json  (Hoy's agent dir)
 //   project     <cwd>/.mcp.json                 (the standard cross-tool file, so
 //                                                a repo's existing MCP servers,
 //                                                shared with Cursor/Claude Code,

@@ -2,7 +2,7 @@
 // so OAuth (absent from Pi's RPC surface entirely) runs as its own short-lived
 // invocation of the same compiled binary, selected by the HOY_OAUTH_LOGIN env
 // var in hoy-sidecar.ts. It drives Pi's AuthStorage.login, which runs the
-// provider flow and persists the {type:"oauth"} entry to the branded auth.json
+// provider flow and persists the {type:"oauth"} entry to Hoy's auth.json
 // (the same file pi_config.rs reads for status), preserving other entries.
 //
 // Protocol: newline-delimited JSON events on stdout; single-line UTF-8

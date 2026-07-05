@@ -332,7 +332,7 @@ function ModelPanel() {
           <h2 className="text-sm font-semibold">Auxiliary models</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Helper tasks run on the main model today. Per-task model overrides
-            are planned once Pi exposes them over its protocol.
+            are planned for a future release.
           </p>
         </div>
         <div className="border border-border">
@@ -768,10 +768,10 @@ export function SettingsPanel({ id }: { id: CategoryId }) {
           title="Advanced"
           description="Diagnostics and experimental options."
           icon={Wrench}
-          blurb="Developer diagnostics need sidecar plumbing before they can be exposed here."
+          blurb="Developer diagnostics need more plumbing before they can be exposed here."
           points={[
             "Developer mode (raw RPC payloads)",
-            "Verbose sidecar logging and log level",
+            "Verbose agent logging and log level",
           ]}
         />
       );

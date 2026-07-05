@@ -262,7 +262,7 @@ export async function runGoalAudit(agentDir: string, cwd: string): Promise<never
     // is read-only without corrupting the JSON result.
     console.error(`hoy-goal-audit: tools=${tools.join(",")}`);
 
-    // Resolve auth + models from the branded agent dir, same files the RPC
+    // Resolve auth + models from Hoy's agent dir, same files the RPC
     // sidecar reads. getAvailable() is the set with usable credentials.
     const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
     const registry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));

@@ -189,7 +189,7 @@ export async function runGoalEval(agentDir: string, cwd: string): Promise<never>
     const transcript = renderTranscript(messages);
     if (!transcript) emit({ met: false, reason: "evaluator error: transcript is empty; no evidence to judge" });
 
-    // Resolve auth + models from the branded agent dir, same files the RPC
+    // Resolve auth + models from Hoy's agent dir, same files the RPC
     // sidecar reads. getAvailable() is the set with usable credentials.
     const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
     const registry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
