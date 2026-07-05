@@ -13,6 +13,7 @@ import { HomePage } from "@/components/HomePage";
 import { UsageView } from "@/components/UsageView";
 import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
+import { TreeNavigator } from "@/components/tree/TreeNavigator";
 import { ConfirmCloseDialog } from "@/components/ConfirmCloseDialog";
 import { TitleBar, WindowResizeHandles } from "@/components/TitleBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
@@ -34,6 +35,7 @@ function App() {
   const sidebarCollapsed = useSessionStore((s) => s.sidebarCollapsed);
   const sidebarView = useSessionStore((s) => s.sidebarView);
   const bodyView = useSessionStore((s) => s.bodyView);
+  const rightDock = useSessionStore((s) => s.rightDock);
   const initWorkspace = useSessionStore((s) => s.initWorkspace);
   const activeId = useSessionStore((s) => s.activeSessionId);
   const setDefaultModel = useSessionStore((s) => s.setDefaultModel);
@@ -175,9 +177,14 @@ function App() {
               keeps the top-left corner, Zed-style); panels render below it. */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <TitleBar />
+            {/* Content row below the title bar: the panel area (bodyRef, which
+                measures only the panels so their widths fit) and, to its right,
+                the global tree dock (HOY-280) — a panel-independent sidebar that
+                follows the active thread. */}
+            <div className="flex min-h-0 flex-1 overflow-hidden">
             <div
               ref={bodyRef}
-              className="relative flex min-h-0 flex-1 overflow-hidden"
+              className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
               {bodyView === "usage" ? (
                 <UsageView />
@@ -261,6 +268,8 @@ function App() {
                   )}
                 </div>
               )}
+            </div>
+            {rightDock === "tree" && <TreeNavigator />}
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import {
   Clock,
   FolderPlus,
+  ListTree,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -34,6 +35,8 @@ export function ContextBar({
   const setSidebarView = useSessionStore((s) => s.setSidebarView);
   const panels = useSessionStore((s) => s.panels);
   const expandedThreadId = useSessionStore((s) => s.expandedThreadId);
+  const rightDock = useSessionStore((s) => s.rightDock);
+  const toggleRightDock = useSessionStore((s) => s.toggleRightDock);
 
   // Mirror the panel strip: one full-width slice while a panel is full screen.
   const expandedPanel = panels.find((p) => p.id === expandedThreadId) ?? null;
@@ -107,6 +110,17 @@ export function ContextBar({
             />
           ))
         )}
+      </div>
+
+      {/* Right dock toggle, pinned to the footer's bottom-right (HOY-280). */}
+      <div className="flex shrink-0 items-center border-l border-border px-1.5">
+        <FooterIconButton
+          label={rightDock === "tree" ? "Close Tree" : "Show Tree"}
+          onClick={() => toggleRightDock("tree")}
+          active={rightDock === "tree"}
+        >
+          <ListTree className="size-4" />
+        </FooterIconButton>
       </div>
     </footer>
   );

@@ -25,6 +25,7 @@ function seed() {
       },
     ],
     panels: [{ id: "t1", width: 1 }],
+    activeThreadId: "t1",
     turns: {},
     streaming: {},
     stats: {},
@@ -33,7 +34,7 @@ function seed() {
     composerAttachments: {},
     notices: {},
     sessionTree: {},
-    rightDock: {},
+    rightDock: null,
   });
 }
 
@@ -48,41 +49,39 @@ beforeEach(() => {
 });
 
 describe("right dock (HOY-280)", () => {
-  test("toggleRightDock opens the view and primes the tree", async () => {
-    useSessionStore.getState().toggleRightDock("t1", "tree");
-    expect(useSessionStore.getState().rightDock.t1).toBe("tree");
-    // refreshSessionTree fired; let its microtask settle, then the slice is set.
+  test("toggleRightDock opens the view and primes the active thread's tree", async () => {
+    useSessionStore.getState().toggleRightDock("tree");
+    expect(useSessionStore.getState().rightDock).toBe("tree");
+    // refreshSessionTree fired for the active thread; settle its microtask.
     await Promise.resolve();
     await Promise.resolve();
     expect(getTree).toHaveBeenCalledWith("sess_live");
     expect(useSessionStore.getState().sessionTree.t1).toEqual(TREE);
   });
 
-  test("toggling the same view again closes it and stops observing the tree", () => {
-    useSessionStore.setState({ rightDock: { t1: "tree" }, sessionTree: { t1: TREE } });
-    useSessionStore.getState().toggleRightDock("t1", "tree");
-    expect(useSessionStore.getState().rightDock.t1).toBeUndefined();
-    expect(useSessionStore.getState().sessionTree.t1).toBeUndefined();
+  test("toggling the same view again closes the dock", () => {
+    useSessionStore.setState({ rightDock: "tree" });
+    useSessionStore.getState().toggleRightDock("tree");
+    expect(useSessionStore.getState().rightDock).toBeNull();
   });
 
-  test("closeRightDock drops both the dock and the observed tree", () => {
-    useSessionStore.setState({ rightDock: { t1: "tree" }, sessionTree: { t1: TREE } });
-    useSessionStore.getState().closeRightDock("t1");
-    expect(useSessionStore.getState().rightDock.t1).toBeUndefined();
-    expect(useSessionStore.getState().sessionTree.t1).toBeUndefined();
+  test("closeRightDock closes the dock", () => {
+    useSessionStore.setState({ rightDock: "tree" });
+    useSessionStore.getState().closeRightDock();
+    expect(useSessionStore.getState().rightDock).toBeNull();
   });
 
-  test("closing the panel also closes its dock", () => {
-    useSessionStore.setState({ rightDock: { t1: "tree" } });
+  test("the global dock survives closing a panel", () => {
+    useSessionStore.setState({ rightDock: "tree" });
     useSessionStore.getState().closePanel("t1");
-    expect(useSessionStore.getState().rightDock.t1).toBeUndefined();
+    expect(useSessionStore.getState().rightDock).toBe("tree");
   });
 });
 
 describe("submitPrompt /tree interception (HOY-280)", () => {
   test("bare /tree toggles the dock and never reaches Pi", async () => {
     await useSessionStore.getState().submitPrompt("t1", "/tree");
-    expect(useSessionStore.getState().rightDock.t1).toBe("tree");
+    expect(useSessionStore.getState().rightDock).toBe("tree");
     expect(sendPrompt).not.toHaveBeenCalled();
     expect(useSessionStore.getState().turns["t1"]).toBeUndefined();
   });
@@ -90,7 +89,7 @@ describe("submitPrompt /tree interception (HOY-280)", () => {
   test("/treeish and /tree with args fall through to Pi unchanged", async () => {
     await useSessionStore.getState().submitPrompt("t1", "/treeish");
     expect(sendPrompt).toHaveBeenCalledTimes(1);
-    expect(useSessionStore.getState().rightDock.t1).toBeUndefined();
+    expect(useSessionStore.getState().rightDock).toBeNull();
   });
 });
 

@@ -45,28 +45,28 @@ const FILTER_LABEL: Record<FilterMode, string> = {
   all: "All",
 };
 
-export function TreeNavigator({
-  threadId,
-  onBranch,
-}: {
-  threadId: string;
-  // Branch a new line from an entry. Wired to the fork RPC in HOY-283; the
-  // affordance itself lives here so the navigator is complete on its own.
-  onBranch: (entryId: string) => void;
-}) {
-  const tree = useSessionStore((s) => s.sessionTree[threadId]);
+export function TreeNavigator() {
+  // The global dock follows the active thread panel (HOY-280): whichever panel
+  // the user is interacting with, its tree shows here.
+  const threadId = useSessionStore((s) => s.activeThreadId);
+  const tree = useSessionStore((s) => (threadId ? s.sessionTree[threadId] : undefined));
   const closeRightDock = useSessionStore((s) => s.closeRightDock);
   const toggleFullScreen = useSessionStore((s) => s.toggleFullScreen);
   const refreshSessionTree = useSessionStore((s) => s.refreshSessionTree);
+  const branchFromEntry = useSessionStore((s) => s.branchFromEntry);
 
   const [filter, setFilter] = useState<FilterMode>("default");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Prime on open and whenever the thread changes; the store keeps it fresh on
-  // turn done while the dock is open.
+  const onBranch = (entryId: string) => {
+    if (threadId) branchFromEntry(threadId, entryId);
+  };
+
+  // Prime on open and whenever the active thread changes; the store keeps it
+  // fresh on turn done while the dock is open on that thread.
   useEffect(() => {
-    void refreshSessionTree(threadId);
+    if (threadId) void refreshSessionTree(threadId);
   }, [threadId, refreshSessionTree]);
 
   // Move focus into the rail on open so arrow keys / Esc work without a click
@@ -118,7 +118,7 @@ export function TreeNavigator({
       if (selectedId) onBranch(selectedId);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      closeRightDock(threadId);
+      closeRightDock();
     }
   }
 
@@ -127,12 +127,12 @@ export function TreeNavigator({
   return (
     <aside
       className="flex w-[340px] shrink-0 flex-col border-l border-border bg-sidebar"
-      aria-label="Session tree navigator"
+      aria-label="Tree navigator"
     >
       <div className="shrink-0 border-b border-border px-3 pb-2 pt-2.5">
         <div className="flex items-center gap-2">
           <ListTree className="size-4 shrink-0 text-brand" />
-          <span className="text-[13px] font-semibold">Session tree</span>
+          <span className="text-[13px] font-semibold">Tree</span>
           <div className="ml-auto flex items-center gap-0.5">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -140,7 +140,8 @@ export function TreeNavigator({
                   variant="ghost"
                   size="icon-sm"
                   className="text-muted-foreground"
-                  onClick={() => toggleFullScreen(threadId)}
+                  onClick={() => threadId && toggleFullScreen(threadId)}
+                  disabled={!threadId}
                   aria-label="Expand thread"
                 >
                   <Maximize2 className="size-3.5" />
@@ -154,13 +155,13 @@ export function TreeNavigator({
                   variant="ghost"
                   size="icon-sm"
                   className="text-muted-foreground"
-                  onClick={() => closeRightDock(threadId)}
-                  aria-label="Close session tree"
+                  onClick={() => closeRightDock()}
+                  aria-label="Close Tree"
                 >
                   <X className="size-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Close (Esc)</TooltipContent>
+              <TooltipContent>Close Tree (Esc)</TooltipContent>
             </Tooltip>
           </div>
         </div>
@@ -198,7 +199,11 @@ export function TreeNavigator({
         onKeyDown={onKeyDown}
         className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand/50"
       >
-        {!tree ? (
+        {!threadId ? (
+          <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+            Open a thread to see its tree.
+          </p>
+        ) : !tree ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
             Loading the session tree...
           </p>
