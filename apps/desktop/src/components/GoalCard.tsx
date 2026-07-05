@@ -3,7 +3,7 @@ import { CircleCheck, Hourglass, Pause, Play, Target, Trash2 } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/state/store";
 import type { ThreadGoal } from "@/state/goal";
-import { formatTokens } from "@/lib/utils";
+import { formatElapsed, formatTokens } from "@/lib/utils";
 
 // Goal Mode (HOY-263): status card for a thread's active/paused/settled goal.
 // Mounted by ThreadView near the composer whenever thread.goal is set. Reads
@@ -25,18 +25,6 @@ const STATUS_LABEL: Record<ThreadGoal["status"], string> = {
   capped: "Capped",
   cleared: "Cleared",
 };
-
-// Mirrors store.ts's private formatElapsed (used for the /goal status notice)
-// but takes a live "now" so the card can tick every second while active.
-function formatElapsed(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes === 0) return `${seconds}s`;
-  const hours = Math.floor(minutes / 60);
-  if (hours === 0) return `${minutes}m ${seconds}s`;
-  return `${hours}h ${minutes % 60}m`;
-}
 
 export function GoalCard({
   threadId,
@@ -69,8 +57,11 @@ export function GoalCard({
 
   const elapsed = formatElapsed(now - goal.startedAt);
   const canResume = goal.status === "paused" || goal.status === "capped";
-  const isSettled =
-    goal.status === "met" || goal.status === "capped" || goal.status === "cleared";
+  // Only "met" and "cleared" are terminal: they hide the Pause/Resume block
+  // entirely. "paused" and "capped" both render as Resume-enabled (Resume
+  // supports resuming from either), matching the design doc's "Resume from
+  // paused/capped re-arms and sends a continuation".
+  const isSettled = goal.status === "met" || goal.status === "cleared";
 
   return (
     <div className="mx-3 mb-2 shrink-0 rounded-lg border border-brand/40 bg-card/70 px-3 py-2.5">

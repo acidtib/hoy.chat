@@ -40,6 +40,19 @@ export function formatTokens(n: number): string {
   return k < 10 ? `${k.toFixed(1)}k` : `${Math.round(k)}k`;
 }
 
+// Formats a millisecond duration as elapsed time, e.g. "3m 12s". Shared by the
+// store's /goal status notice and GoalCard's live-ticking elapsed display, so
+// the two surfaces cannot drift apart.
+export function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  const hours = Math.floor(minutes / 60);
+  if (hours === 0) return `${minutes}m ${seconds}s`;
+  return `${hours}h ${minutes % 60}m`;
+}
+
 export type RecencyBucket = "Today" | "Yesterday" | "This Week" | "Older";
 
 // Bucket an epoch-ms timestamp by recency for the Zed-style history view. Uses

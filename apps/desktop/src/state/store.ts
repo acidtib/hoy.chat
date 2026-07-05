@@ -35,7 +35,7 @@ import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
 import { detectPlanIntent, extractProposedPlan, planKickoffPrompt } from "@/lib/plan";
-import { shortId } from "@/lib/utils";
+import { formatElapsed, shortId } from "@/lib/utils";
 import { usePrefsStore } from "@/state/prefs";
 import {
   buildDelivery,
@@ -3036,16 +3036,6 @@ function restoreGoal(goal: ThreadGoal | undefined): ThreadGoal | undefined {
   };
 }
 
-// Formats a millisecond duration for the /goal status notice, e.g. "3m 12s".
-function formatElapsed(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes === 0) return `${seconds}s`;
-  const hours = Math.floor(minutes / 60);
-  if (hours === 0) return `${minutes}m ${seconds}s`;
-  return `${hours}h ${minutes % 60}m`;
-}
 
 function truncateTitle(text: string): string {
   const firstLine = text.split("\n")[0].trim();
