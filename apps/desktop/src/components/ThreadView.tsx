@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Archive,
   Check,
+  ChevronDown,
   Circle,
   CircleDot,
   CircleStop,
@@ -1033,39 +1034,70 @@ function ProposedPlanCard({
         </PlanContent>
       )}
       {ready && (
-        <PlanFooter className="flex-wrap justify-end gap-1.5">
+        <PlanFooter className="flex-wrap items-center justify-between gap-2">
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-muted-foreground"
+            className="text-muted-foreground"
             onClick={onDismiss}
           >
             Keep planning
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
-            onClick={() => onImplement("default", "inline")}
-          >
-            Implement (review each edit)
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
-            onClick={() => onImplement("acceptEdits", "inline")}
-          >
-            Implement (auto-approve edits)
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 border-agent/40 text-xs text-agent hover:text-agent"
-            onClick={() => onImplement("default", "subagent")}
-          >
-            Implement task-by-task
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {/* Inline execution: this thread implements the plan directly. The
+                edit-oversight sub-choice (review each edit vs auto-approve) lives
+                in the menu so it doesn't compete with the recommended path. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-agent/40 text-agent hover:text-agent"
+                >
+                  Implement inline
+                  <ChevronDown className="opacity-70" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-56">
+                <DropdownMenuItem
+                  className="flex-col items-start gap-0.5"
+                  onSelect={() => onImplement("default", "inline")}
+                >
+                  <span>Review each edit</span>
+                  <span className="text-xs text-muted-foreground">
+                    Approve every file change as it happens
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="flex-col items-start gap-0.5"
+                  onSelect={() => onImplement("acceptEdits", "inline")}
+                >
+                  <span>Auto-approve edits</span>
+                  <span className="text-xs text-muted-foreground">
+                    Apply changes without stopping to confirm
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {/* Recommended path (HOY-295/300): a fresh subagent per step, each
+                reviewed before the next. The one filled action, so it reads as
+                the default. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  className="bg-agent text-background hover:bg-agent/90"
+                  onClick={() => onImplement("default", "subagent")}
+                >
+                  <Sparkle />
+                  Implement task-by-task
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Recommended: a fresh subagent per step, reviewed before the next
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </PlanFooter>
       )}
     </Plan>
