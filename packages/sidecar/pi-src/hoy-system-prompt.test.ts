@@ -124,6 +124,22 @@ describe("plan mode: two-phase design gate (HOY-276 follow-up)", () => {
     );
   });
 
+  test("the plan output contract carries optional per-task interface contracts (HOY-295)", () => {
+    // HOY-295: for multi-file plans, a Global Constraints header plus per-step
+    // Consumes/Produces contracts so steps can be handed to parallel subagents.
+    expect(PROPOSED_PLAN_FORMAT).toContain("**Global Constraints:**");
+    expect(PROPOSED_PLAN_FORMAT).toContain("Consumes:");
+    expect(PROPOSED_PLAN_FORMAT).toContain("Produces:");
+    // Global Constraints sits up top (after Tech Stack) before the steps; the
+    // Consumes/Produces guidance lives in the Steps section.
+    expect(PROPOSED_PLAN_FORMAT.indexOf("**Global Constraints:**")).toBeLessThan(
+      PROPOSED_PLAN_FORMAT.indexOf("## Steps"),
+    );
+    expect(PROPOSED_PLAN_FORMAT.indexOf("Consumes:")).toBeGreaterThan(
+      PROPOSED_PLAN_FORMAT.indexOf("## Steps"),
+    );
+  });
+
   test("plan mode instructs the approaches gate via a single ask_question call", () => {
     expect(PLAN_MODE_PROMPT).toContain("design gate");
     expect(PLAN_MODE_PROMPT).toContain("ask_question");
