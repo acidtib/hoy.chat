@@ -1,14 +1,18 @@
-// HOY-231 Phase 1 + HOY-234 Phase 3: the `agent` tool. Consent + fire-and-forget
-// sentinel notify (Rust turns it into SubagentSpawned). The subagent type is now
-// resolved against the loaded registry (hoy-agents-registry.ts), the param is a
-// dynamic string, and project-scoped types are trust-gated here (the only place
-// with ctx). See docs/plans/HOY-234-*.
+// HOY-231 Phase 1 + HOY-234 Phase 3 + HOY-300: the `agent` tool. Consent gate,
+// then a BLOCKING sentinel round-trip (ctx.ui.input) that Rust turns into a
+// synchronous child spawn/run/answer (see docs/plans/HOY-300-*). The subagent
+// type is resolved against the loaded registry (hoy-agents-registry.ts), the
+// param is a dynamic string, and project-scoped types are trust-gated here
+// (the only place with ctx). See docs/plans/HOY-234-*.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { SubagentRegistry } from "./hoy-agents-registry";
 import { enabledTypes } from "./hoy-agents-registry";
 
+// HOY-300: superseded by SPAWN_SYNC_PREFIX below; kept exported because other
+// code still references it for now.
 export const SPAWN_NOTIFY_PREFIX = "@hoy/spawn-subagent:";
+export const SPAWN_SYNC_PREFIX = "@hoy/spawn-subagent-sync:";
 
 const ALLOW = "Allow";
 const ALLOW_SESSION = "Allow for this session";
@@ -50,12 +54,19 @@ export function createHoyAgents(registry: SubagentRegistry, requireApproval: boo
     }
 
     const agentId = crypto.randomUUID();
-    ctx.ui.notify(`${SPAWN_NOTIFY_PREFIX}${JSON.stringify({ agentId, subagentType: type.name, task })}`, "info");
+    const payload = JSON.stringify({ agentId, subagentType: type.name, task });
+    // Blocking round-trip (HOY-300): the renderer spawns the child, runs it to
+    // completion, and answers this request with the child's result. No Pi-side
+    // timeout, so a long child is safe. Cancelled (abort/deny) -> undefined.
+    const result = await ctx.ui.input(`${SPAWN_SYNC_PREFIX}${payload}`);
     return {
       content: [
         {
           type: "text" as const,
-          text: `Spawned ${type.name} subagent (${agentId}).`,
+          text:
+            result && result.trim().length > 0
+              ? result
+              : `The ${type.name} subagent was stopped before returning a result.`,
         },
       ],
       details: { agentId },
@@ -67,7 +78,7 @@ export function createHoyAgents(registry: SubagentRegistry, requireApproval: boo
       name: "agent",
       label: "Agent",
       description:
-        "Spawn a specialized child agent to work on a task in its own thread. subagentType selects a registered agent type. Fire-and-forget: returns a handle immediately; the subagent runs independently and its result is delivered back to you when it finishes.",
+        "Spawn a specialized child agent to work on a task in its own thread. subagentType selects a registered agent type. Blocks until the child finishes and returns its result to you.",
       promptSnippet: "agent (spawn a specialized child agent that runs in its own thread)",
       parameters: agentParams,
       execute: async (_id, params, _signal, _onUpdate, ctx) => run(params, ctx),

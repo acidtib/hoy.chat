@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createHoyAgents, SPAWN_NOTIFY_PREFIX } from "./hoy-agents";
+import { createHoyAgents, SPAWN_SYNC_PREFIX } from "./hoy-agents";
 import { BUILTIN_SUBAGENTS, type SubagentRegistry } from "./hoy-agents-registry";
 
 function registryFrom(types: SubagentRegistry[string][]): SubagentRegistry {
@@ -20,17 +20,29 @@ function mountAgentTool(registry: SubagentRegistry, requireApproval = true) {
   return tool;
 }
 
-// Fake ctx mirroring hoy-mcp.test.ts's ctx: scripted select, captured notify, project trust.
+// Fake ctx mirroring hoy-mcp.test.ts's ctx: scripted select, captured input
+// (the blocking spawn round-trip, HOY-300), project trust.
 function ctx(
   opts: {
     select?: (title: string, options: string[]) => Promise<string>;
     trusted?: boolean;
-    notifies?: string[];
+    inputs?: string[];
+    inputResult?: string | undefined;
   } = {},
 ) {
-  const notifies = opts.notifies ?? [];
+  const inputs = opts.inputs ?? [];
+  const hasInputResult = "inputResult" in opts;
   return {
-    ui: { select: opts.select ?? (async () => "Allow"), notify: (m: string) => notifies.push(m) },
+    ui: {
+      select: opts.select ?? (async () => "Allow"),
+      input: async (title: string) => {
+        inputs.push(title);
+        return hasInputResult ? opts.inputResult : "CHILD RESULT";
+      },
+      notify: () => {
+        throw new Error("must not notify: spawning is synchronous now (HOY-300)");
+      },
+    },
     isProjectTrusted: () => opts.trusted ?? true,
   } as any;
 }
@@ -40,10 +52,33 @@ describe("agent tool", () => {
     expect(mountAgentTool(builtinRegistry).name).toBe("agent");
   });
 
-  test("Allow fires a sentinel notify with the payload and returns a handle", async () => {
+  test("agent tool blocks on ui.input and returns the child result in-band", async () => {
+    let seenTitle = "";
+    const c: any = {
+      isProjectTrusted: () => true,
+      ui: {
+        input: async (title: string) => {
+          seenTitle = title;
+          return "CHILD RESULT";
+        },
+        notify: () => {
+          throw new Error("must not notify: spawning is synchronous now");
+        },
+      },
+    };
+    const tool = mountAgentTool(builtinRegistry, false);
+    const out = await tool.execute("id", { subagentType: "Explore", task: "look at X" }, undefined, undefined, c);
+    expect(seenTitle.startsWith(SPAWN_SYNC_PREFIX)).toBe(true);
+    const payload = JSON.parse(seenTitle.slice(SPAWN_SYNC_PREFIX.length));
+    expect(payload.subagentType).toBe("Explore");
+    expect(payload.task).toBe("look at X");
+    expect(out.content[0].text).toBe("CHILD RESULT");
+  });
+
+  test("Allow blocks on ui.input with the payload and returns the child result", async () => {
     const tool = mountAgentTool(builtinRegistry);
-    const notifies: string[] = [];
-    const c = ctx({ notifies });
+    const inputs: string[] = [];
+    const c = ctx({ inputs });
     const res = await tool.execute(
       "c1",
       { subagentType: "Explore", task: "read the README" },
@@ -51,25 +86,26 @@ describe("agent tool", () => {
       undefined,
       c,
     );
-    expect(notifies).toHaveLength(1);
-    expect(notifies[0].startsWith(SPAWN_NOTIFY_PREFIX)).toBe(true);
-    const payload = JSON.parse(notifies[0].slice(SPAWN_NOTIFY_PREFIX.length));
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0].startsWith(SPAWN_SYNC_PREFIX)).toBe(true);
+    const payload = JSON.parse(inputs[0].slice(SPAWN_SYNC_PREFIX.length));
     expect(payload.subagentType).toBe("Explore");
     expect(payload.task).toBe("read the README");
     expect(typeof payload.agentId).toBe("string");
     expect(res.details.agentId).toBe(payload.agentId);
+    expect(res.content[0].text).toBe("CHILD RESULT");
   });
 
   test("does not prompt when approval is not required (HOY-248 default off)", async () => {
     const tool = mountAgentTool(builtinRegistry, false);
     let asks = 0;
-    const notifies: string[] = [];
+    const inputs: string[] = [];
     const c = ctx({
       select: async () => {
         asks++;
         return "Deny";
       },
-      notifies,
+      inputs,
     });
     const res = await tool.execute(
       "c0",
@@ -80,19 +116,26 @@ describe("agent tool", () => {
     );
     // No consent prompt, and the spawn proceeds regardless of what select would return.
     expect(asks).toBe(0);
-    expect(notifies).toHaveLength(1);
-    expect(notifies[0].startsWith(SPAWN_NOTIFY_PREFIX)).toBe(true);
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0].startsWith(SPAWN_SYNC_PREFIX)).toBe(true);
     expect(typeof res.details.agentId).toBe("string");
   });
 
-  test("Deny throws and fires no notify", async () => {
+  test("Deny throws and never blocks on ui.input", async () => {
     const tool = mountAgentTool(builtinRegistry);
-    const notifies: string[] = [];
-    const c = ctx({ select: async () => "Deny", notifies });
+    const inputs: string[] = [];
+    const c = ctx({ select: async () => "Deny", inputs });
     await expect(
       tool.execute("c2", { subagentType: "Explore", task: "x" }, undefined, undefined, c),
     ).rejects.toThrow(/declined/);
-    expect(notifies).toHaveLength(0);
+    expect(inputs).toHaveLength(0);
+  });
+
+  test("cancelled/aborted child (ui.input resolves undefined) returns a stopped-note, not the raw undefined", async () => {
+    const tool = mountAgentTool(builtinRegistry, false);
+    const c = ctx({ inputResult: undefined });
+    const res = await tool.execute("c9", { subagentType: "Explore", task: "x" }, undefined, undefined, c);
+    expect(res.content[0].text).toMatch(/stopped before returning a result/);
   });
 
   test("Allow for this session asks once, then not again", async () => {
@@ -135,7 +178,7 @@ describe("agent tool", () => {
     const tool = mountAgentTool(registry);
     const untrusted = ctx({ trusted: false });
     const res = await tool.execute("c7", { subagentType: "Glob", task: "t" }, undefined, undefined, untrusted);
-    expect(res.content[0].text).toContain("Spawned");
+    expect(res.content[0].text).toBe("CHILD RESULT");
   });
 
   test("execute refuses a project-scoped type when the project is untrusted", async () => {
@@ -150,6 +193,6 @@ describe("agent tool", () => {
     );
     // built-in still allowed under the same untrusted ctx
     const res = await tool.execute("c2", { subagentType: "Explore", task: "t" }, undefined, undefined, untrusted);
-    expect(res.content[0].text).toContain("Spawned");
+    expect(res.content[0].text).toBe("CHILD RESULT");
   });
 });
