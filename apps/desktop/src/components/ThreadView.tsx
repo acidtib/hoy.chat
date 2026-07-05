@@ -177,7 +177,7 @@ export function ThreadView({
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const { title, projectId, projectPath, threadModel, permissionMode, thinkingLevel, sessionId, goal } = useMemo(() => {
+  const { title, projectId, projectPath, threadModel, permissionMode, thinkingLevel, sessionId, goal, isSubagent } = useMemo(() => {
     const found = findThread(projects, threadId);
     return {
       title: found?.thread.title ?? "New thread",
@@ -188,6 +188,9 @@ export function ThreadView({
       thinkingLevel: found?.thread.thinkingLevel ?? ("high" as const),
       sessionId: found?.thread.sessionId ?? null,
       goal: found?.thread.goal,
+      // A subagent panel dismisses (keeps running) on close; a root thread tears
+      // down (HOY-301). Drives the button's label/tooltip.
+      isSubagent: found ? !!found.thread.parentThreadId : false,
     };
   }, [projects, threadId]);
 
@@ -408,12 +411,14 @@ export function ThreadView({
                 size="icon-sm"
                 className="text-muted-foreground"
                 onClick={onClose}
-                aria-label="Close panel"
+                aria-label={isSubagent ? "Dismiss panel" : "Close panel"}
               >
                 <Minus className="size-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Close panel</TooltipContent>
+            <TooltipContent>
+              {isSubagent ? "Dismiss (keeps running)" : "Close panel"}
+            </TooltipContent>
           </Tooltip>
         </div>
       </header>

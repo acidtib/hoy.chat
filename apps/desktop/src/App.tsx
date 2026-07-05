@@ -41,7 +41,7 @@ function App() {
   const activeId = useSessionStore((s) => s.activeSessionId);
   const setDefaultModel = useSessionStore((s) => s.setDefaultModel);
   const setBodyWidth = useSessionStore((s) => s.setBodyWidth);
-  const requestTeardown = useSessionStore((s) => s.requestTeardown);
+  const requestPanelClose = useSessionStore((s) => s.requestPanelClose);
   const focusPanel = useSessionStore((s) => s.focusPanel);
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
 
@@ -218,9 +218,7 @@ function App() {
                     >
                       <ThreadView
                         threadId={expandedPanel.id}
-                        onClose={() =>
-                          requestTeardown("close", expandedPanel.id)
-                        }
+                        onClose={() => requestPanelClose(expandedPanel.id)}
                         onDebug={handleDebug}
                         busy={busy}
                         debug={debug}
@@ -247,9 +245,7 @@ function App() {
                           >
                             <ThreadView
                               threadId={panel.id}
-                              onClose={() =>
-                                requestTeardown("close", panel.id)
-                              }
+                              onClose={() => requestPanelClose(panel.id)}
                               onDebug={handleDebug}
                               busy={busy}
                               debug={debug}

@@ -54,6 +54,7 @@ import { usePrefsStore } from "@/state/prefs";
 import {
   childThreadIdsOf,
   extractResultText,
+  isSubagentThread,
   threadDepth,
   threadHasRunningSubagents,
 } from "./delivery";
@@ -436,6 +437,14 @@ interface SessionStore {
   confirmTeardown: () => void;
   cancelTeardown: () => void;
   closePanel: (id: string) => void;
+  // The panel header's close (X): a subagent panel is DISMISSED (removed from the
+  // strip, sidecar keeps running, reopenable from FleetView), a root thread's
+  // panel tears its sidecar down as before (HOY-301). Routes to dismissPanel or
+  // requestTeardown accordingly.
+  requestPanelClose: (threadId: string) => void;
+  // Remove a panel from the strip WITHOUT tearing down its sidecar or dropping its
+  // transcript: the thread keeps running and is reopenable with state intact.
+  dismissPanel: (id: string) => void;
   dismissNotice: (threadId: string, id: number) => void;
   setDraft: (threadId: string, value: string) => void;
   // Image attachment management for the composer (HOY-205). addAttachments
@@ -851,6 +860,43 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       };
     });
   },
+
+  requestPanelClose: (threadId) => {
+    // Closing a subagent's panel should never stop its work: dismiss the view and
+    // leave the sidecar running (reopenable from FleetView). Only a root thread's
+    // panel is torn down on close, keeping the existing kill-on-close + streaming
+    // confirm (HOY-301).
+    const thread = findThread(get().projects, threadId)?.thread;
+    if (thread && isSubagentThread(thread)) {
+      get().dismissPanel(threadId);
+      return;
+    }
+    get().requestTeardown("close", threadId);
+  },
+
+  dismissPanel: (id) =>
+    set((s) => {
+      const index = s.panels.findIndex((p) => p.id === id);
+      if (index < 0) return s;
+      // Remove from the strip and re-fit survivors, exactly like closePanel -- but
+      // keep the sidecar, the channel, and every per-thread slice (turns, streaming,
+      // sessionId, ...) so the thread keeps running and reopens with state intact.
+      const panels = fitPanels(
+        s.panels.filter((p) => p.id !== id),
+        s.bodyWidth,
+      );
+      let activeThreadId = s.activeThreadId;
+      if (activeThreadId === id) {
+        const neighbor = panels[index] ?? panels[index - 1] ?? null;
+        activeThreadId = neighbor?.id ?? null;
+      }
+      return {
+        panels,
+        activeThreadId,
+        expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
+        focusRequest: s.focusRequest?.threadId === id ? null : s.focusRequest,
+      };
+    }),
 
   dismissNotice: (threadId, id) =>
     set((s) => ({
