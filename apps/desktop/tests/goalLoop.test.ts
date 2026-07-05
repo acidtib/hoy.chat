@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type {
   AgentEvent,
+  GoalAudit,
   GoalEvaluation,
   GoalVerifyResult,
   SessionStats,
@@ -27,6 +28,8 @@ const verifyGoalCommand =
   mock<
     (s: string, command: string, cwd?: string) => Promise<GoalVerifyResult>
   >();
+const auditGoal =
+  mock<(s: string, condition: string, cwd?: string) => Promise<GoalAudit>>();
 
 mockIpcModule({
   sendPrompt,
@@ -34,6 +37,7 @@ mockIpcModule({
   getSessionStats,
   evaluateGoal,
   verifyGoalCommand,
+  auditGoal,
 });
 
 const { useSessionStore } = await import("@/state/store");
@@ -125,6 +129,7 @@ beforeEach(() => {
   getSessionStats.mockResolvedValue(makeStats(100));
   evaluateGoal.mockReset();
   verifyGoalCommand.mockReset();
+  auditGoal.mockReset();
   seed();
 });
 
@@ -500,6 +505,173 @@ describe("verify-command gate in the met branch (HOY-298)", () => {
     // The command now resolves exit 0. The second re-read identity guard must
     // abort: no met transition, no continuation, on the since-removed goal.
     resolveVerify({ code: 0, stdout: "ok", stderr: "", killed: false });
+    await flush();
+    await flush();
+
+    expect(goalOf()).toBeUndefined();
+    expect(continuationSends()).toEqual([]);
+  });
+});
+
+describe("auditor gate in the met branch (HOY-299)", () => {
+  test("auditor met: goal goes met, no continuation, lastReason = audit reason", async () => {
+    seed({ status: "active", turns: 0, evaluatorKind: "auditor" });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "transcript looks done" });
+    auditGoal.mockResolvedValue({ met: true, reason: "package.json exists at root" });
+    const emit = await startTurn();
+
+    emit({ kind: "done" });
+    await flush();
+    await flush();
+
+    expect(auditGoal).toHaveBeenCalledTimes(1);
+    expect(auditGoal).toHaveBeenCalledWith("sess_live", "tests pass", undefined);
+    const goal = goalOf();
+    expect(goal?.status).toBe("met");
+    expect(goal?.turns).toBe(1);
+    // The auditor's reason, not the transcript evaluator's, drives the met notice.
+    expect(goal?.lastReason).toBe("package.json exists at root");
+    expect(continuationSends()).toEqual([]);
+  });
+
+  test("auditor not-met: stays active, one continuation carries the audit reason", async () => {
+    seed({ status: "active", turns: 0, evaluatorKind: "auditor" });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "transcript looks done" });
+    auditGoal.mockResolvedValue({ met: false, reason: "no test files found" });
+    const emit = await startTurn();
+
+    emit({ kind: "done" });
+    await flush();
+    await flush();
+
+    expect(auditGoal).toHaveBeenCalledTimes(1);
+    const goal = goalOf();
+    expect(goal?.status).toBe("active");
+    expect(goal?.turns).toBe(1);
+    expect(goal?.lastReason).toBe("no test files found");
+    const sends = continuationSends();
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toContain("Keep working toward the goal: tests pass.");
+    expect(sends[0]).toContain("no test files found");
+  });
+
+  test("auditGoal REJECTS: fail-open continue, no throw, one continuation", async () => {
+    seed({ status: "active", turns: 0, evaluatorKind: "auditor" });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "transcript looks done" });
+    auditGoal.mockRejectedValue(new Error("no live sidecar"));
+    const emit = await startTurn();
+
+    // Must not throw out of the handler.
+    emit({ kind: "done" });
+    await flush();
+    await flush();
+
+    const goal = goalOf();
+    expect(goal?.status).toBe("active");
+    expect(goal?.turns).toBe(1);
+    expect(goal?.lastReason).toContain("auditor could not run:");
+    const sends = continuationSends();
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toContain("no live sidecar");
+  });
+
+  test("verifyCommand FAILS: auditor never runs (command gate short-circuits)", async () => {
+    seed({
+      status: "active",
+      turns: 0,
+      verifyCommand: "npm test",
+      evaluatorKind: "auditor",
+    });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "looks done" });
+    verifyGoalCommand.mockResolvedValue({
+      code: 1,
+      stdout: "1 test failed",
+      stderr: "",
+      killed: false,
+    });
+    const emit = await startTurn();
+
+    emit({ kind: "done" });
+    await flush();
+    await flush();
+
+    expect(verifyGoalCommand).toHaveBeenCalledTimes(1);
+    // The cheaper deterministic gate forced a continue first, so the auditor
+    // never ran.
+    expect(auditGoal).not.toHaveBeenCalled();
+    const goal = goalOf();
+    expect(goal?.status).toBe("active");
+    expect(goal?.lastVerifyExit).toBe(1);
+    expect(continuationSends()).toHaveLength(1);
+  });
+
+  test("verify passes + auditor met: both gates compose to met", async () => {
+    seed({
+      status: "active",
+      turns: 0,
+      verifyCommand: "npm test",
+      evaluatorKind: "auditor",
+    });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "looks done" });
+    verifyGoalCommand.mockResolvedValue({
+      code: 0,
+      stdout: "ok",
+      stderr: "",
+      killed: false,
+    });
+    auditGoal.mockResolvedValue({ met: true, reason: "verified against files" });
+    const emit = await startTurn();
+
+    emit({ kind: "done" });
+    await flush();
+    await flush();
+
+    expect(verifyGoalCommand).toHaveBeenCalledTimes(1);
+    expect(auditGoal).toHaveBeenCalledTimes(1);
+    const goal = goalOf();
+    expect(goal?.status).toBe("met");
+    expect(goal?.lastVerifyExit).toBe(0);
+    expect(goal?.lastReason).toBe("verified against files");
+    expect(continuationSends()).toEqual([]);
+  });
+
+  test("transcript/undefined kind: auditor never runs (v1/v2 unchanged)", async () => {
+    seed({ status: "active", turns: 0 });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "all green" });
+    const emit = await startTurn();
+
+    emit({ kind: "done" });
+    await flush();
+    await flush();
+
+    expect(goalOf()?.status).toBe("met");
+    expect(auditGoal).not.toHaveBeenCalled();
+    expect(continuationSends()).toEqual([]);
+  });
+
+  test("goal cleared DURING the audit await: no met, no continuation (third re-read guard)", async () => {
+    seed({ status: "active", turns: 0, evaluatorKind: "auditor" });
+    evaluateGoal.mockResolvedValue({ met: true, reason: "transcript looks done" });
+    // Hold the auditor open so the loop parks after the transcript evaluator said
+    // met, mid audit-gate, with continuationPending held.
+    let resolveAudit: (v: GoalAudit) => void = () => {};
+    auditGoal.mockReturnValue(
+      new Promise<GoalAudit>((r) => {
+        resolveAudit = r;
+      }),
+    );
+    const emit = await startTurn();
+
+    emit({ kind: "done" });
+    await flush();
+    expect(auditGoal).toHaveBeenCalledTimes(1);
+
+    // User clears the goal while the auditor is running.
+    useSessionStore.getState().clearGoal("t1");
+
+    // The auditor now resolves met. The third re-read identity guard must abort:
+    // no met transition, no continuation, on the since-removed goal.
+    resolveAudit({ met: true, reason: "would have passed" });
     await flush();
     await flush();
 

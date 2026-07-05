@@ -102,6 +102,14 @@ export function GoalCard({
               )}
             </div>
           )}
+          {/* HOY-299: mark a goal that is checked by the independent read-only
+              auditor, matching the verify metadata treatment above. Absent or
+              "transcript" (v1/v2) renders nothing. */}
+          {goal.evaluatorKind === "auditor" && (
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+              <span className="font-mono">auditor</span>
+            </div>
+          )}
           {goal.lastReason && (
             <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
               {goal.lastReason}

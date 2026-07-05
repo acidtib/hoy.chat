@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   abort,
+  auditGoal,
   Channel,
   closeSession,
   compact as ipcCompact,
@@ -61,6 +62,7 @@ import type {
   AgentEvent,
   ContextRef,
   ExtWidget,
+  GoalAudit,
   GoalVerifyResult,
   ImageAttachment,
   ImageContent,
@@ -558,7 +560,14 @@ interface SessionStore {
   // Starts (or replaces) the thread's goal and kicks off the loop by sending
   // `condition` as a normal prompt (spawns the session, applies permission
   // mode/auto-compaction as usual).
-  setGoal: (threadId: string, condition: string) => Promise<void>;
+  setGoal: (
+    threadId: string,
+    condition: string,
+    // HOY-298/HOY-299: the parsed gates from the `/goal ... --verify "cmd" --audit`
+    // command, threaded onto the new goal. Absent => v1 behavior (no command gate,
+    // transcript evaluator).
+    opts?: { verifyCommand?: string; evaluatorKind?: "transcript" | "auditor" },
+  ) => Promise<void>;
   // Flips an active goal to paused. Does not abort an in-flight turn.
   pauseGoal: (threadId: string) => void;
   // Re-arms a paused/capped goal to active and sends a continuation prompt.
@@ -1264,7 +1273,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (goalCommand) {
       switch (goalCommand.kind) {
         case "set":
-          await get().setGoal(threadId, goalCommand.condition);
+          await get().setGoal(threadId, goalCommand.condition, {
+            verifyCommand: goalCommand.verifyCommand,
+            evaluatorKind: goalCommand.evaluatorKind,
+          });
           break;
         case "pause":
           get().pauseGoal(threadId);
@@ -1523,7 +1535,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   // Goal Mode (HOY-263) command actions. Dispatched from submitPrompt's /goal
   // intercept above; none of these send anything to Pi except via the normal
   // submitPrompt path (setGoal's kickoff prompt, resumeGoal's continuation).
-  setGoal: async (threadId, condition) => {
+  setGoal: async (threadId, condition, opts) => {
     if (!findThread(get().projects, threadId)) return;
     // tokensBaseline anchors the goal's usage delta to the thread's current
     // token total (the same per-thread counter the context bar reads via
@@ -1538,6 +1550,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       tokensUsed: 0,
       startedAt: Date.now(),
       capTurns: GOAL_DEFAULT_CAP_TURNS,
+      // HOY-298/HOY-299: carry the parsed verify command and evaluator kind onto
+      // the goal so the loop's command gate and auditor gate see them (and they
+      // persist via WsGoal). Omitted when absent so a plain /goal stays pure v1.
+      ...(opts?.verifyCommand ? { verifyCommand: opts.verifyCommand } : {}),
+      ...(opts?.evaluatorKind ? { evaluatorKind: opts.evaluatorKind } : {}),
     };
     set((s) => ({
       projects: patchThread(s.projects, threadId, (th) => ({ ...th, goal })),
@@ -2490,6 +2507,10 @@ async function maybeContinueGoal(
         }
         const outcome = applyEvaluation(current, res);
         if (outcome.type === "met") {
+          // The reason recorded/shown on a successful met transition. v1 uses the
+          // transcript evaluator's reason; the auditor gate below overrides it
+          // with the auditor's reason when that gate is what confirmed the goal.
+          let metReason = outcome.reason;
           // HOY-298 verify gate: the transcript evaluator said met. If the goal
           // pins a deterministic verify command, it must ALSO exit 0 before we
           // declare the goal met; otherwise we fall through to continue and carry
@@ -2549,15 +2570,89 @@ async function maybeContinueGoal(
             // transition below.
             patchGoal(threadId, { lastVerifyExit: 0 });
           }
+          // HOY-299 auditor gate: composes AFTER the (cheaper, deterministic) v2
+          // command gate so that gate short-circuits first; if it already forced a
+          // continue, the auditor never runs. Only when the goal selected the
+          // read-only auditor. The transcript evaluator already said met and the
+          // command gate (if any) already passed; now an independent read-only
+          // subagent inspects the ACTUAL repo files and must ALSO return met:true
+          // before we declare the goal met. undefined/"transcript" => skip
+          // entirely (pure v1/v2 behavior; auditGoal is never called).
+          if (current.evaluatorKind === "auditor") {
+            // Baseline for the third identity guard, captured SYNCHRONOUSLY right
+            // before the audit await. It is `current` when no command gate ran,
+            // but the verify-pass path above called patchGoal({lastVerifyExit:0}),
+            // which replaced the goal object; that patch is synchronous (no user
+            // action can interleave before this line), so re-reading here yields
+            // the same LOGICAL goal, just its current object identity. Comparing
+            // the post-audit re-read against THIS baseline is what detects a user
+            // pause/clear/replace during the (long) audit run.
+            const preAudit = findThread(
+              useSessionStore.getState().projects,
+              threadId,
+            )?.thread.goal;
+            let audit: GoalAudit;
+            try {
+              audit = await auditGoal(
+                sessionId,
+                current.condition,
+                current.verifyCwd,
+              );
+            } catch (e) {
+              // Same fail-open discipline as the evaluator/verify seams: a rejected
+              // IPC (no live sidecar, spawn failure, unparseable stdout) is a
+              // FAILED audit -> keep working, never a false met, never an
+              // unhandled throw escaping this void-launched handler.
+              audit = {
+                met: false,
+                reason: `auditor could not run: ${String(e)}`,
+              };
+            }
+            // CRITICAL third re-read (HOY-299): auditGoal is a THIRD long await (up
+            // to ~180s) AFTER the evaluateGoal and verifyGoalCommand re-reads. The
+            // goal may have been cleared/paused/replaced during the audit run, so
+            // re-read and re-apply the exact object-identity guard against
+            // `preAudit` (the object captured just before this await). A
+            // since-changed goal aborts the transition cleanly: no met, no
+            // continuation. This is the v1 finding-#1 bug class; do not reintroduce
+            // it across this third await.
+            const c3 = findThread(
+              useSessionStore.getState().projects,
+              threadId,
+            )?.thread.goal;
+            if (
+              !c3 ||
+              !preAudit ||
+              c3 !== preAudit ||
+              c3.status !== "active" ||
+              c3.condition !== current.condition
+            ) {
+              return;
+            }
+            if (!audit.met) {
+              // Audit failed: treat as continue. Carry the audit reason forward as
+              // both the recorded lastReason and the continuation reason.
+              patchGoal(threadId, {
+                lastReason: audit.reason,
+                turns: action.turns,
+                tokensUsed: action.tokensUsed,
+              });
+              await sendGoalContinuation(threadId, c3.condition, audit.reason);
+              return;
+            }
+            // Audit passed: record its reason as the met reason, then fall through
+            // to the met transition below.
+            metReason = audit.reason;
+          }
           // Bump turns onto the met transition too (Fix 3): a goal met on its
           // Nth turn should read `turn N/cap`, not `N-1/cap`. Same action.turns
           // the continue arm below persists; met termination is unchanged.
           patchGoal(threadId, {
             status: "met",
             turns: action.turns,
-            lastReason: outcome.reason,
+            lastReason: metReason,
           });
-          pushNotice(threadId, `Goal met: ${outcome.reason}`, "info");
+          pushNotice(threadId, `Goal met: ${metReason}`, "info");
           return;
         }
         // continue: record this turn's progress on the goal (reason, turn

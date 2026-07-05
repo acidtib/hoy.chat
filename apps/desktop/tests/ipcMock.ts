@@ -7,6 +7,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
   mock.module("@/lib/ipc", () => ({
     Channel: class {},
     abort: mock(),
+    auditGoal: mock(),
     activeSessionId: mock(),
     closeSession: mock(),
     compact: mock(),

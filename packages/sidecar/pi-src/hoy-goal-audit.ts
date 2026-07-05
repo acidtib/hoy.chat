@@ -41,6 +41,7 @@ import {
   SessionManager,
   createAgentSession,
 } from "@earendil-works/pi-coding-agent";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadSubagentRegistry } from "./hoy-agents-registry";
 
@@ -146,13 +147,44 @@ function parseAudit(text: string): GoalAudit {
   return { met: false, reason: `auditor error: unparseable model output: ${trimmed.slice(0, 200)}` };
 }
 
-// Pick the auditor model. Order: an explicit HOY_GOAL_AUDIT_MODEL ("provider/id"),
-// then any cheap-tier model, then any available model. Returns undefined only
-// when no model has usable auth at all. There is no session model here (the
-// auditor opens no thread transcript), so this is simpler than the evaluator's.
+// Read the user's configured default provider/model from <agentDir>/settings.json
+// (the same file the app writes: { "defaultProvider": ..., "defaultModel": ... }).
+// Guarded: a missing or malformed file yields null so pickModel skips to the next
+// step rather than throwing.
+function readSettingsDefault(
+  agentDir: string,
+): { provider: string; model?: string } | null {
+  try {
+    const raw = readFileSync(join(agentDir, "settings.json"), "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    const obj = parsed as Record<string, unknown>;
+    const provider = typeof obj.defaultProvider === "string" ? obj.defaultProvider.trim() : "";
+    if (!provider) return null;
+    const model = typeof obj.defaultModel === "string" ? obj.defaultModel.trim() : "";
+    return { provider, model: model || undefined };
+  } catch {
+    return null;
+  }
+}
+
+// Pick the auditor model. Order: (1) an explicit HOY_GOAL_AUDIT_MODEL
+// ("provider/id"); (2) a cheap-tier model FROM the settings default provider;
+// (3) the exact settings default provider/model if available; (4) any cheap-tier
+// model from another provider; (5) any available model. Returns undefined only
+// when no model has usable auth at all.
+//
+// The settings-default preference mirrors the v1 evaluator's session-provider
+// fix (hoy-goal-eval.pickModel): a bare cross-provider cheap-tier match can
+// resolve to a decommissioned id (e.g. an old anthropic haiku) that still lists
+// as "available" but returns empty output, failing the audit open ("not met")
+// every turn. The auditor has NO session transcript to read a provider from, so
+// its analog of "the session's provider" is the settings default provider, which
+// shares the user's working credentials.
 function pickModel(
   registry: ModelRegistry,
   available: ReturnType<ModelRegistry["getAvailable"]>,
+  agentDir: string,
 ): ReturnType<ModelRegistry["find"]> | undefined {
   const pinned = process.env.HOY_GOAL_AUDIT_MODEL?.trim();
   if (pinned) {
@@ -160,6 +192,17 @@ function pickModel(
     if (slash > 0) {
       const found = registry.find(pinned.slice(0, slash), pinned.slice(slash + 1));
       if (found) return found;
+    }
+  }
+  const settings = readSettingsDefault(agentDir);
+  if (settings) {
+    const providerCheap = available.find(
+      (m) => m.provider === settings.provider && CHEAP_MODEL_RE.test(m.id),
+    );
+    if (providerCheap) return providerCheap;
+    if (settings.model) {
+      const exact = registry.find(settings.provider, settings.model);
+      if (exact) return exact;
     }
   }
   const cheap = available.find((m) => CHEAP_MODEL_RE.test(m.id));
@@ -221,7 +264,7 @@ export async function runGoalAudit(agentDir: string, cwd: string): Promise<never
     const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
     const registry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
     const available = registry.getAvailable();
-    const model = pickModel(registry, available);
+    const model = pickModel(registry, available, agentDir);
     if (!model) {
       if (!settled) {
         settled = true;

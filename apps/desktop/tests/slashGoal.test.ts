@@ -73,6 +73,30 @@ describe("submitPrompt /goal interception (HOY-263)", () => {
     expect(sendPrompt.mock.calls[0][1]).toBe("tests pass");
   });
 
+  test("/goal <condition> --audit threads evaluatorKind onto the goal (HOY-299)", async () => {
+    await useSessionStore
+      .getState()
+      .submitPrompt("t1", "/goal tests pass --audit");
+
+    const goal = useSessionStore.getState().projects[0].threads[0].goal;
+    expect(goal?.condition).toBe("tests pass");
+    expect(goal?.evaluatorKind).toBe("auditor");
+    // The --audit flag is peeled off, so only the bare condition is sent.
+    expect(sendPrompt).toHaveBeenCalledTimes(1);
+    expect(sendPrompt.mock.calls[0][1]).toBe("tests pass");
+  });
+
+  test('/goal <condition> --verify "cmd" threads verifyCommand onto the goal (HOY-298)', async () => {
+    await useSessionStore
+      .getState()
+      .submitPrompt("t1", '/goal tests pass --verify "npm test"');
+
+    const goal = useSessionStore.getState().projects[0].threads[0].goal;
+    expect(goal?.condition).toBe("tests pass");
+    expect(goal?.verifyCommand).toBe("npm test");
+    expect(goal?.evaluatorKind).toBeUndefined();
+  });
+
   test("/goal pause pauses without sending a prompt", async () => {
     useSessionStore.setState((s) => ({
       projects: [
