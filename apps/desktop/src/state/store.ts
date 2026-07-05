@@ -14,6 +14,7 @@ import {
   getMessages,
   getSessionStats,
   getState,
+  getTree,
   getUsageStats,
   listProjectPaths,
   listSubagents,
@@ -83,6 +84,7 @@ import type {
   ProviderAuth,
   ProviderInfo,
   SessionStats,
+  SessionTree,
   SlashCommand,
   StreamingBehavior,
   SubagentDef,
@@ -362,6 +364,11 @@ interface SessionStore {
   // threadId. Fetched once the session is acquired and cached; the composer "/"
   // autocomplete reads it. Empty until a session exists (degrades to built-ins).
   slashCommands: Record<string, SlashCommand[]>;
+  // Session entry tree per thread (HOY-279), keyed by threadId, feeding the
+  // `/tree` navigator. Absent until the navigator is opened for a thread; a
+  // present entry means the tree is being observed, so refreshSessionTree keeps
+  // only those fresh (turn done, fork). Session-scoped: dropped on panel close.
+  sessionTree: Record<string, SessionTree | null>;
   // Composer drafts keyed by threadId. Store-held so hidden panels and app
   // restarts keep unsent text; persisted via the workspace autosave as each
   // thread's draft field. Never cleared on panel close.
@@ -561,6 +568,9 @@ interface SessionStore {
   // Pull the session's slash commands into the store (HOY-223). No-op without a
   // live session; a failure degrades quietly to the built-ins.
   refreshSlashCommands: (threadId: string) => Promise<void>;
+  // Pull the session's entry tree into the store for the `/tree` navigator
+  // (HOY-279). No-op without a live session; a failure leaves the prior tree.
+  refreshSessionTree: (threadId: string) => Promise<void>;
   // Trigger a manual compaction on the thread's session, optionally with custom
   // summarization instructions (HOY-229). Gated on an idle, live session.
   compact: (threadId: string, customInstructions?: string) => Promise<void>;
@@ -632,6 +642,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   statuses: {},
   widgets: {},
   slashCommands: {},
+  sessionTree: {},
   drafts: {},
   composerAttachments: {},
   runningAgents: new Set<string>(),
@@ -773,6 +784,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const { [id]: _q, ...queued } = s.queued;
       // Slash commands are session-scoped; drop them so a reopen re-fetches.
       const { [id]: _slc, ...slashCommands } = s.slashCommands;
+      // The session tree is session-scoped too; drop it so a reopen re-fetches
+      // and a closed thread stops being refreshed on done (HOY-279).
+      const { [id]: _tree, ...sessionTree } = s.sessionTree;
       return {
         panels,
         activeThreadId,
@@ -788,6 +802,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         composerAttachments,
         queued,
         slashCommands,
+        sessionTree,
         drafts: discard ? remainingDrafts : s.drafts,
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
         focusRequest: s.focusRequest?.threadId === id ? null : s.focusRequest,
@@ -1541,6 +1556,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
 
+  refreshSessionTree: async (threadId) => {
+    const sessionId = findThread(get().projects, threadId)?.thread.sessionId;
+    if (!sessionId) return;
+    try {
+      const tree = await getTree(sessionId);
+      set((s) => ({ sessionTree: { ...s.sessionTree, [threadId]: tree } }));
+    } catch {
+      // Best-effort: a failure leaves the navigator on its last tree.
+    }
+  },
+
   compact: async (threadId, customInstructions) => {
     const thread = findThread(get().projects, threadId)?.thread;
     if (!thread?.sessionId) return;
@@ -2198,6 +2224,12 @@ async function streamPromptOnThread(
         return { pendingPermissions: { ...s.pendingPermissions, [threadId]: [] } };
       });
       void useSessionStore.getState().refreshStats(threadId);
+      // HOY-279: a completed turn appends entries, so keep the `/tree` navigator
+      // fresh — but only for threads whose tree is being observed (a present
+      // sessionTree entry). Unopened navigators cost no get_tree call.
+      if (threadId in useSessionStore.getState().sessionTree) {
+        void useSessionStore.getState().refreshSessionTree(threadId);
+      }
       // HOY-245: release this thread's concurrency slot on its INITIAL run's
       // first done. Membership in runningAgents is what marks an initial run;
       // resume runs (a delivered child resuming its parent) and foreground turns
