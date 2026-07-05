@@ -1149,8 +1149,7 @@ impl SidecarManager {
                 String::from_utf8_lossy(&out.stderr)
             ));
         }
-        serde_json::from_slice(&out.stdout)
-            .map_err(|e| format!("parse evaluate_goal output: {e}"))
+        serde_json::from_slice(&out.stdout).map_err(|e| format!("parse evaluate_goal output: {e}"))
     }
 
     // Goal Mode v2 (HOY-298): run a goal's deterministic verify command via a
