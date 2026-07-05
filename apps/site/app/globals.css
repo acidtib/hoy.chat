@@ -787,14 +787,110 @@ h3.heading {
   text-align: center;
 }
 
+/* Keep the wrap's 24px horizontal inset; only override the vertical padding.
+   Writing `56px 0 8px` here would zero out .wrap's left/right padding and hang
+   the title 24px left of the page body below it. */
 .page-head {
-  padding: 56px 0 8px;
+  padding: 56px 24px 8px;
 }
 .page-head h1 {
   font-size: clamp(28px, 5vw, 36px);
   letter-spacing: -0.02em;
   margin: 0 0 8px;
   text-wrap: balance;
+}
+
+/* Legal pages (privacy, terms). One left-aligned column so the title, the
+   summary callout, every heading, and every paragraph share the same left edge
+   as the rest of the site's chrome. Text is held to a readable measure but stays
+   pinned left (not centered) so nothing drifts inward. */
+.legal {
+  padding: 8px 0 72px;
+}
+.legal-tldr {
+  margin: 0;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--brand);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 16px;
+  text-wrap: pretty;
+}
+.legal-section {
+  border-top: 1px solid var(--border);
+  padding: 26px 0;
+}
+/* The summary already sits in a bordered box, so the first section skips its own
+   top rule to avoid a double divider stacked right under the callout. */
+.legal-tldr + .legal-section {
+  border-top: none;
+  padding-top: 30px;
+}
+.legal-section h2 {
+  margin: 0 0 10px;
+  font-size: 19px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+.legal-body {
+  max-width: 74ch;
+}
+.legal-body > :last-child {
+  margin-bottom: 0;
+}
+.legal-body p {
+  color: var(--muted);
+  margin: 0 0 14px;
+  text-wrap: pretty;
+}
+.legal-body ul {
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.legal-body li {
+  color: var(--muted);
+  position: relative;
+  padding: 0 0 0 20px;
+  margin: 0 0 12px;
+  text-wrap: pretty;
+}
+.legal-body li:last-child {
+  margin-bottom: 0;
+}
+.legal-body li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 11px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+.legal-body strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+.legal-body a {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+.legal-body a:hover {
+  text-decoration-color: var(--brand);
+}
+.legal-body code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--fg);
 }
 
 /* Simulated Hoy window. Coded, not screenshotted, so it always reads as

@@ -10,10 +10,8 @@ export function SiteFooter({ version }: { version: string }) {
           Hoy v{version} &middot; {LICENSE} License
         </span>
         <div className="footer-links">
-          <Link href="/changelog">Changelog</Link>
-          <a href={REPO_URL} target="_blank" rel="noreferrer">
-            GitHub
-          </a>
+          <Link href="/terms">Terms of Service</Link>
+          <Link href="/privacy">Privacy Policy</Link>
           <a href={`${REPO_URL}/blob/main/LICENSE`} target="_blank" rel="noreferrer">
             License
           </a>

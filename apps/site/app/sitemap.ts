@@ -9,5 +9,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: `${PRODUCTION_URL}/`, changeFrequency: "weekly", priority: 1 },
     { url: `${PRODUCTION_URL}/changelog`, changeFrequency: "weekly", priority: 0.6 },
+    { url: `${PRODUCTION_URL}/privacy`, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${PRODUCTION_URL}/terms`, changeFrequency: "yearly", priority: 0.3 },
   ];
 }
