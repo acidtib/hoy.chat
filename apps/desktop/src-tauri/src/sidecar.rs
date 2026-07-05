@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use tauri::ipc::Channel;
 use tokio::sync::oneshot;
 
-use crate::events::{AgentEvent, GoalEvaluation, GoalVerifyResult, ModelRef, ToolPhase};
+use crate::events::{AgentEvent, GoalAudit, GoalEvaluation, GoalVerifyResult, ModelRef, ToolPhase};
 use crate::reader::JsonlFramer;
 
 pub type SessionId = String;
@@ -1208,6 +1208,60 @@ impl SidecarManager {
         }
         serde_json::from_slice(&out.stdout)
             .map_err(|e| format!("parse verify_goal_command output: {e}"))
+    }
+
+    // Goal Mode v3 (HOY-299): run the independent READ-ONLY auditor via a one-shot
+    // sidecar run. Mirrors verify_goal_command: spawn self.bin with a mode env
+    // (HOY_GOAL_AUDIT=1, HOY_GOAL_CONDITION=<condition>) in the project cwd,
+    // capture the {met, reason} JSON on stdout, exit. The audit cwd is the
+    // explicit `cwd` (a per-goal cwd) when given, else the session's own cwd from
+    // the cwds map (same fallback verify_goal_command uses), else self.cwd; the
+    // auditor reads the ACTUAL files there. Unlike evaluate_goal this is a genuine
+    // agentic loop, so `.output()` (no timeout of its own) relies on the one-shot's
+    // INTERNAL self-termination: hoy-goal-audit.ts arms a turn budget AND an
+    // absolute wall-clock failsafe that always emits JSON and exits 0, so the
+    // auditor can never wedge us here. Fail-open lives sidecar-side, so a
+    // non-success process status is a genuine spawn failure and surfaces as Err.
+    pub fn audit_goal(
+        &self,
+        session_id: &str,
+        condition: &str,
+        cwd: Option<&str>,
+    ) -> Result<GoalAudit, String> {
+        if !self.bin.exists() {
+            return Err(format!(
+                "sidecar binary not found at {}. Run sidecar/build.sh.",
+                self.bin.display()
+            ));
+        }
+        let audit_cwd: PathBuf = match cwd {
+            Some(c) => PathBuf::from(c),
+            None => self
+                .cwds
+                .lock()
+                .unwrap()
+                .get(session_id)
+                .cloned()
+                .unwrap_or_else(|| self.cwd.clone()),
+        };
+        let mut command = std::process::Command::new(&self.bin);
+        apply_sanitized_env(&mut command, &self.agent_dir, &audit_cwd);
+        let out = command
+            .env("PI_PACKAGE_DIR", &self.payload)
+            .env("HOY_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_GOAL_AUDIT", "1")
+            .env("HOY_GOAL_CONDITION", condition)
+            .current_dir(&audit_cwd)
+            .output()
+            .map_err(|e| format!("spawn sidecar for audit_goal: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "audit_goal exited {}: {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+        serde_json::from_slice(&out.stdout).map_err(|e| format!("parse audit_goal output: {e}"))
     }
 
     // Tear down a session's sidecar (panel close / thread delete). Dropping the

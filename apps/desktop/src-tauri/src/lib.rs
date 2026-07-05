@@ -123,6 +123,7 @@ pub fn run() {
             commands::get_session_stats,
             commands::evaluate_goal,
             commands::verify_goal_command,
+            commands::audit_goal,
             commands::get_usage_stats,
             commands::abort,
             commands::respond_permission,

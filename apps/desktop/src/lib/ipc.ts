@@ -6,6 +6,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AgentEvent,
   CompactionResult,
+  GoalAudit,
   GoalEvaluation,
   GoalVerifyResult,
   ImageContent,
@@ -339,6 +340,23 @@ export function verifyGoalCommand(
   return invoke<GoalVerifyResult>("verify_goal_command", {
     sessionId,
     command,
+    cwd: cwd ?? null,
+  });
+}
+
+// Goal Mode v3 (HOY-299): run the independent read-only auditor via a one-shot
+// sidecar. `cwd` overrides where the auditor reads (a per-goal cwd); omit to run
+// in the session's own cwd. Always resolves to { met, reason }: the auditor fails
+// open to met:false on any error or timeout, so Task B's loop keeps working on
+// uncertainty rather than falsely stopping.
+export function auditGoal(
+  sessionId: string,
+  condition: string,
+  cwd?: string,
+): Promise<GoalAudit> {
+  return invoke<GoalAudit>("audit_goal", {
+    sessionId,
+    condition,
     cwd: cwd ?? null,
   });
 }

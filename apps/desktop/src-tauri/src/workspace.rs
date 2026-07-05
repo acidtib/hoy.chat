@@ -113,6 +113,13 @@ pub struct WsGoal {
     pub verify_command: Option<String>,
     #[serde(default)]
     pub verify_cwd: Option<String>,
+    // HOY-299 (Goal Mode v3): which evaluator the loop uses ("transcript" default
+    // when absent, or "auditor" for the independent read-only auditor). Mirrors
+    // the ThreadGoal field; #[serde(default)] so pre-v3 workspaces still load.
+    // (lastVerifyExit remains intentionally NOT persisted, like lastReason's
+    // transient sibling.)
+    #[serde(default)]
+    pub evaluator_kind: Option<String>,
 }
 
 // Which agent spawned this thread and under what role, for child threads
@@ -218,6 +225,7 @@ mod tests {
                         last_reason: Some("still working".into()),
                         verify_command: Some("bun test".into()),
                         verify_cwd: None,
+                        evaluator_kind: Some("auditor".into()),
                     }),
                 }],
             }],
@@ -264,6 +272,7 @@ mod tests {
         assert_eq!(g.last_reason.as_deref(), Some("still working"));
         assert_eq!(g.verify_command.as_deref(), Some("bun test"));
         assert_eq!(g.verify_cwd, None);
+        assert_eq!(g.evaluator_kind.as_deref(), Some("auditor"));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

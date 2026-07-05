@@ -138,6 +138,62 @@ describe("parseGoalCommand", () => {
     const tooLong = "a".repeat(4001);
     expect(parseGoalCommand(`/goal ${tooLong} --verify "bun test"`)).toBeNull();
   });
+
+  // HOY-299: optional trailing --audit flag selects the read-only auditor.
+  test("/goal <text> --audit selects the auditor evaluator", () => {
+    expect(parseGoalCommand("/goal do X --audit")).toEqual({
+      kind: "set",
+      condition: "do X",
+      evaluatorKind: "auditor",
+    });
+  });
+
+  test("/goal <text> without --audit has no evaluatorKind (transcript default)", () => {
+    expect(parseGoalCommand("/goal do X")).toEqual({
+      kind: "set",
+      condition: "do X",
+    });
+  });
+
+  test("a condition containing the word 'audit' but not the flag is unaffected", () => {
+    expect(parseGoalCommand("/goal audit the deploy logs")).toEqual({
+      kind: "set",
+      condition: "audit the deploy logs",
+    });
+  });
+
+  test('--audit composes with --verify (verify then audit)', () => {
+    expect(parseGoalCommand('/goal do X --verify "bun test" --audit')).toEqual({
+      kind: "set",
+      condition: "do X",
+      verifyCommand: "bun test",
+      evaluatorKind: "auditor",
+    });
+  });
+
+  test('--audit composes with --verify (audit then verify)', () => {
+    expect(parseGoalCommand('/goal do X --audit --verify "bun test"')).toEqual({
+      kind: "set",
+      condition: "do X",
+      verifyCommand: "bun test",
+      evaluatorKind: "auditor",
+    });
+  });
+
+  test("a bare --audit with no remaining condition is rejected", () => {
+    expect(parseGoalCommand("/goal --audit")).toBeNull();
+  });
+
+  test("the condition length cap applies after the --audit flag is stripped", () => {
+    const exact = "a".repeat(4000);
+    expect(parseGoalCommand(`/goal ${exact} --audit`)).toEqual({
+      kind: "set",
+      condition: exact,
+      evaluatorKind: "auditor",
+    });
+    const tooLong = "a".repeat(4001);
+    expect(parseGoalCommand(`/goal ${tooLong} --audit`)).toBeNull();
+  });
 });
 
 describe("nextGoalAction", () => {

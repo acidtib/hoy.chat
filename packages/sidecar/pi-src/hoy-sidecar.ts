@@ -30,6 +30,7 @@ import { buildHoySystemPrompt } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
 import { runGoalEval } from "./hoy-goal-eval";
 import { runVerifyCommand } from "./hoy-verify-command";
+import { runGoalAudit } from "./hoy-goal-audit";
 
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
@@ -112,6 +113,17 @@ if (process.env.HOY_GOAL_EVAL) {
 if (process.env.HOY_VERIFY_COMMAND) {
   await runVerifyCommand();
   // runVerifyCommand writes JSON to stdout and exits; this line is never reached.
+}
+
+// Goal Mode v3 (HOY-299): one-shot READ-ONLY auditor. Rust spawns us with this
+// env, captures the {met, reason} JSON on stdout, and exits us. Runs before the
+// runtime is built so it never touches runRpcMode. Unlike the tool-less
+// evaluator this is a genuine agentic loop over the Explore (read-only) toolset;
+// runGoalAudit self-terminates via a turn budget plus an absolute wall-clock
+// failsafe, and fails open to {met:false, ...}, always writing JSON and exiting 0.
+if (process.env.HOY_GOAL_AUDIT) {
+  await runGoalAudit(agentDir, process.cwd());
+  // runGoalAudit writes JSON to stdout and exits; this line is never reached.
 }
 
 const factory: CreateAgentSessionRuntimeFactory = async ({

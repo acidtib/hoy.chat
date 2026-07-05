@@ -25,6 +25,13 @@ export interface ThreadGoal {
   // Transient and intentionally NOT persisted (no WsGoal mirror), so it is
   // naturally dropped on save/restart like the continuation-pending state.
   lastVerifyExit?: number;
+  // HOY-299 (Goal Mode v3): which evaluator the loop uses. "transcript" (the
+  // default when absent, i.e. v1 behavior) judges the thread's own transcript;
+  // "auditor" spawns an independent READ-ONLY subagent that inspects the ACTUAL
+  // repo files and returns {met, reason}. Persisted on the goal (see WsGoal) so
+  // the chosen mode survives restart. Task A plumbs this through; Task B wires
+  // the auditor into the loop.
+  evaluatorKind?: "transcript" | "auditor";
 }
 
 export const GOAL_DEFAULT_CAP_TURNS = 25;
@@ -32,7 +39,7 @@ export const GOAL_DEFAULT_CAP_TURNS = 25;
 const GOAL_CONDITION_MAX_LENGTH = 4000;
 
 export type GoalCommand =
-  | { kind: "set"; condition: string; verifyCommand?: string }
+  | { kind: "set"; condition: string; verifyCommand?: string; evaluatorKind?: "transcript" | "auditor" }
   | { kind: "status" }
   | { kind: "pause" }
   | { kind: "resume" }
@@ -47,6 +54,13 @@ const CLEAR_ALIASES = new Set(["clear", "stop", "off", "reset", "none", "cancel"
 // still stripped from the condition). A bare `--verify` with no quoted value
 // does not match, so it stays part of the condition rather than erroring.
 const VERIFY_FLAG_RE = /\s*--verify\s+"([^"]*)"\s*$/;
+
+// HOY-299: a trailing bare `--audit` flag selects the independent read-only
+// auditor evaluator. Anchored to the end (like --verify) and matched only as the
+// exact `--audit` token, so the plain word "audit" inside a condition is never
+// mistaken for the flag. It composes with --verify: both may appear in either
+// order, and each is peeled off the end before the condition length cap applies.
+const AUDIT_FLAG_RE = /\s*--audit\s*$/;
 
 // Maps composer input to a goal subcommand. Returns null when the input is not
 // a /goal command at all, so callers can fall through to normal message
@@ -66,24 +80,38 @@ export function parseGoalCommand(raw: string): GoalCommand | null {
   if (lower === "resume") return { kind: "resume" };
   if (CLEAR_ALIASES.has(lower)) return { kind: "clear" };
 
-  // Peel a trailing --verify "<cmd>" off before validating the condition, so the
-  // length cap applies to the condition alone. An empty quoted value yields no
-  // verify command; a non-empty one is trimmed.
+  // Peel trailing --verify "<cmd>" and --audit flags off before validating the
+  // condition, so the length cap applies to the condition alone. Both flags may
+  // appear in either order (and are stripped whichever comes last first), so we
+  // loop until neither matches the current tail. An empty quoted --verify value
+  // yields no verify command; a non-empty one is trimmed.
   let condition = arg;
   let verifyCommand: string | undefined;
-  const verifyMatch = arg.match(VERIFY_FLAG_RE);
-  if (verifyMatch) {
-    condition = arg.slice(0, verifyMatch.index).trim();
-    const value = verifyMatch[1].trim();
-    if (value) verifyCommand = value;
+  let evaluatorKind: "auditor" | undefined;
+  for (;;) {
+    const verifyMatch = condition.match(VERIFY_FLAG_RE);
+    if (verifyMatch) {
+      const value = verifyMatch[1].trim();
+      if (value) verifyCommand = value;
+      condition = condition.slice(0, verifyMatch.index).trim();
+      continue;
+    }
+    const auditMatch = condition.match(AUDIT_FLAG_RE);
+    if (auditMatch) {
+      evaluatorKind = "auditor";
+      condition = condition.slice(0, auditMatch.index).trim();
+      continue;
+    }
+    break;
   }
 
-  // A --verify with no remaining condition is not a usable goal.
+  // A flag-only input with no remaining condition is not a usable goal.
   if (condition.length === 0) return null;
   if (condition.length > GOAL_CONDITION_MAX_LENGTH) return null;
-  return verifyCommand
-    ? { kind: "set", condition, verifyCommand }
-    : { kind: "set", condition };
+  const cmd: Extract<GoalCommand, { kind: "set" }> = { kind: "set", condition };
+  if (verifyCommand) cmd.verifyCommand = verifyCommand;
+  if (evaluatorKind) cmd.evaluatorKind = evaluatorKind;
+  return cmd;
 }
 
 export interface TurnOutcome {

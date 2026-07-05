@@ -266,6 +266,17 @@ pub struct GoalVerifyResult {
     pub killed: bool,
 }
 
+// Goal Mode v3 (HOY-299): the independent read-only auditor's verdict. Mirrors
+// GoalAudit in apps/desktop/src/lib/types.ts. Like GoalEvaluation, `met` is only
+// ever true on clear evidence; every error path in the auditor one-shot fails
+// open to {met:false, reason:"auditor ..."} (or a timed-out result), so the loop
+// never stops on uncertainty.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoalAudit {
+    pub met: bool,
+    pub reason: String,
+}
+
 // Mirror of Pi's ImageContent (pi-ai). Sent on the prompt command's images[].
 // `data` is raw base64 with NO data: URI prefix; the renderer strips it before
 // invoke.

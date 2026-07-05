@@ -580,6 +580,23 @@ pub async fn verify_goal_command(
     manager.verify_goal_command(&session_id, &command, cwd.as_deref())
 }
 
+// Goal Mode v3 (HOY-299): run the independent read-only auditor via a one-shot
+// sidecar and return {met, reason}. Task A plumbing only; Task B calls this from
+// the loop to compose the auditor's verdict with the v2 verify gate. `cwd` is a
+// per-goal override; when absent the manager runs the auditor in the session's
+// own cwd, reading the actual files there. Fail-open is enforced sidecar-side:
+// any auditor failure or timeout still returns {met:false, ...}, so the loop
+// keeps working on uncertainty rather than falsely stopping.
+#[tauri::command]
+pub async fn audit_goal(
+    session_id: String,
+    condition: String,
+    cwd: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<crate::events::GoalAudit, String> {
+    manager.audit_goal(&session_id, &condition, cwd.as_deref())
+}
+
 // HOY-262: aggregate local usage stats from pi's session transcripts. Pure disk
 // read, so it runs on the blocking pool rather than tying up an async worker.
 #[tauri::command]

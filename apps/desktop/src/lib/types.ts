@@ -398,6 +398,16 @@ export interface GoalVerifyResult {
   killed: boolean;
 }
 
+// Goal Mode v3 (HOY-299): the independent read-only auditor's verdict on whether
+// a thread's goal condition holds against the ACTUAL repo files. Mirrors GoalAudit
+// in src-tauri/src/events.rs. `met` is only true on clear file evidence; the
+// auditor fails open to { met: false, reason: "auditor ..." } on any error or
+// timeout, so the loop keeps working on uncertainty rather than falsely stopping.
+export interface GoalAudit {
+  met: boolean;
+  reason: string;
+}
+
 // UI-only grouping. Not backed by Pi's RPC yet: a thread maps to a Pi session and
 // a project to a working directory once persistence lands (next milestone). Kept
 // here so the sidebar renders from typed state, not ad hoc shapes.
