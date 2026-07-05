@@ -3,6 +3,7 @@ import {
   abort,
   auditGoal,
   Channel,
+  cloneSession,
   closeSession,
   compact as ipcCompact,
   setAutoCompaction as ipcSetAutoCompaction,
@@ -13,6 +14,7 @@ import {
   forkSession,
   getCommands,
   getEntries,
+  getForkMessages,
   getMessages,
   getSessionStats,
   getState,
@@ -79,6 +81,7 @@ import type {
   McpScope,
   ModelInfo,
   ModelRef,
+  ForkMessage,
   Notice,
   NotifyType,
   PermissionMode,
@@ -378,6 +381,9 @@ interface SessionStore {
   // body, independent of any one thread panel: its content follows the active
   // thread. `/tree` is the first tenant; a git panel is a planned second.
   rightDock: RightDockView | null;
+  // The /fork picker (HOY-284): the active thread's forkable user messages, or
+  // null when closed. Picking one branches to a new thread via branchFromEntry.
+  forkPicker: { threadId: string; messages: ForkMessage[] } | null;
   // Composer drafts keyed by threadId. Store-held so hidden panels and app
   // restarts keep unsent text; persisted via the workspace autosave as each
   // thread's draft field. Never cleared on panel close.
@@ -589,6 +595,15 @@ interface SessionStore {
   // source file, forks it to a new branch file (source untouched), and surfaces
   // the branch as a child thread seeded to that point.
   branchFromEntry: (threadId: string, entryId: string) => Promise<void>;
+  // Duplicate the current thread's active branch into a new child thread via the
+  // clone RPC (HOY-284): the source is untouched, no composer prefill.
+  cloneThread: (threadId: string) => Promise<void>;
+  // The /fork picker (HOY-284). openForkPicker fetches the thread's forkable user
+  // messages and opens the palette; pickFork branches from the chosen entry;
+  // closeForkPicker dismisses it.
+  openForkPicker: (threadId: string) => Promise<void>;
+  pickFork: (entryId: string) => void;
+  closeForkPicker: () => void;
   // Trigger a manual compaction on the thread's session, optionally with custom
   // summarization instructions (HOY-229). Gated on an idle, live session.
   compact: (threadId: string, customInstructions?: string) => Promise<void>;
@@ -662,6 +677,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   slashCommands: {},
   sessionTree: {},
   rightDock: null,
+  forkPicker: null,
   drafts: {},
   composerAttachments: {},
   runningAgents: new Set<string>(),
@@ -1360,6 +1376,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return;
     }
 
+    // Hoy built-in /fork and /clone (HOY-284): branch commands intercepted before
+    // the prompt path so they never reach Pi. Bare "/clone" duplicates the active
+    // branch into a new thread; bare "/fork" opens the forkable-message picker.
+    // "/forkish" and any trailing args fall through to Pi unchanged.
+    if (/^\/clone$/.test(text)) {
+      void get().cloneThread(threadId);
+      return;
+    }
+    if (/^\/fork$/.test(text)) {
+      void get().openForkPicker(threadId);
+      return;
+    }
+
     const hasImages = !!images && images.length > 0;
     if (!text && !hasImages && contexts.length === 0) return;
 
@@ -1609,99 +1638,55 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   closeRightDock: () => set({ rightDock: null }),
 
   branchFromEntry: async (threadId, entryId) => {
-    const found = findThread(get().projects, threadId);
-    if (!found) return;
-    const { project, thread: source } = found;
-    if (!source.sessionFile) {
-      pushNotice(threadId, "Can't branch yet: this thread has no saved session.", "error");
+    await branchIntoChildThread(threadId, (sid) => forkSession(sid, entryId), {
+      busy: "Finish the current turn before branching.",
+      fail: "Branch",
+      titlePrefix: "Branch",
+      done: (title) => `Branched from "${title}".`,
+    });
+  },
+
+  cloneThread: async (threadId) => {
+    await branchIntoChildThread(threadId, (sid) => cloneSession(sid), {
+      busy: "Finish the current turn before cloning.",
+      fail: "Clone",
+      titlePrefix: "Clone",
+      done: (title) => `Cloned "${title}".`,
+    });
+  },
+
+  openForkPicker: async (threadId) => {
+    const thread = findThread(get().projects, threadId)?.thread;
+    if (!thread?.sessionId) {
+      pushNotice(threadId, "Can't fork yet: this thread has no live session.", "error");
       return;
     }
-    // Fork reads the source file up to the entry; branching mid-write risks a
-    // torn read, so wait for a settled point (the spike's double-open note).
+    // get_fork_messages reads the session file; wait for a settled point, matching
+    // the branch/clone gate.
     if (get().streaming[threadId]) {
-      pushNotice(threadId, "Finish the current turn before branching.", "info");
+      pushNotice(threadId, "Finish the current turn before forking.", "info");
       return;
     }
-
-    const cwd = project.path ?? "";
-    const depth = threadDepth(get().projects, threadId);
-    // Open a fresh sidecar on the SOURCE file, then fork it: pi writes a new
-    // branch file and rebinds THIS sidecar to it, leaving the source untouched.
-    let branchSessionId: string;
     try {
-      branchSessionId = await createSession(
-        cwd,
-        source.sessionFile,
-        null,
-        source.permissionMode ?? null,
-        depth,
-        usePrefsStore.getState().requireSubagentApproval,
-        null,
-      );
-    } catch (e) {
-      pushNotice(threadId, `Branch failed: ${String(e)}`, "error");
-      return;
-    }
-
-    let forkText: string | undefined;
-    try {
-      const result = await forkSession(branchSessionId, entryId);
-      if (result.cancelled) {
-        releaseSession(branchSessionId);
-        pushNotice(threadId, "Branch cancelled.", "info");
+      const { messages } = await getForkMessages(thread.sessionId);
+      if (messages.length === 0) {
+        pushNotice(threadId, "Nothing to fork from yet: no user messages.", "info");
         return;
       }
-      forkText = result.text;
+      set({ forkPicker: { threadId, messages } });
     } catch (e) {
-      releaseSession(branchSessionId);
-      pushNotice(threadId, `Branch failed: ${String(e)}`, "error");
-      return;
+      pushNotice(threadId, `Fork failed: ${String(e)}`, "error");
     }
-
-    // The sidecar now points at the branch; read its new file and transcript.
-    let branchFile: string | undefined;
-    try {
-      branchFile = (await getSessionStats(branchSessionId)).sessionFile ?? undefined;
-    } catch {
-      // Best-effort: without the file the thread still works live; a reopen
-      // after restart just can't restore it. Surfaced by the missing sessionFile.
-    }
-    let branchTurns: Turn[] = [];
-    try {
-      const branchMessages = await getMessages(branchSessionId);
-      branchTurns = messagesToTurns(
-        branchMessages,
-        await entryIdsFor(branchSessionId, branchMessages.length),
-      );
-    } catch {
-      // Best-effort: a failed read leaves an empty transcript, repopulated live.
-    }
-
-    const childId = shortId("t");
-    const seed = (forkText?.trim() || source.title).trim();
-    const child: Thread = {
-      id: childId,
-      title: `Branch: ${seed.length > 40 ? `${seed.slice(0, 40)}...` : seed}`,
-      updatedAt: Date.now(),
-      sessionId: branchSessionId,
-      sessionFile: branchFile,
-      parentThreadId: threadId,
-      ...(source.model ? { model: source.model } : {}),
-      ...(source.permissionMode ? { permissionMode: source.permissionMode } : {}),
-      ...(source.thinkingLevel ? { thinkingLevel: source.thinkingLevel } : {}),
-    };
-    set((s) => ({
-      projects: s.projects.map((p) =>
-        p.id === project.id ? { ...p, threads: [...p.threads, child] } : p,
-      ),
-      turns: { ...s.turns, [childId]: branchTurns },
-    }));
-    // Open the branch (its sessionId is already live, so hydrateThread no-ops),
-    // and prefill the composer with the forked user message (pi's behavior).
-    get().openThread(childId);
-    if (forkText) get().setDraft(childId, forkText);
-    pushNotice(childId, `Branched from "${source.title}".`, "info");
   },
+
+  pickFork: (entryId) => {
+    const picker = get().forkPicker;
+    if (!picker) return;
+    set({ forkPicker: null });
+    void get().branchFromEntry(picker.threadId, entryId);
+  },
+
+  closeForkPicker: () => set({ forkPicker: null }),
 
   compact: async (threadId, customInstructions) => {
     const thread = findThread(get().projects, threadId)?.thread;
@@ -3049,6 +3034,112 @@ async function entryIdsFor(
   } catch {
     return undefined;
   }
+}
+
+// The shared fork/clone flow (HOY-283 branch, HOY-284 clone). Opens a FRESH
+// sidecar on the source thread's file, runs `op` to rebind it to a new branch
+// file (source untouched), then surfaces that file as a child thread. `op`
+// returns the composer prefill (fork's forked user message) or nothing (clone);
+// a cancelled result tears the sidecar down and adds no thread. `copy` carries the
+// fork-vs-clone wording so the one flow serves both.
+async function branchIntoChildThread(
+  threadId: string,
+  op: (branchSessionId: string) => Promise<{ cancelled: boolean; text?: string }>,
+  copy: { busy: string; fail: string; titlePrefix: string; done: (title: string) => string },
+): Promise<void> {
+  const store = useSessionStore;
+  const found = findThread(store.getState().projects, threadId);
+  if (!found) return;
+  const { project, thread: source } = found;
+  if (!source.sessionFile) {
+    pushNotice(threadId, "Can't branch yet: this thread has no saved session.", "error");
+    return;
+  }
+  // The op reads the source file; branching mid-write risks a torn read, so wait
+  // for a settled point (the spike's double-open note).
+  if (store.getState().streaming[threadId]) {
+    pushNotice(threadId, copy.busy, "info");
+    return;
+  }
+
+  const cwd = project.path ?? "";
+  const depth = threadDepth(store.getState().projects, threadId);
+  // Open a fresh sidecar on the SOURCE file, then fork/clone it: pi writes a new
+  // branch file and rebinds THIS sidecar to it, leaving the source untouched.
+  let branchSessionId: string;
+  try {
+    branchSessionId = await createSession(
+      cwd,
+      source.sessionFile,
+      null,
+      source.permissionMode ?? null,
+      depth,
+      usePrefsStore.getState().requireSubagentApproval,
+      null,
+    );
+  } catch (e) {
+    pushNotice(threadId, `${copy.fail} failed: ${String(e)}`, "error");
+    return;
+  }
+
+  let forkText: string | undefined;
+  try {
+    const result = await op(branchSessionId);
+    if (result.cancelled) {
+      releaseSession(branchSessionId);
+      pushNotice(threadId, `${copy.fail} cancelled.`, "info");
+      return;
+    }
+    forkText = result.text;
+  } catch (e) {
+    releaseSession(branchSessionId);
+    pushNotice(threadId, `${copy.fail} failed: ${String(e)}`, "error");
+    return;
+  }
+
+  // The sidecar now points at the branch; read its new file and transcript.
+  let branchFile: string | undefined;
+  try {
+    branchFile = (await getSessionStats(branchSessionId)).sessionFile ?? undefined;
+  } catch {
+    // Best-effort: without the file the thread still works live; a reopen after
+    // restart just can't restore it. Surfaced by the missing sessionFile.
+  }
+  let branchTurns: Turn[] = [];
+  try {
+    const branchMessages = await getMessages(branchSessionId);
+    branchTurns = messagesToTurns(
+      branchMessages,
+      await entryIdsFor(branchSessionId, branchMessages.length),
+    );
+  } catch {
+    // Best-effort: a failed read leaves an empty transcript, repopulated live.
+  }
+
+  const childId = shortId("t");
+  const seed = (forkText?.trim() || source.title).trim();
+  const child: Thread = {
+    id: childId,
+    title: `${copy.titlePrefix}: ${seed.length > 40 ? `${seed.slice(0, 40)}...` : seed}`,
+    updatedAt: Date.now(),
+    sessionId: branchSessionId,
+    sessionFile: branchFile,
+    parentThreadId: threadId,
+    ...(source.model ? { model: source.model } : {}),
+    ...(source.permissionMode ? { permissionMode: source.permissionMode } : {}),
+    ...(source.thinkingLevel ? { thinkingLevel: source.thinkingLevel } : {}),
+  };
+  store.setState((s) => ({
+    projects: s.projects.map((p) =>
+      p.id === project.id ? { ...p, threads: [...p.threads, child] } : p,
+    ),
+    turns: { ...s.turns, [childId]: branchTurns },
+  }));
+  // Open the branch (its sessionId is already live, so hydrateThread no-ops), and
+  // prefill the composer with the forked user message (pi's behavior; clone has none).
+  store.getState().openThread(childId);
+  if (forkText) store.getState().setDraft(childId, forkText);
+  pushNotice(childId, copy.done(source.title), "info");
 }
 
 // Resolve a subagent def's fuzzy `model` string (a free-text name in the

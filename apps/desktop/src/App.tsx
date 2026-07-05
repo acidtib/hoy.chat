@@ -13,6 +13,7 @@ import { HomePage } from "@/components/HomePage";
 import { UsageView } from "@/components/UsageView";
 import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
+import { ForkPicker } from "@/components/tree/ForkPicker";
 import { TreeNavigator } from "@/components/tree/TreeNavigator";
 import { ConfirmCloseDialog } from "@/components/ConfirmCloseDialog";
 import { TitleBar, WindowResizeHandles } from "@/components/TitleBar";
@@ -275,6 +276,7 @@ function App() {
         </div>
         <ContextBar slicesRef={footerSlicesRef} />
       </div>
+      <ForkPicker />
     </TooltipProvider>
   );
 }

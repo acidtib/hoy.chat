@@ -75,6 +75,16 @@ const SLASH_BUILTINS: SlashCommand[] = [
     description: "Open the session tree navigator",
     source: "hoy",
   },
+  {
+    name: "fork",
+    description: "Branch a new thread from an earlier message",
+    source: "hoy",
+  },
+  {
+    name: "clone",
+    description: "Duplicate this thread into a new branch",
+    source: "hoy",
+  },
 ];
 
 // The composer thread reference for the @ picker's Threads section (HOY-220).
