@@ -28,7 +28,7 @@ import {
   type FlatNode,
 } from "@/lib/treeNode";
 import type { SessionTreeNode } from "@/lib/types";
-import { useSessionStore } from "@/state/store";
+import { findThread, useSessionStore } from "@/state/store";
 
 // HOY-280: the `/tree` session-tree navigator. Lives in the ThreadView's right
 // dock (a reusable sidebar host; see HOY-278 spike). Renders pi's pre-nested
@@ -49,6 +49,13 @@ export function TreeNavigator() {
   // the user is interacting with, its tree shows here.
   const threadId = useSessionStore((s) => s.activeThreadId);
   const tree = useSessionStore((s) => (threadId ? s.sessionTree[threadId] : undefined));
+  // The active thread's session id. A thread acquires its session lazily (on
+  // hydrate or first prompt), so this goes null -> id after the thread becomes
+  // active; the fetch effect keys on it so the tree loads once the session
+  // exists, not just when the thread changes (HOY-280 stuck-loading fix).
+  const sessionId = useSessionStore((s) =>
+    threadId ? findThread(s.projects, threadId)?.thread.sessionId ?? null : null,
+  );
   const closeRightDock = useSessionStore((s) => s.closeRightDock);
   const toggleFullScreen = useSessionStore((s) => s.toggleFullScreen);
   const refreshSessionTree = useSessionStore((s) => s.refreshSessionTree);
@@ -131,11 +138,14 @@ export function TreeNavigator() {
     [scrollToEntry],
   );
 
-  // Prime on open and whenever the active thread changes; the store keeps it
-  // fresh on turn done while the dock is open on that thread.
+  // Prime on open, whenever the active thread changes, and once that thread
+  // acquires its session (sessionId in the deps). Without the sessionId key, a
+  // thread selected before its session exists would call refreshSessionTree with
+  // no session, get a no-op, and stay stuck on "Loading" until the dock is
+  // reopened. The store also keeps it fresh on turn done while the dock is open.
   useEffect(() => {
-    if (threadId) void refreshSessionTree(threadId);
-  }, [threadId, refreshSessionTree]);
+    if (threadId && sessionId) void refreshSessionTree(threadId);
+  }, [threadId, sessionId, refreshSessionTree]);
 
   // Move focus into the rail on open so arrow keys / Esc work without a click
   // (the spike's focus model). Runs once per mount.
