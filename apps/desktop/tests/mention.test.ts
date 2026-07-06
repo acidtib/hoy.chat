@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { detectMention, parseToken, filterCommands } from "@/lib/mention";
+import {
+  detectMention,
+  parseToken,
+  filterCommands,
+  filterSkills,
+} from "@/lib/mention";
 import type { SlashCommand } from "@/lib/types";
 
 describe("detectMention (HOY-220)", () => {
@@ -75,6 +80,41 @@ describe("parseToken (HOY-220, HOY-286)", () => {
       q: "foo",
       wantFiles: true,
     });
+  });
+
+  test("@skill: routes to the skill view (HOY-323)", () => {
+    expect(parseToken("skill:")).toEqual({
+      view: "skill",
+      q: "",
+      wantFiles: false,
+    });
+    expect(parseToken("skill:demo")).toEqual({
+      view: "skill",
+      q: "demo",
+      wantFiles: false,
+    });
+  });
+});
+
+describe("filterSkills (HOY-323)", () => {
+  const session: SlashCommand[] = [
+    { name: "skill:demo-review", source: "skill" },
+    { name: "skill:commit", source: "skill" },
+    { name: "init", source: "extension" },
+  ];
+
+  test("returns only skills, matched by their bare name", () => {
+    expect(filterSkills(session, "").map((c) => c.name)).toEqual([
+      "skill:demo-review",
+      "skill:commit",
+    ]);
+    expect(filterSkills(session, "demo").map((c) => c.name)).toEqual([
+      "skill:demo-review",
+    ]);
+  });
+
+  test("excludes non-skill commands even on a name match", () => {
+    expect(filterSkills(session, "init")).toEqual([]);
   });
 });
 

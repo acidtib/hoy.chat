@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Plus,
   SendHorizontal,
+  Sparkle,
   Square,
   SquareSlash,
   TextCursor,
@@ -33,7 +34,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { detectMention, parseToken, filterCommands } from "@/lib/mention";
+import {
+  detectMention,
+  parseToken,
+  filterCommands,
+  filterSkills,
+} from "@/lib/mention";
 import { detectSlash } from "@/lib/slash";
 import {
   draftIsEmpty,
@@ -513,7 +519,13 @@ export function Composer({
     range.setStart(hit.node, 0);
     range.setEnd(hit.node, hit.offset);
     range.deleteContents();
-    const node = document.createTextNode(`/${command.name} `);
+    // Skills are inserted by their bare name (/demo-review), like Claude Code;
+    // submitPrompt rewrites it to Pi's /skill:<name> form on send (HOY-323).
+    const insertName =
+      command.source === "skill"
+        ? command.name.replace(/^skill:/, "")
+        : command.name;
+    const node = document.createTextNode(`/${insertName} `);
     range.insertNode(node);
     range.setStart(node, node.data.length);
     range.collapse(true);
@@ -525,9 +537,11 @@ export function Composer({
     root.focus();
   }
 
-  // Pick a command from the "@" Commands category (HOY-286): replace the whole
-  // "@command:query" token with "/name " plain text, so it dispatches through the
-  // exact same send path as a typed "/" command. An action, not a context chip.
+  // Pick a command from the "@" Commands / Skills category (HOY-286, HOY-323):
+  // replace the whole "@command:query" (or "@skill:query") token with "/name "
+  // plain text, so it dispatches through the exact same send path as a typed "/"
+  // command. An action, not a context chip. Skills insert their bare name
+  // (/demo-review), which submitPrompt rewrites to /skill:<name> for Pi.
   function insertCommand(command: SlashCommand) {
     const root = editorRef.current;
     const range = mentionOrCaretRange();
@@ -536,7 +550,11 @@ export function Composer({
       return;
     }
     range.deleteContents();
-    const node = document.createTextNode(`/${command.name} `);
+    const insertName =
+      command.source === "skill"
+        ? command.name.replace(/^skill:/, "")
+        : command.name;
+    const node = document.createTextNode(`/${insertName} `);
     range.insertNode(node);
     const after = document.createRange();
     after.setStart(node, node.data.length);
@@ -680,6 +698,14 @@ export function Composer({
       ? filterCommands(SLASH_BUILTINS, slashCommands, parsed.q).slice(0, 8)
       : [];
 
+  // The "@skill:" category (HOY-323): only the session's skills, filtered by the
+  // @skill query. A focused alternative to "@command:" for users who reach for
+  // the "skill:" namespace directly.
+  const shownSkills =
+    parsed.view === "skill"
+      ? filterSkills(slashCommands, parsed.q).slice(0, 8)
+      : [];
+
   const renderFileRows = () =>
     shownPaths.length === 0 ? (
       <PickerEmpty>No matching files</PickerEmpty>
@@ -728,6 +754,20 @@ export function Composer({
       <PickerEmpty>No commands</PickerEmpty>
     ) : (
       shownCommands.map((command) => (
+        <SlashRow
+          key={command.name}
+          command={command}
+          active={false}
+          onSelect={() => insertCommand(command)}
+        />
+      ))
+    );
+
+  const renderSkillRows = () =>
+    shownSkills.length === 0 ? (
+      <PickerEmpty>No skills</PickerEmpty>
+    ) : (
+      shownSkills.map((command) => (
         <SlashRow
           key={command.name}
           command={command}
@@ -788,6 +828,9 @@ export function Composer({
           dismissPicker();
         } else if (parsed.view === "command") {
           if (shownCommands.length > 0) insertCommand(shownCommands[0]);
+          else dismissPicker();
+        } else if (parsed.view === "skill") {
+          if (shownSkills.length > 0) insertCommand(shownSkills[0]);
           else dismissPicker();
         } else if (parsed.view === "thread") {
           if (shownThreads.length > 0) {
@@ -999,6 +1042,8 @@ export function Composer({
             <PickerSection label="Threads">{renderThreadRows()}</PickerSection>
           ) : parsed.view === "command" ? (
             <PickerSection label="Commands">{renderCommandRows()}</PickerSection>
+          ) : parsed.view === "skill" ? (
+            <PickerSection label="Skills">{renderSkillRows()}</PickerSection>
           ) : (
             <>
               {recents.length > 0 && (
@@ -1042,6 +1087,14 @@ export function Composer({
                   label="Commands"
                   chevron
                   onSelect={() => setToken("@command:")}
+                />
+                <CategoryRow
+                  icon={
+                    <Sparkle className="size-4 shrink-0 text-muted-foreground" />
+                  }
+                  label="Skills"
+                  chevron
+                  onSelect={() => setToken("@skill:")}
                 />
                 <CategoryRow
                   icon={
@@ -1239,8 +1292,9 @@ function PickerEmpty({ children }: { children: React.ReactNode }) {
 
 // A "/" command row (HOY-223): name, optional description, and a source badge
 // (extension / prompt / skill, or "hoy" for a built-in). `active` mirrors the
-// keyboard highlight. Skills carry a "skill:" name prefix, stripped for display
-// only; insertSlash still writes the full "/skill:<name>".
+// keyboard highlight. Skills carry a "skill:" name prefix, stripped everywhere
+// the user sees it: the row shows "/demo-review" and insertSlash writes the same
+// bare form, which submitPrompt rewrites to "/skill:<name>" for Pi (HOY-323).
 function SlashRow({
   command,
   active,

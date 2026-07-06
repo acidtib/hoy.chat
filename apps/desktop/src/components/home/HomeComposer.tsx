@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Composer } from "@/components/Composer";
 import { useSessionStore } from "@/state/store";
 import { listProjectPaths } from "@/lib/ipc";
@@ -8,15 +8,12 @@ import type {
   ImageAttachment,
   ModelRef,
   PermissionMode,
-  SlashCommand,
   ThinkingLevel,
 } from "@/lib/types";
 
 // The hero composer on home (HOY-264). Reuses the real Composer, but holds its
 // draft/model/permission/thinking/attachments in LOCAL state so no thread is
 // created until submit. On submit it hands off to startThread (create-and-send).
-const NO_SLASH: SlashCommand[] = [];
-
 export function HomeComposer({
   projectId,
   projectPath,
@@ -28,6 +25,15 @@ export function HomeComposer({
   const defaultModel = useSessionStore((s) => s.defaultModel);
   const projects = useSessionStore((s) => s.projects);
   const startThread = useSessionStore((s) => s.startThread);
+  // Skills for the "/" and "@skill:" pickers (HOY-323). No thread exists yet, so
+  // there is no session and thus no get_commands; skills come from disk instead,
+  // refreshed for the selected project like ThreadView does.
+  const skillCommands = useSessionStore((s) => s.skillCommands);
+  const refreshSkills = useSessionStore((s) => s.refreshSkills);
+
+  useEffect(() => {
+    void refreshSkills(projectPath);
+  }, [projectPath, refreshSkills]);
 
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -99,7 +105,7 @@ export function HomeComposer({
       canAttachImages={canAttachImages}
       searchPaths={searchPaths}
       threads={contextThreads}
-      slashCommands={NO_SLASH}
+      slashCommands={skillCommands}
       projectPath={projectPath}
     />
   );

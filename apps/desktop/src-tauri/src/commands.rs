@@ -270,6 +270,22 @@ pub fn list_subagents(
     manager.list_subagents(&path)
 }
 
+// Skills management (HOY-323): list discovered skills + diagnostics for the
+// settings UI. Mirrors list_subagents; the passthrough Value is decoded by the
+// renderer (see SkillList in types.ts).
+#[tauri::command]
+pub fn list_skills(
+    cwd: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<serde_json::Value, String> {
+    let path = if cwd.trim().is_empty() {
+        std::env::temp_dir()
+    } else {
+        PathBuf::from(cwd)
+    };
+    manager.list_skills(&path)
+}
+
 #[tauri::command]
 pub async fn set_subagent_enabled(
     scope: SubagentScope,

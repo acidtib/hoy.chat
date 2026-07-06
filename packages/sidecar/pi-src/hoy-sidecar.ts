@@ -31,6 +31,7 @@ import { runOAuthLogin } from "./hoy-oauth";
 import { runGoalEval } from "./hoy-goal-eval";
 import { runVerifyCommand } from "./hoy-verify-command";
 import { runGoalAudit } from "./hoy-goal-audit";
+import { runListSkills } from "./hoy-list-skills";
 
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
@@ -98,6 +99,14 @@ if (process.env.HOY_LIST_SUBAGENTS) {
   }));
   process.stdout.write(JSON.stringify(defs));
   process.exit(0);
+}
+
+// One-shot skill-registry dump for the settings UI (HOY-323). Like the subagent
+// dump above, but the discovery lives in DefaultResourceLoader, so it runs
+// through runListSkills, which writes JSON to stdout and exits.
+if (process.env.HOY_LIST_SKILLS) {
+  await runListSkills(agentDir, process.cwd());
+  // runListSkills writes JSON to stdout and exits; this line is never reached.
 }
 
 // Goal Mode (HOY-263): one-shot transcript evaluator. Rust spawns us with this

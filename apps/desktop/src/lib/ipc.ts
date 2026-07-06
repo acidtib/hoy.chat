@@ -26,6 +26,7 @@ import type {
   SessionEntries,
   SessionStats,
   SessionTree,
+  SkillList,
   SlashCommand,
   StreamingBehavior,
   SubagentDef,
@@ -148,6 +149,13 @@ export function removeMcpServer(
 // per-project commands.
 export function listSubagents(cwd: string): Promise<SubagentDef[]> {
   return invoke<SubagentDef[]>("list_subagents", { cwd });
+}
+
+// Skills discovered by Pi's resource loader (HOY-323): the global ~/.hoy/skills
+// dir plus the active project's .hoy/skills, with validation diagnostics. `cwd`
+// resolves the project scope; an empty cwd falls back to the backend default.
+export function listSkills(cwd: string): Promise<SkillList> {
+  return invoke<SkillList>("list_skills", { cwd });
 }
 
 export function setSubagentEnabled(

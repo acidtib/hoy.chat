@@ -18,6 +18,7 @@ import {
   getMessages,
   getSessionStats,
   getState,
+  listSkills,
   getTree,
   getUsageStats,
   listProjectPaths,
@@ -42,6 +43,7 @@ import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { leafChainMessageIds } from "@/lib/treeNode";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
+import { rewriteSkillCommand } from "@/lib/skill";
 import {
   detectPlanIntent,
   extractProposedPlan,
@@ -373,6 +375,12 @@ interface SessionStore {
   // threadId. Fetched once the session is acquired and cached; the composer "/"
   // autocomplete reads it. Empty until a session exists (degrades to built-ins).
   slashCommands: Record<string, SlashCommand[]>;
+  // Skills for the active project context (HOY-323), as slash commands
+  // (`skill:<name>`). Sourced from disk via list_skills, so they are available in
+  // the composer "/" and "@skill:" pickers even before a session exists — unlike
+  // slashCommands, which is session-gated. Refreshed when the active project
+  // changes.
+  skillCommands: SlashCommand[];
   // Session entry tree per thread (HOY-279), keyed by threadId, feeding the
   // `/tree` navigator. Absent until the navigator is opened for a thread; a
   // present entry means the tree is being observed, so refreshSessionTree keeps
@@ -593,6 +601,10 @@ interface SessionStore {
   // Pull the session's slash commands into the store (HOY-223). No-op without a
   // live session; a failure degrades quietly to the built-ins.
   refreshSlashCommands: (threadId: string) => Promise<void>;
+  // Pull the active project's skills into skillCommands from disk (HOY-323).
+  // Session-independent (spawns a one-shot), so the composer shows skills before
+  // any message is sent. A failure leaves the prior list.
+  refreshSkills: (projectPath: string | null) => Promise<void>;
   // Pull the session's entry tree into the store for the `/tree` navigator
   // (HOY-279). No-op without a live session; a failure leaves the prior tree.
   refreshSessionTree: (threadId: string) => Promise<void>;
@@ -685,6 +697,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   statuses: {},
   widgets: {},
   slashCommands: {},
+  skillCommands: [],
   sessionTree: {},
   rightDock: null,
   forkPicker: null,
@@ -1443,7 +1456,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // revoke their previews) so they cannot be sent twice (HOY-205).
     get().clearAttachments(threadId);
     const contextBlock = await buildContextBlock(contexts, project.path ?? "");
-    const outbound = contextBlock ? `${contextBlock}\n\n${text}` : text;
+    // Skill commands (HOY-323): the composer inserts a skill by its bare name
+    // (/demo-review) like Claude Code, but Pi only expands the /skill:<name>
+    // form. Rewrite the leading command for the message Pi receives; the visible
+    // user turn keeps the bare text the user typed.
+    const promptText = rewriteSkillCommand(text, [
+      ...(get().slashCommands[threadId] ?? []),
+      ...get().skillCommands,
+    ]);
+    const outbound = contextBlock ? `${contextBlock}\n\n${promptText}` : promptText;
 
     // Mid-turn send (HOY-218): a turn is streaming, so queue the message into that
     // run via enqueue_prompt. It shows as a queued chip (from queueUpdate) until Pi
@@ -1656,6 +1677,25 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       }));
     } catch {
       // Best-effort: the composer still offers the /compact built-in.
+    }
+  },
+
+  refreshSkills: async (projectPath) => {
+    try {
+      const { skills } = await listSkills(projectPath ?? "");
+      // Shape skills as slash commands (`skill:<name>`) so the composer's "/" and
+      // "@skill:" pickers and the submit-time rewrite treat them like any other
+      // command. Names mirror Pi's get_commands skill entries, so a session's
+      // get_commands and this disk list dedupe cleanly by name.
+      const commands: SlashCommand[] = skills.map((s) => ({
+        name: `skill:${s.name}`,
+        description: s.description,
+        source: "skill",
+      }));
+      set({ skillCommands: commands });
+    } catch {
+      // Best-effort: leave the prior skills list; the composer degrades to
+      // whatever the session's get_commands provides.
     }
   },
 

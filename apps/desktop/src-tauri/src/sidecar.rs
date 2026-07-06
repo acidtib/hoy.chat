@@ -1135,6 +1135,37 @@ impl SidecarManager {
         serde_json::from_slice(&out.stdout).map_err(|e| format!("parse list_subagents output: {e}"))
     }
 
+    // Skills management (HOY-323): dump the discovered skills + validation
+    // diagnostics for the settings UI. Mirrors list_subagents exactly: spawn
+    // self.bin with a mode env (HOY_LIST_SKILLS=1), capture stdout JSON, exit.
+    // The sidecar builds the same DefaultResourceLoader the runtime uses, so the
+    // panel never drifts from what actually loads.
+    pub fn list_skills(&self, cwd: &Path) -> Result<serde_json::Value, String> {
+        if !self.bin.exists() {
+            return Err(format!(
+                "sidecar binary not found at {}. Run sidecar/build.sh.",
+                self.bin.display()
+            ));
+        }
+        let mut command = std::process::Command::new(&self.bin);
+        apply_sanitized_env(&mut command, &self.agent_dir, cwd);
+        let out = command
+            .env("PI_PACKAGE_DIR", &self.payload)
+            .env("HOY_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_LIST_SKILLS", "1")
+            .current_dir(cwd)
+            .output()
+            .map_err(|e| format!("spawn sidecar for list_skills: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "list_skills exited {}: {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+        serde_json::from_slice(&out.stdout).map_err(|e| format!("parse list_skills output: {e}"))
+    }
+
     // Goal Mode (HOY-263): judge a thread's transcript against `condition` via a
     // one-shot sidecar run. Mirrors list_subagents: spawn self.bin with a mode env
     // (HOY_GOAL_EVAL=1), capture stdout JSON, exit. `session_file` is the thread's

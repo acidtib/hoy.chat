@@ -34,7 +34,13 @@ export function detectMention(value: string, cursor: number): Mention | null {
 // bare @ or button-open is the root menu; anything else is a fuzzy search over
 // files + threads. `wantFiles` gates the (expensive) live path search — only the
 // file and free search views need it (HOY-220, HOY-286).
-export type PickerView = "root" | "file" | "thread" | "command" | "search";
+export type PickerView =
+  | "root"
+  | "file"
+  | "thread"
+  | "command"
+  | "skill"
+  | "search";
 
 export interface ParsedToken {
   view: PickerView;
@@ -46,11 +52,17 @@ export function parseToken(token: string | null): ParsedToken {
   if (token === null || token === "") {
     return { view: "root", q: "", wantFiles: false };
   }
-  const typed = /^(file|thread|command):(.*)$/i.exec(token);
+  const typed = /^(file|thread|command|skill):(.*)$/i.exec(token);
   if (typed) {
     const kind = typed[1].toLowerCase();
     const view: PickerView =
-      kind === "thread" ? "thread" : kind === "command" ? "command" : "file";
+      kind === "thread"
+        ? "thread"
+        : kind === "command"
+          ? "command"
+          : kind === "skill"
+            ? "skill"
+            : "file";
     return { view, q: typed[2], wantFiles: view === "file" };
   }
   return { view: "search", q: token, wantFiles: true };
@@ -72,4 +84,18 @@ export function filterCommands(
     ...builtins,
     ...session.filter((c) => !builtinNames.has(c.name)),
   ].filter((c) => c.name.toLowerCase().includes(q));
+}
+
+// The "@skill:" category (HOY-323): the session's skills only, matched by their
+// bare name (the "skill:" prefix stripped) so "@skill:demo" filters to
+// demo-review. Built-ins and other command sources are excluded, unlike
+// filterCommands, which mixes every source together.
+export function filterSkills(
+  session: SlashCommand[],
+  query: string,
+): SlashCommand[] {
+  const q = query.toLowerCase();
+  return session
+    .filter((c) => c.source === "skill")
+    .filter((c) => c.name.replace(/^skill:/, "").toLowerCase().includes(q));
 }

@@ -12,6 +12,7 @@ import {
   Palette,
   Plug,
   ShieldCheck,
+  Sparkle,
   SlidersHorizontal,
   Wrench,
   type LucideIcon,
@@ -23,6 +24,7 @@ export type CategoryId =
   | "workspace"
   | "memory"
   | "providers"
+  | "skills"
   | "about"
   | "appearance"
   | "safety"
@@ -54,6 +56,7 @@ export const CATEGORIES: Category[] = [
   { id: "providers", label: "Providers", icon: Plug, group: 1 },
   { id: "mcp", label: "MCP", icon: Cable, group: 1 },
   { id: "subagents", label: "Subagents", icon: Bot, group: 1 },
+  { id: "skills", label: "Skills", icon: Sparkle, group: 1 },
   { id: "about", label: "About", icon: Info, group: 1 },
   { id: "appearance", label: "Appearance", icon: Palette, group: 2, placeholder: true },
   { id: "safety", label: "Safety", icon: ShieldCheck, group: 2, placeholder: true },

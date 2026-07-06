@@ -557,6 +557,32 @@ export interface McpServerList {
   projectShared: McpServerEntry[];
 }
 
+// Skills management (HOY-323). One discovered skill, from the sidecar's
+// HOY_LIST_SKILLS dump (which reads Pi's DefaultResourceLoader.getSkills). Scope
+// mirrors Pi's SourceScope: "user" is the global ~/.hoy/skills dir, "project" is
+// the active project's .hoy/skills, "temporary" is a one-off path.
+export interface SkillInfo {
+  name: string;
+  description: string;
+  filePath: string;
+  scope: "user" | "project" | "temporary";
+  disableModelInvocation: boolean;
+}
+
+// A validation problem from skill discovery (invalid name/description, or a
+// name collision between two skill files). Mirrors Pi's ResourceDiagnostic.
+export interface SkillDiagnostic {
+  type: "warning" | "error" | "collision";
+  message: string;
+  path: string | null;
+}
+
+// The full HOY_LIST_SKILLS payload: the discovered skills plus any diagnostics.
+export interface SkillList {
+  skills: SkillInfo[];
+  diagnostics: SkillDiagnostic[];
+}
+
 // Mirror of subagents_config::SubagentScope. Which file a subagent type lives
 // in: builtin (Pi's own, read-only), the global agent dir, or the active
 // project's .hoy/subagents dir.

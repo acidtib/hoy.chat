@@ -113,6 +113,7 @@ pub fn run() {
             commands::save_mcp_server,
             commands::remove_mcp_server,
             commands::list_subagents,
+            commands::list_skills,
             commands::set_subagent_enabled,
             commands::write_subagent,
             commands::delete_subagent,

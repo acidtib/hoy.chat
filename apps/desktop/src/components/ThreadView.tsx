@@ -68,6 +68,11 @@ import {
 } from "@/components/ai-elements/reasoning";
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   Plan,
   PlanAction,
   PlanContent,
@@ -91,6 +96,7 @@ import {
 import { usePrefsStore } from "@/state/prefs";
 import { listProjectPaths } from "@/lib/ipc";
 import { contextKey, modelSupportsImages } from "@/lib/types";
+import { parseSkillBlock } from "@/lib/skill";
 import type {
   AssistantBlock,
   ContextRef,
@@ -171,9 +177,11 @@ export function ThreadView({
   const addAttachments = useSessionStore((s) => s.addAttachments);
   const removeAttachment = useSessionStore((s) => s.removeAttachment);
   const queued = useSessionStore((s) => s.queued[threadId] ?? EMPTY_QUEUE);
-  const slashCommands = useSessionStore(
+  const sessionCommands = useSessionStore(
     (s) => s.slashCommands[threadId] ?? EMPTY_SLASH,
   );
+  const skillCommands = useSessionStore((s) => s.skillCommands);
+  const refreshSkills = useSessionStore((s) => s.refreshSkills);
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -193,6 +201,21 @@ export function ThreadView({
       isSubagent: found ? !!found.thread.parentThreadId : false,
     };
   }, [projects, threadId]);
+
+  // Refresh the active project's disk skills whenever the project changes
+  // (HOY-323), so the composer's "/" and "@skill:" pickers list skills without
+  // waiting for a session. Global skills load even with no project (path null).
+  useEffect(() => {
+    void refreshSkills(projectPath);
+  }, [projectPath, refreshSkills]);
+
+  // The command list the composer shows: the session's commands (extensions,
+  // prompts, and — once a session exists — skills) merged with the disk skills,
+  // deduped by name so a skill present in both appears once (HOY-323).
+  const slashCommands = useMemo(() => {
+    const seen = new Set(sessionCommands.map((c) => c.name));
+    return [...sessionCommands, ...skillCommands.filter((c) => !seen.has(c.name))];
+  }, [sessionCommands, skillCommands]);
 
   // The header glyph reads teal only while this thread has a live fleet (HOY-302).
   const threadHasFleet = useThreadHasRunningSubagents(threadId);
@@ -530,6 +553,10 @@ type AssistantTurnData = Extract<Turn, { role: "assistant" }>;
 // identity of every completed turn, so referential equality on `turn` lets the
 // whole subtree bail out.
 const UserTurn = memo(function UserTurn({ turn }: { turn: UserTurnData }) {
+  // A `/skill:<name>` invocation comes back as the turn text rewritten into a
+  // <skill> block by Pi (HOY-323); show a chip instead of the raw XML, with the
+  // user's own trailing text (if any) rendered as the message body below it.
+  const skill = turn.text ? parseSkillBlock(turn.text) : null;
   return (
     <div
       data-entry-id={turn.entryId}
@@ -554,10 +581,50 @@ const UserTurn = memo(function UserTurn({ turn }: { turn: UserTurnData }) {
           ))}
         </div>
       )}
-      {turn.text && <div className="whitespace-pre-wrap">{turn.text}</div>}
+      {skill ? (
+        <>
+          <SkillInvocation name={skill.name} content={skill.content} />
+          {skill.userMessage && (
+            <div className="mt-2 whitespace-pre-wrap">{skill.userMessage}</div>
+          )}
+        </>
+      ) : (
+        turn.text && <div className="whitespace-pre-wrap">{turn.text}</div>
+      )}
     </div>
   );
 });
+
+// The `[skill] <name>` chip for a skill invocation. Collapsed by default (the
+// body is instructions the model consumed, not something the user needs open);
+// expands to the skill's markdown content. Mirrors Pi's SkillInvocationMessage.
+function SkillInvocation({
+  name,
+  content,
+}: {
+  name: string;
+  content: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-2 py-1 text-xs text-muted-foreground hover:text-foreground">
+        <Sparkle className="size-3 shrink-0" />
+        <span className="font-medium text-foreground">skill</span>
+        <span className="truncate">{name}</span>
+        <ChevronDown
+          className={cn(
+            "size-3 shrink-0 transition-transform",
+            open && "rotate-180",
+          )}
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+        <MessageResponse>{content}</MessageResponse>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 
 // A single assistant turn. Memoized (HOY-292) on the same principle as UserTurn:
 // only the in-flight turn (whose `turn` object is replaced per token by
