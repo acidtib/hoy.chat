@@ -31,13 +31,13 @@ jobs:
             rust_targets: ''
             # Linux builds through a wrapper that shelters + repacks the bun
             # sidecar so the AppImage's sidecar is not corrupted (HOY-217).
-            # tauri-action runs tauriScript from projectPath (apps/desktop), so
-            # the wrapper is referenced by absolute workspace path. Must use the
-            # ${{ github.workspace }} expression (substituted by the Actions
-            # runner at YAML-parse time), not $GITHUB_WORKSPACE: tauri-action
-            # execs tauriScript directly (no shell), so a literal $VAR in the
-            # string is never expanded and bash fails with "No such file".
-            tauri_script: 'bash ${{ github.workspace }}/scripts/linux/build-appimage.sh'
+            # tauri-action execs tauriScript directly via execa with cwd set to
+            # projectPath (apps/desktop) - no shell, so neither $GITHUB_WORKSPACE
+            # nor ${{ github.workspace }} expand there (the latter is also empty
+            # this early: matrix.include is evaluated before a runner - and thus
+            # github.workspace - exists). A path relative to apps/desktop avoids
+            # both problems.
+            tauri_script: 'bash ../../scripts/linux/build-appimage.sh'
           - platform: windows-latest
             args: ''
             triple: x86_64-pc-windows-msvc
