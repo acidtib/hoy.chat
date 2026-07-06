@@ -50,7 +50,7 @@ export function TitleBar() {
             </span>
             {/* Mocked branch chip to match the website app mock; real git
                 status (branch/dirty/stash) is not wired yet. Tracked in
-                TODO.md (HOY-233). */}
+                HOY-306. */}
             <span
               data-tauri-drag-region
               className="flex shrink-0 items-center gap-1"

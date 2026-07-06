@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build and install Hoy locally as the daily driver (HOY-207). Linux only; real
-# packaging (bundle.externalBin, per-platform payload placement) is the release
-# blocker tracked in TODO.md, this is the dogfooding stopgap.
+# Build and install Hoy locally as the daily driver (HOY-207). Linux only; this
+# is the dogfooding stopgap that predates the signed release pipeline
+# (.github/workflows/release.yml now ships per-platform bundles).
 #
 # Installs to:
 #   ~/.local/share/hoy-desktop/   app binary, sidecar binary, pi-payload
