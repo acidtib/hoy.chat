@@ -10,6 +10,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { ThreadHistory } from "@/components/ThreadHistory";
 import { FleetBoard } from "@/components/fleet/FleetBoard";
 import { HomePage } from "@/components/HomePage";
+import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
 import { UsageView } from "@/components/UsageView";
 import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
@@ -18,6 +19,7 @@ import { TreeNavigator } from "@/components/tree/TreeNavigator";
 import { ConfirmCloseDialog } from "@/components/ConfirmCloseDialog";
 import { TitleBar, WindowResizeHandles } from "@/components/TitleBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
+import { ThemeController } from "@/components/ThemeController";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { activeSessionId, getState, setKeepAwake } from "@/lib/ipc";
 import { refreshProviderData } from "@/lib/refresh";
@@ -44,6 +46,10 @@ function App() {
   const requestPanelClose = useSessionStore((s) => s.requestPanelClose);
   const focusPanel = useSessionStore((s) => s.focusPanel);
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
+  const providerConfigured = useSessionStore((s) =>
+    s.providerAuth.some((auth) => auth.configured),
+  );
+  const setPref = usePrefsStore((s) => s.setPref);
 
   // Full screen: the one panel rendered while set, at full body width via CSS.
   // Stored widths are untouched, so exiting restores the exact layout.
@@ -99,6 +105,7 @@ function App() {
   const [debug, setDebug] = useState<PiState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [providerBootstrapped, setProviderBootstrapped] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +123,7 @@ function App() {
           refreshProviderData(),
         ]);
         if (cancelled) return;
+        finalizeBootstrap();
         // The control session's model is Pi's persisted defaultModel: what a
         // thread shows and spawns with until it has its own pick.
         if (piState?.model) {
@@ -125,13 +133,26 @@ function App() {
           });
         }
       } catch (e) {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) {
+          finalizeBootstrap();
+          setError(String(e));
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [setActiveSessionId, setDefaultModel]);
+  }, [setActiveSessionId, setDefaultModel, setPref]);
+
+  function finalizeBootstrap() {
+    const configured = useSessionStore
+      .getState()
+      .providerAuth.some((auth) => auth.configured);
+    if (configured && !usePrefsStore.getState().onboardingCompleted) {
+      setPref("onboardingCompleted", true);
+    }
+    setProviderBootstrapped(true);
+  }
 
   // Developer round-trip: toggle the raw get_state payload in the transcript.
   async function handleDebug(sessionId?: string | null) {
@@ -164,8 +185,11 @@ function App() {
     );
   };
 
+  const showOnboarding = providerBootstrapped && !providerConfigured;
+
   return (
     <TooltipProvider delayDuration={200}>
+      <ThemeController />
       <SettingsModal />
       <ConfirmCloseDialog />
       <WindowResizeHandles />
@@ -187,7 +211,11 @@ function App() {
               ref={bodyRef}
               className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
-              {bodyView === "usage" ? (
+              {!providerBootstrapped ? (
+                <OnboardingPage loading />
+              ) : showOnboarding ? (
+                <OnboardingPage />
+              ) : bodyView === "usage" ? (
                 <UsageView />
               ) : bodyView === "fleet" ? (
                 <FleetBoard />

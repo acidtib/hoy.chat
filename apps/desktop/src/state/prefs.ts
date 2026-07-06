@@ -14,7 +14,14 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { MAX_CONCURRENT_AGENTS } from "./limits";
 
+export type AppTheme = "light" | "dark" | "system";
+
 export interface AppPrefs {
+  // Applied to <html>. "system" follows prefers-color-scheme.
+  theme: AppTheme;
+  // First-run setup gate. Provider credentials still live in Pi's auth.json;
+  // this only records that the local UI flow has been completed.
+  onboardingCompleted: boolean;
   // Composer: Enter sends. When false, Enter inserts a newline and Cmd/Ctrl+Enter
   // sends. (Shift+Enter mid-turn still queues a follow-up regardless.)
   sendOnEnter: boolean;
@@ -68,6 +75,8 @@ const memoryStorage = {
 };
 
 export const PREFS_DEFAULTS: AppPrefs = {
+  theme: "dark",
+  onboardingCompleted: false,
   sendOnEnter: true,
   expandReasoning: false,
   expandToolDetails: false,
@@ -98,6 +107,8 @@ export const usePrefsStore = create<PrefsStore>()(
       // to their default because persist merges the stored partial over initial
       // state.
       partialize: (s) => ({
+        theme: s.theme,
+        onboardingCompleted: s.onboardingCompleted,
         sendOnEnter: s.sendOnEnter,
         expandReasoning: s.expandReasoning,
         expandToolDetails: s.expandToolDetails,

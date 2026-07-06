@@ -14,7 +14,6 @@ import {
   Mic,
   Monitor,
   Network,
-  Palette,
   RefreshCw,
   ShieldCheck,
   Wrench,
@@ -40,6 +39,7 @@ import { pickDirectory } from "@/lib/ipc";
 import type { ModelInfo, ModelRef } from "@/lib/types";
 import type { CategoryId } from "./categories";
 import { ProvidersPanel } from "./ProvidersPanel";
+import { ThemeSelector } from "./ThemeSelector";
 import { McpPanel } from "./McpPanel";
 import { SubagentsPanel } from "./SubagentsPanel";
 import { SkillsPanel } from "./SkillsPanel";
@@ -720,6 +720,25 @@ function AboutPanel() {
   );
 }
 
+function AppearancePanel() {
+  return (
+    <div className="space-y-8">
+      <PanelHeader
+        title="Appearance"
+        description="Choose how Hoy renders its local interface."
+      />
+      <Section
+        title="Theme"
+        description="Dark remains the default Hoy workbench; light and system use the same token set."
+      >
+        <div className="mt-4">
+          <ThemeSelector />
+        </div>
+      </Section>
+    </div>
+  );
+}
+
 export function SettingsPanel({ id }: { id: CategoryId }) {
   switch (id) {
     case "model":
@@ -727,15 +746,7 @@ export function SettingsPanel({ id }: { id: CategoryId }) {
     case "chat":
       return <ChatPanel />;
     case "appearance":
-      return (
-        <Placeholder
-          title="Appearance"
-          description="Theme and visual density."
-          icon={Palette}
-          blurb="Hoy ships a single dark, square theme for now. Theming is deferred by design; the layered near-black identity is intentional."
-          points={["Light theme", "Accent color choice", "Compact density"]}
-        />
-      );
+      return <AppearancePanel />;
     case "workspace":
       return <WorkspacePanel />;
     case "safety":
