@@ -1681,8 +1681,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   refreshSkills: async (projectPath) => {
+    const cwd = projectPath ?? "";
+    // Dedupe the mount-storm: if a refresh for this cwd is already running, skip.
+    if (skillsRefreshInFlight === cwd) return;
+    skillsRefreshInFlight = cwd;
     try {
-      const { skills } = await listSkills(projectPath ?? "");
+      const { skills } = await listSkills(cwd);
       // Shape skills as slash commands (`skill:<name>`) so the composer's "/" and
       // "@skill:" pickers and the submit-time rewrite treat them like any other
       // command. Names mirror Pi's get_commands skill entries, so a session's
@@ -1696,6 +1700,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     } catch {
       // Best-effort: leave the prior skills list; the composer degrades to
       // whatever the session's get_commands provides.
+    } finally {
+      if (skillsRefreshInFlight === cwd) skillsRefreshInFlight = null;
     }
   },
 
@@ -2140,6 +2146,13 @@ export function useThreadHasRunningSubagents(threadId: string): boolean {
 // while the user may submitPrompt before it resolves. Sharing the in-flight
 // promise means both get the same sidecar instead of spawning (and leaking) two.
 const pendingSessions = new Map<string, Promise<string>>();
+
+// The project cwd whose skills refresh is currently in flight (HOY-323), or null.
+// refreshSkills spawns a one-shot sidecar, and ThreadView + HomeComposer both
+// fire it on mount for the same project (home -> thread hands off in a moment);
+// deduping concurrent refreshes for the same cwd avoids a redundant spawn. A
+// later refresh (after the in-flight one resolves) still re-reads disk.
+let skillsRefreshInFlight: string | null = null;
 
 // The channel currently streaming a turn for each thread. Used to ignore trailing
 // events from a channel whose thread has moved on (panel closed, or a newer turn

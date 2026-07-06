@@ -34,6 +34,14 @@ export function parseSkillBlock(text: string): ParsedSkillBlock | null {
   };
 }
 
+// Strip the `skill:` prefix from a skill command's name. Skills arrive from
+// get_commands / list_skills as `skill:<name>`; this is the bare `<name>` the
+// user sees in the picker and types. Shared so the display, the `@skill:`
+// filter, and the submit rewrite agree on one convention (HOY-323).
+export function bareSkillName(name: string): string {
+  return name.replace(/^skill:/, "");
+}
+
 // The minimal shape rewriteSkillCommand needs from a Pi slash command
 // (get_commands): its name and where it came from. Skills arrive as
 // `skill:<name>`; every other source keeps its bare name.
@@ -61,7 +69,7 @@ export function rewriteSkillCommand(
   let shadowed = false;
   for (const command of commands) {
     if (command.source === "skill") {
-      if (command.name.replace(/^skill:/, "") === token) isSkill = true;
+      if (bareSkillName(command.name) === token) isSkill = true;
     } else if (command.name === token) {
       shadowed = true;
     }

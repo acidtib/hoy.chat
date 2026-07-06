@@ -2,6 +2,7 @@
 // Composer's dropdown logic stays testable.
 
 import type { SlashCommand } from "@/lib/types";
+import { bareSkillName } from "@/lib/skill";
 
 export interface Mention {
   // Index of the triggering `@` in the value.
@@ -97,5 +98,5 @@ export function filterSkills(
   const q = query.toLowerCase();
   return session
     .filter((c) => c.source === "skill")
-    .filter((c) => c.name.replace(/^skill:/, "").toLowerCase().includes(q));
+    .filter((c) => bareSkillName(c.name).toLowerCase().includes(q));
 }

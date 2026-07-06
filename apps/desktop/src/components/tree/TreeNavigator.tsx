@@ -267,6 +267,12 @@ export function TreeNavigator() {
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
             Open a thread to see its tree.
           </p>
+        ) : !sessionId ? (
+          // No session yet (a fresh thread before its first message): there is
+          // nothing to load, so say so rather than sit on "Loading" forever.
+          <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+            Send a message to start this thread's tree.
+          </p>
         ) : !tree ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
             Loading the session tree...

@@ -34,6 +34,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { bareSkillName } from "@/lib/skill";
 import {
   detectMention,
   parseToken,
@@ -519,13 +520,13 @@ export function Composer({
     range.setStart(hit.node, 0);
     range.setEnd(hit.node, hit.offset);
     range.deleteContents();
-    // Skills are inserted by their bare name (/demo-review), like Claude Code;
-    // submitPrompt rewrites it to Pi's /skill:<name> form on send (HOY-323).
-    const insertName =
-      command.source === "skill"
-        ? command.name.replace(/^skill:/, "")
-        : command.name;
-    const node = document.createTextNode(`/${insertName} `);
+    // Insert the command's full name. For a skill that is the qualified
+    // `/skill:<name>` form (command.name is `skill:<name>`), which Pi expands
+    // directly, so a picked skill always runs, even when its bare name would
+    // collide with a built-in (/tree) or a same-named extension command, or
+    // contains characters the bare-name rewrite regex rejects (HOY-323). Bare
+    // `/name` typed by hand still works via submitPrompt's best-effort rewrite.
+    const node = document.createTextNode(`/${command.name} `);
     range.insertNode(node);
     range.setStart(node, node.data.length);
     range.collapse(true);
@@ -540,8 +541,9 @@ export function Composer({
   // Pick a command from the "@" Commands / Skills category (HOY-286, HOY-323):
   // replace the whole "@command:query" (or "@skill:query") token with "/name "
   // plain text, so it dispatches through the exact same send path as a typed "/"
-  // command. An action, not a context chip. Skills insert their bare name
-  // (/demo-review), which submitPrompt rewrites to /skill:<name> for Pi.
+  // command. An action, not a context chip. Skills insert the qualified
+  // /skill:<name> form (command.name), which Pi expands directly regardless of
+  // built-in or extension name collisions.
   function insertCommand(command: SlashCommand) {
     const root = editorRef.current;
     const range = mentionOrCaretRange();
@@ -550,11 +552,7 @@ export function Composer({
       return;
     }
     range.deleteContents();
-    const insertName =
-      command.source === "skill"
-        ? command.name.replace(/^skill:/, "")
-        : command.name;
-    const node = document.createTextNode(`/${insertName} `);
+    const node = document.createTextNode(`/${command.name} `);
     range.insertNode(node);
     const after = document.createRange();
     after.setStart(node, node.data.length);
@@ -1292,9 +1290,9 @@ function PickerEmpty({ children }: { children: React.ReactNode }) {
 
 // A "/" command row (HOY-223): name, optional description, and a source badge
 // (extension / prompt / skill, or "hoy" for a built-in). `active` mirrors the
-// keyboard highlight. Skills carry a "skill:" name prefix, stripped everywhere
-// the user sees it: the row shows "/demo-review" and insertSlash writes the same
-// bare form, which submitPrompt rewrites to "/skill:<name>" for Pi (HOY-323).
+// keyboard highlight. Skills carry a "skill:" name prefix, stripped for display
+// so the row reads "/demo-review"; selecting it inserts the qualified
+// "/skill:<name>" that Pi expands directly (HOY-323).
 function SlashRow({
   command,
   active,
@@ -1305,9 +1303,7 @@ function SlashRow({
   onSelect: () => void;
 }) {
   const display =
-    command.source === "skill"
-      ? command.name.replace(/^skill:/, "")
-      : command.name;
+    command.source === "skill" ? bareSkillName(command.name) : command.name;
   return (
     <button
       type="button"

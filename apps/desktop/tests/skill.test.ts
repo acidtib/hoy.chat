@@ -1,7 +1,21 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseSkillBlock, rewriteSkillCommand } from "@/lib/skill";
+import {
+  bareSkillName,
+  parseSkillBlock,
+  rewriteSkillCommand,
+} from "@/lib/skill";
 import type { SlashCommand } from "@/lib/types";
+
+describe("bareSkillName (HOY-323)", () => {
+  test("strips the skill: prefix", () => {
+    expect(bareSkillName("skill:demo-review")).toBe("demo-review");
+  });
+
+  test("leaves a non-skill name untouched", () => {
+    expect(bareSkillName("compact")).toBe("compact");
+  });
+});
 
 describe("parseSkillBlock (HOY-323)", () => {
   test("parses a skill block with no user message", () => {
