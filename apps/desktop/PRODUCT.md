@@ -70,10 +70,11 @@ landing page bolted onto an app.
 
 ## Accessibility & Inclusion
 
-Target WCAG AA contrast across the dark-first palette: body text >=4.5:1, large
-text (>=18px, or bold >=14px) >=3:1, placeholders held to the 4.5:1 body bar.
-Verify against the layered near-black surfaces, where muted-foreground on muted
-is the most likely failure. Honor `prefers-reduced-motion` on every animation
-with a crossfade or instant alternative; motion is never load-bearing for
-meaning. Do not rely on color alone to convey state (streaming, error, queued);
-pair with text, icon, or shape.
+Target WCAG AA contrast across both dark and light palettes: body text >=4.5:1,
+large text (>=18px, or bold >=14px) >=3:1, placeholders held to the 4.5:1 body
+bar. Verify against the dark layered near-black surfaces (muted-foreground on
+muted is the most likely failure) and the light neutral ramp (muted-foreground
+on muted). Honor `prefers-reduced-motion` on every animation with a crossfade
+or instant alternative; motion is never load-bearing for meaning. Do not rely on
+color alone to convey state (streaming, error, queued); pair with text, icon, or
+shape.

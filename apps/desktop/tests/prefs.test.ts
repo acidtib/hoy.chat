@@ -13,7 +13,7 @@ afterEach(() => {
 describe("usePrefsStore", () => {
   test("ships the documented defaults", () => {
     expect(PREFS_DEFAULTS).toEqual({
-      theme: "dark",
+      theme: "system",
       onboardingCompleted: false,
       sendOnEnter: true,
       expandReasoning: false,
@@ -25,6 +25,7 @@ describe("usePrefsStore", () => {
       maxConcurrentAgents: 4,
       keepAwakeWhileStreaming: true,
       autoCompaction: true,
+      sidebarCollapsed: false,
     });
   });
 

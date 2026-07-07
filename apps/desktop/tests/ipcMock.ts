@@ -40,7 +40,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     respondPermission: mock(),
     saveMcpServer: mock(),
     saveProviderKey: mock(),
-    saveWorkspace: mock(),
+    saveWorkspace: mock(() => Promise.resolve()),
     sendPrompt: mock(),
     setKeepAwake: mock(),
     setModel: mock(),

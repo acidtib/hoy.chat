@@ -670,7 +670,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   activeThreadId: null,
   activeProjectId: null,
   bodyWidth: initialBodyWidth(),
-  sidebarCollapsed: false,
+  sidebarCollapsed: usePrefsStore.getState().sidebarCollapsed,
   sidebarView: "projects",
   historyProjectId: null,
   settingsOpen: false,
@@ -992,7 +992,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return { panels };
     }),
 
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  toggleSidebar: () => {
+    const next = !get().sidebarCollapsed;
+    set({ sidebarCollapsed: next });
+    usePrefsStore.getState().setPref("sidebarCollapsed", next);
+  },
   setSidebarView: (view) => set({ sidebarView: view, historyProjectId: null }),
   openThreadHistory: (projectId) =>
     set({ sidebarView: "history", historyProjectId: projectId }),

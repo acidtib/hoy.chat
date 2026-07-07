@@ -22,6 +22,7 @@ type ResizeDirection =
 // non-interactive left wrapper while the buttons stay clickable. Double-click
 // to maximize comes with the drag region.
 export function TitleBar() {
+
   const projects = useSessionStore((s) => s.projects);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
   const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
@@ -153,7 +154,7 @@ export function WindowResizeHandles() {
   );
 }
 
-function WindowControls() {
+export function WindowControls() {
   const maximized = useMaximized();
 
   return (

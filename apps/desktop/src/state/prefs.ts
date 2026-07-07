@@ -60,6 +60,10 @@ export interface AppPrefs {
   // unreachable with no session open), applied to every session on spawn via
   // set_auto_compaction and pushed to the active session when toggled.
   autoCompaction: boolean;
+  // Sidebar collapsed state. Defaults to false (open) so the sidebar
+  // naturally appears when chrome first renders. Persisted so the user's
+  // manual collapse survives restarts.
+  sidebarCollapsed: boolean;
 }
 
 interface PrefsStore extends AppPrefs {
@@ -75,7 +79,7 @@ const memoryStorage = {
 };
 
 export const PREFS_DEFAULTS: AppPrefs = {
-  theme: "dark",
+  theme: "system",
   onboardingCompleted: false,
   sendOnEnter: true,
   expandReasoning: false,
@@ -87,6 +91,7 @@ export const PREFS_DEFAULTS: AppPrefs = {
   maxConcurrentAgents: MAX_CONCURRENT_AGENTS,
   keepAwakeWhileStreaming: true,
   autoCompaction: true,
+  sidebarCollapsed: false,
 };
 
 export const usePrefsStore = create<PrefsStore>()(
@@ -119,6 +124,7 @@ export const usePrefsStore = create<PrefsStore>()(
         maxConcurrentAgents: s.maxConcurrentAgents,
         keepAwakeWhileStreaming: s.keepAwakeWhileStreaming,
         autoCompaction: s.autoCompaction,
+        sidebarCollapsed: s.sidebarCollapsed,
       }),
     },
   ),

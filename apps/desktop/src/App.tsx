@@ -17,7 +17,7 @@ import { ContextBar } from "@/components/ContextBar";
 import { ForkPicker } from "@/components/tree/ForkPicker";
 import { TreeNavigator } from "@/components/tree/TreeNavigator";
 import { ConfirmCloseDialog } from "@/components/ConfirmCloseDialog";
-import { TitleBar, WindowResizeHandles } from "@/components/TitleBar";
+import { TitleBar, WindowControls, WindowResizeHandles } from "@/components/TitleBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import { ThemeController } from "@/components/ThemeController";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -189,6 +189,9 @@ function App() {
   const showOnboarding =
     providerBootstrapped && !(providerConfigured && onboardingCompleted);
 
+  const showChrome = providerBootstrapped && !showOnboarding;
+
+
   return (
     <TooltipProvider delayDuration={200}>
       <ThemeController />
@@ -197,13 +200,22 @@ function App() {
       <WindowResizeHandles />
       <div className="flex h-screen flex-col bg-background text-foreground">
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
-          {!sidebarCollapsed &&
+          {showChrome && !sidebarCollapsed &&
             (sidebarView === "history" ? <ThreadHistory /> : <Sidebar />)}
 
           {/* Main column: the title bar spans the main body only (the sidebar
               keeps the top-left corner, Zed-style); panels render below it. */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <TitleBar />
+            {showChrome ? (
+              <TitleBar />
+            ) : (
+              <header
+                data-tauri-drag-region
+                className="flex h-9 shrink-0 select-none items-center justify-end border-b border-border bg-sidebar px-1 text-xs text-muted-foreground"
+              >
+                <WindowControls />
+              </header>
+            )}
             {/* Content row below the title bar: the panel area (bodyRef, which
                 measures only the panels so their widths fit) and, to its right,
                 the global tree dock (HOY-280) — a panel-independent sidebar that
@@ -304,7 +316,7 @@ function App() {
             </div>
           </div>
         </div>
-        <ContextBar slicesRef={footerSlicesRef} />
+        {showChrome && <ContextBar slicesRef={footerSlicesRef} />}
       </div>
       <ForkPicker />
     </TooltipProvider>
