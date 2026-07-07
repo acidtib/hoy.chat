@@ -25,8 +25,8 @@ import { OAuthLoginDialog } from "./OAuthLoginDialog";
 
 function statusLabel(auth: ProviderAuth): string {
   if (auth.source === "environment") return "Env var";
-  if (auth.kind === "oauth") return "Signed in";
-  return "Saved key";
+  if (auth.kind === "oauth") return "Signed In";
+  return "Key saved";
 }
 
 // Square mark tile: the provider's brand glyph in currentColor, or a two-letter
@@ -241,8 +241,8 @@ function ProviderRow({
 }
 
 // Subscription sign-in. Reflects a real oauth entry in auth.json (a completed
-// login shows "Signed in" with a Manage action); otherwise Connect launches the
-// manual-paste OAuth flow (OAuthLoginDialog -> oauth_login_start).
+// login shows "Subscription" pill with a Renew action); otherwise Sign in
+// launches the manual-paste OAuth flow (OAuthLoginDialog -> oauth_login_start).
 function SubscriptionSection({
   authOf,
   onConnect,
@@ -281,7 +281,7 @@ function SubscriptionSection({
                     className="text-muted-foreground"
                     onClick={() => onConnect(p)}
                   >
-                    Reconnect
+                    Renew
                   </Button>
                 </div>
               ) : (
@@ -290,7 +290,7 @@ function SubscriptionSection({
                   size="sm"
                   onClick={() => onConnect(p)}
                 >
-                  Connect
+                  Sign In
                 </Button>
               )}
             </div>
@@ -419,7 +419,7 @@ export function ProvidersPanel() {
             {configured.length > 0 && (
               <>
                 <p className="bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
-                  Connected · {configured.length}
+                  Configured · {configured.length}
                 </p>
                 <div className="divide-y divide-border">
                   {configured.map(row)}
