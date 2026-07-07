@@ -165,9 +165,9 @@ fn resolve_login_path_inner() -> Option<String> {
         )
         .collect();
     // A login shell (`-l`) sources the user's profile/rc files, which may
-    // contain arbitrary commands. Poll with try_wait so we retain ownership
-    // of the child handle and can kill it on timeout — no leaked OS thread
-    // or orphaned child process (HOY-337).
+    // contain arbitrary commands. Retain ownership of the child handle
+    // to kill it on timeout; no leaked OS thread or orphaned child
+    // process (HOY-337).
     use std::process::Stdio;
     for shell in &shells {
         let mut child = match Command::new(shell)
