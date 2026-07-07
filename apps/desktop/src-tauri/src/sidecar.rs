@@ -173,7 +173,7 @@ fn resolve_login_path_inner() -> Option<String> {
         let mut child = match Command::new(shell)
             .args(["-l", "-c", "echo $PATH"])
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::null())
             .stdin(Stdio::null())
             .spawn()
         {
@@ -186,11 +186,13 @@ fn resolve_login_path_inner() -> Option<String> {
             match child.try_wait() {
                 Ok(Some(status)) => {
                     if status.success() {
-                        let output = child.wait_with_output().ok()?;
-                        let path = String::from_utf8(output.stdout).ok()?;
-                        let path = path.trim().to_string();
-                        if !path.is_empty() {
-                            return Some(path);
+                        if let Ok(output) = child.wait_with_output() {
+                            if let Ok(path) = String::from_utf8(output.stdout) {
+                                let path = path.trim().to_string();
+                                if !path.is_empty() {
+                                    return Some(path);
+                                }
+                            }
                         }
                     }
                     break;
