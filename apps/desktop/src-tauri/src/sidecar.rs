@@ -150,38 +150,55 @@ fn resolved_login_path() -> String {
 }
 
 fn resolve_login_path_inner() -> Option<String> {
-    let shell = std::env::var("SHELL").ok()?;
+    // Try $SHELL first, then common fallbacks. When Hoy is launched from a
+    // .desktop shortcut inside an AppImage, $SHELL is often unset so the
+    // sidecar inherits a minimal PATH that lacks version-manager entries (nvm,
+    // fnm, volta, bun standalone). Trying well-known shells gives us a chance
+    // to source the user's profile and recover the full PATH.
+    let shells: Vec<String> = std::env::var("SHELL")
+        .ok()
+        .into_iter()
+        .chain(
+            ["/bin/zsh", "/bin/bash", "/bin/sh"]
+                .iter()
+                .map(|s| s.to_string()),
+        )
+        .collect();
     // A login shell (`-l`) sources the user's profile/rc files, which may
     // contain arbitrary commands. Spawn with a timeout so a slow init (e.g.
     // nvm, network calls in .bash_profile) cannot block the sidecar spawn
     // indefinitely.
     use std::process::Stdio;
     use std::sync::mpsc;
-    let child = Command::new(&shell)
-        .args(["-l", "-c", "echo $PATH"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .stdin(Stdio::null())
-        .spawn()
-        .ok()?;
+    for shell in &shells {
+        let child = match Command::new(shell)
+            .args(["-l", "-c", "echo $PATH"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdin(Stdio::null())
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(_) => continue,
+        };
 
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let _ = tx.send(child.wait_with_output());
-    });
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = tx.send(child.wait_with_output());
+        });
 
-    match rx.recv_timeout(Duration::from_secs(3)) {
-        Ok(Ok(output)) if output.status.success() => {
-            let path = String::from_utf8(output.stdout).ok()?;
-            let path = path.trim().to_string();
-            if path.is_empty() {
-                None
-            } else {
-                Some(path)
+        match rx.recv_timeout(Duration::from_secs(3)) {
+            Ok(Ok(output)) if output.status.success() => {
+                let path = String::from_utf8(output.stdout).ok()?;
+                let path = path.trim().to_string();
+                if !path.is_empty() {
+                    return Some(path);
+                }
             }
+            _ => continue,
         }
-        _ => None, // timeout, spawn error, or non-zero exit
     }
+    None
 }
 
 /// Reset `command`'s environment to the sanitized base: the host allowlist plus

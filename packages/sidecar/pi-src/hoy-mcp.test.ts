@@ -8,7 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { createHoyMcp, mergeConfigs, mergeLayers, type McpConfig } from "./hoy-mcp";
+import { createHoyMcp, mergeConfigs, mergeLayers, resolveCommand, type McpConfig } from "./hoy-mcp";
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
 
 const TEST_SERVER = join(import.meta.dir, "mcp-test-server.mjs");
@@ -209,5 +209,49 @@ describe("mcp proxy tool (real stdio server)", () => {
     // call blocks and returns the subagent's result in-band (not "delivered back").
     expect(enabled).toContain("BLOCKS until the subagent finishes and returns its result");
     expect(enabled).not.toContain("Fire-and-forget");
+  });
+});
+
+describe("resolveCommand", () => {
+  test("absolute path is returned as-is", () => {
+    expect(resolveCommand("/usr/bin/node", { PATH: "" })).toBe("/usr/bin/node");
+  });
+
+  test("relative path with separator is returned as-is", () => {
+    expect(resolveCommand("./my-server", { PATH: "" })).toBe("./my-server");
+    expect(resolveCommand("subdir/server", { PATH: "" })).toBe("subdir/server");
+  });
+
+  test("Windows absolute path is returned as-is", () => {
+    expect(resolveCommand("C:\\Users\\foo\\server.exe", { PATH: "" })).toBe("C:\\Users\\foo\\server.exe");
+    expect(resolveCommand("D:\\tools\\bunx.cmd", { PATH: "" })).toBe("D:\\tools\\bunx.cmd");
+  });
+
+  test("Windows path with backslash separator is returned as-is", () => {
+    expect(resolveCommand("subdir\\server", { PATH: "" })).toBe("subdir\\server");
+  });
+
+  test("resolves command from PATH", () => {
+    // "node" should be in PATH on any system with Node installed
+    const result = resolveCommand("node", { PATH: process.env.PATH });
+    expect(result).toContain("node");
+    expect(result.startsWith("/")).toBe(true);
+  });
+
+  test("throws descriptive error for missing command", () => {
+    try {
+      resolveCommand("definitely-not-a-real-command-abc123", { PATH: "/usr/bin:/bin" });
+      expect(true).toBe(false); // should not reach here
+    } catch (e) {
+      expect((e as Error).message).toContain("definitely-not-a-real-command-abc123");
+      expect((e as Error).message).toContain("not found in PATH");
+      expect((e as Error).message).toContain("Searched:");
+      expect((e as Error).message).toContain("/usr/bin");
+    }
+  });
+
+  test("throws on empty PATH", () => {
+    expect(() => resolveCommand("node", { PATH: "" })).toThrow("not found in PATH");
+    expect(() => resolveCommand("node", { PATH: "" })).toThrow("(empty PATH)");
   });
 });

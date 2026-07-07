@@ -18,8 +18,8 @@ import { Type } from "typebox";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { accessSync, constants, readFileSync } from "node:fs";
+import { join, delimiter } from "node:path";
 
 export type McpScope = "global" | "project";
 
@@ -122,6 +122,36 @@ function readConfigFile(path: string): McpConfigFile {
   }
 }
 
+// Resolve a relative command (e.g. "bunx") to an absolute path by searching
+// PATH. Returns the command as-is if already absolute or contains a path
+// separator (e.g. "./my-server"). Throws with a helpful message if the
+// command can't be found.
+export function resolveCommand(
+  command: string,
+  env: Record<string, string | undefined>,
+): string {
+  // Absolute paths (e.g. "/usr/bin/bunx") and relative paths with separators
+  // (e.g. "./my-server", "subdir/server") are returned as-is.
+  if (/^(\/|[a-zA-Z]:[\\\/])/.test(command) || command.includes("/") || command.includes("\\")) return command;
+
+  const pathDirs = (env.PATH ?? "").split(delimiter).filter(Boolean);
+  for (const dir of pathDirs) {
+    const fullPath = join(dir, command);
+    try {
+      accessSync(fullPath, constants.X_OK);
+      return fullPath;
+    } catch {
+      // not found in this dir, continue
+    }
+  }
+
+  throw new Error(
+    `MCP server command "${command}" not found in PATH. ` +
+      `Install it or add its directory to PATH. ` +
+      `Searched: ${pathDirs.join(", ") || "(empty PATH)"}`,
+  );
+}
+
 // Three sources, low to high precedence:
 //   global      $HOY_CODING_AGENT_DIR/mcp.json  (Hoy's agent dir)
 //   project     <cwd>/.mcp.json                 (the standard cross-tool file, so
@@ -193,10 +223,12 @@ export function createHoyMcp(config: McpConfig) {
       await client.connect(transport);
     } else {
       const spec = s.spec as McpStdioServer;
+      const env = { ...(process.env as Record<string, string>), ...(spec.env ?? {}) };
+      const resolvedCommand = resolveCommand(spec.command, env);
       const transport = new StdioClientTransport({
-        command: spec.command,
+        command: resolvedCommand,
         args: spec.args ?? [],
-        env: { ...(process.env as Record<string, string>), ...(spec.env ?? {}) },
+        env,
         cwd: spec.cwd,
       });
       await client.connect(transport);
