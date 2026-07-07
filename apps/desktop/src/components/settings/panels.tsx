@@ -442,14 +442,14 @@ function WorkspacePanel() {
         <Separator />
         <ToggleRow
           label="Auto-open spawned subagent threads"
-          description="Open a panel for each subagent a thread spawns. Off by default; watch spawned agents in FleetView instead (the footer's Fleet button)."
+          description="Open a panel for each subagent a thread spawns. Off by default; watch spawned agents in Fleet instead (the footer's Fleet button)."
           checked={autoOpenSpawnedThreads}
           onChange={(v) => setPref("autoOpenSpawnedThreads", v)}
         />
         <Separator />
         <ToggleRow
           label="Require approval before spawning subagents"
-          description="Ask before a thread spawns each subagent type. Off by default; spawns proceed without a prompt and you watch or intervene in FleetView. Applies to sessions started after the change."
+          description="Ask before a thread spawns each subagent type. Off by default; spawns proceed without a prompt and you watch or intervene in Fleet. Applies to sessions started after the change."
           checked={requireSubagentApproval}
           onChange={(v) => setPref("requireSubagentApproval", v)}
         />

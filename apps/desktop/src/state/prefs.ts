@@ -36,12 +36,12 @@ export interface AppPrefs {
   confirmCloseStreaming: boolean;
   // Starting directory for the "Open project" picker. Empty = OS default.
   defaultProjectDir: string;
-  // Open a panel for each subagent a thread spawns. Off by default; FleetView
+  // Open a panel for each subagent a thread spawns. Off by default; Fleet
   // is the intended way to watch spawned agents instead.
   autoOpenSpawnedThreads: boolean;
   // Prompt for consent before a thread spawns each subagent type. Off by
   // default (HOY-248): spawns proceed without a gate and the user watches or
-  // intervenes via FleetView. On restores the per-type "Allow / Allow for this
+  // intervenes via Fleet. On restores the per-type "Allow / Allow for this
   // session / Deny" prompt. Threaded to the sidecar as HOY_REQUIRE_SUBAGENT_APPROVAL.
   requireSubagentApproval: boolean;
   // How many spawned subagent initial runs may stream at once; the rest queue
