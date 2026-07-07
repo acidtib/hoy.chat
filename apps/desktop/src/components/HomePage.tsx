@@ -33,7 +33,7 @@ export function HomePage() {
   const recents = useMemo(() => {
     const rows = projects.flatMap((p) =>
       p.threads
-        .filter((t) => !t.archived)
+        .filter((t) => !t.archived && !t.parentThreadId)
         .map((t) => ({ thread: t, project: p })),
     );
     rows.sort((a, b) => b.thread.updatedAt - a.thread.updatedAt);
