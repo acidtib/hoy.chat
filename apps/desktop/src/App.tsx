@@ -50,6 +50,7 @@ function App() {
     s.providerAuth.some((auth) => auth.configured),
   );
   const setPref = usePrefsStore((s) => s.setPref);
+  const onboardingCompleted = usePrefsStore((s) => s.onboardingCompleted);
 
   // Full screen: the one panel rendered while set, at full body width via CSS.
   // Stored widths are untouched, so exiting restores the exact layout.
@@ -185,7 +186,8 @@ function App() {
     );
   };
 
-  const showOnboarding = providerBootstrapped && !providerConfigured;
+  const showOnboarding =
+    providerBootstrapped && !(providerConfigured && onboardingCompleted);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -212,7 +214,13 @@ function App() {
               className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
               {!providerBootstrapped ? (
-                <OnboardingPage loading />
+                <div className="flex flex-1 items-center justify-center bg-background">
+                  <img
+                    src="/hoy-icon.png"
+                    alt="Hoy"
+                    className="size-16 animate-pulse opacity-60"
+                  />
+                </div>
               ) : showOnboarding ? (
                 <OnboardingPage />
               ) : bodyView === "usage" ? (
