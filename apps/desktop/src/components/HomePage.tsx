@@ -13,6 +13,7 @@ import { HomeComposer } from "@/components/home/HomeComposer";
 import { ThreadModelIcon } from "@/components/ThreadModelIcon";
 import { useSessionStore } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
+import { isSubagentThread } from "@/state/delivery";
 import { pickDirectory } from "@/lib/ipc";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
@@ -33,7 +34,7 @@ export function HomePage() {
   const recents = useMemo(() => {
     const rows = projects.flatMap((p) =>
       p.threads
-        .filter((t) => !t.archived && !t.parentThreadId)
+        .filter((t) => !t.archived && !isSubagentThread(t))
         .map((t) => ({ thread: t, project: p })),
     );
     rows.sort((a, b) => b.thread.updatedAt - a.thread.updatedAt);
