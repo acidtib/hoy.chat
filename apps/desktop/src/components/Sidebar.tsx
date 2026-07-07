@@ -37,6 +37,7 @@ import { threadIconColorClass } from "@/lib/threadColor";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
 import { pickDirectory } from "@/lib/ipc";
 import { useSessionStore, useThreadHasRunningSubagents } from "@/state/store";
+import { isSubagentThread } from "@/state/delivery";
 import { usePrefsStore } from "@/state/prefs";
 import type { Project, Thread } from "@/lib/types";
 
@@ -80,7 +81,7 @@ export function Sidebar() {
         // top-level threads by title. Their children ride along in the array
         // (never shown) so the parent's fleet marker still computes.
         const matchedTop = new Set(
-          p.threads.filter((t) => !t.parentThreadId && matches(t)).map((t) => t.id),
+          p.threads.filter((t) => !isSubagentThread(t) && matches(t)).map((t) => t.id),
         );
         const threads = nameMatch
           ? p.threads
@@ -253,7 +254,7 @@ function ProjectGroup({
   const topThreads = useMemo(
     () =>
       project.threads
-        .filter((t) => !t.parentThreadId)
+        .filter((t) => !isSubagentThread(t))
         .sort((a, b) => b.updatedAt - a.updatedAt),
     [project.threads],
   );
