@@ -23,10 +23,10 @@ No breaking changes for Hoy. Verified against the installed 0.80.3 source:
   accurate. Docs-block GitHub tag repointed to `v0.80.3`.
 - **Provider list and env-var mapping unchanged.** The 0.80.3 CHANGELOG lists no
   provider additions; `core/provider-display-names.js` matches the 0.80.2 set, so
-  `pi_config.rs` needs no change. (A pre-existing gap noted for later, not
-  introduced by this bump: `ant-ling`, `nvidia`, and `zai-coding-cn` are in Pi's
-  display-names table but not in `pi_config.rs`, and Pi's `zai` label is now
-  "ZAI Coding Plan (Global)".)
+  `pi_config.rs` needs no change for the bump itself. (HOY-317 subsequently
+  reconciled the pre-existing gap: added `ant-ling`, `nvidia`, `zai-coding-cn`,
+  fixed the `zai` label to "ZAI Coding Plan (Global)", and corrected
+  `moonshotai-cn`'s env var to `MOONSHOT_API_KEY`.)
 - **Sidecar imports still resolve.** `createAgentSessionServices`,
   `createAgentSessionFromServices`, `runRpcMode`, and the `resourceLoaderOptions`
   we use still export from the package root; the sidecar build succeeds on 0.80.3.

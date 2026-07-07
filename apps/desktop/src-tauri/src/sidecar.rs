@@ -9,7 +9,7 @@ use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -136,6 +136,54 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
     "PATHEXT",
 ];
 
+/// Resolve the user's login shell PATH by running `$SHELL -l -c 'echo $PATH'`.
+/// Cached after first call so we only spawn a shell once per process lifetime.
+/// Falls back to the current process PATH on failure (shell not found, timeout,
+/// empty output) so HOY-261's env_clear + allowlist security is preserved.
+fn resolved_login_path() -> String {
+    static CACHE: OnceLock<String> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            resolve_login_path_inner().unwrap_or_else(|| std::env::var("PATH").unwrap_or_default())
+        })
+        .clone()
+}
+
+fn resolve_login_path_inner() -> Option<String> {
+    let shell = std::env::var("SHELL").ok()?;
+    // A login shell (`-l`) sources the user's profile/rc files, which may
+    // contain arbitrary commands. Spawn with a timeout so a slow init (e.g.
+    // nvm, network calls in .bash_profile) cannot block the sidecar spawn
+    // indefinitely.
+    use std::process::Stdio;
+    use std::sync::mpsc;
+    let child = Command::new(&shell)
+        .args(["-l", "-c", "echo $PATH"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdin(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+
+    match rx.recv_timeout(Duration::from_secs(3)) {
+        Ok(Ok(output)) if output.status.success() => {
+            let path = String::from_utf8(output.stdout).ok()?;
+            let path = path.trim().to_string();
+            if path.is_empty() {
+                None
+            } else {
+                Some(path)
+            }
+        }
+        _ => None, // timeout, spawn error, or non-zero exit
+    }
+}
+
 /// Reset `command`'s environment to the sanitized base: the host allowlist plus
 /// any `${VAR}` referenced in the MCP config files (so MCP server secrets keep
 /// resolving, HOY-261). Call BEFORE setting the dir vars / per-spawn HOY_*; those
@@ -143,6 +191,16 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
 fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
     command.env_clear();
     for key in HOST_ENV_ALLOWLIST {
+        if *key == "PATH" {
+            // Use the login shell's PATH, not the desktop app's own PATH.
+            // When launched from a .desktop shortcut the Tauri app gets a
+            // minimal PATH that lacks version-manager entries (nvm, fnm, etc.),
+            // so tools like bun/bunx are invisible. Spawning $SHELL -l captures
+            // the fully-initialized PATH. Capped to one spawn per process
+            // lifetime by OnceLock in resolved_login_path().
+            command.env("PATH", resolved_login_path());
+            continue;
+        }
         if let Some(val) = std::env::var_os(key) {
             command.env(key, val);
         }
@@ -2202,6 +2260,39 @@ mod live_tests {
         assert!(
             env.contains("PI_TELEMETRY=0"),
             "expected telemetry forced off, got:\n{env}"
+        );
+    }
+
+    // The sanitized env must use the login shell's PATH (resolved via
+    // $SHELL -l -c 'echo $PATH'), not the desktop app's own PATH. This
+    // ensures version-manager paths (nvm, fnm, etc.) are visible to the
+    // sidecar and its child processes.
+    #[cfg(unix)]
+    #[test]
+    fn sanitized_env_uses_login_shell_path() {
+        let dir = std::env::temp_dir().join(format!("hoy-path-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).ok();
+
+        let mut cmd = Command::new("/usr/bin/env");
+        apply_sanitized_env(&mut cmd, &dir, &dir);
+        let out = cmd.output().expect("spawn /usr/bin/env");
+        let env = String::from_utf8_lossy(&out.stdout);
+
+        std::fs::remove_dir_all(&dir).ok();
+
+        let path_line = env
+            .lines()
+            .find(|l| l.starts_with("PATH="))
+            .expect("PATH should be set in sanitized env");
+        let path_value = &path_line[5..];
+        assert!(
+            path_value.contains(':'),
+            "resolved PATH should have multiple entries (colon-separated), got: {path_value}"
+        );
+        // The login shell PATH should contain /usr/bin at minimum
+        assert!(
+            path_value.split(':').any(|p| p == "/usr/bin"),
+            "resolved PATH should contain /usr/bin, got: {path_value}"
         );
     }
 }
