@@ -3,6 +3,7 @@
 // supportedProviders(); this module only decorates it for display.
 
 import type { ProviderAuth, ProviderInfo } from "@/lib/types";
+import { SUBSCRIPTION_PROVIDER_IDS } from "@/lib/providerIds";
 
 export interface ProviderMeta {
   description: string;
@@ -137,19 +138,19 @@ export interface SubscriptionProvider {
 
 export const SUBSCRIPTION_PROVIDERS: SubscriptionProvider[] = [
   {
-    id: "anthropic",
+    id: SUBSCRIPTION_PROVIDER_IDS[0],
     label: "Claude Pro / Max",
     subtitle: "Use your Anthropic subscription, no API key needed",
     glyph: "claude",
   },
   {
-    id: "openai-codex",
+    id: SUBSCRIPTION_PROVIDER_IDS[1],
     label: "ChatGPT",
     subtitle: "Sign in with your OpenAI plan",
     glyph: "openai",
   },
   {
-    id: "github-copilot",
+    id: SUBSCRIPTION_PROVIDER_IDS[2],
     label: "GitHub Copilot",
     subtitle: "Bring your Copilot subscription",
     glyph: "copilot",

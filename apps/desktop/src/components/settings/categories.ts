@@ -51,6 +51,7 @@ export interface Category {
 export const CATEGORIES: Category[] = [
   { id: "model", label: "Model", icon: Boxes, group: 0 },
   { id: "chat", label: "Chat", icon: MessageSquare, group: 0 },
+  { id: "appearance", label: "Appearance", icon: Palette, group: 0 },
   { id: "workspace", label: "Workspace", icon: LayoutGrid, group: 0 },
   { id: "memory", label: "Memory & Context", icon: Brain, group: 0 },
   { id: "providers", label: "Providers", icon: Plug, group: 1 },
@@ -58,7 +59,6 @@ export const CATEGORIES: Category[] = [
   { id: "subagents", label: "Subagents", icon: Bot, group: 1 },
   { id: "skills", label: "Skills", icon: Sparkle, group: 1 },
   { id: "about", label: "About", icon: Info, group: 1 },
-  { id: "appearance", label: "Appearance", icon: Palette, group: 2, placeholder: true },
   { id: "safety", label: "Safety", icon: ShieldCheck, group: 2, placeholder: true },
   { id: "voice", label: "Voice", icon: Mic, group: 2, placeholder: true },
   { id: "advanced", label: "Advanced", icon: SlidersHorizontal, group: 2, placeholder: true },

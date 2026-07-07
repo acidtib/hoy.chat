@@ -10,14 +10,16 @@ import { Sidebar } from "@/components/Sidebar";
 import { ThreadHistory } from "@/components/ThreadHistory";
 import { FleetBoard } from "@/components/fleet/FleetBoard";
 import { HomePage } from "@/components/HomePage";
+import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
 import { UsageView } from "@/components/UsageView";
 import { ThreadView } from "@/components/ThreadView";
 import { ContextBar } from "@/components/ContextBar";
 import { ForkPicker } from "@/components/tree/ForkPicker";
 import { TreeNavigator } from "@/components/tree/TreeNavigator";
 import { ConfirmCloseDialog } from "@/components/ConfirmCloseDialog";
-import { TitleBar, WindowResizeHandles } from "@/components/TitleBar";
+import { TitleBar, WindowControls, WindowResizeHandles } from "@/components/TitleBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
+import { ThemeController } from "@/components/ThemeController";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { activeSessionId, getState, setKeepAwake } from "@/lib/ipc";
 import { refreshProviderData } from "@/lib/refresh";
@@ -44,6 +46,11 @@ function App() {
   const requestPanelClose = useSessionStore((s) => s.requestPanelClose);
   const focusPanel = useSessionStore((s) => s.focusPanel);
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
+  const providerConfigured = useSessionStore((s) =>
+    s.providerAuth.some((auth) => auth.configured),
+  );
+  const setPref = usePrefsStore((s) => s.setPref);
+  const onboardingCompleted = usePrefsStore((s) => s.onboardingCompleted);
 
   // Full screen: the one panel rendered while set, at full body width via CSS.
   // Stored widths are untouched, so exiting restores the exact layout.
@@ -99,6 +106,7 @@ function App() {
   const [debug, setDebug] = useState<PiState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [providerBootstrapped, setProviderBootstrapped] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +124,7 @@ function App() {
           refreshProviderData(),
         ]);
         if (cancelled) return;
+        finalizeBootstrap();
         // The control session's model is Pi's persisted defaultModel: what a
         // thread shows and spawns with until it has its own pick.
         if (piState?.model) {
@@ -125,13 +134,26 @@ function App() {
           });
         }
       } catch (e) {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) {
+          finalizeBootstrap();
+          setError(String(e));
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [setActiveSessionId, setDefaultModel]);
+  }, [setActiveSessionId, setDefaultModel, setPref]);
+
+  function finalizeBootstrap() {
+    const configured = useSessionStore
+      .getState()
+      .providerAuth.some((auth) => auth.configured);
+    if (configured && !usePrefsStore.getState().onboardingCompleted) {
+      setPref("onboardingCompleted", true);
+    }
+    setProviderBootstrapped(true);
+  }
 
   // Developer round-trip: toggle the raw get_state payload in the transcript.
   async function handleDebug(sessionId?: string | null) {
@@ -164,20 +186,36 @@ function App() {
     );
   };
 
+  const showOnboarding =
+    providerBootstrapped && !(providerConfigured && onboardingCompleted);
+
+  const showChrome = providerBootstrapped && !showOnboarding;
+
+
   return (
     <TooltipProvider delayDuration={200}>
+      <ThemeController />
       <SettingsModal />
       <ConfirmCloseDialog />
       <WindowResizeHandles />
       <div className="flex h-screen flex-col bg-background text-foreground">
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
-          {!sidebarCollapsed &&
+          {showChrome && !sidebarCollapsed &&
             (sidebarView === "history" ? <ThreadHistory /> : <Sidebar />)}
 
           {/* Main column: the title bar spans the main body only (the sidebar
               keeps the top-left corner, Zed-style); panels render below it. */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <TitleBar />
+            {showChrome ? (
+              <TitleBar />
+            ) : (
+              <header
+                data-tauri-drag-region
+                className="flex h-9 shrink-0 select-none items-center justify-end border-b border-border bg-sidebar px-1 text-xs text-muted-foreground"
+              >
+                <WindowControls />
+              </header>
+            )}
             {/* Content row below the title bar: the panel area (bodyRef, which
                 measures only the panels so their widths fit) and, to its right,
                 the global tree dock (HOY-280) — a panel-independent sidebar that
@@ -187,7 +225,17 @@ function App() {
               ref={bodyRef}
               className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
-              {bodyView === "usage" ? (
+              {!providerBootstrapped ? (
+                <div className="flex flex-1 items-center justify-center bg-background">
+                  <img
+                    src="/hoy-icon.png"
+                    alt="Hoy"
+                    className="size-16 animate-pulse opacity-60"
+                  />
+                </div>
+              ) : showOnboarding ? (
+                <OnboardingPage />
+              ) : bodyView === "usage" ? (
                 <UsageView />
               ) : bodyView === "fleet" ? (
                 <FleetBoard />
@@ -268,7 +316,7 @@ function App() {
             </div>
           </div>
         </div>
-        <ContextBar slicesRef={footerSlicesRef} />
+        {showChrome && <ContextBar slicesRef={footerSlicesRef} />}
       </div>
       <ForkPicker />
     </TooltipProvider>

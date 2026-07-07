@@ -13,6 +13,8 @@ mockIpcModule({ listModels, providerStatuses, supportedProviders });
 const { useSessionStore } = await import("@/state/store");
 const { refreshProviderData } = await import("@/lib/refresh");
 
+const STATUS_IDS = ["anthropic", "google", "openai-codex", "github-copilot"];
+
 const PROVIDERS: ProviderInfo[] = [
   { id: "anthropic", label: "Anthropic", env: "ANTHROPIC_API_KEY" },
   { id: "google", label: "Google Gemini", env: "GEMINI_API_KEY" },
@@ -50,7 +52,7 @@ describe("refreshProviderData", () => {
     await refreshProviderData();
 
     expect(supportedProviders).toHaveBeenCalledTimes(1);
-    expect(providerStatuses).toHaveBeenCalledWith(["anthropic", "google"]);
+    expect(providerStatuses).toHaveBeenCalledWith(STATUS_IDS);
     const state = useSessionStore.getState();
     expect(state.supportedProviders).toEqual(PROVIDERS);
     expect(state.providerAuth).toEqual(AUTH);
@@ -65,7 +67,7 @@ describe("refreshProviderData", () => {
     await refreshProviderData();
 
     expect(supportedProviders).not.toHaveBeenCalled();
-    expect(providerStatuses).toHaveBeenCalledWith(["anthropic", "google"]);
+    expect(providerStatuses).toHaveBeenCalledWith(STATUS_IDS);
   });
 
   test("propagates a real listModels failure (timeout, crash) instead of swallowing it", async () => {

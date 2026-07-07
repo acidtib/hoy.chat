@@ -1,19 +1,21 @@
 # Design
 
 Visual system for Hoy Desktop. Captured from the live token set in
-`src/index.css` and the shadcn/ui + AI Elements component layer. Dark-first: the
-app ships with `<html class="dark">` and the light palette exists but is not the
-default surface. All colors are OKLCH.
+`src/index.css` and the shadcn/ui + AI Elements component layer. Dark-first:
+dark is the default surface, while light and system preferences are user
+selectable. All colors are OKLCH.
 
 ## Theme
 
 Dark-first, layered near-black with a faint cool cast (hue ~285). The background
 sits below panels so the sidebar and cards read as elevated surfaces, a
-Zed/Codex-style workbench. The identity move is the **square theme**: `--radius`
-is `0rem`, so every `rounded-*` utility (all `calc()` multiples of `--radius`)
-renders with sharp corners. Only `rounded-full` is exempt, keeping dots, switch
-thumbs, and avatars round. Chrome recedes (thin self-effacing scrollbars, hairline
-borders); the streaming transcript is the focal plane.
+Zed/Codex-style workbench. The app applies `dark`, `light`, or `system` through
+the persisted renderer theme preference; `system` follows `prefers-color-scheme`.
+The identity move is the **square theme**: `--radius` is `0rem`, so every
+`rounded-*` utility (all `calc()` multiples of `--radius`) renders with sharp
+corners. Only `rounded-full` is exempt, keeping dots, switch thumbs, and avatars
+round. Chrome recedes (thin self-effacing scrollbars, hairline borders); the
+streaming transcript is the focal plane.
 
 ## Color
 

@@ -4,6 +4,7 @@
 // store is empty.
 
 import { listModels, providerStatuses, supportedProviders } from "./ipc";
+import { SUBSCRIPTION_PROVIDER_IDS } from "./providerIds";
 import { useSessionStore } from "@/state/store";
 
 export async function refreshProviderData(): Promise<void> {
@@ -15,9 +16,13 @@ export async function refreshProviderData(): Promise<void> {
     store.setSupportedProviders(providers);
   }
 
+  const providerIds = Array.from(
+    new Set([...providers.map((p) => p.id), ...SUBSCRIPTION_PROVIDER_IDS]),
+  );
+
   // Statuses and models are independent IPC calls; fetch them in parallel.
   await Promise.all([
-    providerStatuses(providers.map((p) => p.id)).then(store.setProviderAuth),
+    providerStatuses(providerIds).then(store.setProviderAuth),
     // list_models requires an active session and the panel must work without
     // one (first-key setup), so that case is swallowed. Real failures (sidecar
     // timeout or crash after a respawn) propagate to the caller; the error

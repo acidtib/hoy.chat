@@ -13,6 +13,8 @@ afterEach(() => {
 describe("usePrefsStore", () => {
   test("ships the documented defaults", () => {
     expect(PREFS_DEFAULTS).toEqual({
+      theme: "system",
+      onboardingCompleted: false,
       sendOnEnter: true,
       expandReasoning: false,
       expandToolDetails: false,
@@ -23,6 +25,7 @@ describe("usePrefsStore", () => {
       maxConcurrentAgents: 4,
       keepAwakeWhileStreaming: true,
       autoCompaction: true,
+      sidebarCollapsed: false,
     });
   });
 
@@ -31,6 +34,8 @@ describe("usePrefsStore", () => {
     expect(usePrefsStore.getState().sendOnEnter).toBe(false);
     usePrefsStore.getState().setPref("defaultProjectDir", "/home/u/code");
     expect(usePrefsStore.getState().defaultProjectDir).toBe("/home/u/code");
+    usePrefsStore.getState().setPref("theme", "system");
+    expect(usePrefsStore.getState().theme).toBe("system");
     // Unrelated fields are untouched.
     expect(usePrefsStore.getState().expandReasoning).toBe(false);
   });

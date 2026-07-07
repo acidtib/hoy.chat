@@ -26,14 +26,32 @@ pub fn run() {
     // desktop-only.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        // HOY-206: debug builds use the hoyd namespace (chat.hoy.desktop.dev) so
+        // the single-instance lock doesn't collide with a running production app.
+        // Pass the dev identifier explicitly as the DBus id; the config merge via
+        // --config / TAURI_CONFIG env var is unreliable for this plugin's setup.
+        #[cfg(debug_assertions)]
+        let single_instance = tauri_plugin_single_instance::Builder::new()
+            .dbus_id("chat.hoy.desktop.dev")
+            .callback(|app, _args, _cwd| {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            })
+            .build();
+        #[cfg(not(debug_assertions))]
+        let single_instance = tauri_plugin_single_instance::init(|app, _args, _cwd| {
             use tauri::Manager;
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
             }
-        }));
+        });
+        builder = builder.plugin(single_instance);
     }
 
     builder = builder
