@@ -124,8 +124,10 @@ function readConfigFile(path: string): McpConfigFile {
 
 // Resolve a relative command (e.g. "bunx") to an absolute path by searching
 // PATH. Returns the command as-is if already absolute or contains a path
-// separator (e.g. "./my-server"). Throws with a helpful message if the
-// command can't be found.
+// separator (e.g. "./my-server"). On Windows, tries PATHEXT extensions
+// (.exe/.cmd/.bat/.com) when the bare command is not found, so npm-installed
+// CLI shims like bunx.cmd resolve correctly. Throws with a helpful message if
+// the command can't be found.
 export function resolveCommand(
   command: string,
   env: Record<string, string | undefined>,
@@ -135,13 +137,25 @@ export function resolveCommand(
   if (/^(\/|[a-zA-Z]:[\\\/])/.test(command) || command.includes("/") || command.includes("\\")) return command;
 
   const pathDirs = (env.PATH ?? "").split(delimiter).filter(Boolean);
+  // PATHEXT is semicolon-delimited on Windows; on other platforms it is unset
+  // so the inner loop is a no-op.
+  const pathext = (env.PATHEXT ?? "").split(";").filter(Boolean);
   for (const dir of pathDirs) {
     const fullPath = join(dir, command);
     try {
       accessSync(fullPath, constants.X_OK);
       return fullPath;
     } catch {
-      // not found in this dir, continue
+      // not found bare; try each PATHEXT extension
+    }
+    for (const ext of pathext) {
+      const withExt = ext.startsWith(".") ? fullPath + ext : fullPath + "." + ext;
+      try {
+        accessSync(withExt, constants.X_OK);
+        return withExt;
+      } catch {
+        // not found with this extension, continue
+      }
     }
   }
 

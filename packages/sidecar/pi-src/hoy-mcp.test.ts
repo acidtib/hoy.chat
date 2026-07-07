@@ -8,6 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { createHoyMcp, mergeConfigs, mergeLayers, resolveCommand, type McpConfig } from "./hoy-mcp";
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
 
@@ -253,5 +254,33 @@ describe("resolveCommand", () => {
   test("throws on empty PATH", () => {
     expect(() => resolveCommand("node", { PATH: "" })).toThrow("not found in PATH");
     expect(() => resolveCommand("node", { PATH: "" })).toThrow("(empty PATH)");
+  });
+
+  test("resolves command via PATHEXT extensions", () => {
+    const dir = mkdtempSync("/tmp/hoy-test-pathext-");
+    // Windows filesystem is case-insensitive but the test runs on Linux;
+    // use lowercase extensions to match the actual filename.
+    const exe = join(dir, "bunx.cmd");
+    writeFileSync(exe, "", { mode: 0o755 });
+    try {
+      const env = { PATH: dir, PATHEXT: ".cmd;.exe;.bat;.com" };
+      const result = resolveCommand("bunx", env);
+      expect(result).toBe(exe);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("PATHEXT: normalizes extensions missing a leading dot", () => {
+    const dir = mkdtempSync("/tmp/hoy-test-pathext2-");
+    const exe = join(dir, "uvx.exe");
+    writeFileSync(exe, "", { mode: 0o755 });
+    try {
+      const env = { PATH: dir, PATHEXT: "exe;cmd" };
+      const result = resolveCommand("uvx", env);
+      expect(result).toBe(exe);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
