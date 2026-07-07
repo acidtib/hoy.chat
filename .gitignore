@@ -26,11 +26,6 @@ node_modules/
 # Rust build output
 target/
 
-# Per-user Claude settings and transient state
-.claude/settings.local.json
-.claude/scheduled_tasks.lock
-.claude/worktrees/
-
 # Playwright MCP verification artifacts
 .playwright-mcp/
 
