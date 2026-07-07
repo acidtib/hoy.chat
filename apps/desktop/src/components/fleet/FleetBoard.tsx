@@ -1,12 +1,5 @@
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { ArrowLeft, Sparkle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { FleetTree } from "@/components/fleet/FleetTree";
 import { useSessionStore } from "@/state/store";
 import {
@@ -22,7 +15,6 @@ import { formatTokens } from "@/lib/utils";
 // footer's Fleet button. One card per fleet over the shared recursive tree.
 export function FleetBoard() {
   const projects = useSessionStore((s) => s.projects);
-  const setBodyView = useSessionStore((s) => s.setBodyView);
 
   const roots = useMemo(() => fleetRoots(projects), [projects]);
 
@@ -59,23 +51,7 @@ export function FleetBoard() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() => setBodyView("panels")}
-              aria-label="Back to panels"
-            >
-              <ArrowLeft className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Back to panels</TooltipContent>
-        </Tooltip>
-
-        <Sparkle className="size-4 text-agent" />
-        <h1 className="text-sm font-medium text-foreground">FleetView</h1>
+        <h1 className="text-sm font-medium text-foreground">Fleet</h1>
 
         <div className="ml-auto flex items-center gap-3 font-mono text-[11px] tabular-nums text-muted-foreground">
           <span>{counts.running} running</span>

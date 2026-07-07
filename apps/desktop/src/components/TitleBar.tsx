@@ -64,7 +64,7 @@ export function TitleBar() {
         )}
       </div>
 
-      {/* Global view/app controls, left → right: Usage toggle, FleetView
+      {/* Global view/app controls, left → right: Usage toggle, Fleet
           toggle, Settings cog, then the window controls. The two body-view
           toggles keep their footer active treatment (brand for Usage,
           text-agent for the agents/fleet view). */}
@@ -77,7 +77,7 @@ export function TitleBar() {
           <BarChart3 className="size-4" />
         </TitleBarButton>
         <TitleBarButton
-          label={bodyView === "fleet" ? "Show Panels" : "Show FleetView"}
+          label={bodyView === "fleet" ? "Show Panels" : "Show Fleet"}
           onClick={() => setBodyView(bodyView === "fleet" ? "panels" : "fleet")}
           active={bodyView === "fleet"}
           activeClassName="text-agent"
@@ -214,7 +214,7 @@ function TitleBarButton({
   children: React.ReactNode;
   active?: boolean;
   // Color when active; defaults to the brand navigation color, overridden by
-  // callers representing a different surface (e.g. text-agent for FleetView).
+  // callers representing a different surface (e.g. text-agent for Fleet).
   activeClassName?: string;
 }) {
   return (

@@ -446,7 +446,7 @@ interface SessionStore {
   cancelTeardown: () => void;
   closePanel: (id: string) => void;
   // The panel header's close (X): a subagent panel is DISMISSED (removed from the
-  // strip, sidecar keeps running, reopenable from FleetView), a root thread's
+  // strip, sidecar keeps running, reopenable from Fleet), a root thread's
   // panel tears its sidecar down as before (HOY-301). Routes to dismissPanel or
   // requestTeardown accordingly.
   requestPanelClose: (threadId: string) => void;
@@ -876,7 +876,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   requestPanelClose: (threadId) => {
     // Closing a subagent's panel should never stop its work: dismiss the view and
-    // leave the sidecar running (reopenable from FleetView). Only a root thread's
+    // leave the sidecar running (reopenable from Fleet). Only a root thread's
     // panel is torn down on close, keeping the existing kill-on-close + streaming
     // confirm (HOY-301).
     const thread = findThread(get().projects, threadId)?.thread;
@@ -1113,7 +1113,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }));
     // Auto-open the child so the user follows the run live instead of finding
     // it after the fact (HOY-236). The child is already in projects above, so
-    // openThread's findThread resolves. FleetView (HOY-235) is the alternative
+    // openThread's findThread resolves. Fleet (HOY-235) is the alternative
     // watch surface, so this is gated behind the autoOpenSpawnedThreads pref
     // (HOY-246), off by default to avoid a panel-per-subagent storm at scale.
     if (usePrefsStore.getState().autoOpenSpawnedThreads) get().openThread(childId);
