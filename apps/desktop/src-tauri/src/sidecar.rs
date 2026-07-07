@@ -165,13 +165,12 @@ fn resolve_login_path_inner() -> Option<String> {
         )
         .collect();
     // A login shell (`-l`) sources the user's profile/rc files, which may
-    // contain arbitrary commands. Spawn with a timeout so a slow init (e.g.
-    // nvm, network calls in .bash_profile) cannot block the sidecar spawn
-    // indefinitely.
+    // contain arbitrary commands. Poll with try_wait so we retain ownership
+    // of the child handle and can kill it on timeout — no leaked OS thread
+    // or orphaned child process (HOY-337).
     use std::process::Stdio;
-    use std::sync::mpsc;
     for shell in &shells {
-        let child = match Command::new(shell)
+        let mut child = match Command::new(shell)
             .args(["-l", "-c", "echo $PATH"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -182,20 +181,30 @@ fn resolve_login_path_inner() -> Option<String> {
             Err(_) => continue,
         };
 
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let _ = tx.send(child.wait_with_output());
-        });
-
-        match rx.recv_timeout(Duration::from_secs(3)) {
-            Ok(Ok(output)) if output.status.success() => {
-                let path = String::from_utf8(output.stdout).ok()?;
-                let path = path.trim().to_string();
-                if !path.is_empty() {
-                    return Some(path);
+        let start = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if status.success() {
+                        let output = child.wait_with_output().ok()?;
+                        let path = String::from_utf8(output.stdout).ok()?;
+                        let path = path.trim().to_string();
+                        if !path.is_empty() {
+                            return Some(path);
+                        }
+                    }
+                    break;
                 }
+                Ok(None) => {
+                    if start.elapsed() >= Duration::from_secs(3) {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(50));
+                }
+                Err(_) => break,
             }
-            _ => continue,
         }
     }
     None
