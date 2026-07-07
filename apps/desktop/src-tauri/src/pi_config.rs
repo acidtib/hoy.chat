@@ -162,13 +162,18 @@ struct ProviderDef {
     env: &'static str,
 }
 
-// API-key providers Pi supports, from pi-coding-agent 0.78.0
+// API-key providers Pi supports, from pi-coding-agent 0.80.3
 // core/provider-display-names.js (BUILT_IN_PROVIDER_DISPLAY_NAMES). Excludes
 // amazon-bedrock and google-vertex, which use cloud auth (AWS creds / gcloud ADC)
 // rather than a plain api_key entry. `env` is Pi's actual env var for that
 // provider; several differ from the id (google -> GEMINI_API_KEY). Pinned to the
 // Pi version: re-verify against provider-display-names.js when bumping Pi.
 const PROVIDERS: &[ProviderDef] = &[
+    ProviderDef {
+        id: "ant-ling",
+        label: "Ant Ling",
+        env: "ANT_LING_API_KEY",
+    },
     ProviderDef {
         id: "anthropic",
         label: "Anthropic",
@@ -257,7 +262,12 @@ const PROVIDERS: &[ProviderDef] = &[
     ProviderDef {
         id: "moonshotai-cn",
         label: "Moonshot AI (China)",
-        env: "MOONSHOT_CN_API_KEY",
+        env: "MOONSHOT_API_KEY",
+    },
+    ProviderDef {
+        id: "nvidia",
+        label: "NVIDIA NIM",
+        env: "NVIDIA_API_KEY",
     },
     ProviderDef {
         id: "kimi-coding",
@@ -276,8 +286,13 @@ const PROVIDERS: &[ProviderDef] = &[
     },
     ProviderDef {
         id: "zai",
-        label: "ZAI",
+        label: "ZAI Coding Plan (Global)",
         env: "ZAI_API_KEY",
+    },
+    ProviderDef {
+        id: "zai-coding-cn",
+        label: "ZAI Coding Plan (China)",
+        env: "ZAI_CODING_CN_API_KEY",
     },
     ProviderDef {
         id: "opencode",
