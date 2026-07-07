@@ -236,6 +236,9 @@ fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
     // Keep the secrets referenced by MCP server configs (chosen over a strict
     // allowlist so `${GITHUB_TOKEN}`-style refs still resolve; HOY-261).
     for key in mcp_referenced_env_vars(agent_dir, cwd) {
+        if key == "PATH" {
+            continue;
+        }
         if let Some(val) = std::env::var_os(&key) {
             command.env(&key, val);
         }
