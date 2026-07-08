@@ -1623,6 +1623,7 @@ dependencies = [
  "chrono",
  "ignore",
  "keepawake",
+ "libc",
  "serde",
  "serde_json",
  "tauri",
