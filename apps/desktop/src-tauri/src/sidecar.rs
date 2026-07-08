@@ -140,30 +140,89 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
 /// Cached after first call so we only spawn a shell once per process lifetime.
 /// Falls back to the current process PATH on failure (shell not found, timeout,
 /// empty output) so HOY-261's env_clear + allowlist security is preserved.
-fn resolved_login_path() -> String {
+fn resolved_login_path() -> &'static str {
     static CACHE: OnceLock<String> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            resolve_login_path_inner().unwrap_or_else(|| std::env::var("PATH").unwrap_or_default())
-        })
-        .clone()
+    CACHE.get_or_init(|| {
+        resolve_login_path_inner().unwrap_or_else(|| std::env::var("PATH").unwrap_or_default())
+    })
+}
+
+/// Build the ordered, deduplicated list of login shells to try when
+/// recovering a user's real PATH. Order: `$SHELL` first, then the user's
+/// passwd login shell (resolved via getpwuid on Unix so NixOS/Guix store
+/// paths work; HOY-345), then hardcoded FHS fallbacks. Each candidate is
+/// only included once (HOY-341).
+fn resolve_login_shells() -> Vec<String> {
+    let mut shells = Vec::new();
+
+    if let Ok(shell) = std::env::var("SHELL") {
+        if !shell.is_empty() && !shells.contains(&shell) {
+            shells.push(shell);
+        }
+    }
+
+    #[cfg(unix)]
+    if let Some(shell) = get_user_login_shell() {
+        if !shell.is_empty() && !shells.contains(&shell) {
+            shells.push(shell);
+        }
+    }
+
+    for s in &["/bin/zsh", "/bin/bash", "/bin/sh"] {
+        let s = s.to_string();
+        if !shells.contains(&s) {
+            shells.push(s);
+        }
+    }
+
+    shells
+}
+
+/// Get the user's login shell from the passwd database via getpwuid_r.
+/// On NixOS/Guix this returns the store path (e.g. `/nix/store/...-zsh/bin/zsh`)
+/// which hardcoded FHS paths would miss (HOY-345).
+///
+/// Uses a stack buffer for the common case; grows the buffer and retries
+/// on ERANGE so deeply nested Nix store paths are not silently dropped.
+#[cfg(unix)]
+fn get_user_login_shell() -> Option<String> {
+    unsafe {
+        let uid = libc::getuid();
+        let mut passwd = std::mem::MaybeUninit::<libc::passwd>::uninit();
+        let mut bufsz = 4096usize;
+        loop {
+            let mut buf = vec![0u8; bufsz];
+            let mut result: *mut libc::passwd = std::ptr::null_mut();
+            let ret = libc::getpwuid_r(
+                uid,
+                passwd.as_mut_ptr(),
+                buf.as_mut_ptr() as *mut libc::c_char,
+                buf.len(),
+                &mut result,
+            );
+            if ret == 0 {
+                // result may be valid but pw_shell can be NULL on accounts
+                // with no login shell (POSIX permits this; NSS/LDAP edge).
+                return if !result.is_null() && !(*result).pw_shell.is_null() {
+                    std::ffi::CStr::from_ptr((*result).pw_shell)
+                        .to_str()
+                        .ok()
+                        .map(|s| s.to_string())
+                } else {
+                    None
+                };
+            }
+            if ret != libc::ERANGE {
+                return None;
+            }
+            // Buffer too small; double and retry.
+            bufsz = bufsz.saturating_mul(2);
+        }
+    }
 }
 
 fn resolve_login_path_inner() -> Option<String> {
-    // Try $SHELL first, then common fallbacks. When Hoy is launched from a
-    // .desktop shortcut inside an AppImage, $SHELL is often unset so the
-    // sidecar inherits a minimal PATH that lacks version-manager entries (nvm,
-    // fnm, volta, bun standalone). Trying well-known shells gives us a chance
-    // to source the user's profile and recover the full PATH.
-    let shells: Vec<String> = std::env::var("SHELL")
-        .ok()
-        .into_iter()
-        .chain(
-            ["/bin/zsh", "/bin/bash", "/bin/sh"]
-                .iter()
-                .map(|s| s.to_string()),
-        )
-        .collect();
+    let shells = resolve_login_shells();
     // A login shell (`-l`) sources the user's profile/rc files, which may
     // contain arbitrary commands. Retain ownership of the child handle
     // to kill it on timeout; no leaked OS thread or orphaned child
@@ -2325,5 +2384,112 @@ mod live_tests {
             path_value.split(':').any(|p| p == "/usr/bin"),
             "resolved PATH should contain /usr/bin, got: {path_value}"
         );
+    }
+
+    // HOY-341: when $SHELL matches a hardcoded fallback path, the path must
+    // only appear once in the shell list (no duplicate /bin/zsh after the
+    // SHELL-env /bin/zsh).
+    #[cfg(unix)]
+    #[test]
+    fn resolve_login_shells_dedupes_shell_env() {
+        let saved = std::env::var("SHELL").ok();
+        std::env::set_var("SHELL", "/bin/zsh");
+        let shells = resolve_login_shells();
+        if let Some(ref val) = saved {
+            std::env::set_var("SHELL", val);
+        } else {
+            std::env::remove_var("SHELL");
+        }
+
+        assert!(shells.iter().any(|s| s == "/bin/zsh"), "should contain zsh");
+        assert!(
+            shells.iter().filter(|s| *s == "/bin/zsh").count() == 1,
+            "zsh must not appear twice; got: {shells:?}"
+        );
+    }
+
+    // HOY-341: when $SHELL does NOT match any fallback, the list is the
+    // env value plus all three hardcoded fallbacks.
+    #[cfg(unix)]
+    #[test]
+    fn resolve_login_shells_chains_env_plus_fallbacks() {
+        let saved = std::env::var("SHELL").ok();
+        std::env::set_var("SHELL", "/usr/local/bin/foo");
+        let shells = resolve_login_shells();
+        if let Some(ref val) = saved {
+            std::env::set_var("SHELL", val);
+        } else {
+            std::env::remove_var("SHELL");
+        }
+
+        assert_eq!(shells[0], "/usr/local/bin/foo", "env shell must be first");
+        // The passwd shell may add an extra entry, so at minimum the env
+        // shell + fallbacks are present.
+        let has_zsh = shells.iter().any(|s| s == "/bin/zsh");
+        let has_bash = shells.iter().any(|s| s == "/bin/bash");
+        let has_sh = shells.iter().any(|s| s == "/bin/sh");
+        assert!(has_zsh, "should contain /bin/zsh; got: {shells:?}");
+        assert!(has_bash, "should contain /bin/bash; got: {shells:?}");
+        assert!(has_sh, "should contain /bin/sh; got: {shells:?}");
+    }
+
+    // HOY-341: no $SHELL in env, the fallback list starts with the passwd
+    // login shell (on Unix) then the hardcoded ones.
+    #[cfg(unix)]
+    #[test]
+    fn resolve_login_shells_no_env_uses_passwd_then_fallbacks() {
+        let saved = std::env::var("SHELL").ok();
+        std::env::remove_var("SHELL");
+        let shells = resolve_login_shells();
+        if let Some(ref val) = saved {
+            std::env::set_var("SHELL", val);
+        }
+
+        // The passwd shell should be first if retrieved successfully.
+        let has_zsh = shells.iter().any(|s| s == "/bin/zsh");
+        let has_bash = shells.iter().any(|s| s == "/bin/bash");
+        let has_sh = shells.iter().any(|s| s == "/bin/sh");
+        assert!(has_zsh, "should contain /bin/zsh; got: {shells:?}");
+        assert!(has_bash, "should contain /bin/bash; got: {shells:?}");
+        assert!(has_sh, "should contain /bin/sh; got: {shells:?}");
+    }
+
+    // HOY-345: verify the passwd login shell is included in the list.
+    // If getpwuid_r returns a shell, it must appear before the hardcoded
+    // fallbacks. This guards against regressions that would drop the
+    // NixOS/Guix store path from the chain.
+    #[cfg(unix)]
+    #[test]
+    fn resolve_login_shells_includes_passwd_shell_before_fallbacks() {
+        // Save and clear SHELL so we can see the passwd entry in isolation.
+        let saved = std::env::var("SHELL").ok();
+        std::env::remove_var("SHELL");
+        let shells = resolve_login_shells();
+        if let Some(ref val) = saved {
+            std::env::set_var("SHELL", val);
+        }
+
+        let passwd_shell = get_user_login_shell();
+        if let Some(pw) = &passwd_shell {
+            assert!(
+                shells.contains(pw),
+                "passwd shell {pw} missing from list: {shells:?}"
+            );
+            // The passwd shell (if present) must come before any hardcoded
+            // fallback that it doesn't match.
+            if pw != "/bin/zsh" && pw != "/bin/bash" && pw != "/bin/sh" {
+                let pw_idx = shells.iter().position(|s| s == pw).unwrap();
+                let hardcoded_positions: Vec<usize> = ["/bin/zsh", "/bin/bash", "/bin/sh"]
+                    .iter()
+                    .filter_map(|&f| shells.iter().position(|s| s == f))
+                    .collect();
+                if let Some(&min_hc) = hardcoded_positions.iter().min() {
+                    assert!(
+                        pw_idx < min_hc,
+                        "passwd shell {pw} at index {pw_idx} must come before first fallback at {min_hc}; shells={shells:?}"
+                    );
+                }
+            }
+        }
     }
 }

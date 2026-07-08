@@ -43,6 +43,8 @@ tauri-plugin-single-instance = "2"
 # Keep the machine awake while an agent turn is streaming (HOY-188). Driven from
 # a single owner thread in keep_awake.rs (Windows thread-affinity requirement).
 keepawake = "0.6"
+# User's login shell from passwd (HOY-345: NixOS/Guix store paths).
+libc = "0.2"
 
 [dev-dependencies]
 # test-util enables tokio's paused virtual clock (start_paused) for the
