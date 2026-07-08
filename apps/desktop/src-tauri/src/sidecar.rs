@@ -2471,7 +2471,10 @@ mod live_tests {
 
         let passwd_shell = get_user_login_shell();
         if let Some(pw) = &passwd_shell {
-            assert!(shells.contains(pw), "passwd shell {pw} missing from list: {shells:?}");
+            assert!(
+                shells.contains(pw),
+                "passwd shell {pw} missing from list: {shells:?}"
+            );
             // The passwd shell (if present) must come before any hardcoded
             // fallback that it doesn't match.
             if pw != "/bin/zsh" && pw != "/bin/bash" && pw != "/bin/sh" {
