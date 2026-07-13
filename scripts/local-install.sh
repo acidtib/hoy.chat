@@ -5,13 +5,13 @@
 #
 # Installs to:
 #   ~/.local/share/hoy-desktop/   app binary, sidecar binary, pi-payload
-#   ~/.local/bin/hoy              launcher (env pins below)
+#   ~/.local/bin/hoy              launcher
 #   ~/.local/share/applications/hoy-desktop.desktop
 #
-# The launcher exports HOY_SIDECAR_BIN / HOY_SIDECAR_PAYLOAD because
-# resolve_sidecar_paths (sidecar.rs) prefers the repo's packages/sidecar dev
-# artifacts over next-to-exe whenever the repo exists; without the pin the
-# installed release would run whatever sidecar dev last built.
+# The installed app resolves its sidecar and payload beside the executable.
+# Do not pin those paths in the launcher: after a self-update the executable is
+# an AppImage whose matching sidecar lives inside its mounted resources. Pinning
+# the original local-install artifacts would mix protocol versions.
 #
 # Usage: bun run local:install   (re-run to upgrade)
 set -euo pipefail
@@ -32,7 +32,9 @@ echo "[2/4] release build (no bundle; the final link sits quiet for a minute or 
 echo "[3/4] install to $APP_DIR"
 mkdir -p "$APP_DIR" "$BIN_DIR" "$DESKTOP_DIR" "$ICON_DIR"
 install -m 755 "$ROOT/apps/desktop/src-tauri/target/release/hoy-desktop" "$APP_DIR/hoy-desktop"
-install -m 755 "$ROOT/packages/sidecar/hoy-pi-$TRIPLE" "$APP_DIR/hoy-pi-$TRIPLE"
+# Match Tauri's packaged externalBin name. build.sh keeps the target triple on
+# the source artifact, while packaged binaries have it stripped.
+install -m 755 "$ROOT/packages/sidecar/hoy-pi-$TRIPLE" "$APP_DIR/hoy-pi"
 rm -rf "$APP_DIR/pi-payload"
 cp -r "$ROOT/packages/sidecar/pi-payload" "$APP_DIR/pi-payload"
 install -m 644 "$ROOT/apps/desktop/src-tauri/icons/128x128.png" "$ICON_DIR/hoy-desktop.png"
@@ -40,10 +42,7 @@ install -m 644 "$ROOT/apps/desktop/src-tauri/icons/128x128.png" "$ICON_DIR/hoy-d
 echo "[4/4] launcher and desktop entry"
 cat > "$BIN_DIR/hoy" <<EOF
 #!/usr/bin/env bash
-# Installed by scripts/local-install.sh (HOY-207). Env pins keep the installed
-# release on its own sidecar instead of the repo's dev artifacts.
-export HOY_SIDECAR_BIN="$APP_DIR/hoy-pi-$TRIPLE"
-export HOY_SIDECAR_PAYLOAD="$APP_DIR/pi-payload"
+# Installed by scripts/local-install.sh (HOY-207).
 export GDK_BACKEND=x11
 # webkit2gtk's DMABUF renderer fails on this GPU ("Failed to create GBM
 # buffer"), leaving the webview black; fall back to shared-memory rendering.
@@ -68,7 +67,7 @@ command -v update-desktop-database >/dev/null && update-desktop-database "$DESKT
 echo
 echo "done. installed:"
 echo "  app:      $APP_DIR/hoy-desktop"
-echo "  sidecar:  $APP_DIR/hoy-pi-$TRIPLE"
+echo "  sidecar:  $APP_DIR/hoy-pi"
 echo "  launcher: $BIN_DIR/hoy"
 echo "  desktop:  $DESKTOP_DIR/hoy-desktop.desktop"
 echo "launch with: hoy"

@@ -1135,7 +1135,8 @@ impl SidecarManager {
     pub fn new_with_resolver<R: tauri::Runtime>(resolver: &tauri::path::PathResolver<R>) -> Self {
         let resource_payload = resolver
             .resolve("pi-payload", tauri::path::BaseDirectory::Resource)
-            .ok();
+            .ok()
+            .filter(|path| path.exists());
         Self::from_paths(resolve_sidecar_paths(resource_payload))
     }
 
@@ -1606,10 +1607,11 @@ impl Default for SidecarManager {
 }
 
 // Locate the bundled sidecar binary and its PI_PACKAGE_DIR asset payload.
-// Order: explicit env overrides, then the dev build under sidecar/, then the
-// bundled artifacts of a packaged app. `resource_payload` is the Tauri-resolved
-// $RESOURCE/pi-payload (Some only when an AppHandle is available); the binary is
-// shipped via externalBin next to the executable with its triple stripped.
+// Order: explicit env overrides, then bundled artifacts when the resolved
+// resource payload exists, then the dev build under sidecar/. Keeping packaged
+// resources ahead of repo artifacts prevents an installed app from mixing its
+// Rust bridge with a stale development sidecar. The binary is shipped via
+// externalBin next to the executable with its triple stripped.
 fn resolve_sidecar_paths(resource_payload: Option<PathBuf>) -> (PathBuf, PathBuf) {
     let triple = env!("TARGET_TRIPLE");
 
@@ -1660,14 +1662,17 @@ fn select_sidecar_paths(
     resource_payload: Option<PathBuf>,
 ) -> (PathBuf, PathBuf) {
     let bundled_bin_name = format!("hoy-pi{}", std::env::consts::EXE_SUFFIX);
+    let bundled_bin = resource_payload
+        .as_ref()
+        .and_then(|_| exe_dir.map(|d| d.join(&bundled_bin_name)));
     let bin = env_bin
+        .or(bundled_bin)
         .or(dev_bin)
-        .or_else(|| exe_dir.map(|d| d.join(&bundled_bin_name)))
         .unwrap_or_else(|| PathBuf::from(&bundled_bin_name));
 
     let payload = env_payload
-        .or(dev_payload)
         .or(resource_payload)
+        .or(dev_payload)
         .or_else(|| exe_dir.map(|d| d.join("pi-payload")))
         .unwrap_or_else(|| PathBuf::from("pi-payload"));
 
@@ -2266,7 +2271,7 @@ mod live_tests {
         assert!(matches!(out, Ok(v) if v == json!("late answer")));
     }
 
-    // HOY-193: the sidecar path precedence chain (env > dev > bundled).
+    // HOY-193: the sidecar path precedence chain.
     #[test]
     fn select_paths_env_override_wins() {
         let (bin, payload) = select_sidecar_paths(
@@ -2282,7 +2287,7 @@ mod live_tests {
     }
 
     #[test]
-    fn select_paths_prefers_dev_when_present() {
+    fn select_paths_prefers_bundled_resources_when_present() {
         let (bin, payload) = select_sidecar_paths(
             None,
             None,
@@ -2290,6 +2295,23 @@ mod live_tests {
             Some(PathBuf::from("/dev/pi-payload")),
             Some(Path::new("/exe")),
             Some(PathBuf::from("/res/pi-payload")),
+        );
+        assert_eq!(
+            bin,
+            Path::new("/exe").join(format!("hoy-pi{}", std::env::consts::EXE_SUFFIX))
+        );
+        assert_eq!(payload, PathBuf::from("/res/pi-payload"));
+    }
+
+    #[test]
+    fn select_paths_uses_dev_without_bundled_resources() {
+        let (bin, payload) = select_sidecar_paths(
+            None,
+            None,
+            Some(PathBuf::from("/dev/pi-triple")),
+            Some(PathBuf::from("/dev/pi-payload")),
+            Some(Path::new("/exe")),
+            None,
         );
         assert_eq!(bin, PathBuf::from("/dev/pi-triple"));
         assert_eq!(payload, PathBuf::from("/dev/pi-payload"));
