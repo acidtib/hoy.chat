@@ -162,7 +162,7 @@ struct ProviderDef {
     env: &'static str,
 }
 
-// API-key providers Pi supports, from pi-coding-agent 0.80.3
+// API-key providers Pi supports, from pi-coding-agent 0.80.6
 // core/provider-display-names.js (BUILT_IN_PROVIDER_DISPLAY_NAMES). Excludes
 // amazon-bedrock and google-vertex, which use cloud auth (AWS creds / gcloud ADC)
 // rather than a plain api_key entry. `env` is Pi's actual env var for that

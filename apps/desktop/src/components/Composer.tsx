@@ -109,6 +109,7 @@ const THINKING_LABELS: Record<ThinkingLevel, string> = {
   medium: "Medium",
   high: "High",
   xhigh: "X-High",
+  max: "Max",
 };
 
 // Thread permission modes (HOY-186), in selector order. Labels are display

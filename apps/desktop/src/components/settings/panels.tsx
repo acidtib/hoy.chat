@@ -47,7 +47,7 @@ import { useSessionStore } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 
 // Pinned Pi version (packages/sidecar; see docs/pi-version-bump.md). Surfaced in About.
-const PI_VERSION = "0.80.3";
+const PI_VERSION = "0.80.6";
 
 export function PanelHeader({
   title,

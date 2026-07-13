@@ -1,10 +1,61 @@
 # Pi RPC coverage
 
-What Hoy uses of pi 0.80.3's RPC surface (`--mode rpc`, JSONL over stdio), against
+What Hoy uses of pi 0.80.6's RPC surface (`--mode rpc`, JSONL over stdio), against
 the full command and event set in
 `@earendil-works/pi-coding-agent/dist/modes/rpc/rpc-types.d.ts`. Snapshot from a
-docs-and-source review on 2026-06-30 (bumped 0.80.2 -> 0.80.3); re-check on every
+docs-and-source review on 2026-07-13 (bumped 0.80.3 -> 0.80.6); re-check on every
 pi version bump.
+
+## Bump review: 0.80.3 -> 0.80.6
+
+No RPC command was added or removed. One lifecycle event and one thinking level
+required Hoy changes. Verified against the installed 0.80.6 source and the
+0.80.4 and 0.80.6 release notes:
+
+- **`agent_settled` is now the terminal streaming boundary.** Pi 0.80.4 added
+  this extension and RPC event to mean the agent is fully idle after retries,
+  auto-compaction, and queued continuation. Hoy previously detached its Tauri
+  Channel and emitted `Done` on a non-retrying `agent_end`; it now retains the
+  channel until `agent_settled`. `agent_end.willRetry` remains a retry-status
+  signal. This also lets post-run `compaction_end` and queue events reach the
+  renderer before `Done`.
+- **The new `max` thinking level is wired end to end.** Pi 0.80.6 added `max`
+  above `xhigh` to its SDK and RPC `ThinkingLevel`. Hoy's shared TS union,
+  validator, selector order, and composer label now accept it. The existing Rust
+  `set_thinking_level` command sends the string unchanged, and Pi clamps it for
+  models that do not support it.
+- **RPC commands and response fields are otherwise unchanged.** The installed
+  `RpcCommand` union remains the same 31-command surface as 0.80.3. The separate
+  extension UI response input and the request/response unions Hoy mirrors are
+  unchanged.
+- **Edit-tool prompt guidelines are byte-identical** to 0.80.3
+  (`core/tools/{read,edit,write}.js`). The verbatim block in
+  `hoy-system-prompt.ts` remains accurate, and its docs-block GitHub tag now
+  points to `v0.80.6`.
+- **Provider list and environment-variable mapping are unchanged.** The installed
+  `provider-display-names.js` and pi-ai `env-api-keys.js` match Hoy's provider
+  definitions. GPT-5.6 metadata, Copilot Claude Sonnet 5, corrected model
+  metadata, transport fixes, retry classification, and long-context pricing are
+  inherited through `get_available_models` and Pi's usage/cost values. They need
+  no provider-specific Hoy code.
+- **Sidecar imports still resolve and the compiled build succeeds.** The package
+  root still exports `createAgentSessionServices`,
+  `createAgentSessionFromServices`, `runRpcMode`, and the resource-loader options
+  used by Hoy. Pi 0.80.4's new model-resolution, session-storage,
+  `InlineExtension`, entry-renderer, and provider-header APIs are optional SDK
+  surfaces and do not replace Hoy's current factories or RPC bridge.
+- **No settings UI is required for `showCacheMissNotices`.** It controls Pi's
+  interactive transcript rendering, while Hoy renders its own transcript from
+  RPC events. Project-local resource configuration is also a Pi CLI/TUI surface;
+  Hoy's branded resource loader behavior is unchanged.
+- **Telemetry remains forced off.** Pi 0.80.4 removed Vercel AI Gateway's default
+  attribution headers, but other telemetry-covered providers remain. Hoy still
+  sets `PI_TELEMETRY=0` on every sidecar spawn.
+- Non-RPC fixes relevant to Hoy arrive without contract changes: null imported
+  message content is normalized, truncated tool calls fail instead of hanging,
+  Bun socket drops retry, Windows project context traversal no longer hangs,
+  split-turn compaction is serialized, stale pre-compaction usage no longer
+  affects output budgeting, and signed empty Claude thinking blocks are kept.
 
 ## Bump review: 0.80.2 -> 0.80.3 (HOY-221)
 
@@ -76,12 +127,11 @@ settlement are now dropped instead of emitting stale `tool_execution_update`
 Status key: **used** (wired end to end), **partial** (some of the surface wired),
 **planned** (Linear ticket filed), **unused** (never invoked or mapped).
 
-## Commands (10 of 32 used, on pinned 0.80.3)
+## Client inputs (15 of 32 used, on pinned 0.80.6)
 
-The 32 rows are the 0.80.3 surface. The last two rows (`get_entries`, `get_tree`)
-are the 0.80.3 additions, now wired as a read surface (Rust command + typed IPC
-wrapper + types) with no UI yet; the `/tree` navigator that consumes them is a
-follow-up.
+The 32 rows are the 31 `RpcCommand` variants plus the separate
+`extension_ui_response` input. The last two command additions (`get_entries`,
+`get_tree`) arrived in 0.80.3 and are now wired through the `/tree` navigator.
 
 | RPC command | What it does | Hoy status | Notes |
 |---|---|---|---|
@@ -97,7 +147,7 @@ follow-up.
 | `follow_up` | Queue a message for after the turn ends | covered (HOY-218) | Driven via `prompt` + `streamingBehavior:"followUp"` (same `_queueFollowUp` path); standalone command not invoked |
 | `set_steering_mode` | Queue delivery: `all` or `one-at-a-time` | unused | |
 | `set_follow_up_mode` | Same for follow-ups | unused | |
-| `set_thinking_level` | Set thinking: off, minimal, low, medium, high, xhigh | used (HOY-204) | `commands.rs:90`; composer dropdown drives it via `store.selectThinkingLevel`, re-synced from `get_state` (pi clamps per model) |
+| `set_thinking_level` | Set thinking: off, minimal, low, medium, high, xhigh, max | used (HOY-204) | `commands.rs:90`; composer dropdown drives it via `store.selectThinkingLevel`, re-synced from `get_state` (pi clamps per model); `max` added in 0.80.6 |
 | `cycle_thinking_level` | Step through thinking levels | unused | |
 | `cycle_model` | Step through scoped models | unused | Deferred with keyboard shortcuts |
 | `compact` | Manual compaction, optional custom instructions | used (HOY-229) | "Compact now" popover near the usage meter; reads the CompactionResult from the response (longer request timeout) |
@@ -126,7 +176,8 @@ follow-up.
 | `message_update` (thinking_start/delta/end) | used (HOY-211) | Maps to `Reasoning` (`sidecar.rs`); folds into the turn's reasoning block, drives the live "Thinking for Ns" timer |
 | `message_end` | partial | Only `error`/`aborted` stop reasons surface, `sidecar.rs:379` |
 | `tool_execution_start/update/end` | used | `Tool` events with phase, `sidecar.rs:393` |
-| `agent_end` | used | Terminal `Done` unless `willRetry`, `sidecar.rs:336` |
+| `agent_end` | partial | `willRetry` surfaces retry status; no longer terminal because compaction or queued continuation may follow |
+| `agent_settled` | used | Terminal `Done` and Channel detach after the full run is idle (0.80.4) |
 | `auto_retry_start` | used | `Status` "retrying" |
 | `compaction_start` | used | `Status` "compacting"; now also carries `reason` and `willRetry` (0.79.10) and a post-compaction token estimate (0.79.8), unused |
 | `compaction_end` | used (HOY-229) | Maps to `CompactionEnd` (reason, aborted, willRetry, token estimate); auto-path notice + usage refresh over the streaming sink |

@@ -494,7 +494,7 @@ impl PiProcess {
 
     // Attach the prompt's Channel so the reader thread forwards this session's
     // stream to it. Replaces any previous sink (one prompt streams per session at
-    // a time). The reader detaches it on the terminal agent_end.
+    // a time). The reader detaches it on the terminal agent_settled event.
     pub fn set_sink(&self, channel: Channel<AgentEvent>) {
         *self.sink.lock().unwrap() = Some(channel);
     }
@@ -704,23 +704,26 @@ fn route_message(
         return;
     }
 
-    // agent_end terminates a turn unless Pi is about to auto-retry, in which case
-    // more events follow and we keep the channel attached.
-    if ty == Some("agent_end") {
-        let will_retry = value
-            .get("willRetry")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let mut guard = sink.lock().unwrap();
-        if will_retry {
+    // Pi 0.80.4 added agent_settled as the fully-idle boundary. agent_end can be
+    // followed by retry, auto-compaction, or queued continuation, so it must not
+    // detach the channel. Its willRetry flag remains useful for status only.
+    match classify_agent_lifecycle(ty, &value) {
+        AgentLifecycle::Retrying => {
+            let guard = sink.lock().unwrap();
             if let Some(channel) = guard.as_ref() {
                 let _ = channel.send(AgentEvent::Status {
                     label: "retrying".into(),
                 });
             }
-        } else if let Some(channel) = guard.take() {
-            let _ = channel.send(AgentEvent::Done);
         }
+        AgentLifecycle::Settled => {
+            if let Some(channel) = sink.lock().unwrap().take() {
+                let _ = channel.send(AgentEvent::Done);
+            }
+        }
+        AgentLifecycle::Ignore => {}
+    }
+    if matches!(ty, Some("agent_end" | "agent_settled")) {
         return;
     }
 
@@ -732,9 +735,31 @@ fn route_message(
 }
 
 // Map an unsolicited Pi RPC event to a frontend AgentEvent, or None to ignore it
-// (start/end-of-text markers, thinking deltas, queue updates, ...). agent_end and
-// command responses are handled by the caller. Mapping is pinned to Pi 0.78.0's
+// (start/end-of-text markers, thinking deltas, queue updates, ...). agent lifecycle and
+// command responses are handled by the caller. Mapping is pinned to Pi 0.80.6's
 // AgentSessionEvent + AssistantMessageEvent shapes.
+#[derive(Debug, PartialEq, Eq)]
+enum AgentLifecycle {
+    Retrying,
+    Settled,
+    Ignore,
+}
+
+fn classify_agent_lifecycle(ty: Option<&str>, value: &Value) -> AgentLifecycle {
+    match ty {
+        Some("agent_end")
+            if value
+                .get("willRetry")
+                .and_then(Value::as_bool)
+                .unwrap_or(false) =>
+        {
+            AgentLifecycle::Retrying
+        }
+        Some("agent_settled") => AgentLifecycle::Settled,
+        _ => AgentLifecycle::Ignore,
+    }
+}
+
 // Outcome of classifying an extension_ui_request. Kept pure (no stdin/sink I/O)
 // so route_message stays a thin dispatcher and this is unit-testable.
 #[derive(Debug)]
@@ -750,7 +775,7 @@ enum ExtUiOutcome {
 // Map an extension_ui_request to a frontend event. Dialogs become
 // PermissionRequest (input/editor carry placeholder/prefill and answer with the
 // same {value} shape as select); fire-and-forget methods become their own
-// events. Mirrors Pi 0.80.3's RpcExtensionUIRequest union.
+// events. Mirrors Pi 0.80.6's RpcExtensionUIRequest union.
 fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome {
     let str_field = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
     let str_array = |key: &str| {
@@ -985,7 +1010,7 @@ fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
                     .and_then(Value::as_u64),
             })
         }
-        // The sink is per-active-prompt (set in send_prompt, taken on agent_end),
+        // The sink is per-active-prompt (set in send_prompt, taken on agent_settled),
         // so a queue_update emitted with no active turn is dropped. In practice
         // every queue mutation we care about (enqueue on steer/followUp, dequeue
         // on delivery) happens while a turn is streaming, so the sink is attached.
@@ -1937,6 +1962,22 @@ mod live_tests {
             map_pi_event(Some("message_update"), &v),
             Some(AgentEvent::Text { delta }) if delta == "hi"
         ));
+    }
+
+    #[test]
+    fn agent_lifecycle_uses_settled_as_terminal_boundary() {
+        assert_eq!(
+            classify_agent_lifecycle(Some("agent_end"), &json!({ "willRetry": false })),
+            AgentLifecycle::Ignore
+        );
+        assert_eq!(
+            classify_agent_lifecycle(Some("agent_end"), &json!({ "willRetry": true })),
+            AgentLifecycle::Retrying
+        );
+        assert_eq!(
+            classify_agent_lifecycle(Some("agent_settled"), &json!({})),
+            AgentLifecycle::Settled
+        );
     }
 
     #[test]
