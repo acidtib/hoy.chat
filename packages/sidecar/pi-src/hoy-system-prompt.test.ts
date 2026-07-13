@@ -20,7 +20,7 @@ import {
   PROPOSED_PLAN_FORMAT,
 } from "./hoy-system-prompt";
 
-// Pi 0.80.3 edit guidelines (core/tools/edit.js). The prompt must carry these
+// Pi 0.80.6 edit guidelines (core/tools/edit.js). The prompt must carry these
 // verbatim; replacement strips pi's ability to inject them.
 const PI_EDIT_GUIDELINES = [
   "Use edit for precise changes (edits[].oldText must match exactly)",
@@ -66,7 +66,7 @@ describe("hoy system prompt assembly", () => {
 
     // Docs block points at the pinned GitHub tag, never at local package paths.
     expect(prompt).toContain(
-      "https://raw.githubusercontent.com/earendil-works/pi/v0.80.3/packages/coding-agent/docs/extensions.md",
+      "https://raw.githubusercontent.com/earendil-works/pi/v0.80.6/packages/coding-agent/docs/extensions.md",
     );
     expect(prompt).not.toContain("node_modules");
 

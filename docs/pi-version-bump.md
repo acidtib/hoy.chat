@@ -2,7 +2,7 @@
 
 Pi (`@earendil-works/pi-coding-agent`) is pinned to an exact version; its SDK/RPC
 surface is still evolving, so every bump is deliberate. Currently pinned:
-**0.80.3** (`packages/sidecar/pi-src/package.json`).
+**0.80.6** (`packages/sidecar/pi-src/package.json`).
 
 On every bump:
 

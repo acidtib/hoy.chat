@@ -8,7 +8,7 @@
 //
 // SHELL INVOCATION: we run the command through Pi's OWN shell resolution rather
 // than hard-coding a shell. Recon said to import Pi's `execCommand` from the
-// package root, but in the pinned Pi (0.80.3) `execCommand` is NOT re-exported
+// package root, but in the pinned Pi (0.80.6) `execCommand` is NOT re-exported
 // from the package root (only `getShellConfig`, `truncateTail`, and
 // `createLocalBashOperations` are) and its dist subpath is blocked by the
 // package `exports` map, so it cannot be imported. Instead we resolve the shell

@@ -65,7 +65,7 @@ and event shapes were confirmed against the installed version's
 
 If a future Pi release breaks `bun build --compile`: ship Node alongside and
 invoke `node dist/cli.js`, or bundle Pi's source with a minimal Node runtime.
-Neither was required at 0.80.3.
+Neither was required at 0.80.6.
 
 ## Files
 

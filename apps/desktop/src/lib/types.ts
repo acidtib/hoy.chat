@@ -274,9 +274,9 @@ export function modelSupportsImages(model?: ModelInfo | null): boolean {
 }
 
 export type ThinkingLevel =
-  | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export const THINKING_LEVELS: ThinkingLevel[] =
-  ["off", "minimal", "low", "medium", "high", "xhigh"];
+  ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 // Guard for registry-supplied thinking strings (a subagent def's `thinking` is
 // a free string until resolved). Keeps a malformed value from being cast
