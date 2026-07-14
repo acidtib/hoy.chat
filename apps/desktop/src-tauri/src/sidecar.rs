@@ -736,7 +736,7 @@ fn route_message(
 
 // Map an unsolicited Pi RPC event to a frontend AgentEvent, or None to ignore it
 // (start/end-of-text markers, thinking deltas, queue updates, ...). agent lifecycle and
-// command responses are handled by the caller. Mapping is pinned to Pi 0.80.6's
+// command responses are handled by the caller. Mapping is pinned to Pi 0.80.7's
 // AgentSessionEvent + AssistantMessageEvent shapes.
 #[derive(Debug, PartialEq, Eq)]
 enum AgentLifecycle {
@@ -775,7 +775,7 @@ enum ExtUiOutcome {
 // Map an extension_ui_request to a frontend event. Dialogs become
 // PermissionRequest (input/editor carry placeholder/prefill and answer with the
 // same {value} shape as select); fire-and-forget methods become their own
-// events. Mirrors Pi 0.80.6's RpcExtensionUIRequest union.
+// events. Mirrors Pi 0.80.7's RpcExtensionUIRequest union.
 fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome {
     let str_field = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
     let str_array = |key: &str| {

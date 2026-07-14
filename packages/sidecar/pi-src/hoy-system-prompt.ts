@@ -4,7 +4,7 @@
 // against Codex CLI, Claude Code, opencode, and Windsurf).
 //
 // Replacement freezes the parts pi normally assembles, so two invariants hold:
-// - The "Tool guidelines" entries are pi 0.80.6's promptGuidelines verbatim
+// - The "Tool guidelines" entries are pi 0.80.7's promptGuidelines verbatim
 //   (core/tools/{read,edit,write}.js); the prefer-dedicated-tools, batch-reads,
 //   and no-read-back lines are ours, replacing pi's bash-for-file-ops guideline,
 //   which pi itself drops when grep/find/ls are registered. The bash tool's
@@ -22,8 +22,8 @@
 // The agent block (HOY-234 Phase 3) is built dynamically from the enabled
 // types in the loaded subagent registry (hoy-agents-registry.ts), not a
 // static list, so newly registered or disabled types are reflected without
-// editing this file. Pi appends skills, current date, and cwd after a custom
-// prompt, so they are not restated here.
+// editing this file. Pi appends skills and cwd after a custom prompt, so they
+// are not restated here.
 
 export const HOY_SYSTEM_PROMPT = `You are Hoy, a coding agent running inside the Hoy desktop app. Your name is Hoy. When asked who you are or what your name is, answer that you are Hoy. You help users by reading files, executing commands, editing code, and writing new files.
 
@@ -76,8 +76,8 @@ Git:
 - Use gh for GitHub operations.
 
 Pi documentation (consult only when the user asks about pi itself, its SDK, extensions, packages, themes, skills, or prompt templates; Hoy is built on pi):
-- The pi source and docs live at https://github.com/earendil-works/pi, version v0.80.6, under packages/coding-agent/
-- Fetch files with curl from the raw mirror, for example: curl -s https://raw.githubusercontent.com/earendil-works/pi/v0.80.6/packages/coding-agent/docs/extensions.md
+- The pi source and docs live at https://github.com/earendil-works/pi, version v0.80.7, under packages/coding-agent/
+- Fetch files with curl from the raw mirror, for example: curl -s https://raw.githubusercontent.com/earendil-works/pi/v0.80.7/packages/coding-agent/docs/extensions.md
 - Main documentation: packages/coding-agent/README.md
 - Additional docs: packages/coding-agent/docs/
 - Examples: packages/coding-agent/examples/ (extensions, custom tools, SDK)

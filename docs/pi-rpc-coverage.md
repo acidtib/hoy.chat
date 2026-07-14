@@ -1,10 +1,42 @@
 # Pi RPC coverage
 
-What Hoy uses of pi 0.80.6's RPC surface (`--mode rpc`, JSONL over stdio), against
+What Hoy uses of pi 0.80.7's RPC surface (`--mode rpc`, JSONL over stdio), against
 the full command and event set in
 `@earendil-works/pi-coding-agent/dist/modes/rpc/rpc-types.d.ts`. Snapshot from a
-docs-and-source review on 2026-07-13 (bumped 0.80.3 -> 0.80.6); re-check on every
+docs-and-source review on 2026-07-14 (bumped 0.80.6 -> 0.80.7); re-check on every
 pi version bump.
+
+## Bump review: 0.80.6 -> 0.80.7
+
+No RPC integration changes are required. Verified against the installed 0.80.7
+source and the 0.80.7 release notes:
+
+- **RPC and extension UI declarations are unchanged.** The command union,
+  response fields, events, and `RpcExtensionUIRequest` declarations match
+  0.80.6, so `AgentEvent`, command wrappers, and extension UI mappings remain
+  unchanged. The optional `addedToolNames` result used by dynamic tool loading
+  is not part of Hoy's renderer contract; Hoy's extension tools remain active at
+  session startup.
+- **Radius is supported for both API keys and OAuth.** Hoy exposes Radius in the
+  backend provider registry with `PI_GATEWAY_API_KEY`, adds its built-in OAuth
+  provider id to authentication refreshes, and uses a label-derived monogram
+  until an approved glyph is available.
+- **Custom prompts no longer receive an appended current date.** Prompt assembly
+  tests now reject `Current date:` while retaining the working-directory
+  assertion. The read, edit, and write `promptGuidelines` are byte-identical to
+  0.80.6, so Hoy's load-bearing edit guidance is unchanged.
+- **SDK imports remain available.** The package root exports used by the sidecar
+  and its in-process extension factories are unchanged.
+- **The session-affinity rename does not break in-repo configuration.** Hoy owns
+  no `sendSessionIdHeader` setting and does not rewrite user-owned
+  `~/.hoy/models.json`. Custom OpenAI Responses entries using
+  `compat.sendSessionIdHeader: false` must replace it with
+  `compat.sessionAffinityFormat: "openai-nosession"`.
+- **Other upstream changes are inherited without Hoy contracts.** These include
+  dynamic-tool loading, Fable 5 thinking levels, `toolChoice`, provider
+  transport fixes, and model metadata fixes.
+- **Telemetry remains forced off.** Hoy continues to set `PI_TELEMETRY=0` on
+  every sidecar spawn, including RPC sessions, OAuth login, and subagent listing.
 
 ## Bump review: 0.80.3 -> 0.80.6
 
@@ -127,7 +159,7 @@ settlement are now dropped instead of emitting stale `tool_execution_update`
 Status key: **used** (wired end to end), **partial** (some of the surface wired),
 **planned** (Linear ticket filed), **unused** (never invoked or mapped).
 
-## Client inputs (15 of 32 used, on pinned 0.80.6)
+## Client inputs (15 of 32 used, on pinned 0.80.7)
 
 The 32 rows are the 31 `RpcCommand` variants plus the separate
 `extension_ui_response` input. The last two command additions (`get_entries`,

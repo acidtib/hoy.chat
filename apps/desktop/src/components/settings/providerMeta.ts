@@ -133,7 +133,7 @@ export interface SubscriptionProvider {
   // Brand glyph slug (providerIcons). The subscription mark differs from the
   // api-key row: "anthropic" login is the Claude subscription, so it wears the
   // Claude mark, not the Anthropic corporate mark.
-  glyph: string;
+  glyph?: string;
 }
 
 export const SUBSCRIPTION_PROVIDERS: SubscriptionProvider[] = [
@@ -154,5 +154,10 @@ export const SUBSCRIPTION_PROVIDERS: SubscriptionProvider[] = [
     label: "GitHub Copilot",
     subtitle: "Bring your Copilot subscription",
     glyph: "copilot",
+  },
+  {
+    id: SUBSCRIPTION_PROVIDER_IDS[3],
+    label: "Radius",
+    subtitle: "Sign in with Radius",
   },
 ];

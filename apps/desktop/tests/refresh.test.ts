@@ -13,7 +13,13 @@ mockIpcModule({ listModels, providerStatuses, supportedProviders });
 const { useSessionStore } = await import("@/state/store");
 const { refreshProviderData } = await import("@/lib/refresh");
 
-const STATUS_IDS = ["anthropic", "google", "openai-codex", "github-copilot"];
+const STATUS_IDS = [
+  "anthropic",
+  "google",
+  "openai-codex",
+  "github-copilot",
+  "radius",
+];
 
 const PROVIDERS: ProviderInfo[] = [
   { id: "anthropic", label: "Anthropic", env: "ANTHROPIC_API_KEY" },

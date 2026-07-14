@@ -162,7 +162,7 @@ struct ProviderDef {
     env: &'static str,
 }
 
-// API-key providers Pi supports, from pi-coding-agent 0.80.6
+// API-key providers Pi supports, from pi-coding-agent 0.80.7
 // core/provider-display-names.js (BUILT_IN_PROVIDER_DISPLAY_NAMES). Excludes
 // amazon-bedrock and google-vertex, which use cloud auth (AWS creds / gcloud ADC)
 // rather than a plain api_key entry. `env` is Pi's actual env var for that
@@ -188,6 +188,11 @@ const PROVIDERS: &[ProviderDef] = &[
         id: "openrouter",
         label: "OpenRouter",
         env: "OPENROUTER_API_KEY",
+    },
+    ProviderDef {
+        id: "radius",
+        label: "Radius",
+        env: "PI_GATEWAY_API_KEY",
     },
     ProviderDef {
         id: "google",
@@ -601,6 +606,7 @@ mod tests {
         // Differs from the id: google -> GEMINI, vercel-ai-gateway -> AI_GATEWAY.
         assert_eq!(env_var_for("google"), "GEMINI_API_KEY");
         assert_eq!(env_var_for("vercel-ai-gateway"), "AI_GATEWAY_API_KEY");
+        assert_eq!(env_var_for("radius"), "PI_GATEWAY_API_KEY");
         // Unknown id falls back to the uppercase convention.
         assert_eq!(env_var_for("totally-unknown"), "TOTALLY_UNKNOWN_API_KEY");
     }
@@ -716,5 +722,8 @@ mod tests {
         }
         let google = list.iter().find(|p| p.id == "google").unwrap();
         assert_eq!(google.env, "GEMINI_API_KEY");
+        let radius = list.iter().find(|p| p.id == "radius").unwrap();
+        assert_eq!(radius.label, "Radius");
+        assert_eq!(radius.env, "PI_GATEWAY_API_KEY");
     }
 }
