@@ -79,6 +79,26 @@ a {
   align-items: center;
   gap: 8px;
 }
+.header-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.header-version {
+  color: var(--muted-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.header-version:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
 /* Brand mark: the mountain/speech-bubble glyph from the hoy.chat kit,
    recolored via a luminance mask to the reserved brand accent (source SVG is
    a flat #343943 raster on transparent, which has ~no contrast on --bg).

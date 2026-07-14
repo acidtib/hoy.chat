@@ -20,7 +20,7 @@ export default async function Privacy() {
 
   return (
     <>
-      <SiteHeader />
+      <SiteHeader version={version} />
 
       <main>
         <div className="wrap page-head">
@@ -41,13 +41,13 @@ export default async function Privacy() {
             </p>
 
             <div className="legal-section">
-              <h2>What never leaves your machine</h2>
+              <h2>What never reaches Hoy</h2>
               <div className="legal-body">
                 <p>
-                  Hoy is a desktop app. Your repositories, the files it reads and
-                  edits, the prompts you write, and the keys you paste into it all
-                  stay on your own disk. They are not uploaded to us, and we have
-                  no way to see them. There is no us in the loop.
+                  Hoy is a desktop app. Your repositories and API keys stay on
+                  your own disk. Prompts and relevant code go directly to the
+                  model provider you choose, never to Hoy. We have no way to see
+                  them because there is no Hoy server in the loop.
                 </p>
               </div>
             </div>

@@ -18,11 +18,11 @@ export const metadata: Metadata = {
 // empty state below rather than breaking the static export.
 export default async function Changelog() {
   const releases = await getReleases();
-  const version = await getLatestVersion();
+  const version = releases[0]?.version ?? (await getLatestVersion());
 
   return (
     <>
-      <SiteHeader />
+      <SiteHeader version={version} />
 
       <main>
         <div className="wrap page-head">

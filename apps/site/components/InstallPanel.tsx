@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   assetUrl,
   OS_DOWNLOADS,
@@ -8,15 +8,7 @@ import {
   RELEASES_LIST_URL,
   type OS,
 } from "@/lib/downloads";
-
-function detectOS(): OS | null {
-  if (typeof navigator === "undefined") return null;
-  const s = `${navigator.userAgent} ${navigator.platform ?? ""}`.toLowerCase();
-  if (s.includes("mac")) return "macos";
-  if (s.includes("win")) return "windows";
-  if (s.includes("linux") || s.includes("x11")) return "linux";
-  return null;
-}
+import { useDetectedOS } from "@/lib/platform";
 
 function OSIcon({ os }: { os: OS }) {
   if (os === "macos") {
@@ -76,11 +68,7 @@ function CopyBlock({ code }: { code: string }) {
 }
 
 export function InstallPanel({ version }: { version: string }) {
-  const [detected, setDetected] = useState<OS | null>(null);
-
-  useEffect(() => {
-    setDetected(detectOS());
-  }, []);
+  const detected = useDetectedOS();
 
   const primaryOS = detected ?? "macos";
   const primary = OS_DOWNLOADS[primaryOS];

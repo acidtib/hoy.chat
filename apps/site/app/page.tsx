@@ -43,7 +43,7 @@ export default async function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }}
       />
-      <SiteHeader />
+      <SiteHeader version={version} />
 
       <main>
         <section className="hero">
@@ -56,10 +56,8 @@ export default async function Home() {
               </span>
               <h1>Local. Fast. Yours.</h1>
               <p className="tagline">
-                Your coding agent has been living in a terminal. Hoy gives it a
-                real desktop app, it runs Pi on your machine, speaks to the models
-                and tools you already use, and lets you prompt, watch, and steer
-                every move, with your code never leaving your laptop.
+                A desktop agent harness you can see and steer. Runs locally, uses
+                your own model keys, and is built on Pi under the hood.
               </p>
 
               <div className="cta-row cta-row-center">
@@ -106,14 +104,13 @@ export default async function Home() {
           <div className="wrap-wide">
             <div className="beats-head">
               <div className="section-head">
-                <h2 className="heading">See everything. Send nothing.</h2>
+                <h2 className="heading">See everything. Route nothing through us.</h2>
               </div>
               <p className="lead">
-                It all runs on your machine. Your keys, your files, your model
-                calls, none of it takes a detour through us, because there is no
-                us in the loop. And Hoy does more than a chat box, branch any turn
-                into a new direction, or hand a goal to a whole team of agents at
-                once.
+                Hoy runs locally and connects directly to the model providers you
+                choose. Your code and prompts never pass through Hoy servers.
+                Branch any turn into a new direction, or hand a goal to a whole
+                team of agents at once.
               </p>
             </div>
 
