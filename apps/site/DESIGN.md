@@ -98,7 +98,8 @@ Hand-written CSS classes (no component library):
 ## Layout
 
 - **Header** (`SiteHeader`): sticky, backdrop-blurred, hairline bottom border;
-  wordmark (with brand dot) left, nav right (Changelog, GitHub, etc.).
+  wordmark and a quiet linked release-version chip left, nav right (Changelog,
+  GitHub, etc.).
 - **Hero**: centered, beta badge, `h1`, tagline (what Hoy is, Pi named as the
   engine, with the local/on-your-keys hook), CTA row (Download vN + Changelog),
   and the floating product-window mock.

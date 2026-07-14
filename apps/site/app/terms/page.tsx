@@ -21,7 +21,7 @@ export default async function Terms() {
 
   return (
     <>
-      <SiteHeader />
+      <SiteHeader version={version} />
 
       <main>
         <div className="wrap page-head">

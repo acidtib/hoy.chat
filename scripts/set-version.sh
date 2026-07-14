@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Single source for the app version. Writes the same x.y.z into the files that
-# must agree for a release: the root workspace package.json, the desktop app's
-# package.json, apps/desktop/src-tauri/tauri.conf.json (the version the updater
-# compares), and apps/desktop/src-tauri/Cargo.toml.
+# must agree for a release: the root workspace package.json, the desktop and site
+# package.json files, Tauri's updater version, and the Rust package version.
 #
 # Usage: scripts/set-version.sh <x.y.z>
 # Release flow: scripts/set-version.sh x.y.z && git commit -am "vx.y.z" &&
@@ -29,6 +28,7 @@ VERSION="$VERSION" ROOT="$ROOT" bun --eval '
   };
   set("package.json", /"version": "[^"]*"/, `"version": "${v}"`);
   set("apps/desktop/package.json", /"version": "[^"]*"/, `"version": "${v}"`);
+  set("apps/site/package.json", /"version": "[^"]*"/, `"version": "${v}"`);
   set("apps/desktop/src-tauri/tauri.conf.json", /"version": "[^"]*"/, `"version": "${v}"`);
   set("apps/desktop/src-tauri/Cargo.toml", /^version = "[^"]*"/m, `version = "${v}"`);
   // Keep Cargo.lock in sync so the committed lockfile matches Cargo.toml.
@@ -37,6 +37,17 @@ VERSION="$VERSION" ROOT="$ROOT" bun --eval '
     /(name = "hoy-desktop"\nversion = )"[^"]*"/,
     `$1"${v}"`,
   );
+  // Bun records workspace package versions in its lockfile.
+  set(
+    "bun.lock",
+    /("apps\/desktop": \{\n\s+"name": "hoy-desktop",\n\s+"version": )"[^"]*"/,
+    `$1"${v}"`,
+  );
+  set(
+    "bun.lock",
+    /("apps\/site": \{\n\s+"name": "@hoy\/site",\n\s+"version": )"[^"]*"/,
+    `$1"${v}"`,
+  );
 '
 
-echo "set version to $VERSION in package.json, apps/desktop/package.json, apps/desktop/src-tauri/tauri.conf.json, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock"
+echo "set version to $VERSION in root, desktop, site, Tauri, Cargo, and lockfiles"

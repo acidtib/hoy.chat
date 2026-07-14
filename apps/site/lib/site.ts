@@ -30,8 +30,4 @@ export const RELEASES_URL = `${REPO_URL}/releases`;
 export const RELEASES_LATEST_URL = `${RELEASES_URL}/latest`;
 export const RELEASES_API = `https://api.github.com/repos/${REPO}/releases`;
 
-// Shown only when GitHub returns nothing at build time. Keep in sync with the
-// desktop app's current build.
-export const FALLBACK_VERSION = "0.1.1";
-
 export const LICENSE = "MIT";

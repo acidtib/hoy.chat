@@ -1,4 +1,5 @@
-import { RELEASES_API, FALLBACK_VERSION } from "./site";
+import rootPackage from "../../../package.json";
+import { RELEASES_API } from "./site";
 
 export interface Release {
   version: string;
@@ -26,11 +27,12 @@ export function normalizeVersion(tag: string): string {
 }
 
 // Fetched once at build time (static export). Any failure, including no network
-// or GitHub rate limiting, resolves to an empty list so the build never breaks;
-// callers render an empty state instead. A GITHUB_TOKEN in the build env (CI)
-// authenticates the request so shared runners are not rate-limited; local builds
-// run unauthenticated and fall back to FALLBACK_VERSION if throttled.
-export async function getReleases(): Promise<Release[]> {
+// or GitHub rate limiting, resolves to an empty list. A GITHUB_TOKEN in the build
+// env authenticates the request so shared runners are not rate-limited. CI later
+// treats an empty result as fatal; local builds use the monorepo version.
+let releasesPromise: Promise<Release[]> | undefined;
+
+async function fetchReleases(): Promise<Release[]> {
   try {
     const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
     const res = await fetch(RELEASES_API, {
@@ -59,11 +61,32 @@ export async function getReleases(): Promise<Release[]> {
   }
 }
 
-// Newest released version for the install section and footer; falls back to the
-// pinned build when releases cannot be fetched.
+// Share one release snapshot across every component rendered in this build.
+export function getReleases(): Promise<Release[]> {
+  releasesPromise ??= fetchReleases();
+  return releasesPromise;
+}
+
+// Newest released version for page chrome and downloads. CI requires GitHub and
+// the packaged version to agree so a deploy cannot publish stale asset links.
 export async function getLatestVersion(): Promise<string> {
   const releases = await getReleases();
-  return releases[0]?.version ?? FALLBACK_VERSION;
+  const latest = releases[0]?.version;
+
+  if (!latest) {
+    if (process.env.CI) {
+      throw new Error("Could not resolve the latest GitHub release during a CI build.");
+    }
+    return rootPackage.version;
+  }
+
+  if (process.env.CI && latest !== rootPackage.version) {
+    throw new Error(
+      `Latest GitHub release (${latest}) does not match the packaged version (${rootPackage.version}).`,
+    );
+  }
+
+  return latest;
 }
 
 export function formatDate(iso: string): string {
