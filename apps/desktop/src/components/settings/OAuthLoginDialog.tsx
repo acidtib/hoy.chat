@@ -18,6 +18,7 @@ import {
 } from "@/lib/ipc";
 import type { OAuthEvent, OAuthSelectOption } from "@/lib/types";
 import type { SubscriptionProvider } from "./providerMeta";
+import { initialsFor } from "./providerMeta";
 import { ProviderGlyph } from "./providerIcons";
 
 // Phases. "waiting" is the common desktop path: the login flow runs a local
@@ -184,7 +185,13 @@ export function OAuthLoginDialog({
           <DialogHeader>
             <div className="flex items-center gap-3">
               <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-muted/50 text-muted-foreground">
-                <ProviderGlyph slug={provider.glyph} className="size-[18px]" />
+                {provider.glyph ? (
+                  <ProviderGlyph slug={provider.glyph} className="size-[18px]" />
+                ) : (
+                  <span className="text-[11px] font-semibold tracking-wide">
+                    {initialsFor(provider.label)}
+                  </span>
+                )}
               </span>
               <div className="min-w-0">
                 <DialogTitle className="text-base">

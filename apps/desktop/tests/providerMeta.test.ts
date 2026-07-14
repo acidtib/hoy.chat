@@ -105,15 +105,17 @@ describe("SUBSCRIPTION_PROVIDERS", () => {
       "anthropic",
       "openai-codex",
       "github-copilot",
+      "radius",
     ]);
   });
 
-  test("each row carries a label, subtitle, and glyph", () => {
+  test("each row carries display copy and branded providers carry glyphs", () => {
     for (const p of SUBSCRIPTION_PROVIDERS) {
       expect(p.label.length).toBeGreaterThan(0);
       expect(p.subtitle.length).toBeGreaterThan(0);
-      expect(p.glyph.length).toBeGreaterThan(0);
     }
+    expect(SUBSCRIPTION_PROVIDERS.slice(0, 3).every((p) => Boolean(p.glyph))).toBeTrue();
+    expect(SUBSCRIPTION_PROVIDERS.find((p) => p.id === "radius")?.glyph).toBeUndefined();
   });
 });
 
@@ -126,5 +128,6 @@ describe("initialsFor", () => {
   test("single-word labels take the first two letters", () => {
     expect(initialsFor("DeepSeek")).toBe("DE");
     expect(initialsFor("xAI")).toBe("XA");
+    expect(initialsFor("Radius")).toBe("RA");
   });
 });

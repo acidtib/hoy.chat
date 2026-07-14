@@ -20,7 +20,7 @@ import {
   PROPOSED_PLAN_FORMAT,
 } from "./hoy-system-prompt";
 
-// Pi 0.80.6 edit guidelines (core/tools/edit.js). The prompt must carry these
+// Pi 0.80.7 edit guidelines (core/tools/edit.js). The prompt must carry these
 // verbatim; replacement strips pi's ability to inject them.
 const PI_EDIT_GUIDELINES = [
   "Use edit for precise changes (edits[].oldText must match exactly)",
@@ -66,7 +66,7 @@ describe("hoy system prompt assembly", () => {
 
     // Docs block points at the pinned GitHub tag, never at local package paths.
     expect(prompt).toContain(
-      "https://raw.githubusercontent.com/earendil-works/pi/v0.80.6/packages/coding-agent/docs/extensions.md",
+      "https://raw.githubusercontent.com/earendil-works/pi/v0.80.7/packages/coding-agent/docs/extensions.md",
     );
     expect(prompt).not.toContain("node_modules");
 
@@ -75,8 +75,8 @@ describe("hoy system prompt assembly", () => {
       expect(prompt).toContain(guideline);
     }
 
-    // Pi still appends date and cwd after a custom prompt.
-    expect(prompt).toMatch(/Current date: \d{4}-\d{2}-\d{2}/);
+    // Pi appends cwd, but 0.80.7 no longer appends the current date.
+    expect(prompt).not.toContain("Current date:");
     expect(prompt).toContain("Current working directory:");
 
     // HOY-186: the prompt's tools list matches the registered set.
