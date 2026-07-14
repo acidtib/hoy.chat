@@ -44,7 +44,7 @@ updater artifacts, so the in-app updater will not detect the release.
 ## Cutting a release
 
 ```
-scripts/set-version.sh x.y.z        # writes package.json, tauri.conf.json, Cargo.toml
+scripts/set-version.sh x.y.z        # syncs root, desktop, site, Tauri, Cargo, and lockfiles
 git commit -am "vx.y.z"
 git tag vx.y.z
 git push origin main --tags
