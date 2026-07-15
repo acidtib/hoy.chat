@@ -240,7 +240,14 @@ export type Turn =
     }
   | {
       role: "assistant";
-      reasoning?: { text: string; seconds?: number; active?: boolean };
+      reasoning?: {
+        text: string;
+        seconds?: number;
+        active?: boolean;
+        // Number of ordered text/tool blocks rendered before reasoning. The
+        // position advances through a tool loop so live thinking stays visible.
+        blockIndex?: number;
+      };
       blocks: AssistantBlock[];
       // Session entry of the first assistant message folded into this turn
       // (HOY-304); the per-block entryId is the precise scroll target.

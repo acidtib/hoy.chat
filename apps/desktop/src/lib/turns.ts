@@ -36,6 +36,7 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
               tool: { ...block.tool, pending: false, running: true },
             };
           }
+          moveReasoningAfterBlock(assistant, existingIndex);
         } else {
           const tool: ToolUI = {
             id: event.toolCallId,
@@ -47,6 +48,7 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
             running: true,
           };
           assistant.blocks.push({ kind: "tool", tool });
+          moveReasoningAfterBlock(assistant, assistant.blocks.length - 1);
         }
       } else {
         const blockIndex = assistant.blocks.findIndex(
@@ -87,11 +89,20 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
       // turn's tool loop (HOY-211). Create it lazily so a delta with no prior
       // start (redacted thinking) still opens the block. active drives the live
       // "Thinking for Ns" timer; end stops it.
-      const current = assistant.reasoning ?? { text: "", active: true };
+      const current = assistant.reasoning ?? {
+        text: "",
+        active: true,
+        blockIndex: assistant.blocks.length,
+      };
       assistant.reasoning =
         event.phase === "end"
           ? { ...current, active: false }
-          : { ...current, text: current.text + (event.delta ?? ""), active: true };
+          : {
+              ...current,
+              text: current.text + (event.delta ?? ""),
+              active: true,
+              blockIndex: assistant.blocks.length,
+            };
       break;
     }
     case "status":
@@ -172,6 +183,7 @@ export function messagesToTurns(
         if (part.type === "thinking" && typeof part.thinking === "string" && part.thinking) {
           a.reasoning = {
             text: (a.reasoning?.text ?? "") + part.thinking,
+            blockIndex: a.blocks.length,
           };
         } else if (part.type === "text" && typeof part.text === "string") {
           const lastBlock = a.blocks[a.blocks.length - 1];
@@ -196,6 +208,7 @@ export function messagesToTurns(
               running: false,
             },
           });
+          moveReasoningAfterBlock(a, a.blocks.length - 1);
         }
       }
     } else if (m.role === "toolResult") {
@@ -212,6 +225,17 @@ export function messagesToTurns(
     }
   });
   return turns;
+}
+
+function moveReasoningAfterBlock(
+  assistant: AssistantTurn,
+  blockIndex: number,
+): void {
+  if (!assistant.reasoning) return;
+  assistant.reasoning = {
+    ...assistant.reasoning,
+    blockIndex: Math.max(assistant.reasoning.blockIndex ?? 0, blockIndex + 1),
+  };
 }
 
 // The open assistant turn to fold the current message run into: the last turn if
@@ -335,7 +359,9 @@ export function markToolPending(
       tool: buildPendingToolBlock(toolCallId, toolName ?? "tool", args),
     });
   }
-  return [...turns.slice(0, -1), { ...last, blocks }];
+  const assistant = { ...last, blocks };
+  moveReasoningAfterBlock(assistant, idx >= 0 ? idx : blocks.length - 1);
+  return [...turns.slice(0, -1), assistant];
 }
 
 function buildDiff(toolName: string, args: unknown): string | undefined {

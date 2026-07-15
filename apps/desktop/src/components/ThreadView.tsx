@@ -648,43 +648,57 @@ const AssistantTurn = memo(function AssistantTurn({
   onImplement: (mode: PermissionMode, execution: PlanExecution) => void;
   onDismiss: () => void;
 }) {
+  const content: ReactNode[] = turn.blocks.map((block, blockIndex) =>
+    // A `flex flex-col gap-2` wrapper carries the entry id (HOY-304) for
+    // tree-node scroll targeting while reproducing MessageContent's own gap-2.
+    block.kind === "text" ? (
+      <div
+        key={`text-${blockIndex}`}
+        data-entry-id={block.entryId}
+        className="flex min-w-0 flex-col gap-2"
+      >
+        <AssistantTextBlock
+          content={block.content}
+          planReady={planReady}
+          onImplement={onImplement}
+          onDismiss={onDismiss}
+        />
+      </div>
+    ) : (
+      <div
+        key={block.tool.id}
+        data-entry-id={block.entryId}
+        className="flex min-w-0 flex-col gap-2"
+      >
+        <ToolCall tool={block.tool} />
+      </div>
+    ),
+  );
+  if (turn.reasoning) {
+    const blockIndex = Math.min(
+      Math.max(turn.reasoning.blockIndex ?? 0, 0),
+      turn.blocks.length,
+    );
+    content.splice(
+      blockIndex,
+      0,
+      <Reasoning
+        key="reasoning"
+        defaultOpen={expandReasoning}
+        autoCloseOnStreamEnd={!expandReasoning}
+        isStreaming={turn.reasoning.active ?? false}
+        duration={turn.reasoning.seconds}
+      >
+        <ReasoningTrigger />
+        <ReasoningContent>{turn.reasoning.text}</ReasoningContent>
+      </Reasoning>,
+    );
+  }
+
   return (
     <Message from="assistant" className="max-w-full">
       <MessageContent className="w-full">
-        {turn.reasoning && (
-          <Reasoning
-            defaultOpen={expandReasoning}
-            autoCloseOnStreamEnd={!expandReasoning}
-            isStreaming={turn.reasoning.active ?? false}
-            duration={turn.reasoning.seconds}
-          >
-            <ReasoningTrigger />
-            <ReasoningContent>{turn.reasoning.text}</ReasoningContent>
-          </Reasoning>
-        )}
-        {turn.blocks.map((block, bi) =>
-          // A `flex flex-col gap-2` wrapper carries the entry id (HOY-304) for
-          // tree-node scroll targeting while reproducing MessageContent's own
-          // gap-2 so per-block spacing is unchanged.
-          block.kind === "text" ? (
-            <div key={bi} data-entry-id={block.entryId} className="flex min-w-0 flex-col gap-2">
-              <AssistantTextBlock
-                content={block.content}
-                planReady={planReady}
-                onImplement={onImplement}
-                onDismiss={onDismiss}
-              />
-            </div>
-          ) : (
-            <div
-              key={block.tool.id}
-              data-entry-id={block.entryId}
-              className="flex min-w-0 flex-col gap-2"
-            >
-              <ToolCall tool={block.tool} />
-            </div>
-          ),
-        )}
+        {content}
         {turn.streaming && !turn.aborted && (
           <TurnStatus
             blocks={turn.blocks}

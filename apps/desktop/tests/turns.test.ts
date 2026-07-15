@@ -69,6 +69,7 @@ describe("messagesToTurns reasoning", () => {
 
     const a = assistantTurn(turns, 1);
     expect(a.reasoning?.text).toBe("step one. ");
+    expect(a.reasoning?.blockIndex).toBe(0);
     // Pi transcripts carry no thinking duration (HOY-179).
     expect(a.reasoning?.seconds).toBeUndefined();
   });
@@ -99,6 +100,33 @@ describe("messagesToTurns reasoning", () => {
     ]);
 
     expect(assistantTurn(turns).reasoning?.text).toBe("ab");
+  });
+
+  test("restores tool loops with reasoning below tools and before final text", () => {
+    const turns = messagesToTurns([
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "first" },
+          { type: "toolCall", id: "tc1", name: "read", arguments: {} },
+        ],
+      },
+      { role: "toolResult", toolCallId: "tc1", content: "one" },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: " second" },
+          { type: "toolCall", id: "tc2", name: "read", arguments: {} },
+        ],
+      },
+      { role: "toolResult", toolCallId: "tc2", content: "two" },
+      { role: "assistant", content: [{ type: "text", text: "done" }] },
+    ]);
+
+    const a = assistantTurn(turns);
+    expect(a.reasoning).toMatchObject({ text: "first second", blockIndex: 2 });
+    expect(a.blocks).toHaveLength(3);
+    expect(a.blocks[2]).toEqual({ kind: "text", content: "done", entryId: undefined });
   });
 });
 
