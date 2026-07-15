@@ -1,3 +1,4 @@
+mod alibaba_config;
 mod commands;
 mod events;
 mod keep_awake;
@@ -86,6 +87,7 @@ pub fn run() {
             // before anything reads the agent dir (the sidecar spawn below is the
             // first consumer). Best effort; it logs and continues on failure.
             pi_config::migrate_flatten_agent_dir();
+            alibaba_config::migrate_legacy_files();
 
             // Debug builds run in the hoyd namespace (HOY-206): retitle the OS
             // window so taskbar/alt-tab tells the dev instance from production.
@@ -172,6 +174,9 @@ pub fn run() {
             commands::remove_provider_key,
             commands::provider_statuses,
             commands::supported_providers,
+            commands::list_alibaba_endpoints,
+            commands::save_alibaba_endpoints,
+            commands::reset_alibaba_endpoints,
             commands::list_mcp_servers,
             commands::save_mcp_server,
             commands::remove_mcp_server,

@@ -162,13 +162,29 @@ struct ProviderDef {
     env: &'static str,
 }
 
-// API-key providers Pi supports, from pi-coding-agent 0.80.7
-// core/provider-display-names.js (BUILT_IN_PROVIDER_DISPLAY_NAMES). Excludes
+// API-key providers Hoy exposes. Pi's built-ins come from pi-coding-agent 0.80.7
+// core/provider-display-names.js (BUILT_IN_PROVIDER_DISPLAY_NAMES); Alibaba's
+// Hoy-owned providers are registered by createHoyAlibaba. Excludes
 // amazon-bedrock and google-vertex, which use cloud auth (AWS creds / gcloud ADC)
 // rather than a plain api_key entry. `env` is Pi's actual env var for that
 // provider; several differ from the id (google -> GEMINI_API_KEY). Pinned to the
 // Pi version: re-verify against provider-display-names.js when bumping Pi.
 const PROVIDERS: &[ProviderDef] = &[
+    ProviderDef {
+        id: "alibaba-cloud",
+        label: "Alibaba Cloud Model Studio",
+        env: "",
+    },
+    ProviderDef {
+        id: "alibaba-coding-plan",
+        label: "Alibaba Coding Plan",
+        env: "",
+    },
+    ProviderDef {
+        id: "alibaba-token-plan",
+        label: "Alibaba Token Plan",
+        env: "",
+    },
     ProviderDef {
         id: "ant-ling",
         label: "Ant Ling",
@@ -337,8 +353,8 @@ pub struct ProviderInfo {
     pub id: String,
     pub label: String,
     // Env var Pi reads for this provider's key, shown in settings as the
-    // alternative to storing a key in auth.json.
-    pub env: String,
+    // alternative to storing a key in auth.json. Hoy-owned providers omit it.
+    pub env: Option<String>,
 }
 
 // Full provider list for the settings picker. get_available_models is gated to
@@ -349,7 +365,7 @@ pub fn supported_providers() -> Vec<ProviderInfo> {
         .map(|p| ProviderInfo {
             id: p.id.to_string(),
             label: p.label.to_string(),
-            env: p.env.to_string(),
+            env: (!p.env.is_empty()).then(|| p.env.to_string()),
         })
         .collect()
 }
@@ -357,9 +373,9 @@ pub fn supported_providers() -> Vec<ProviderInfo> {
 // Env var Pi reads for a provider key. Known providers use Pi's actual name (some
 // differ from the id); unknown ids fall back to the uppercase convention. Used
 // only for the "configured via environment" status signal.
-fn env_var_for(provider: &str) -> String {
+fn env_var_for(provider: &str) -> Option<String> {
     if let Some(def) = PROVIDERS.iter().find(|p| p.id == provider) {
-        return def.env.to_string();
+        return (!def.env.is_empty()).then(|| def.env.to_string());
     }
     let up: String = provider
         .chars()
@@ -371,7 +387,7 @@ fn env_var_for(provider: &str) -> String {
             }
         })
         .collect();
-    format!("{up}_API_KEY")
+    Some(format!("{up}_API_KEY"))
 }
 
 fn read_auth_map_at(path: &Path) -> Result<Map<String, Value>, String> {
@@ -486,7 +502,7 @@ pub fn statuses(providers: &[String]) -> Result<Vec<ProviderAuth>, String> {
                     removable,
                 };
             }
-            if std::env::var_os(env_var_for(provider)).is_some() {
+            if env_var_for(provider).and_then(std::env::var_os).is_some() {
                 return ProviderAuth {
                     provider: provider.clone(),
                     configured: true,
@@ -602,13 +618,23 @@ mod tests {
 
     #[test]
     fn env_var_uses_pi_names_then_falls_back() {
-        assert_eq!(env_var_for("anthropic"), "ANTHROPIC_API_KEY");
+        assert_eq!(
+            env_var_for("anthropic").as_deref(),
+            Some("ANTHROPIC_API_KEY")
+        );
         // Differs from the id: google -> GEMINI, vercel-ai-gateway -> AI_GATEWAY.
-        assert_eq!(env_var_for("google"), "GEMINI_API_KEY");
-        assert_eq!(env_var_for("vercel-ai-gateway"), "AI_GATEWAY_API_KEY");
-        assert_eq!(env_var_for("radius"), "PI_GATEWAY_API_KEY");
+        assert_eq!(env_var_for("google").as_deref(), Some("GEMINI_API_KEY"));
+        assert_eq!(
+            env_var_for("vercel-ai-gateway").as_deref(),
+            Some("AI_GATEWAY_API_KEY")
+        );
+        assert_eq!(env_var_for("radius").as_deref(), Some("PI_GATEWAY_API_KEY"));
         // Unknown id falls back to the uppercase convention.
-        assert_eq!(env_var_for("totally-unknown"), "TOTALLY_UNKNOWN_API_KEY");
+        assert_eq!(
+            env_var_for("totally-unknown").as_deref(),
+            Some("TOTALLY_UNKNOWN_API_KEY")
+        );
+        assert_eq!(env_var_for("alibaba-cloud"), None);
     }
 
     #[test]
@@ -717,13 +743,19 @@ mod tests {
         let count = ids.len();
         ids.dedup();
         assert_eq!(ids.len(), count, "provider ids must be unique");
-        for p in &list {
-            assert!(!p.env.is_empty(), "provider {} must have an env var", p.id);
-        }
         let google = list.iter().find(|p| p.id == "google").unwrap();
-        assert_eq!(google.env, "GEMINI_API_KEY");
+        assert_eq!(google.env.as_deref(), Some("GEMINI_API_KEY"));
         let radius = list.iter().find(|p| p.id == "radius").unwrap();
         assert_eq!(radius.label, "Radius");
-        assert_eq!(radius.env, "PI_GATEWAY_API_KEY");
+        assert_eq!(radius.env.as_deref(), Some("PI_GATEWAY_API_KEY"));
+        assert!(list
+            .iter()
+            .filter(|p| p.id.starts_with("alibaba-"))
+            .all(|p| p.env.is_none()));
+        for p in &list {
+            if !p.id.starts_with("alibaba-") {
+                assert!(p.env.is_some(), "provider {} must have an env var", p.id);
+            }
+        }
     }
 }

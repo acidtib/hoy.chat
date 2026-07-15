@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use tauri::ipc::Channel;
 use tauri::State;
 
+use crate::alibaba_config::{self, AlibabaEndpointSettings};
 use crate::events::{
     AgentEvent, CompactionResult, ImageContent, ModelInfo, PiState, SessionStats, SlashCommand,
 };
@@ -220,6 +221,33 @@ pub fn provider_statuses(providers: Vec<String>) -> Result<Vec<ProviderAuth>, St
 #[tauri::command]
 pub fn supported_providers() -> Vec<ProviderInfo> {
     pi_config::supported_providers()
+}
+
+#[tauri::command]
+pub fn list_alibaba_endpoints() -> Result<Vec<AlibabaEndpointSettings>, String> {
+    alibaba_config::list()
+}
+
+#[tauri::command]
+pub async fn save_alibaba_endpoints(
+    provider: String,
+    open_ai_base_url: String,
+    anthropic_base_url: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    alibaba_config::save(&provider, &open_ai_base_url, &anthropic_base_url)?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn reset_alibaba_endpoints(
+    provider: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    alibaba_config::reset(&provider)?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
 }
 
 // MCP server config (HOY-232). Global lives in the branded agent dir; project

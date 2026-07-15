@@ -519,8 +519,20 @@ export interface Project {
 export interface ProviderInfo {
   id: string;
   label: string;
-  // Env var Pi reads for this provider's key (e.g. google -> GEMINI_API_KEY).
-  env: string;
+  // Env var Pi reads for this provider's key. Hoy-owned providers omit it.
+  env?: string | null;
+}
+
+export type AlibabaProviderId =
+  | "alibaba-cloud"
+  | "alibaba-coding-plan"
+  | "alibaba-token-plan";
+
+export interface AlibabaEndpointSettings {
+  provider: AlibabaProviderId;
+  openAiBaseUrl: string;
+  anthropicBaseUrl: string;
+  usingDefaults: boolean;
 }
 
 // Mirror of pi_config::ProviderAuth. Carries configured status only, never a key.

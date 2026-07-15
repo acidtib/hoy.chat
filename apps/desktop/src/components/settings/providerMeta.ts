@@ -67,6 +67,24 @@ export const PROVIDER_META: Record<string, ProviderMeta> = {
     consoleUrl: "https://console.groq.com/keys",
     placeholder: "gsk_xxxxxxxx",
   },
+  "alibaba-cloud": {
+    description: "Pay-as-you-go Qwen and partner models from Model Studio",
+    consoleUrl: "https://modelstudio.console.alibabacloud.com/",
+    consoleLabel: "Alibaba Model Studio",
+    placeholder: "sk-xxxxxxxx",
+  },
+  "alibaba-coding-plan": {
+    description: "Individual Alibaba Coding Plan for interactive coding agents",
+    consoleUrl: "https://www.alibabacloud.com/help/en/model-studio/coding-plan",
+    consoleLabel: "Coding Plan",
+    placeholder: "sk-sp-xxxxxxxx",
+  },
+  "alibaba-token-plan": {
+    description: "Team Token Plan for interactive coding agents",
+    consoleUrl: "https://www.alibabacloud.com/help/en/model-studio/token-plan-overview",
+    consoleLabel: "Token Plan",
+    placeholder: "sk-sp-xxxxxxxx",
+  },
 };
 
 export function metaFor(id: string, label: string): ProviderMeta {

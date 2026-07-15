@@ -5,6 +5,8 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AgentEvent,
+  AlibabaEndpointSettings,
+  AlibabaProviderId,
   CompactionResult,
   GoalAudit,
   GoalEvaluation,
@@ -116,6 +118,26 @@ export function providerStatuses(providers: string[]): Promise<ProviderAuth[]> {
 
 export function supportedProviders(): Promise<ProviderInfo[]> {
   return invoke<ProviderInfo[]>("supported_providers");
+}
+
+export function listAlibabaEndpoints(): Promise<AlibabaEndpointSettings[]> {
+  return invoke<AlibabaEndpointSettings[]>("list_alibaba_endpoints");
+}
+
+export function saveAlibabaEndpoints(
+  provider: AlibabaProviderId,
+  openAiBaseUrl: string,
+  anthropicBaseUrl: string,
+): Promise<void> {
+  return invoke<void>("save_alibaba_endpoints", {
+    provider,
+    openAiBaseUrl,
+    anthropicBaseUrl,
+  });
+}
+
+export function resetAlibabaEndpoints(provider: AlibabaProviderId): Promise<void> {
+  return invoke<void>("reset_alibaba_endpoints", { provider });
 }
 
 // MCP server config (HOY-232). `projectPath` is the active project's dir, needed
