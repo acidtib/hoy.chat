@@ -7,10 +7,10 @@
 // this module stays pure and testable.
 //
 // Security: starting a server is arbitrary subprocess execution (stdio) or
-// network egress (http), so the first connect to a server requires explicit
-// consent, and each distinct tool call requires consent naming server + tool
-// (the proxy tool defeats the name-based permission gate, which only ever sees
-// "mcp"). Project-scoped servers additionally require project trust before any
+// network egress (http), so the first connect to a server and each distinct tool
+// call require explicit consent unless autonomous mode pre-approves them. The
+// proxy tool defeats the name-based permission gate, which only ever sees
+// "mcp". Project-scoped servers additionally require project trust before any
 // connect. See docs/plans/HOY-210-mcp-support-findings.md.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -20,6 +20,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { accessSync, constants, readFileSync } from "node:fs";
 import { join, delimiter } from "node:path";
+import type { PermissionState } from "./hoy-permissions";
 
 export type McpScope = "global" | "project";
 
@@ -204,6 +205,10 @@ const DENY = "Deny";
 
 const NUL = "\u0000";
 
+export function requiresMcpConsent(state: PermissionState): boolean {
+  return state.mode !== "autonomous";
+}
+
 function textResult(text: string) {
   return { content: [{ type: "text" as const, text }], details: {} };
 }
@@ -221,7 +226,7 @@ const mcpParams = Type.Object({
   args: Type.Optional(Type.Any({ description: "Arguments object for the tool call (see describe)." })),
 });
 
-export function createHoyMcp(config: McpConfig) {
+export function createHoyMcp(config: McpConfig, permissionState: PermissionState) {
   const servers = new Map<string, ManagedServer>();
   for (const s of config.servers) servers.set(s.name, { ...s });
 
@@ -261,7 +266,7 @@ export function createHoyMcp(config: McpConfig) {
       );
     }
 
-    if (!connectConsented.has(name)) {
+    if (requiresMcpConsent(permissionState) && !connectConsented.has(name)) {
       const what = isHttp(s.spec) ? `connect to ${s.spec.url}` : `run "${s.spec.command}"`;
       const choice = await ctx.ui.select(
         `Start MCP server "${name}"? Hoy will ${what} (${s.scope} scope).`,
@@ -289,6 +294,7 @@ export function createHoyMcp(config: McpConfig) {
   }
 
   async function requireCallConsent(server: string, tool: string, ctx: ExtensionContext): Promise<void> {
+    if (!requiresMcpConsent(permissionState)) return;
     const key = `${server}${NUL}${tool}`;
     if (callConsented.has(key)) return;
     const choice = await ctx.ui.select(`Run MCP tool "${server}/${tool}"?`, [ALLOW, ALLOW_SESSION, DENY]);
