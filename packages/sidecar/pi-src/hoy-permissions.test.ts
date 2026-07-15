@@ -8,7 +8,14 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decide, isPlanFilePath, type GateDecision, type PermissionMode } from "./hoy-permissions";
+import {
+  createHoyPermissions,
+  createPermissionState,
+  decide,
+  isPlanFilePath,
+  type GateDecision,
+  type PermissionMode,
+} from "./hoy-permissions";
 
 describe("gate policy table", () => {
   const table: Array<[PermissionMode, string, GateDecision]> = [
@@ -55,6 +62,24 @@ describe("agent tool gating (HOY-231)", () => {
   });
   test("allowed in autonomous", () => {
     expect(decide("autonomous", "agent")).toBe("allow");
+  });
+});
+
+describe("shared permission state", () => {
+  test("the hoy_mode command updates state shared with other extensions", async () => {
+    const state = createPermissionState("default");
+    let command: any;
+    const pi: any = {
+      registerCommand: (_name: string, registered: any) => {
+        command = registered;
+      },
+      on: () => {},
+    };
+    createHoyPermissions(state)(pi);
+
+    await command.handler("autonomous", { ui: { notify: () => {} } });
+
+    expect(state.mode).toBe("autonomous");
   });
 });
 

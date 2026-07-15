@@ -19,7 +19,7 @@ import {
   SessionManager,
   type CreateAgentSessionRuntimeFactory,
 } from "@earendil-works/pi-coding-agent";
-import { createHoyPermissions, isPermissionMode, type PermissionMode } from "./hoy-permissions";
+import { createHoyPermissions, createPermissionState, isPermissionMode, type PermissionMode } from "./hoy-permissions";
 import { createHoyMcp, loadMcpConfig } from "./hoy-mcp";
 import { createHoyAgents } from "./hoy-agents";
 import { createHoyAskQuestion } from "./hoy-ask-question";
@@ -40,6 +40,7 @@ import { runListSkills } from "./hoy-list-skills";
 const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "agent", "ask_question"];
 const envMode = process.env.HOY_PERMISSION_MODE ?? "default";
 const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "default";
+const permissionState = createPermissionState(initialMode);
 
 // Hoy's agent dir, set by Rust (pi_config::agent_dir, default ~/.hoy).
 // auth.json, models.json, and settings.json all resolve from here. HOY_-prefixed
@@ -193,8 +194,8 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       // root-vs-child; a child at or beyond the cap never gets it.
       extensionFactories: [
         createHoyAlibaba(agentDir),
-        createHoyPermissions(initialMode),
-        createHoyMcp(mcpConfig),
+        createHoyPermissions(permissionState),
+        createHoyMcp(mcpConfig, permissionState),
         // HOY-253: ask_question is a user-interaction tool, not a side
         // effect. Only root/user threads get it in their tool set (HOY_TOOLS);
         // child subagents (childType set) do not, since the intent-interrogation

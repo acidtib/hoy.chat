@@ -9,8 +9,9 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { createHoyMcp, mergeConfigs, mergeLayers, resolveCommand, type McpConfig } from "./hoy-mcp";
+import { createHoyMcp, mergeConfigs, mergeLayers, requiresMcpConsent, resolveCommand, type McpConfig } from "./hoy-mcp";
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
+import { createPermissionState, type PermissionMode } from "./hoy-permissions";
 
 const TEST_SERVER = join(import.meta.dir, "mcp-test-server.mjs");
 
@@ -20,9 +21,10 @@ function stdioConfig(scope: "global" | "project" = "global"): McpConfig {
 
 // Mount createHoyMcp with a fake ExtensionAPI, capturing the registered tool
 // and the session_shutdown handler.
-function mount(config: McpConfig) {
+function mount(config: McpConfig, mode: PermissionMode = "default") {
   let tool: any;
   let shutdown: (() => Promise<void>) | undefined;
+  const permissionState = createPermissionState(mode);
   const pi: any = {
     registerTool: (t: any) => {
       tool = t;
@@ -32,8 +34,8 @@ function mount(config: McpConfig) {
       if (event === "session_shutdown") shutdown = handler;
     },
   };
-  createHoyMcp(config)(pi);
-  return { tool, shutdown: async () => shutdown?.() };
+  createHoyMcp(config, permissionState)(pi);
+  return { tool, permissionState, shutdown: async () => shutdown?.() };
 }
 
 function ctx(opts: { select?: (title: string, options: string[]) => Promise<string>; trusted?: boolean } = {}) {
@@ -181,6 +183,37 @@ describe("mcp proxy tool (real stdio server)", () => {
     await shutdown();
   });
 
+  test("autonomous mode skips server consent", async () => {
+    const config: McpConfig = {
+      servers: [{ name: "missing", scope: "global", spec: { command: "hoy-missing-mcp-command" } }],
+    };
+    const { tool, shutdown } = mount(config, "autonomous");
+    const c = ctx({
+      select: async () => {
+        throw new Error("autonomous mode must not request MCP consent");
+      },
+    });
+    const res = await tool.execute("c-autonomous", { action: "search" }, undefined, undefined, c);
+    expect(res.content[0].text).toContain('MCP server command "hoy-missing-mcp-command" not found');
+    await shutdown();
+  });
+
+  test("a live switch to autonomous mode skips subsequent MCP consent", async () => {
+    const config: McpConfig = {
+      servers: [{ name: "missing", scope: "global", spec: { command: "hoy-missing-mcp-command" } }],
+    };
+    const { tool, permissionState, shutdown } = mount(config);
+    permissionState.mode = "autonomous";
+    const c = ctx({
+      select: async () => {
+        throw new Error("live autonomous mode must not request MCP consent");
+      },
+    });
+    const res = await tool.execute("c-live", { action: "search" }, undefined, undefined, c);
+    expect(res.content[0].text).toContain('MCP server command "hoy-missing-mcp-command" not found');
+    await shutdown();
+  });
+
   test("system prompt advertises the mcp tool only when servers are configured", () => {
     expect(buildHoySystemPrompt(false)).not.toContain("MCP tools:");
     const configured = buildHoySystemPrompt(true);
@@ -192,6 +225,19 @@ describe("mcp proxy tool (real stdio server)", () => {
     const { tool, shutdown } = mount(stdioConfig("project"));
     const c = ctx({ trusted: false });
     const res = await tool.execute("c8", { action: "search" }, undefined, undefined, c);
+    expect(res.content[0].text).toContain("not trusted");
+    await shutdown();
+  });
+
+  test("autonomous mode does not bypass project trust", async () => {
+    const { tool, shutdown } = mount(stdioConfig("project"), "autonomous");
+    const c = ctx({
+      trusted: false,
+      select: async () => {
+        throw new Error("project trust must fail before MCP consent");
+      },
+    });
+    const res = await tool.execute("c-untrusted", { action: "search" }, undefined, undefined, c);
     expect(res.content[0].text).toContain("not trusted");
     await shutdown();
   });
@@ -210,6 +256,24 @@ describe("mcp proxy tool (real stdio server)", () => {
     // call blocks and returns the subagent's result in-band (not "delivered back").
     expect(enabled).toContain("BLOCKS until the subagent finishes and returns its result");
     expect(enabled).not.toContain("Fire-and-forget");
+  });
+});
+
+describe("MCP consent policy", () => {
+  test("only autonomous mode bypasses MCP consent", () => {
+    for (const mode of ["default", "acceptEdits", "plan"] as const) {
+      expect(requiresMcpConsent(createPermissionState(mode))).toBe(true);
+    }
+    expect(requiresMcpConsent(createPermissionState("autonomous"))).toBe(false);
+  });
+
+  test("reads live permission state", () => {
+    const state = createPermissionState("default");
+    expect(requiresMcpConsent(state)).toBe(true);
+    state.mode = "autonomous";
+    expect(requiresMcpConsent(state)).toBe(false);
+    state.mode = "default";
+    expect(requiresMcpConsent(state)).toBe(true);
   });
 });
 

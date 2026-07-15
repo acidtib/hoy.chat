@@ -4,18 +4,24 @@
 // emits extension_ui_request on stdout and blocks the agent until Rust writes
 // the matching extension_ui_response (rpc.md, Extension UI Protocol).
 //
-// Mode lives in closure state. Initial value comes from HOY_PERMISSION_MODE
-// (set by Rust at spawn so respawns restore it); changes arrive as the
-// /hoy_mode extension command, which the RPC prompt command executes
-// immediately even mid-stream. A resource-loader reload() re-runs this factory
-// and resets mode to the env value; Rust keeps the env in sync on every mode
-// change so that reset is harmless.
+// Mode lives in state shared with extensions that implement their own consent
+// checks. Its initial value comes from HOY_PERMISSION_MODE (set by Rust at spawn
+// so respawns restore it); changes arrive as the /hoy_mode extension command,
+// which the RPC prompt command executes immediately even mid-stream.
 
 import { isAbsolute, join, relative } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AUTONOMOUS_MODE_PROMPT, PLAN_MODE_PROMPT } from "./hoy-system-prompt";
 
 export type PermissionMode = "default" | "acceptEdits" | "plan" | "autonomous";
+
+export interface PermissionState {
+  mode: PermissionMode;
+}
+
+export function createPermissionState(mode: PermissionMode): PermissionState {
+  return { mode };
+}
 
 export const PERMISSION_MODES: PermissionMode[] = ["default", "acceptEdits", "plan", "autonomous"];
 
@@ -150,9 +156,8 @@ function blockReason(mode: PermissionMode, toolName: string): string {
 const DENY_REASON =
   "The user declined this tool call. Do not retry it unchanged; adjust your approach or ask the user how to proceed.";
 
-export function createHoyPermissions(initialMode: PermissionMode) {
+export function createHoyPermissions(state: PermissionState) {
   return function hoyPermissions(pi: ExtensionAPI) {
-    let mode: PermissionMode = initialMode;
     // The child runs in the project dir, so process.cwd() is the project root
     // used to resolve the .hoy/plans plan-file gate (HOY-213).
     const cwd = process.cwd();
@@ -168,18 +173,18 @@ export function createHoyPermissions(initialMode: PermissionMode) {
           ctx.ui.notify(`hoy_mode: unknown mode "${next}"`, "error");
           return;
         }
-        mode = next;
+        state.mode = next;
         // Observable confirmation for the client (and the spike test); Rust
         // drops notify requests rather than rendering them.
-        ctx.ui.notify(`permission mode: ${mode}`, "info");
+        ctx.ui.notify(`permission mode: ${state.mode}`, "info");
       },
     });
 
     pi.on("before_agent_start", async (event) => {
-      if (mode === "plan") {
+      if (state.mode === "plan") {
         return { systemPrompt: `${event.systemPrompt}\n\n${PLAN_MODE_PROMPT}` };
       }
-      if (mode === "autonomous") {
+      if (state.mode === "autonomous") {
         return { systemPrompt: `${event.systemPrompt}\n\n${AUTONOMOUS_MODE_PROMPT}` };
       }
       return undefined;
@@ -187,10 +192,10 @@ export function createHoyPermissions(initialMode: PermissionMode) {
 
     pi.on("tool_call", async (event, ctx) => {
       const path = typeof (event.input as any)?.path === "string" ? (event.input as any).path : undefined;
-      const decision = decide(mode, event.toolName, { path, cwd });
+      const decision = decide(state.mode, event.toolName, { path, cwd });
       if (decision === "allow") return undefined;
       if (decision === "block") {
-        return { block: true, reason: blockReason(mode, event.toolName) };
+        return { block: true, reason: blockReason(state.mode, event.toolName) };
       }
       if (sessionAllowed.has(event.toolName)) return undefined;
 
