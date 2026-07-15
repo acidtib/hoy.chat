@@ -25,6 +25,12 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
+    // WebKit can navigate as soon as Vite starts listening. Pre-transform the
+    // renderer graph so that first navigation cannot remain on an empty root
+    // while the large desktop module graph is compiled.
+    warmup: {
+      clientFiles: ["./src/main.tsx"],
+    },
     hmr: host
       ? {
           protocol: "ws",
