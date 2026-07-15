@@ -11,7 +11,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use tauri::ipc::Channel;
@@ -23,6 +23,7 @@ use crate::reader::JsonlFramer;
 pub type SessionId = String;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const LOGIN_PATH_CACHE_TTL: Duration = Duration::from_secs(30);
 
 type EventSink = Arc<Mutex<Option<Channel<AgentEvent>>>>;
 
@@ -137,14 +138,38 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
 ];
 
 /// Resolve the user's login shell PATH by running `$SHELL -l -c 'echo $PATH'`.
-/// Cached after first call so we only spawn a shell once per process lifetime.
+/// Cached briefly so repeated sidecar spawns do not each start a shell, while
+/// tools installed during the app's lifetime become visible without a restart.
 /// Falls back to the current process PATH on failure (shell not found, timeout,
 /// empty output) so HOY-261's env_clear + allowlist security is preserved.
-fn resolved_login_path() -> &'static str {
-    static CACHE: OnceLock<String> = OnceLock::new();
-    CACHE.get_or_init(|| {
-        resolve_login_path_inner().unwrap_or_else(|| std::env::var("PATH").unwrap_or_default())
-    })
+fn resolved_login_path() -> String {
+    static CACHE: OnceLock<Mutex<Option<(Instant, String)>>> = OnceLock::new();
+    cached_login_path(
+        CACHE.get_or_init(|| Mutex::new(None)),
+        Instant::now(),
+        LOGIN_PATH_CACHE_TTL,
+        || resolve_login_path_inner().unwrap_or_else(|| std::env::var("PATH").unwrap_or_default()),
+    )
+}
+
+fn cached_login_path(
+    cache: &Mutex<Option<(Instant, String)>>,
+    now: Instant,
+    ttl: Duration,
+    resolve: impl FnOnce() -> String,
+) -> String {
+    let mut cache = cache
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some((resolved_at, path)) = cache.as_ref() {
+        if now.saturating_duration_since(*resolved_at) < ttl {
+            return path.clone();
+        }
+    }
+
+    let path = resolve();
+    *cache = Some((now, path.clone()));
+    path
 }
 
 /// Build the ordered, deduplicated list of login shells to try when
@@ -283,8 +308,8 @@ fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
             // When launched from a .desktop shortcut the Tauri app gets a
             // minimal PATH that lacks version-manager entries (nvm, fnm, etc.),
             // so tools like bun/bunx are invisible. Spawning $SHELL -l captures
-            // the fully-initialized PATH. Capped to one spawn per process
-            // lifetime by OnceLock in resolved_login_path().
+            // the fully-initialized PATH. The short cache avoids shell-spawn
+            // churn while allowing newly installed tools to appear.
             command.env("PATH", resolved_login_path());
             continue;
         }
@@ -2447,6 +2472,41 @@ mod live_tests {
             path_value.split(':').any(|p| p == "/usr/bin"),
             "resolved PATH should contain /usr/bin, got: {path_value}"
         );
+    }
+
+    #[test]
+    fn login_path_cache_reuses_value_within_ttl() {
+        let cache = Mutex::new(None);
+        let started = Instant::now();
+        let first = cached_login_path(&cache, started, Duration::from_secs(30), || {
+            "/first/path".to_string()
+        });
+        let second = cached_login_path(
+            &cache,
+            started + Duration::from_secs(29),
+            Duration::from_secs(30),
+            || "/unexpected/path".to_string(),
+        );
+
+        assert_eq!(first, "/first/path");
+        assert_eq!(second, "/first/path");
+    }
+
+    #[test]
+    fn login_path_cache_refreshes_at_ttl() {
+        let cache = Mutex::new(None);
+        let started = Instant::now();
+        cached_login_path(&cache, started, Duration::from_secs(30), || {
+            "/old/path".to_string()
+        });
+        let refreshed = cached_login_path(
+            &cache,
+            started + Duration::from_secs(30),
+            Duration::from_secs(30),
+            || "/new/path".to_string(),
+        );
+
+        assert_eq!(refreshed, "/new/path");
     }
 
     // HOY-341: when $SHELL matches a hardcoded fallback path, the path must
