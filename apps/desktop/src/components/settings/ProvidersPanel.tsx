@@ -9,9 +9,20 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { refreshProviderData } from "@/lib/refresh";
+import { listAlibabaEndpoints } from "@/lib/ipc";
+import {
+  apiHostFromSettings,
+  endpointsFromApiHost,
+  type DerivedAlibabaEndpoints,
+} from "@/lib/alibaba";
 import { useSessionStore } from "@/state/store";
 import { cn } from "@/lib/utils";
-import type { ProviderAuth, ProviderInfo } from "@/lib/types";
+import type {
+  AlibabaEndpointSettings,
+  AlibabaProviderId,
+  ProviderAuth,
+  ProviderInfo,
+} from "@/lib/types";
 import { PanelHeader, Section } from "./panels";
 import {
   SUBSCRIPTION_PROVIDERS,
@@ -77,6 +88,148 @@ function StatusPill({ auth }: { auth: ProviderAuth }) {
   );
 }
 
+function AlibabaEndpointEditor({
+  settings,
+  onChanged,
+}: {
+  settings: AlibabaEndpointSettings;
+  onChanged: () => Promise<void>;
+}) {
+  const [custom, setCustom] = useState(!settings.usingDefaults);
+  const [apiHost, setApiHost] = useState(() => apiHostFromSettings(settings));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = useSessionStore((s) => s.saveAlibabaEndpoints);
+  const reset = useSessionStore((s) => s.resetAlibabaEndpoints);
+
+  useEffect(() => {
+    setCustom(!settings.usingDefaults);
+    setApiHost(apiHostFromSettings(settings));
+    setError(null);
+  }, [settings]);
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      await onChanged();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  let derived: DerivedAlibabaEndpoints | null = null;
+  try {
+    derived = endpointsFromApiHost(settings.provider, apiHost);
+  } catch {
+    // Rust remains authoritative for endpoint validation on save.
+  }
+
+  return (
+    <div className="space-y-2 border-t border-border/60 pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium text-foreground">Endpoints</p>
+          <p className="text-xs text-muted-foreground">
+            {settings.usingDefaults
+              ? "Official defaults"
+              : "Custom HTTPS endpoints"}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="xs"
+          disabled={busy}
+          onClick={() => setCustom((value) => !value)}
+        >
+          {custom ? "Cancel" : "Customize"}
+        </Button>
+      </div>
+      {custom ? (
+        <div className="space-y-2">
+          <label className="block space-y-1 text-xs text-muted-foreground">
+            <span>API Host</span>
+            <Input
+              value={apiHost}
+              disabled={busy}
+              spellCheck={false}
+              placeholder="workspace.region.maas.aliyuncs.com"
+              onChange={(e) => setApiHost(e.target.value)}
+            />
+          </label>
+          {derived && (
+            <div className="space-y-1 font-mono text-[11px] text-muted-foreground">
+              <p className="truncate" title={derived.openAiBaseUrl}>
+                OpenAI: {derived.openAiBaseUrl}
+              </p>
+              {derived.dashscopeBaseUrl && (
+                <p className="truncate" title={derived.dashscopeBaseUrl}>
+                  DashScope: {derived.dashscopeBaseUrl}
+                </p>
+              )}
+              <p className="truncate" title={derived.anthropicBaseUrl}>
+                Anthropic: {derived.anthropicBaseUrl}
+              </p>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button
+              size="xs"
+              disabled={busy || !derived}
+              onClick={() =>
+                derived &&
+                void run(() =>
+                  save(
+                    settings.provider,
+                    derived.openAiBaseUrl,
+                    derived.anthropicBaseUrl,
+                  ),
+                )
+              }
+            >
+              Save API Host
+            </Button>
+            {!settings.usingDefaults && (
+              <Button
+                variant="ghost"
+                size="xs"
+                disabled={busy}
+                onClick={() => void run(() => reset(settings.provider))}
+              >
+                Reset defaults
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-1 font-mono text-[11px] text-muted-foreground">
+          <p className="truncate" title={apiHostFromSettings(settings)}>
+            API Host: {apiHostFromSettings(settings)}
+          </p>
+          <p className="truncate" title={settings.openAiBaseUrl}>
+            OpenAI: {settings.openAiBaseUrl}
+          </p>
+          {settings.provider === "alibaba-cloud" && (
+            <p
+              className="truncate"
+              title={`${apiHostFromSettings(settings)}/api/v1`}
+            >
+              DashScope: {apiHostFromSettings(settings)}/api/v1
+            </p>
+          )}
+          <p className="truncate" title={settings.anthropicBaseUrl}>
+            Anthropic: {settings.anthropicBaseUrl}
+          </p>
+        </div>
+      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
 function ProviderRow({
   info,
   auth,
@@ -84,6 +237,8 @@ function ProviderRow({
   onToggle,
   onClose,
   onChanged,
+  endpointSettings,
+  onEndpointsChanged,
 }: {
   info: ProviderInfo;
   auth: ProviderAuth | undefined;
@@ -96,6 +251,8 @@ function ProviderRow({
   // Never rejects; refresh failures surface panel-level so a row error always
   // means the save/remove itself failed.
   onChanged: () => Promise<void>;
+  endpointSettings?: AlibabaEndpointSettings;
+  onEndpointsChanged: () => Promise<void>;
 }) {
   const meta = metaFor(info.id, info.label);
   const [key, setKey] = useState("");
@@ -215,13 +372,15 @@ function ProviderRow({
               Saving a key replaces the subscription login for this provider.
             </p>
           )}
-          <p className="text-xs text-muted-foreground">
-            Or set{" "}
-            <code className="rounded-none bg-muted px-1 py-0.5 font-mono text-[11px]">
-              {info.env}
-            </code>{" "}
-            in the environment and restart Hoy.
-          </p>
+          {info.env && (
+            <p className="text-xs text-muted-foreground">
+              Or set{" "}
+              <code className="rounded-none bg-muted px-1 py-0.5 font-mono text-[11px]">
+                {info.env}
+              </code>{" "}
+              in the environment and restart Hoy.
+            </p>
+          )}
           {error && <p className="text-xs text-destructive">{error}</p>}
           {auth?.removable && (
             <Button
@@ -233,6 +392,9 @@ function ProviderRow({
             >
               Remove key
             </Button>
+          )}
+          {endpointSettings && (
+            <AlibabaEndpointEditor settings={endpointSettings} onChanged={onEndpointsChanged} />
           )}
         </div>
       )}
@@ -308,6 +470,9 @@ export function ProvidersPanel() {
   const [showAll, setShowAll] = useState(false);
   const [query, setQuery] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [alibabaEndpoints, setAlibabaEndpoints] = useState<
+    AlibabaEndpointSettings[]
+  >([]);
   const [loginProvider, setLoginProvider] = useState<SubscriptionProvider | null>(
     null,
   );
@@ -324,10 +489,28 @@ export function ProvidersPanel() {
     }
   }, []);
 
+  const refreshEndpoints = useCallback(async () => {
+    try {
+      setAlibabaEndpoints(await listAlibabaEndpoints());
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(String(e));
+    }
+  }, []);
+
   // Cheap; picks up the no-session boot path.
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    void refreshEndpoints();
+  }, [refresh, refreshEndpoints]);
+
+  const endpointByProvider = useMemo(
+    () =>
+      new Map(
+        alibabaEndpoints.map((settings) => [settings.provider, settings]),
+      ),
+    [alibabaEndpoints],
+  );
 
   const authOf = useMemo(() => {
     const map = new Map(providerAuth.map((a) => [a.provider, a]));
@@ -362,6 +545,8 @@ export function ProvidersPanel() {
       }
       onClose={() => setExpandedId((cur) => (cur === info.id ? null : cur))}
       onChanged={refresh}
+      endpointSettings={endpointByProvider.get(info.id as AlibabaProviderId)}
+      onEndpointsChanged={refreshEndpoints}
     />
   );
 

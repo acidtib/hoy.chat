@@ -55,6 +55,21 @@ describe("metaFor", () => {
   });
 });
 
+describe("Alibaba providers", () => {
+  test("each Hoy-owned provider has connection metadata", () => {
+    for (const id of [
+      "alibaba-cloud",
+      "alibaba-coding-plan",
+      "alibaba-token-plan",
+    ]) {
+      const meta = PROVIDER_META[id];
+      expect(meta.description.length).toBeGreaterThan(0);
+      expect(meta.consoleUrl).toStartWith("https://");
+      expect(meta.placeholder.length).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("partitionProviders", () => {
   const p = (id: string, label: string): ProviderInfo => ({
     id,

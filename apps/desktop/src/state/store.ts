@@ -26,10 +26,12 @@ import {
   loadWorkspace,
   readContextFile,
   readSessionTranscript,
+  resetAlibabaEndpoints as ipcResetAlibabaEndpoints,
   removeMcpServer as ipcRemoveMcpServer,
   removeProviderKey as ipcRemoveProviderKey,
   respondPermission as ipcRespondPermission,
   saveMcpServer as ipcSaveMcpServer,
+  saveAlibabaEndpoints as ipcSaveAlibabaEndpoints,
   saveProviderKey as ipcSaveProviderKey,
   saveWorkspace,
   sendPrompt,
@@ -76,6 +78,7 @@ import {
 import type { EvaluationResult, ThreadGoal } from "./goal";
 import type {
   AgentEvent,
+  AlibabaProviderId,
   ContextRef,
   ExtWidget,
   GoalAudit,
@@ -504,6 +507,12 @@ interface SessionStore {
   // thread's model pick and permission mode.
   saveProviderKey: (provider: string, key: string) => Promise<void>;
   removeProviderKey: (provider: string) => Promise<void>;
+  saveAlibabaEndpoints: (
+    provider: AlibabaProviderId,
+    openAiBaseUrl: string,
+    anthropicBaseUrl: string,
+  ) => Promise<void>;
+  resetAlibabaEndpoints: (provider: AlibabaProviderId) => Promise<void>;
   // MCP config writes respawn idle sidecars too (they reload the merged config),
   // so the same reconcile guards must be cleared.
   saveMcpServer: (
@@ -1205,6 +1214,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   removeMcpServer: async (scope, name, projectPath) => {
     await ipcRemoveMcpServer(scope, name, projectPath ?? null);
+    modelApplied.clear();
+    permissionModeApplied.clear();
+  },
+
+  saveAlibabaEndpoints: async (provider, openAiBaseUrl, anthropicBaseUrl) => {
+    await ipcSaveAlibabaEndpoints(provider, openAiBaseUrl, anthropicBaseUrl);
+    modelApplied.clear();
+    permissionModeApplied.clear();
+  },
+
+  resetAlibabaEndpoints: async (provider) => {
+    await ipcResetAlibabaEndpoints(provider);
     modelApplied.clear();
     permissionModeApplied.clear();
   },
