@@ -5,7 +5,7 @@
 //
 // The prompt is a FULL replacement via systemPromptOverride (HOY-185). It
 // restates pi's tool guidelines verbatim because a customPrompt replaces pi's
-// default coding prompt entirely; see hoy-system-prompt.ts for the invariants
+// default coding prompt entirely. See hoy-system-prompt.ts for the invariants
 // that replacement freezes. OAuth is unaffected: the Claude Code identity edge
 // lives in pi-ai's Anthropic provider, which injects system[0] itself for
 // OAuth tokens and sends this prompt as system[1]. The earlier append-only
@@ -36,7 +36,7 @@ import { runListSkills } from "./hoy-list-skills";
 
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
-// with grep/find/ls while bash is blocked; the prompt's tools list matches.
+// with grep/find/ls while bash is blocked. The prompt's tools list matches.
 const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "agent", "ask_question"];
 const envMode = process.env.HOY_PERMISSION_MODE ?? "default";
 const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "default";
@@ -53,11 +53,11 @@ if (!agentDir) {
 }
 
 // Set by Rust (create_session) only for spawned child sessions. Selects the
-// child's built-in type; absent for user threads.
+// child's built-in type. Absent for user threads.
 const subagentType = process.env.HOY_SUBAGENT_TYPE;
 
-// Numeric depth from Rust (0 for root/user threads). A thread may spawn iff
-// depth < MAX_SUBAGENT_DEPTH. Mirrors apps/desktop/src/state/limits.ts; keep
+// Numeric depth from Rust (0 for root/user threads). A thread can spawn iff
+// depth < MAX_SUBAGENT_DEPTH. Mirrors apps/desktop/src/state/limits.ts. Keep
 // the two in sync. This is the authoritative structural gate: a child at or
 // beyond the cap never receives the agent tool, so it cannot spawn (HOY-245).
 const subagentDepth = Number(process.env.HOY_SUBAGENT_DEPTH ?? 0);
@@ -71,7 +71,7 @@ const requireSubagentApproval = process.env.HOY_REQUIRE_SUBAGENT_APPROVAL === "1
 
 // OAuth login runs as its own short-lived invocation of this binary (Rust sets
 // HOY_OAUTH_LOGIN=<providerId>). It speaks a different, one-shot JSONL protocol
-// over stdio and exits; it never reaches runRpcMode below.
+// over stdio and exits. It never reaches runRpcMode below.
 const oauthProvider = process.env.HOY_OAUTH_LOGIN;
 if (oauthProvider) {
   await runOAuthLogin(agentDir, oauthProvider);
@@ -90,7 +90,7 @@ if (process.env.HOY_LIST_SUBAGENTS) {
     promptMode: t.promptMode,
     // The system prompt body (HOY-254), so an edit form can pre-fill it. Present
     // for global/project types and for built-ins with a static body (Explore,
-    // Plan); null for general-purpose, which inherits the base prompt (no body).
+    // Plan). Null for general-purpose, which inherits the base prompt (no body).
     body: t.body ?? null,
     model: t.model ?? null,
     thinking: t.thinking ?? null,
@@ -108,7 +108,7 @@ if (process.env.HOY_LIST_SUBAGENTS) {
 // through runListSkills, which writes JSON to stdout and exits.
 if (process.env.HOY_LIST_SKILLS) {
   await runListSkills(agentDir, process.cwd());
-  // runListSkills writes JSON to stdout and exits; this line is never reached.
+  // runListSkills writes JSON to stdout and exits. This line is never reached.
 }
 
 // Goal Mode (HOY-263): one-shot transcript evaluator. Rust spawns us with this
@@ -117,7 +117,7 @@ if (process.env.HOY_LIST_SKILLS) {
 // runGoalEval, which always writes JSON and exits.
 if (process.env.HOY_GOAL_EVAL) {
   await runGoalEval(agentDir, process.cwd());
-  // runGoalEval writes JSON to stdout and exits; this line is never reached.
+  // runGoalEval writes JSON to stdout and exits. This line is never reached.
 }
 
 // Goal Mode v2 (HOY-298): one-shot deterministic verify-command runner. Rust
@@ -127,18 +127,18 @@ if (process.env.HOY_GOAL_EVAL) {
 // and exits 0 (a non-zero `code` means the gate failed).
 if (process.env.HOY_VERIFY_COMMAND) {
   await runVerifyCommand();
-  // runVerifyCommand writes JSON to stdout and exits; this line is never reached.
+  // runVerifyCommand writes JSON to stdout and exits. This line is never reached.
 }
 
 // Goal Mode v3 (HOY-299): one-shot READ-ONLY auditor. Rust spawns us with this
 // env, captures the {met, reason} JSON on stdout, and exits us. Runs before the
 // runtime is built so it never touches runRpcMode. Unlike the tool-less
-// evaluator this is a genuine agentic loop over the Explore (read-only) toolset;
+// evaluator this is a genuine agentic loop over the Explore (read-only) toolset
 // runGoalAudit self-terminates via a turn budget plus an absolute wall-clock
-// failsafe, and fails open to {met:false, ...}, always writing JSON and exiting 0.
+// failsafe, and fails open to {met:false,...}, always writing JSON and exiting 0.
 if (process.env.HOY_GOAL_AUDIT) {
   await runGoalAudit(agentDir, process.cwd());
-  // runGoalAudit writes JSON to stdout and exits; this line is never reached.
+  // runGoalAudit writes JSON to stdout and exits. This line is never reached.
 }
 
 const factory: CreateAgentSessionRuntimeFactory = async ({
@@ -148,17 +148,17 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   sessionStartEvent,
 }) => {
   // MCP servers from Hoy's global + project mcp.json, merged per session
-  // (project cwd wins). createHoyMcp registers the `mcp` proxy tool; with no
-  // servers configured it simply reports none available (HOY-232).
+  // (project cwd wins). createHoyMcp registers the `mcp` proxy tool. With no
+  // servers configured it reports none available (HOY-232).
   const mcpConfig = loadMcpConfig(agentDir, cwd);
   const registry = loadSubagentRegistry(agentDir, cwd);
 
   // Depth cap is absolute: if this child was spawned for a type that is no
-  // longer in the freshly-loaded registry (its .hoy/agents/*.md was deleted or
+  // longer in the freshly-loaded registry (its.hoy/agents/*.md was deleted or
   // renamed since the parent validated the spawn), fail closed. Falling through
-  // to the parent branch would hand the child HOY_TOOLS (including agent) and
+  // to the parent branch will hand the child HOY_TOOLS (including agent) and
   // createHoyAgents, promoting it to a spawner. Phase 1's resolveSubagentType
-  // threw here; preserve that.
+  // threw here. Preserve that.
   if (subagentType && !registry[subagentType]) {
     throw new Error(
       `hoy-sidecar: unknown subagent type "${subagentType}"; refusing to start child session (depth cap).`,
@@ -178,26 +178,26 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       systemPromptOverride: () => {
         // Spawn guidance (agent tool + advertised types) is on iff this thread
         // can spawn, so a spawning-capable child sees it too. A non-spawning
-        // child gets guidance off; effectiveChildPrompt still applies its body.
+        // child gets guidance off. EffectiveChildPrompt still applies its body.
         const base = buildHoySystemPrompt(mcpConfig.servers.length > 0, canSpawn, advertised);
         return childType ? effectiveChildPrompt(childType, base) : base;
       },
       // Disk discovery of <agentDir>/{extensions,skills,prompts,themes} needs no
       // opt-in: DefaultResourceLoader.reload() auto-discovers user-scope resources
       // from agentDir unconditionally, and agentDir here is Hoy's agent dir
-      // (the HOY_CODING_AGENT_DIR Rust passes). Disk .ts extensions coexist with these
+      // (the HOY_CODING_AGENT_DIR Rust passes). Disk.ts extensions coexist with these
       // in-process extensionFactories. Proven against the bun --compile binary in
-      // HOY-228 (jiti + typebox resolve via Pi's virtualModules; an extension's
+      // HOY-228 (jiti + typebox resolve via Pi's virtualModules. An extension's
       // own node_modules deps resolve from disk). See docs/plans/HOY-228-*.
       // createHoyAgents is the switch that installs the agent tool. It is added
-      // iff this thread may spawn (depth < MAX_SUBAGENT_DEPTH), independent of
-      // root-vs-child; a child at or beyond the cap never gets it.
+      // iff this thread can spawn (depth < MAX_SUBAGENT_DEPTH), independent of
+      // root-vs-child. A child at or beyond the cap never gets it.
       extensionFactories: [
         createHoyAlibaba(agentDir),
         createHoyPermissions(permissionState),
         createHoyMcp(mcpConfig, permissionState),
         // HOY-253: ask_question is a user-interaction tool, not a side
-        // effect. Only root/user threads get it in their tool set (HOY_TOOLS);
+        // effect. Only root/user threads get it in their tool set (HOY_TOOLS)
         // child subagents (childType set) do not, since the intent-interrogation
         // phase belongs to the thread talking to the user, not a fire-and-forget
         // child. Registering it unconditionally is harmless (mirrors mcp): a
@@ -208,7 +208,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         // unconditionally is safe: a child subagent never types /init.
         createHoyInit(),
         ...(canSpawn ? [createHoyAgents(registry, requireSubagentApproval)] : []),
-        // HOY-244: cap a budgeted subagent type's turns; root/unbudgeted threads
+        // HOY-244: cap a budgeted subagent type's turns. Root/unbudgeted threads
         // run uncapped. childType is null for user threads, so this is child-only.
         ...(childType?.maxTurns ? [createHoyTurnBudget(childType.maxTurns)] : []),
       ],
@@ -227,11 +227,11 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
 // (HOY_SESSION_FILE), else create a fresh one. create(cwd) resolves the session
 // dir under HOY_CODING_AGENT_DIR (~/.hoy/sessions/<encoded-cwd>/), so
 // transcripts stay in Hoy's agent dir. open() restores prior messages and keeps
-// appending to the same file (stable identity across restart and respawn); fall
+// appending to the same file (stable identity across restart and respawn). Fall
 // back to a fresh session if the file is missing or unreadable.
 const sessionFile = process.env.HOY_SESSION_FILE;
 // HOY-244: on first spawn of a subagent whose type sets `inherit_context: true`,
-// Rust passes the parent's transcript path here; forkFrom mints a fresh child
+// Rust passes the parent's transcript path here. ForkFrom mints a fresh child
 // session seeded with the parent's history so the child starts with full context.
 // The renderer gates this (only sets the env for inheriting types), so honoring
 // it unconditionally is correct. Absent, or on respawn (own HOY_SESSION_FILE set),

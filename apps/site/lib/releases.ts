@@ -29,7 +29,7 @@ export function normalizeVersion(tag: string): string {
 // Fetched once at build time (static export). Any failure, including no network
 // or GitHub rate limiting, resolves to an empty list. A GITHUB_TOKEN in the build
 // env authenticates the request so shared runners are not rate-limited. CI later
-// treats an empty result as fatal; local builds use the monorepo version.
+// treats an empty result as fatal. Local builds use the monorepo version.
 let releasesPromise: Promise<Release[]> | undefined;
 
 async function fetchReleases(): Promise<Release[]> {

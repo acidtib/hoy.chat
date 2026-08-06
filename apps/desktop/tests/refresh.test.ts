@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ModelInfo, ProviderAuth, ProviderInfo } from "@/lib/types";
 import { mockIpcModule } from "./ipcMock";
 
-// Named mocks for the three provider calls under test; the shared helper fills
+// Named mocks for the three provider calls under test. The shared helper fills
 // in the rest of the ipc surface the store needs at import time.
 const listModels = mock<() => Promise<ModelInfo[]>>();
 const providerStatuses = mock<(ids: string[]) => Promise<ProviderAuth[]>>();

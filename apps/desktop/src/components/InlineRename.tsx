@@ -2,7 +2,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 // Inline title editor shared by the sidebar thread rows and the panel header.
-// Enter or blur commits, Escape cancels; unmounting the focused input fires no
+// Enter or blur commits, Escape cancels. Unmounting the focused input fires no
 // blur, so cancel never commits. The parent owns the editing flag and closes
 // via onClose.
 export function InlineRename({

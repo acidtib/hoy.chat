@@ -102,7 +102,7 @@ export function setAutoCompaction(
   return invoke<void>("set_auto_compaction", { sessionId, enabled });
 }
 
-// The key value is sent down once and never read back; status comes from
+// The key value is sent down once and never read back. Status comes from
 // providerStatuses. Pi's auth.json is the store, written in Rust.
 export function saveProviderKey(provider: string, key: string): Promise<void> {
   return invoke<void>("save_provider_key", { provider, key });
@@ -141,8 +141,8 @@ export function resetAlibabaEndpoints(provider: AlibabaProviderId): Promise<void
 }
 
 // MCP server config (HOY-232). `projectPath` is the active project's dir, needed
-// for project-scope entries; omit for global-only. save/remove respawn idle
-// sidecars in Rust so they reload the merged config, so callers should clear the
+// for project-scope entries. Omit for global-only. save/remove respawn idle
+// sidecars in Rust so they reload the merged config, so callers must clear the
 // per-session reconcile guards after (see the store actions).
 export function listMcpServers(projectPath?: string | null): Promise<McpServerList> {
   return invoke<McpServerList>("list_mcp_servers", { projectPath: projectPath ?? null });
@@ -167,15 +167,15 @@ export function removeMcpServer(
 
 // Subagent registry (HOY-234): builtin/global/project subagent types, merged
 // with each scope's enabled/disabled overrides. `cwd` resolves the project
-// scope; an empty cwd falls back to the backend's default dir like other
+// scope. An empty cwd falls back to the backend's default dir like other
 // per-project commands.
 export function listSubagents(cwd: string): Promise<SubagentDef[]> {
   return invoke<SubagentDef[]>("list_subagents", { cwd });
 }
 
 // Skills discovered by Pi's resource loader (HOY-323): the global ~/.hoy/skills
-// dir plus the active project's .hoy/skills, with validation diagnostics. `cwd`
-// resolves the project scope; an empty cwd falls back to the backend default.
+// dir plus the active project's.hoy/skills, with validation diagnostics. `cwd`
+// resolves the project scope. An empty cwd falls back to the backend default.
 export function listSkills(cwd: string): Promise<SkillList> {
   return invoke<SkillList>("list_skills", { cwd });
 }
@@ -194,14 +194,14 @@ export function setSubagentEnabled(
   });
 }
 
-// Author a custom subagent type (HOY-254). Rust serializes `def` into a .md in the
-// scope's agents dir (global agent dir or <project>/.hoy/agents) — the single
-// writer; the sidecar registry stays the only reader — then respawns idle sidecars
+// Author a custom subagent type (HOY-254). Rust serializes `def` into a.md in the
+// scope's agents dir (global agent dir or <project>/.hoy/agents), the single
+// writer. The sidecar registry stays the only reader, then respawns idle sidecars
 // so live sessions reload the registry. Rejects a name that is unsafe, duplicate
 // in-scope, or shadows a built-in (general-purpose/Explore/Plan). `scope` is
-// "global" or "project"; project scope needs `projectPath`. Editing an existing
-// type passes overwrite=true so the existing .md is replaced in a single atomic
-// write (no delete-then-write window); a new type passes overwrite=false (create-
+// "global" or "project". Project scope needs `projectPath`. Editing an existing
+// type passes overwrite=true so the existing.md is replaced in a single atomic
+// write (no delete-then-write window). A new type passes overwrite=false (create-
 // only: rejects a duplicate or built-in name).
 export function writeSubagent(
   def: SubagentWrite,
@@ -217,7 +217,7 @@ export function writeSubagent(
   });
 }
 
-// Delete a custom subagent type's .md (HOY-254). Idempotent; respawns idle
+// Delete a custom subagent type's.md (HOY-254). Idempotent. Respawns idle
 // sidecars so live sessions drop it from their registry. Only global/project
 // types are deletable (built-ins have no file).
 export function deleteSubagent(
@@ -234,13 +234,13 @@ export function deleteSubagent(
 
 // Spawn a thread's own sidecar in its project dir, returning the sessionId the
 // thread then drives. Empty cwd falls back to the backend's default dir.
-// `sessionFile` reopens an existing transcript (M4 restore); omit for a new one.
+// `sessionFile` reopens an existing transcript (M4 restore). Omit for a new one.
 // `subagentType`/`permissionMode` (HOY-231) brand and gate a spawned child
-// thread's sidecar; omit for an ordinary user thread.
-// `depth` (HOY-245) is the thread's position in the subagent tree (root = 0);
+// thread's sidecar. Omit for an ordinary user thread.
+// `depth` (HOY-245) is the thread's position in the subagent tree (root = 0)
 // the sidecar uses it to decide whether to grant the `agent` tool.
 // `requireSubagentApproval` (HOY-248) relays the renderer pref of the same name
-// to the sidecar as HOY_REQUIRE_SUBAGENT_APPROVAL; when false (default) the
+// to the sidecar as HOY_REQUIRE_SUBAGENT_APPROVAL. When false (default) the
 // `agent` tool spawns without a consent prompt.
 export function createSession(
   cwd: string,
@@ -268,21 +268,21 @@ export function closeSession(sessionId: string): Promise<void> {
   return invoke<void>("close_session", { sessionId });
 }
 
-// Full transcript as raw Pi AgentMessage objects; mapped to turns by the caller.
+// Full transcript as raw Pi AgentMessage objects. Mapped to turns by the caller.
 export function getMessages(sessionId: string): Promise<unknown[]> {
   return invoke<unknown[]>("get_messages", { sessionId });
 }
 
 // Sidecar-free transcript read (HOY-287): parse the thread's session JSONL off
 // disk, returning the same raw Pi AgentMessage[] as getMessages. Lets a reopened
-// thread render instantly before its sidecar is live; the caller reconciles with
+// thread render instantly before its sidecar is live. The caller reconciles with
 // getMessages once the session is up. `sessionFile` is the thread's stored path.
 export function readSessionTranscript(sessionFile: string): Promise<unknown[]> {
   return invoke<unknown[]>("read_session_transcript", { sessionFile });
 }
 
 // Read the session's tree entries (0.80.3, HOY-221): the flat SessionEntry list
-// plus the current leafId. Read side of the fork/tree gap; backs a future /tree
+// plus the current leafId. Read side of the fork/tree gap. Backs a future /tree
 // navigator. `since` returns only entries after that entry id (incremental read).
 export function getEntries(
   sessionId: string,
@@ -302,9 +302,9 @@ export function getTree(sessionId: string): Promise<SessionTree> {
 
 // Branch a new session from a user-message entry (HOY-281). Pi writes a new
 // session file (original preserved, `parentSession` set) and rebinds THIS
-// sidecar to the branch, so the session's file changes — read it back with
+// sidecar to the branch, so the session's file changes, read it back with
 // getSessionStats afterwards. `text` is the forked user message (composer
-// prefill); `cancelled` is true if the user aborted a confirm.
+// prefill). `cancelled` is true if the user aborted a confirm.
 export function forkSession(
   sessionId: string,
   entryId: string,
@@ -328,7 +328,7 @@ export function deleteSessionFile(sessionFile: string): Promise<void> {
 }
 
 // Toggle the OS keep-awake behavior (HOY-188). Synced from the
-// keepAwakeWhileStreaming pref on boot and whenever it changes; the backend's
+// keepAwakeWhileStreaming pref on boot and whenever it changes. The backend's
 // owner thread only holds the wake lock while a turn streams AND this is on.
 export function setKeepAwake(enabled: boolean): Promise<void> {
   return invoke<void>("set_keep_awake", { enabled });
@@ -342,9 +342,9 @@ export function saveWorkspace(workspace: Workspace): Promise<void> {
   return invoke<void>("save_workspace", { workspace });
 }
 
-// Send a prompt and stream the turn. Resolves once Pi accepts the prompt; tokens,
+// Send a prompt and stream the turn. Resolves once Pi accepts the prompt. Tokens,
 // tool calls, and the terminal `done` arrive on `onEvent`, never via the return.
-// `images` attaches vision content; `streamingBehavior` ("steer"|"followUp")
+// `images` attaches vision content. `streamingBehavior` ("steer"|"followUp")
 // queues the message when a turn is already streaming (HOY-205 / HOY-218).
 export function sendPrompt(
   sessionId: string,
@@ -380,7 +380,7 @@ export function enqueuePrompt(
 }
 
 // List project files/dirs for the @ context picker (HOY-220). `query` is a
-// substring filter over the relative path; results are gitignore-aware and capped.
+// substring filter over the relative path. Results are gitignore-aware and capped.
 export function listProjectPaths(
   root: string,
   query: string,
@@ -405,7 +405,7 @@ export function getUsageStats(): Promise<UsageReport> {
 }
 
 // Goal Mode (HOY-263): judge the thread's transcript against `condition` via a
-// one-shot evaluator sidecar. `evaluatorModel` pins the judge model; omit to let
+// one-shot evaluator sidecar. `evaluatorModel` pins the judge model. Omit to let
 // the sidecar pick a cheap available one. Always resolves to { met, reason }:
 // the evaluator fails open to met:false on any error, so Task 5's loop keeps
 // working on uncertainty rather than falsely stopping.
@@ -423,7 +423,7 @@ export function evaluateGoal(
 
 // Goal Mode v2 (HOY-298): run a goal's deterministic verify command via a
 // one-shot sidecar. `cwd` overrides where the command runs (a per-goal
-// verifyCwd); omit to run in the session's own cwd. Always resolves to
+// verifyCwd). Omit to run in the session's own cwd. Always resolves to
 // { code, stdout, stderr, killed }: the sidecar fails soft, emitting a non-zero
 // `code` on any command failure or timeout, so Task B's gate treats a non-zero
 // result as "not met, keep working".
@@ -440,7 +440,7 @@ export function verifyGoalCommand(
 }
 
 // Goal Mode v3 (HOY-299): run the independent read-only auditor via a one-shot
-// sidecar. `cwd` overrides where the auditor reads (a per-goal cwd); omit to run
+// sidecar. `cwd` overrides where the auditor reads (a per-goal cwd). Omit to run
 // in the session's own cwd. Always resolves to { met, reason }: the auditor fails
 // open to met:false on any error or timeout, so Task B's loop keeps working on
 // uncertainty rather than falsely stopping.
@@ -461,7 +461,7 @@ export function abort(sessionId: string): Promise<void> {
 }
 
 // Switch a session's permission mode (HOY-186). Applies immediately, even
-// mid-stream; the backend also remembers it for respawns.
+// mid-stream. The backend also remembers it for respawns.
 export function setPermissionMode(
   sessionId: string,
   mode: PermissionMode,
@@ -470,7 +470,7 @@ export function setPermissionMode(
 }
 
 // Answer a pending approval card. `value` answers a select dialog, `confirmed`
-// a confirm dialog, `cancelled` declines either; exactly one should be set.
+// a confirm dialog, `cancelled` declines either. Exactly one must be set.
 export function respondPermission(
   sessionId: string,
   requestId: string,
@@ -485,7 +485,7 @@ export function respondPermission(
   });
 }
 
-// Start a subscription OAuth login. Resolves once the login child is spawned;
+// Start a subscription OAuth login. Resolves once the login child is spawned
 // the flow (auth URL, prompts, done/error) streams on `onEvent`. Only one login
 // runs at a time. The renderer opens the auth URL and submits pasted codes via
 // oauthLoginSubmit.

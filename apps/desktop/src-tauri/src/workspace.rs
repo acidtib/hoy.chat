@@ -1,11 +1,11 @@
 // Hoy's own persistence: the projects -> threads tree, stored as workspace.json
 // in the branded agent dir (~/.hoy/agent, via pi_config::agent_dir). This is the
-// metadata layer; Pi owns the transcripts (SessionManager writes JSONL session
+// metadata layer. Pi owns the transcripts (SessionManager writes JSONL session
 // files under the same dir). Each thread carries the durable sessionFile path so
 // a reopened thread can SessionManager.open() its prior conversation.
 //
 // Read-modify-write is atomic (temp + rename), mirroring pi_config's auth.json
-// handling. The live sidecar process id is NOT persisted (it is ephemeral); only
+// handling. The live sidecar process id is NOT persisted (it is ephemeral). Only
 // sessionFile is durable.
 
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ pub struct Workspace {
     pub projects: Vec<WsProject>,
     // The last project the user worked in, restored so the home launcher can
     // default a new thread to it across restarts. camelCase to match the
-    // frontend Workspace shape; absent in pre-flag files.
+    // frontend Workspace shape. Absent in pre-flag files.
     #[serde(rename = "activeProjectId", default)]
     pub active_project_id: Option<String>,
 }
@@ -46,26 +46,26 @@ pub struct WsThread {
     pub session_file: Option<String>,
     #[serde(default)]
     pub archived: bool,
-    // True once the user manually renamed the thread; pre-flag workspaces
+    // True once the user manually renamed the thread. Pre-flag workspaces
     // default to false.
     #[serde(default)]
     pub renamed: bool,
     // Unsent composer text, restored into the editor on reopen.
     #[serde(default)]
     pub draft: Option<String>,
-    // Permission mode (HOY-186); absent means default. The renderer re-applies
+    // Permission mode (HOY-186). Absent means default. The renderer re-applies
     // it to the thread's sidecar after spawn.
     #[serde(default)]
     pub permission_mode: Option<String>,
     // HOY-231: subagent orchestration. A spawned child thread's parent, so the
-    // tree survives restart; absent for top-level threads and pre-HOY-231 files.
+    // tree survives restart. Absent for top-level threads and pre-HOY-231 files.
     #[serde(default)]
     pub parent_thread_id: Option<String>,
     #[serde(default)]
     pub spawned_by: Option<SpawnedBy>,
     // Last-selected model (HOY-267): a cached hint so the sidebar can show the
     // thread's provider glyph on load without spawning the session. The session
-    // JSONL remains the source of truth; the renderer reconciles this against
+    // JSONL remains the source of truth. The renderer reconciles this against
     // get_state after the thread is opened. Absent on new/session-less threads
     // and pre-HOY-267 files.
     #[serde(default)]
@@ -73,8 +73,8 @@ pub struct WsThread {
     // Goal Mode (HOY-263): the thread's goal loop state, if any. Absent for
     // threads with no goal and pre-HOY-263 files. On load, the frontend
     // (store.ts initWorkspace) demotes a restored "active" goal to "paused"
-    // and resets its counters so it does not auto-run; a "met"/"cleared"
-    // goal is dropped rather than restored. Persisted as-is here; the reset
+    // and resets its counters so it does not auto-run. A "met"/"cleared"
+    // goal is dropped rather than restored. Persisted as-is here. The reset
     // is a load-time frontend concern, not a workspace.rs one.
     #[serde(default)]
     pub goal: Option<WsGoal>,
@@ -106,7 +106,7 @@ pub struct WsGoal {
     #[serde(default)]
     pub last_reason: Option<String>,
     // HOY-298 (Goal Mode v2): optional deterministic verify gate. Mirrors the
-    // ThreadGoal fields; #[serde(default)] so pre-v2 workspaces still load. Kept
+    // ThreadGoal fields. #[serde(default)] so pre-v2 workspaces still load. Kept
     // in sync with the frontend so a persisted verifyCommand/verifyCwd is not
     // silently dropped on save/load.
     #[serde(default)]
@@ -115,7 +115,7 @@ pub struct WsGoal {
     pub verify_cwd: Option<String>,
     // HOY-299 (Goal Mode v3): which evaluator the loop uses ("transcript" default
     // when absent, or "auditor" for the independent read-only auditor). Mirrors
-    // the ThreadGoal field; #[serde(default)] so pre-v3 workspaces still load.
+    // the ThreadGoal field. #[serde(default)] so pre-v3 workspaces still load.
     // (lastVerifyExit remains intentionally NOT persisted, like lastReason's
     // transient sibling.)
     #[serde(default)]

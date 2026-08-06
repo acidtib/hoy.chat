@@ -222,7 +222,7 @@ export const MessageBranchSelector = ({
 }: MessageBranchSelectorProps) => {
   const { totalBranches } = useMessageBranch();
 
-  // Don't render if there's only one branch
+  // Do not render if there is only one branch
   if (totalBranches <= 1) {
     return null;
   }

@@ -2,7 +2,7 @@ import type { UsageDay } from "@/lib/types";
 import { heatmapGrid } from "@/lib/usage";
 import { formatTokens } from "@/lib/utils";
 
-// 53-week activity grid (HOY-262). Intensity scales opacity of the brand color;
+// 53-week activity grid (HOY-262). Intensity scales opacity of the brand color
 // the row scrolls horizontally if the column is too narrow to hold a full year.
 const WEEKS = 53;
 

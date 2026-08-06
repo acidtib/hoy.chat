@@ -19,12 +19,12 @@ import { cn } from "@/lib/utils";
 import { PanelHeader, Section, StatusDot } from "./panels";
 
 // Split a command line into args on whitespace, ignoring empty runs. Good enough
-// for the common case; a server needing quoted args can be authored in the file.
+// for the common case. A server needing quoted args can be authored in the file.
 function splitArgs(raw: string): string[] {
   return raw.trim().length ? raw.trim().split(/\s+/) : [];
 }
 
-// Parse a "KEY=value" per line block into an object; blank lines and lines
+// Parse a "KEY=value" per line block into an object. Blank lines and lines
 // without "=" are skipped.
 function parseKeyVals(raw: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -140,7 +140,7 @@ function AddServerForm({
   async function submit() {
     if (!valid) return;
     // JSON-paste path (HOY-273): parse the standard mcpServers config into one or
-    // more (name, spec) pairs and add each; the typed Name is the fallback for a
+    // more (name, spec) pairs and add each. The typed Name is the fallback for a
     // single unnamed server. Parse errors surface before any server is added.
     if (mode === "json") {
       let servers;

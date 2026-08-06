@@ -1,6 +1,6 @@
 // Static display metadata for the Providers panel. Pure data, no IPC. The
 // canonical provider list (ids, labels, env vars) comes from the backend via
-// supportedProviders(); this module only decorates it for display.
+// supportedProviders(). This module only decorates it for display.
 
 import type { ProviderAuth, ProviderInfo } from "@/lib/types";
 import { SUBSCRIPTION_PROVIDER_IDS } from "@/lib/providerIds";
@@ -8,7 +8,7 @@ import { SUBSCRIPTION_PROVIDER_IDS } from "@/lib/providerIds";
 export interface ProviderMeta {
   description: string;
   // Key console URL, opened in the system browser. Absent for non-featured
-  // providers; the console step is omitted when missing.
+  // providers. The console step is omitted when missing.
   consoleUrl?: string;
   consoleLabel?: string;
   placeholder: string;
@@ -142,7 +142,7 @@ export function partitionProviders(
 // Subscription sign-in options, one per Pi OAuth provider (pi-ai/oauth). `id`
 // is Pi's OAuth provider id, which is also the auth.json key written on login,
 // so a configured status can be matched back to a row by provider id. The
-// Connect flow (manual paste of the redirect code) is wired in a follow-up; the
+// Connect flow (manual paste of the redirect code) is wired in a follow-up. The
 // backend command does not exist yet.
 export interface SubscriptionProvider {
   id: string;

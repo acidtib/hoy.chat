@@ -18,7 +18,7 @@ import {
 import { getLatestVersion } from "@/lib/releases";
 import { PRODUCTION_URL, RELEASES_URL } from "@/lib/site";
 
-// Resolved at build time via the static export; a new GitHub release refreshes
+// Resolved at build time via the static export. A new GitHub release refreshes
 // the displayed version on the next deploy without editing this file.
 export default async function Home() {
   const version = await getLatestVersion();
@@ -74,7 +74,7 @@ export default async function Home() {
             {/* On phones the two-pane window reflows into a cramped, clipped
                 mess, so below the hero breakpoint we swap the live mock for a
                 proportionally-correct capture of it. Regenerate this PNG from
-                the desktop-rendered .appwin-hero if the mock changes. */}
+ the desktop-rendered.appwin-hero if the mock changes. */}
             <Image
               className="hero-shot"
               src={appMock}

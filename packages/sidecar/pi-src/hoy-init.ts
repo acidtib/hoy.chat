@@ -22,7 +22,7 @@ import { join } from "node:path";
 
 export type InitMode = "create" | "update";
 
-// Best-effort read; a missing (or unreadable) file means "no AGENTS.md yet".
+// Best-effort read. A missing (or unreadable) file means "no AGENTS.md yet".
 function readIfExists(target: string): string | null {
   try {
     return readFileSync(target, "utf8");
@@ -32,7 +32,7 @@ function readIfExists(target: string): string | null {
 }
 
 // An AGENTS.md that carries human-authored substance picks update mode so we
-// preserve it. Strip a BOM, HTML comments, blank lines, and markdown headings;
+// preserve it. Strip a BOM, HTML comments, blank lines, and markdown headings
 // if more than ~80 non-whitespace characters remain, treat it as real content.
 // A bare heading-only scaffold or an empty file falls through to create.
 function hasRealContent(existing: string): boolean {
@@ -129,7 +129,7 @@ export function createHoyInit() {
         );
         const prompt = buildInitPrompt(mode, ctx.cwd);
         // Do not block the handler (HOY-215). sendUserMessage always triggers a
-        // turn; when idle it sends immediately, so deliverAs is only needed to
+        // turn. When idle it sends immediately, so deliverAs is only needed to
         // queue behind a turn that is mid-stream (omitting it then throws).
         if (ctx.isIdle()) pi.sendUserMessage(prompt);
         else pi.sendUserMessage(prompt, { deliverAs: "followUp" });

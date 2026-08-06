@@ -10,9 +10,9 @@ import {
 import { useSessionStore } from "@/state/store";
 
 // HOY-284: the /fork command's picker. Lists the active thread's forkable user
-// messages (get_fork_messages); choosing one branches a new thread from that
+// messages (get_fork_messages). Choosing one branches a new thread from that
 // point (store.pickFork -> branchFromEntry). A command-palette list, matching
-// pi's /fork UX. Rendered once at the app root; open state lives in the store.
+// pi's /fork UX. Rendered once at the app root. Open state lives in the store.
 export function ForkPicker() {
   const picker = useSessionStore((s) => s.forkPicker);
   const pickFork = useSessionStore((s) => s.pickFork);
@@ -27,8 +27,8 @@ export function ForkPicker() {
       title="Fork from a message"
       description="Pick a user message to branch a new thread from."
     >
-      {/* CommandDialog provides only the dialog shell; cmdk's Command context
-          (needed by Input/List/Item) must be supplied here, as ModelSelector does. */}
+      {/*CommandDialog provides only the dialog shell. Cmdk's Command context
+ (needed by Input/List/Item) must be supplied here, as ModelSelector does. */}
       <Command>
         <CommandInput placeholder="Fork from which message?" />
         <CommandList>
@@ -36,7 +36,7 @@ export function ForkPicker() {
           {picker?.messages.map((m) => (
             <CommandItem
               key={m.entryId}
-              // entryId keeps the value unique when two messages share text; the
+              // entryId keeps the value unique when two messages share text. The
               // text makes the row searchable.
               value={`${m.text} ${m.entryId}`}
               onSelect={() => pickFork(m.entryId)}

@@ -31,7 +31,7 @@ import type { SessionTreeNode } from "@/lib/types";
 import { findThread, useSessionStore } from "@/state/store";
 
 // HOY-280: the `/tree` session-tree navigator. Lives in the ThreadView's right
-// dock (a reusable sidebar host; see HOY-278 spike). Renders pi's pre-nested
+// dock (a reusable sidebar host. See HOY-278 spike). Renders pi's pre-nested
 // entry tree, keeps the linear common case a clean spine with a hover "Branch
 // from here" hero, and lets branch points fan out with connectors. Filtering and
 // keyboard nav run client-side over the fetched tree (HOY-279 slice).
@@ -51,8 +51,8 @@ export function TreeNavigator() {
   const tree = useSessionStore((s) => (threadId ? s.sessionTree[threadId] : undefined));
   // The active thread's session id. A thread acquires its session lazily (on
   // hydrate or first prompt), so this goes null -> id after the thread becomes
-  // active; the fetch effect keys on it so the tree loads once the session
-  // exists, not just when the thread changes (HOY-280 stuck-loading fix).
+  // active. The fetch effect keys on it so the tree loads once the session
+  // exists, not when the thread changes (HOY-280 stuck-loading fix).
   const sessionId = useSessionStore((s) =>
     threadId ? findThread(s.projects, threadId)?.thread.sessionId ?? null : null,
   );
@@ -78,7 +78,7 @@ export function TreeNavigator() {
   );
 
   // Scroll the active conversation panel to a clicked node and flash it (HOY-304).
-  // Restored turns/blocks carry a data-entry-id (store.entryIdsFor); a meta or
+  // Restored turns/blocks carry a data-entry-id (store.entryIdsFor). A meta or
   // tool-result node has none, so we fall back to the nearest addressable neighbor
   // in tree order rather than doing nothing.
   const scrollToEntry = useCallback(
@@ -140,7 +140,7 @@ export function TreeNavigator() {
 
   // Prime on open, whenever the active thread changes, and once that thread
   // acquires its session (sessionId in the deps). Without the sessionId key, a
-  // thread selected before its session exists would call refreshSessionTree with
+  // thread selected before its session exists will call refreshSessionTree with
   // no session, get a no-op, and stay stuck on "Loading" until the dock is
   // reopened. The store also keeps it fresh on turn done while the dock is open.
   useEffect(() => {
@@ -153,7 +153,7 @@ export function TreeNavigator() {
     listRef.current?.focus();
   }, []);
 
-  // The visible, ordered rows drive keyboard navigation; the recursive renderer
+  // The visible, ordered rows drive keyboard navigation. The recursive renderer
   // below reproduces the same order and filter.
   const visible = useMemo<FlatNode[]>(
     () => flatAll.filter((n) => matchesFilter(n, filter)),
@@ -298,7 +298,7 @@ export function TreeNavigator() {
 }
 
 // Recursive renderer over pi's pre-nested children. Linear runs stay a flat
-// spine; a branch point wraps each divergent child in a connector column.
+// spine. A branch point wraps each divergent child in a connector column.
 function TreeRows({
   nodes,
   depth,
@@ -429,7 +429,7 @@ function TreeRow({
         : node.entry.type === "session_info"
           ? "Session start"
           : nodeRoleLabel(node));
-  // A "+tools" hint only on a mixed step (prose that also ran tools); a tool-only
+  // A "+tools" hint only on a mixed step (prose that also ran tools). A tool-only
   // step already reads as tools via its wrench icon and tool-name preview.
   const showToolChip =
     isMessage &&

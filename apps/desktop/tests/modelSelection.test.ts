@@ -3,7 +3,7 @@ import type { Thread } from "@/lib/types";
 
 import { mockIpcModule } from "./ipcMock";
 
-// Named mocks these tests assert against; the shared helper fills in the rest
+// Named mocks these tests assert against. The shared helper fills in the rest
 // of the ipc surface the store needs at import time.
 const setModel =
   mock<(sessionId: string, provider: string, modelId: string) => Promise<unknown>>();
@@ -117,7 +117,7 @@ describe("selectModel", () => {
 });
 
 // The modelApplied guard is module-level, so every test uses a distinct
-// session id; session ids are never reused in the app either.
+// session id. Session ids are never reused in the app either.
 describe("applyThreadModel at spawn", () => {
   test("submitPrompt applies a deferred pick to the new session before sending", async () => {
     seed({
@@ -177,7 +177,7 @@ describe("applyThreadModel at spawn", () => {
     getMessages.mockResolvedValue([]);
 
     await useSessionStore.getState().hydrateThread("t1");
-    // The model apply is fire-and-forget off the hydration path; flush it.
+    // The model apply is fire-and-forget off the hydration path. Flush it.
     await new Promise((r) => setTimeout(r, 0));
 
     expect(thread().model).toEqual({
@@ -218,7 +218,7 @@ describe("applyThreadModel failure recovery", () => {
     expect(sendPrompt).not.toHaveBeenCalled();
     expect(lastTurnError()).toContain("rpc timeout");
 
-    // The transient failure clears; the retry must re-apply the pick.
+    // The transient failure clears. The retry must re-apply the pick.
     getState.mockResolvedValue({
       model: { provider: "anthropic", id: "claude-opus-4-8" },
     });
@@ -239,7 +239,7 @@ describe("applyThreadModel failure recovery", () => {
 describe("closePanel model state", () => {
   test("keeps thread.model but drops modelSelecting with the other per-thread records", () => {
     const pick = { provider: "groq", id: "llama-3.3-70b" };
-    // sessionFile marks the thread as touched; an untouched one is discarded
+    // sessionFile marks the thread as touched. An untouched one is discarded
     // wholesale on close (HOY-184), pick and all.
     seed({ sessionId: null, sessionFile: "/tmp/s.jsonl", model: pick });
     useSessionStore.setState({

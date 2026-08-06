@@ -1,5 +1,5 @@
 // Image attachment encoding for the composer (HOY-205). Files are read in the
-// renderer and base64-encoded in memory; nothing touches disk. The base64 is raw
+// renderer and base64-encoded in memory. Nothing touches disk. The base64 is raw
 // (no data: URI prefix), matching Pi's ImageContent.data.
 
 import type { ImageAttachment } from "./types";

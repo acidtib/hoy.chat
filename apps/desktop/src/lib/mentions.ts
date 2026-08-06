@@ -2,7 +2,7 @@
 // round-trips: each mention is serialized between a pair of NUL delimiters, which
 // the user can never type and JSON.stringify never emits, so splitting on NUL
 // cleanly separates plain text from mention refs. The draft is the single source
-// of truth (persisted as-is); the message Pi sees replaces each marker with the
+// of truth (persisted as-is). The message Pi sees replaces each marker with the
 // ref's label, and contexts are derived from the markers.
 
 import { contextKey } from "./types";
@@ -37,7 +37,7 @@ export function draftToParts(draft: string): DraftPart[] {
           continue;
         }
       } catch {
-        // Not a valid ref; fall through and treat the segment as text.
+        // Not a valid ref. Fall through and treat the segment as text.
       }
     }
     if (seg) parts.push({ type: "text", text: seg });

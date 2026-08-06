@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mockIpcModule } from "./ipcMock";
 
-// None of the ipc surface is exercised here; the store just needs it mocked
+// None of the ipc surface is exercised here. The store needs it mocked
 // at import time.
 mockIpcModule();
 
@@ -34,11 +34,11 @@ function widths(): number[] {
 
 describe("closePanel widths", () => {
   test("closing overflowing panels re-fits survivors to the body instead of stacking widths", () => {
-    // Three panels at the minimum overflow an 800px body; the strip scrolls.
+    // Three panels at the minimum overflow an 800px body. The strip scrolls.
     seed([460, 460, 460], 800);
 
     useSessionStore.getState().closePanel("t3");
-    // Survivors are already at the minimum; they keep their width (still
+    // Survivors are already at the minimum. They keep their width (still
     // overflowing) rather than absorbing the closed panel's 460px.
     expect(widths()).toEqual([460, 460]);
 

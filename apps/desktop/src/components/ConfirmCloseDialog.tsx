@@ -18,7 +18,7 @@ const COPY = {
 } as const;
 
 // Global confirm for tearing down a streaming thread (close/archive/delete).
-// Rendered once in App; driven by the store's pendingTeardown.
+// Rendered once in App. Driven by the store's pendingTeardown.
 export function ConfirmCloseDialog() {
   const pending = useSessionStore((s) => s.pendingTeardown);
   const confirmTeardown = useSessionStore((s) => s.confirmTeardown);

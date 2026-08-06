@@ -5,14 +5,14 @@
 // provider flow and persists the {type:"oauth"} entry to Hoy's auth.json
 // (the same file pi_config.rs reads for status), preserving other entries.
 //
-// Protocol: newline-delimited JSON events on stdout; single-line UTF-8
+// Protocol: newline-delimited JSON events on stdout. Single-line UTF-8
 // responses on stdin (the raw pasted code / selected option id). Rust opens the
 // auth URL, relays events to the renderer, and writes the user's paste back.
 
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 
-// Callback shape Pi hands provider.login. Mirrors pi-ai OAuthLoginCallbacks; we
+// Callback shape Pi hands provider.login. Mirrors pi-ai OAuthLoginCallbacks. We
 // only depend on the fields we drive, so it is restated here to avoid importing
 // a deep subpath type.
 interface OAuthLoginCallbacks {

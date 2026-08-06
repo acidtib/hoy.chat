@@ -58,7 +58,7 @@ describe("validateDraft (HOY-254)", () => {
   });
 
   test("max turns above the u32 ceiling is rejected", () => {
-    // The Rust field is Option<u32>; a larger value fails serde at the write.
+    // The Rust field is Option<u32>. A larger value fails serde at the write.
     expect(fields(base({ maxTurns: "9999999999" }))).toContain("maxTurns");
     expect(fields(base({ maxTurns: "4294967295" }))).not.toContain("maxTurns");
   });

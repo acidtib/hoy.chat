@@ -52,7 +52,7 @@ describe("right dock (HOY-280)", () => {
   test("toggleRightDock opens the view and primes the active thread's tree", async () => {
     useSessionStore.getState().toggleRightDock("tree");
     expect(useSessionStore.getState().rightDock).toBe("tree");
-    // refreshSessionTree fired for the active thread; settle its microtask.
+    // refreshSessionTree fired for the active thread. Settle its microtask.
     await Promise.resolve();
     await Promise.resolve();
     expect(getTree).toHaveBeenCalledWith("sess_live");
@@ -92,4 +92,3 @@ describe("submitPrompt /tree interception (HOY-280)", () => {
     expect(useSessionStore.getState().rightDock).toBeNull();
   });
 });
-

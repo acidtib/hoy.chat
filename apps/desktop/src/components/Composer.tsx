@@ -65,7 +65,7 @@ import { contextKey, THINKING_LEVELS } from "@/lib/types";
 
 // Hoy built-in slash commands (HOY-223), shown in the "/" autocomplete alongside
 // Pi's get_commands. /compact is intercepted on submit (store.submitPrompt) and
-// never reaches Pi; its "source" renders as a "hoy" badge.
+// never reaches Pi. Its "source" renders as a "hoy" badge.
 const SLASH_BUILTINS: SlashCommand[] = [
   {
     name: "compact",
@@ -100,7 +100,7 @@ interface ContextThread {
   title: string;
 }
 
-// Thinking levels (HOY-204). Labels are display only; pi's lowercase
+// Thinking levels (HOY-204). Labels are display only. Pi's lowercase
 // ThinkingLevel union is the wire value.
 const THINKING_LABELS: Record<ThinkingLevel, string> = {
   off: "Off",
@@ -113,7 +113,7 @@ const THINKING_LABELS: Record<ThinkingLevel, string> = {
 };
 
 // Thread permission modes (HOY-186), in selector order. Labels are display
-// only; the wire values are the PermissionMode union.
+// only. The wire values are the PermissionMode union.
 const MODE_LABELS: Array<{ value: PermissionMode; label: string }> = [
   { value: "default", label: "Default" },
   { value: "acceptEdits", label: "Accept Edits" },
@@ -184,7 +184,7 @@ function pathToRef(entry: PathEntry): ContextRef {
 
 // Zed-style agent composer. The message editor is a contenteditable surface so @
 // mentions render as inline chips (HOY-220). `fill` makes it expand to fill the
-// panel (the empty thread state); otherwise it auto-grows up to a cap and docks
+// panel (the empty thread state). Otherwise it auto-grows up to a cap and docks
 // at the bottom of an active thread.
 export function Composer({
   value,
@@ -220,7 +220,7 @@ export function Composer({
   // The draft, with @ mentions encoded inline as markers (lib/mentions.ts).
   value: string;
   onChange: (value: string) => void;
-  // "enter" is a normal send / steer; "shiftEnter" queues a follow-up mid-turn
+  // "enter" is a normal send / steer. "shiftEnter" queues a follow-up mid-turn
   // (HOY-218). When idle, both start a normal turn.
   onSubmit?: (intent: "enter" | "shiftEnter") => void;
   models: ModelInfo[];
@@ -231,7 +231,7 @@ export function Composer({
   onSelectMode?: (mode: PermissionMode) => void;
   thinking: ThinkingLevel;
   onSelectThinking: (level: ThinkingLevel) => void;
-  // While streaming, the Stop button appears alongside Send (HOY-195/HOY-218);
+  // While streaming, the Stop button appears alongside Send (HOY-195/HOY-218)
   // onStop is the abort. The composer stays enabled during a turn so the user
   // can steer (Enter) or queue a follow-up (Shift+Enter).
   onStop?: () => void;
@@ -256,7 +256,7 @@ export function Composer({
   // Selected refs become inline chips in the draft.
   searchPaths?: (query: string) => Promise<PathEntry[]>;
   threads?: ContextThread[];
-  // Pi's slash commands for the "/" autocomplete (HOY-223); the /compact built-in
+  // Pi's slash commands for the "/" autocomplete (HOY-223). The /compact built-in
   // is prepended here, so an empty list still offers it.
   slashCommands?: SlashCommand[];
   projectPath?: string | null;
@@ -271,13 +271,13 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   // The @ picker (HOY-220). `token` is the raw text after the @ in the editor, or
   // null when opened from the @ button (no @ typed yet). The token grammar drives
-  // the view: "" / null -> root (Recent + categories); "file:q" / "thread:q" ->
-  // that category filtered by q; any other text -> a fuzzy search. Picking a
+  // the view: "" / null -> root (Recent + categories). "file:q" / "thread:q" ->
+  // that category filtered by q. Any other text -> a fuzzy search. Picking a
   // category rewrites the token to its "@type:" prefix (Zed-style). The exact @
   // position is recomputed from the live caret at insert time.
   const [picker, setPicker] = useState<{ token: string | null } | null>(null);
   // The "/" command autocomplete (HOY-223), parallel to the @ picker. Open only
-  // when "/" starts the message and the caret is within that first token; `query`
+  // when "/" starts the message and the caret is within that first token. `query`
   // filters the command list, `index` is the keyboard-highlighted row.
   const [slash, setSlash] = useState<{ query: string; index: number } | null>(
     null,
@@ -346,7 +346,7 @@ export function Composer({
 
   // The active "/" command at the caret, or null (HOY-223). Only fires when "/"
   // leads the whole message: the caret's text node must start with "/", the caret
-  // must sit within that first token, and nothing (a chip or non-blank text) may
+  // must sit within that first token, and nothing (a chip or non-blank text) can
   // precede the node. This keeps the popup off for a mid-text or post-mention "/".
   function currentSlash(): {
     node: Text;
@@ -382,7 +382,7 @@ export function Composer({
     let rect: DOMRect | undefined = rects[0] ?? range.getBoundingClientRect();
     if (!rect || (rect.top === 0 && rect.left === 0 && rect.height === 0)) {
       // A collapsed caret at an element boundary (e.g. an empty editor) reports a
-      // zero rect; anchor at the editor's top-left, not its full-height rect
+      // zero rect. Anchor at the editor's top-left, not its full-height rect
       // (whose bottom sits at the screen edge and throws the menu to the bottom).
       const er = editorRef.current?.getBoundingClientRect();
       rect = er ? new DOMRect(er.left, er.top, 0, 20) : undefined;
@@ -402,7 +402,7 @@ export function Composer({
   }
 
   // Reflect the caret's @-mention or leading "/" after any edit (HOY-220/HOY-223).
-  // The two are mutually exclusive at the caret; the @ picker takes priority.
+  // The two are mutually exclusive at the caret. The @ picker takes priority.
   // Typing away from either closes the menu (including a button-opened @ picker,
   // which has no @ to anchor it). A new "/" query resets the highlight to the top.
   function updateMenus() {
@@ -523,7 +523,7 @@ export function Composer({
     range.deleteContents();
     // Insert the command's full name. For a skill that is the qualified
     // `/skill:<name>` form (command.name is `skill:<name>`), which Pi expands
-    // directly, so a picked skill always runs, even when its bare name would
+    // directly, so a picked skill always runs, even when its bare name will
     // collide with a built-in (/tree) or a same-named extension command, or
     // contains characters the bare-name rewrite regex rejects (HOY-323). Bare
     // `/name` typed by hand still works via submitPrompt's best-effort rewrite.
@@ -574,7 +574,7 @@ export function Composer({
     setSlash(null);
   }
 
-  // The @ button opens the menu at the caret without typing anything; the token
+  // The @ button opens the menu at the caret without typing anything. The token
   // is null (root view) until the user picks a category.
   function openPickerFromButton() {
     const root = editorRef.current;
@@ -691,7 +691,7 @@ export function Composer({
 
   // The "@" Commands category (HOY-286): the same list, filtered by the @command
   // query, surfaced as an alternate discovery path for slash commands. Capped like
-  // the file/thread views; picking one inserts "/name " (an action, not a chip).
+  // the file/thread views. Picking one inserts "/name " (an action, not a chip).
   const shownCommands =
     parsed.view === "command"
       ? filterCommands(SLASH_BUILTINS, slashCommands, parsed.q).slice(0, 8)
@@ -813,7 +813,7 @@ export function Composer({
       }
     }
     // The @ picker takes keys next (HOY-220): Escape closes it, Enter selects
-    // the top match instead of sending. In the root view Enter just closes (there
+    // the top match instead of sending. In the root view Enter closes (there
     // is no single obvious pick).
     if (picker) {
       if (e.key === "Escape") {
@@ -914,7 +914,7 @@ export function Composer({
               size="icon-sm"
               // z-20 lifts the button above the contenteditable editor below it:
               // both sit in the composer's `relative` stacking context, and the
-              // later-in-DOM editor wrapper (also positioned) would otherwise
+              // later-in-DOM editor wrapper (also positioned) will otherwise
               // paint over the button and swallow real mouse clicks (HOY-268).
               className="absolute right-1.5 top-1.5 z-20 size-7 text-muted-foreground"
               onClick={onToggleExpand}
@@ -990,7 +990,7 @@ export function Composer({
               return;
             }
             // Insert clipboard text as plain text so pasted HTML never pollutes
-            // the editor (which would break serialization).
+            // the editor (which will break serialization).
             e.preventDefault();
             insertTextAtCaret(e.clipboardData.getData("text/plain"));
           }}
@@ -1158,8 +1158,8 @@ export function Composer({
             multiple
             className="hidden"
             onChange={(e) => {
-              addImageFiles(e.target.files);
-              e.target.value = "";
+              addImageFiles(e.target.files)
+              e.target.value = ""
             }}
           />
           {canAttachImages && (
@@ -1196,8 +1196,8 @@ export function Composer({
             }
             options={MODE_LABELS.map((m) => m.label)}
             onSelect={(label) => {
-              const picked = MODE_LABELS.find((m) => m.label === label);
-              if (picked) onSelectMode?.(picked.value);
+              const picked = MODE_LABELS.find((m) => m.label === label)
+              if (picked) onSelectMode?.(picked.value)
             }}
           />
           <ModelSelect
@@ -1212,8 +1212,8 @@ export function Composer({
             onSelect={(label) => {
               const level = THINKING_LEVELS.find(
                 (l) => THINKING_LABELS[l] === label,
-              );
-              if (level) onSelectThinking(level);
+              )
+              if (level) onSelectThinking(level)
             }}
           />
           {streaming && onStop && (
@@ -1245,15 +1245,15 @@ export function Composer({
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 function PickerSection({
   label,
   children,
 }: {
-  label: string;
-  children: React.ReactNode;
+  label: string
+  children: React.ReactNode
 }) {
   return (
     <div className="py-0.5">
@@ -1262,15 +1262,15 @@ function PickerSection({
       </div>
       {children}
     </div>
-  );
+  )
 }
 
 function PickerRow({
   onSelect,
   children,
 }: {
-  onSelect: () => void;
-  children: React.ReactNode;
+  onSelect: () => void
+  children: React.ReactNode
 }) {
   return (
     <button
@@ -1280,31 +1280,31 @@ function PickerRow({
     >
       {children}
     </button>
-  );
+  )
 }
 
 function PickerEmpty({ children }: { children: React.ReactNode }) {
   return (
     <div className="px-2 py-1.5 text-sm text-muted-foreground">{children}</div>
-  );
+  )
 }
 
 // A "/" command row (HOY-223): name, optional description, and a source badge
 // (extension / prompt / skill, or "hoy" for a built-in). `active` mirrors the
 // keyboard highlight. Skills carry a "skill:" name prefix, stripped for display
-// so the row reads "/demo-review"; selecting it inserts the qualified
+// so the row reads "/demo-review". Selecting it inserts the qualified
 // "/skill:<name>" that Pi expands directly (HOY-323).
 function SlashRow({
   command,
   active,
   onSelect,
 }: {
-  command: SlashCommand;
-  active: boolean;
-  onSelect: () => void;
+  command: SlashCommand
+  active: boolean
+  onSelect: () => void
 }) {
   const display =
-    command.source === "skill" ? bareSkillName(command.name) : command.name;
+    command.source === "skill" ? bareSkillName(command.name) : command.name
   return (
     <button
       type="button"
@@ -1324,7 +1324,7 @@ function SlashRow({
         {command.source}
       </span>
     </button>
-  );
+  )
 }
 
 // A recently used @ context (HOY-220). Clock icon + label + dimmed secondary,
@@ -1333,10 +1333,10 @@ function RecentRow({
   contextRef,
   onSelect,
 }: {
-  contextRef: ContextRef;
-  onSelect: () => void;
+  contextRef: ContextRef
+  onSelect: () => void
 }) {
-  const secondary = contextRef.kind === "thread" ? "thread" : contextRef.path;
+  const secondary = contextRef.kind === "thread" ? "thread" : contextRef.path
   return (
     <PickerRow onSelect={onSelect}>
       <Clock className="size-4 shrink-0 text-muted-foreground" />
@@ -1345,11 +1345,11 @@ function RecentRow({
         {secondary}
       </span>
     </PickerRow>
-  );
+  )
 }
 
 // A category row in the picker's root view. Supported categories drill in (chevron)
-// or act; deferred ones are hidden entirely rather than shown dimmed and inert,
+// or act. Deferred ones are hidden entirely rather than shown dimmed and inert,
 // so the root menu lists only what actually works (HOY-220).
 function CategoryRow({
   icon,
@@ -1358,13 +1358,13 @@ function CategoryRow({
   disabled = false,
   onSelect,
 }: {
-  icon: React.ReactNode;
-  label: string;
-  chevron?: boolean;
-  disabled?: boolean;
-  onSelect?: () => void;
+  icon: React.ReactNode
+  label: string
+  chevron?: boolean
+  disabled?: boolean
+  onSelect?: () => void
 }) {
-  if (disabled) return null;
+  if (disabled) return null
   return (
     <button
       type="button"
@@ -1377,7 +1377,7 @@ function CategoryRow({
         <ChevronRight className="ml-auto size-4 text-muted-foreground/50" />
       )}
     </button>
-  );
+  )
 }
 
 // An extension setWidget panel: muted, monospace, multi-line, docked at the
@@ -1391,7 +1391,7 @@ function WidgetPanel({ lines }: { lines: string[] }) {
         </div>
       ))}
     </div>
-  );
+  )
 }
 
 function PillSelect({
@@ -1399,9 +1399,9 @@ function PillSelect({
   options,
   onSelect,
 }: {
-  value: string;
-  options: string[];
-  onSelect: (value: string) => void;
+  value: string
+  options: string[]
+  onSelect: (value: string) => void
 }) {
   return (
     <DropdownMenu>
@@ -1422,5 +1422,5 @@ function PillSelect({
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  )
 }

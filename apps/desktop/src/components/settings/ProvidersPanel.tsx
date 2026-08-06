@@ -44,7 +44,7 @@ function statusLabel(auth: ProviderAuth): string {
 // monogram fallback for providers without a vendored mark. Neutral by default,
 // brand-tinted once connected, so a scan down the list reads connected-ness at a
 // glance without a second color per provider (the system is restrained to one
-// brand hue; the glyphs are monochrome for the same reason).
+// brand hue. The glyphs are monochrome for the same reason).
 function ProviderMark({
   label,
   providerId,
@@ -244,11 +244,11 @@ function ProviderRow({
   auth: ProviderAuth | undefined;
   expanded: boolean;
   onToggle: () => void;
-  // Collapses this row only if it is still the expanded one; a plain toggle
-  // here would re-expand the row (or steal expansion from another row) when
+  // Collapses this row only if it is still the expanded one. A plain toggle
+  // here will re-expand the row (or steal expansion from another row) when
   // the user changed expansion while the save was in flight.
   onClose: () => void;
-  // Never rejects; refresh failures surface panel-level so a row error always
+  // Never rejects. Refresh failures surface panel-level so a row error always
   // means the save/remove itself failed.
   onChanged: () => Promise<void>;
   endpointSettings?: AlibabaEndpointSettings;
@@ -403,7 +403,7 @@ function ProviderRow({
 }
 
 // Subscription sign-in. Reflects a real oauth entry in auth.json (a completed
-// login shows "Subscription" pill with a Renew action); otherwise Sign in
+// login shows "Subscription" pill with a Renew action). Otherwise Sign in
 // launches the manual-paste OAuth flow (OAuthLoginDialog -> oauth_login_start).
 function SubscriptionSection({
   authOf,
@@ -498,7 +498,7 @@ export function ProvidersPanel() {
     }
   }, []);
 
-  // Cheap; picks up the no-session boot path.
+  // Cheap. Picks up the no-session boot path.
   useEffect(() => {
     void refresh();
     void refreshEndpoints();

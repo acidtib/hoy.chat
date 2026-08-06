@@ -181,7 +181,7 @@ function SidebarEmptyState({ onOpenProject }: { onOpenProject: () => void }) {
   );
 }
 
-// Drag the sidebar's right edge to resize; the store clamps to min/max. The drag
+// Drag the sidebar's right edge to resize. The store clamps to min/max. The drag
 // lifecycle (window listeners + body cursor, torn down on pointerup/cancel and on
 // unmount) lives in the shared useGlobalDrag hook.
 function ResizeHandle() {
@@ -245,12 +245,12 @@ function ProjectGroup({
   const [collapsed, setCollapsed] = useState(false);
   const expanded = searching || !collapsed;
   // Removing a project is destructive (drops the project and all its threads
-  // from the workspace); gate it behind a confirm (HOY-225).
+  // from the workspace). Gate it behind a confirm (HOY-225).
   const [confirmOpen, setConfirmOpen] = useState(false);
   const openThreadHistory = useSessionStore((s) => s.openThreadHistory);
 
   // Top-level threads, most-recent first. Children stay in project.threads for
-  // the fleet-marker computation below; they never render as rows (HOY-250).
+  // the fleet-marker computation below. They never render as rows (HOY-250).
   const topThreads = useMemo(
     () =>
       project.threads
@@ -318,7 +318,7 @@ function ProjectGroup({
               <DropdownMenuItem
                 variant="destructive"
                 onSelect={(e) => {
-                  // Keep the menu's select from firing the removal directly;
+                  // Keep the menu's select from firing the removal directly
                   // open the confirm dialog instead.
                   e.preventDefault();
                   setConfirmOpen(true);
@@ -402,10 +402,10 @@ function ThreadRow({
   const defaultModel = useSessionStore((s) => s.defaultModel);
   const [editing, setEditing] = useState(false);
 
-  // A thread with neither a persisted transcript nor a live sidecar hasn't been
+  // A thread with neither a persisted transcript nor a live sidecar has not been
   // prompted yet (HOY-289). Its row icon previews the provider glyph of the
-  // model it will use — the composer keeps thread.model in sync even before a
-  // session exists (deferred pick), falling back to the app default — instead
+  // model it will use, the composer keeps thread.model in sync even before a
+  // session exists (deferred pick), falling back to the app default, instead
   // of the neutral Sparkle. The first message spawns the sidecar and, once the
   // session reports its model, the row shows the thread's own glyph.
   const isUnstarted = !thread.sessionFile && !thread.sessionId;
@@ -502,4 +502,3 @@ function ThreadRow({
     </div>
   );
 }
-

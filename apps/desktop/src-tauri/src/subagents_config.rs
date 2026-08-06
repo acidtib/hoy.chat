@@ -157,7 +157,7 @@ fn mutate_override_locked(
 // Two-sided override (HOY-244): a name lives in exactly one of `enabled` /
 // `disabled`, or neither (frontmatter default). Recording explicit intent in
 // both directions keeps the settings toggle authoritative even for a type that
-// ships `enabled: false` in its .md frontmatter.
+// ships `enabled: false` in its.md frontmatter.
 fn set_enabled_at(path: &Path, name: &str, enabled: bool) -> Result<(), String> {
     let _guard = SUBAGENTS_MUTATION_LOCK
         .lock()
@@ -189,13 +189,13 @@ pub fn set_enabled(
 
 // HOY-254 (Slice 1): the write path for custom subagent types. Rust serializes a
 // type into a `<scope>/agents/<name>.md` (global agent dir or <project>/.hoy/
-// agents); the sidecar's hoy-agents-registry.ts is the single READER. This is the
+// agents). The sidecar's hoy-agents-registry.ts is the single READER. This is the
 // single-parser invariant: because Rust only ever SERIALIZES and never parses a
 // .md, the two sides can never drift on precedence, tool validation, or defaults.
 
 // The built-in type names (hoy-agents-registry.ts BUILTIN_SUBAGENTS), lowercased.
-// A custom .md must not reuse one of these case-insensitively: the registry keys
-// types by name, so a file named e.g. Explore.md would shadow the built-in. Rust
+// A custom.md must not reuse one of these case-insensitively: the registry keys
+// types by name, so a file named e.g. Explore.md will shadow the built-in. Rust
 // rejects the write so a built-in can never be masked by a user file.
 const BUILTIN_NAMES: [&str; 3] = ["general-purpose", "explore", "plan"];
 
@@ -203,7 +203,7 @@ const BUILTIN_NAMES: [&str; 3] = ["general-purpose", "explore", "plan"];
 // arg (camelCase from the renderer). Mirrors SubagentDef/SubagentWrite on the TS
 // side. `enabled` is absent by design: a new type is enabled by default and the
 // on/off state is owned by the two-sided override in subagents.json (set_enabled),
-// not the .md. The Option is kept so a caller CAN ship a type disabled, but the
+// not the.md. The Option is kept so a caller CAN ship a type disabled, but the
 // renderer does not.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -235,7 +235,7 @@ fn scope_label(scope: SubagentScope) -> &'static str {
     }
 }
 
-// The agents dir a scope's .md files live in: <agent_dir>/agents for global,
+// The agents dir a scope's.md files live in: <agent_dir>/agents for global,
 // <project>/.hoy/agents for project. Mirrors how the registry loader resolves the
 // same two layers (hoy-agents-registry.ts loadSubagentRegistry).
 fn agents_dir(scope: SubagentScope, project: Option<&str>) -> Result<PathBuf, String> {
@@ -269,7 +269,7 @@ fn is_safe_name(name: &str) -> bool {
 // than is_safe_name (it allows dots and spaces) so the UI can still delete or
 // overwrite a hand-authored file whose name is not a strict slug (the registry
 // reader keys types by raw filename and imposes no slug rule). New names still go
-// through the strict validate_name; this only gates operations on files that
+// through the strict validate_name. This only gates operations on files that
 // already exist on disk.
 fn is_path_component_safe(name: &str) -> bool {
     !name.is_empty()
@@ -315,7 +315,7 @@ fn yaml_string(s: &str) -> String {
     out
 }
 
-// Serialize a custom type to its .md text: a YAML frontmatter block carrying ONLY
+// Serialize a custom type to its.md text: a YAML frontmatter block carrying ONLY
 // the keys the user set, then the body (the system prompt). The keys mirror
 // EXACTLY what hoy-agents-registry.ts parseAgentFile reads: description, tools,
 // prompt_mode, model, thinking, enabled, inherit_context, max_turns. Omitted /
@@ -335,7 +335,7 @@ fn render_agent_md(def: &SubagentDef) -> String {
     // no selection means no tools, never a silent escalation to the full set.
     let items: Vec<String> = def.tools.iter().map(|t| yaml_string(t)).collect();
     fm.push_str(&format!("tools: [{}]\n", items.join(", ")));
-    // prompt_mode is a tiny required selector (replace|append); written always so
+    // prompt_mode is a tiny required selector (replace|append). Written always so
     // the mode a form chose is explicit in the file.
     fm.push_str(&format!("prompt_mode: {}\n", yaml_string(&def.prompt_mode)));
     if let Some(model) = def.model.as_deref() {
@@ -349,7 +349,7 @@ fn render_agent_md(def: &SubagentDef) -> String {
         }
     }
     // enabled defaults true in the registry (enabled !== false), so only a
-    // disabled type needs the key; writing `enabled: true` would be redundant.
+    // disabled type needs the key. Writing `enabled: true` will be redundant.
     if def.enabled == Some(false) {
         fm.push_str("enabled: false\n");
     }
@@ -367,9 +367,9 @@ fn render_agent_md(def: &SubagentDef) -> String {
     format!("---\n{fm}---\n{}\n", def.body.trim_end())
 }
 
-// Atomic replace for a subagent .md, tmp-then-rename so a crash mid-write never
-// leaves a half-written file the sidecar would try to parse. Mirrors
-// write_config_atomic_at; 0600/0700 for the same reason (the body is user content
+// Atomic replace for a subagent.md, tmp-then-rename so a crash mid-write never
+// leaves a half-written file the sidecar will try to parse. Mirrors
+// write_config_atomic_at. 0600/0700 for the same reason (the body is user content
 // kept private).
 fn write_md_atomic_at(path: &Path, contents: &str) -> Result<(), String> {
     let dir = path.parent().ok_or("agent .md path has no parent")?;
@@ -416,7 +416,7 @@ fn is_builtin_name(name: &str) -> bool {
 // overwrite=false (create) a new name must be a strict slug that is not a built-in
 // and does not already exist, so a create never clobbers another type. With
 // overwrite=true (edit) the file must already exist and is replaced atomically in a
-// single rename (write_md_atomic_at) -- no delete-then-write window that could lose
+// single rename (write_md_atomic_at), no delete-then-write window that can lose
 // the agent if the write fails. An edit keeps the same filename, so it accepts any
 // existing traversal-safe name (including a hand-authored non-slug).
 pub fn write_subagent(
@@ -461,7 +461,7 @@ pub fn write_subagent(
     write_md_atomic_at(&path, &render_agent_md(def))
 }
 
-// Remove a custom type's .md. Idempotent (a missing file is not an error), same
+// Remove a custom type's.md. Idempotent (a missing file is not an error), same
 // tolerance as the MCP remove path. Accepts any traversal-safe name so a
 // hand-authored non-slug file (e.g. my.agent.md, which the registry loads fine) is
 // still deletable from the UI.
@@ -488,9 +488,9 @@ pub fn delete_subagent(
         Err(e) => return Err(format!("remove {}: {e}", path.display())),
     }
     // Clear a stale enabled/disabled override so it does not silently apply to a
-    // future same-named type -- but ONLY for a custom name. A built-in-named override
-    // belongs to the built-in (whose file, if any, was just a shadow), so wiping it
-    // would silently re-enable a built-in the user disabled. Best-effort: the file is
+    // future same-named type, but ONLY for a custom name. A built-in-named override
+    // belongs to the built-in (whose file, if any, was a shadow), so wiping it
+    // will silently re-enable a built-in the user disabled. Best-effort: the file is
     // already gone (the delete's contract), so an override-write hiccup must not
     // report the whole delete as failed.
     if !is_builtin_name(name) {
@@ -626,7 +626,7 @@ mod tests {
         )
         .is_err());
 
-        // A fresh name writes; the same name again is a duplicate (create-only).
+        // A fresh name writes. The same name again is a duplicate (create-only).
         assert!(write_subagent(
             SubagentScope::Project,
             Some(p),
@@ -728,7 +728,7 @@ mod tests {
         let md =
             std::fs::read_to_string(proj.join(".hoy").join("agents").join("no-tools.md")).unwrap();
         // An explicit empty list (zero tools), never an omitted key that the registry
-        // would read as full access.
+        // will read as full access.
         assert!(md.contains("tools: []"));
         std::fs::remove_dir_all(&proj).ok();
     }
@@ -738,7 +738,7 @@ mod tests {
         let proj = std::env::temp_dir().join(format!("hoy-agent-shadow-{}", std::process::id()));
         std::fs::remove_dir_all(&proj).ok();
         let p = proj.to_str().unwrap();
-        // Simulate a hand-authored shadow file the create path could never make.
+        // Simulate a hand-authored shadow file the create path can never make.
         let dir = proj.join(".hoy").join("agents");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("Explore.md"), "---\n---\nhand authored\n").unwrap();
@@ -759,10 +759,10 @@ mod tests {
         std::fs::remove_dir_all(&proj).ok();
         let p = proj.to_str().unwrap();
         let json_path = proj.join(".hoy").join("subagents.json");
-        // The user disabled the built-in "explore" (no .md file involved).
+        // The user disabled the built-in "explore" (no.md file involved).
         set_enabled(SubagentScope::Project, Some(p), "explore", false).unwrap();
         // Deleting a same-named file (none here) must NOT wipe the built-in's
-        // override, or it would silently re-enable a built-in the user turned off.
+        // override, or it will silently re-enable a built-in the user turned off.
         delete_subagent(SubagentScope::Project, Some(p), "explore").unwrap();
         let after: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&json_path).unwrap()).unwrap();

@@ -31,9 +31,9 @@ export function detectMention(value: string, cursor: number): Mention | null {
 }
 
 // The picker view parsed from the raw @token (text after the @, or null when
-// button-opened). "@file:q" / "@thread:q" / "@command:q" scope to a category; a
-// bare @ or button-open is the root menu; anything else is a fuzzy search over
-// files + threads. `wantFiles` gates the (expensive) live path search — only the
+// button-opened). "@file:q" / "@thread:q" / "@command:q" scope to a category. A
+// bare @ or button-open is the root menu. Anything else is a fuzzy search over
+// files + threads. `wantFiles` gates the (expensive) live path search, only the
 // file and free search views need it (HOY-220, HOY-286).
 export type PickerView =
   | "root"
@@ -72,7 +72,7 @@ export function parseToken(token: string | null): ParsedToken {
 // The command list shared by the "/" autocomplete and the "@" Commands category
 // (HOY-223, HOY-286): built-ins plus the session's commands, deduped by name (a
 // built-in wins), filtered by a case-insensitive substring of the command name.
-// Skills carry a "skill:" name prefix; the query matches the full name so
+// Skills carry a "skill:" name prefix. The query matches the full name so
 // "/skill:x" still filters.
 export function filterCommands(
   builtins: SlashCommand[],

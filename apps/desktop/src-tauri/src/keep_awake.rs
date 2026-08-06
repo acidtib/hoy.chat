@@ -1,12 +1,12 @@
 // HOY-188: keep the machine awake while an agent turn is streaming, so a long
 // unattended run (a big edit loop, a build, a multi-minute tool sequence) does
 // not idle-sleep out from under the user. Full rationale and platform notes:
-// docs/plans/HOY-188-keep-alive-findings.md.
+// docs/plans/__P0__-keep-alive-findings.md.
 //
 // The wake lock (keepawake crate) MUST be created and dropped on the same
 // long-lived OS thread: on Windows SetThreadExecutionState is scoped to the
 // calling thread, so creating the guard inside a tokio task or command handler
-// would leak or clear it when the future resumes on a different worker thread.
+// will leak or clear it when the future resumes on a different worker thread.
 // The whole design follows from that: one dedicated owner thread creates, holds,
 // and drops the guard, and polls the manager's busy state. macOS and Linux do
 // not need the thread affinity, but a single owner thread is correct everywhere.
@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, Runtime};
 
 // User toggle (HOY-188): keepAwakeWhileStreaming. The renderer syncs the
-// persisted pref here via the set_keep_awake command on boot and on change; the
+// persisted pref here via the set_keep_awake command on boot and on change. The
 // owner thread reads it each poll. Defaults to true so behavior matches the pref
 // default even before the first sync (e.g. a turn that starts during startup).
 static ENABLED: AtomicBool = AtomicBool::new(true);
@@ -29,7 +29,7 @@ pub fn set_enabled(enabled: bool) {
 }
 
 // Idle timeouts are minutes, so a coarse poll is fine and self-healing: a missed
-// transition just corrects on the next tick, never a leaked lock.
+// transition corrects on the next tick, never a leaked lock.
 const POLL: Duration = Duration::from_secs(2);
 
 // Hold the lock briefly after the last turn ends so back-to-back turns do not
@@ -46,9 +46,9 @@ pub fn spawn<R: Runtime>(app: AppHandle<R>) {
 
 fn run<R: Runtime>(app: AppHandle<R>) {
     // The guard lives only on this thread (the Windows requirement). None = the
-    // wake lock is released and the machine may idle-sleep.
+    // wake lock is released and the machine can idle-sleep.
     let mut guard: Option<keepawake::KeepAwake> = None;
-    // When the manager was last observed busy; drives the post-idle linger.
+    // When the manager was last observed busy. Drives the post-idle linger.
     let mut last_busy: Option<Instant> = None;
     // create() can fail on Linux with no session/system bus (headless, some
     // sandboxes). Log that once, keep polling, and treat the feature as

@@ -32,8 +32,8 @@ fn unwrap_response(response: Value, what: &str) -> Result<Value, String> {
         .ok_or_else(|| format!("{what} response missing data"))
 }
 
-// For RPC commands whose success response carries no `data` (prompt, abort): just
-// confirm success and surface Pi's error string otherwise. unwrap_response would
+// For RPC commands whose success response carries no `data` (prompt, abort):
+// confirm success and surface Pi's error string otherwise. unwrap_response will
 // wrongly reject these for the absent data field.
 fn check_success(response: &Value, what: &str) -> Result<(), String> {
     if response.get("success").and_then(Value::as_bool) == Some(true) {
@@ -167,7 +167,7 @@ pub async fn set_auto_compaction(
 // Pi caches credentials at process start. For each session the current
 // transcript file is captured live via get_session_stats (only pi knows it
 // once a fresh session first writes) and reopened by the respawn, so pi-side
-// context survives; cwd and permission mode come from the manager mirrors.
+// context survives. Cwd and permission mode come from the manager mirrors.
 // Streaming sessions are skipped: killing a turn mid-flight is worse than
 // stale auth, and the close/reopen path still refreshes them later.
 pub(crate) async fn respawn_idle_sessions(manager: &SidecarManager) {
@@ -180,7 +180,7 @@ pub(crate) async fn respawn_idle_sessions(manager: &SidecarManager) {
             .await
         {
             Ok(response) => response["data"]["sessionFile"].as_str().map(str::to_string),
-            // A wedged process still gets a fresh child; worst case the thread
+            // A wedged process still gets a fresh child. Worst case the thread
             // is hydrated from the renderer's persisted sessionFile on reopen.
             Err(_) => None,
         };
@@ -250,9 +250,9 @@ pub async fn reset_alibaba_endpoints(
     Ok(())
 }
 
-// MCP server config (HOY-232). Global lives in the branded agent dir; project
+// MCP server config (HOY-232). Global lives in the branded agent dir. Project
 // lives in <project>/.hoy/mcp.json. `project_path` is the active project's dir,
-// needed only for project-scope reads/writes; the renderer already knows it.
+// needed only for project-scope reads/writes. The renderer already knows it.
 // Writes respawn idle sidecars so each reloads the merged config, same path as
 // a credential change.
 #[tauri::command]
@@ -299,7 +299,7 @@ pub fn list_subagents(
 }
 
 // Skills management (HOY-323): list discovered skills + diagnostics for the
-// settings UI. Mirrors list_subagents; the passthrough Value is decoded by the
+// settings UI. Mirrors list_subagents. The passthrough Value is decoded by the
 // renderer (see SkillList in types.ts).
 #[tauri::command]
 pub fn list_skills(
@@ -328,9 +328,9 @@ pub async fn set_subagent_enabled(
 }
 
 // HOY-254 (Slice 1): author a custom subagent type. Rust serializes `def` into a
-// .md in the scope's agents dir (the single writer; the sidecar registry stays the
+// .md in the scope's agents dir (the single writer. The sidecar registry stays the
 // only reader). `overwrite=false` creates (rejecting an unsafe/duplicate name or
-// one that shadows a built-in); `overwrite=true` replaces an existing file in a
+// one that shadows a built-in). `overwrite=true` replaces an existing file in a
 // single atomic write, the path an edit takes so it never has to delete first.
 // Respawns idle sidecars afterward, like set_subagent_enabled, so live sessions
 // reload the registry and pick up the change.
@@ -347,7 +347,7 @@ pub async fn write_subagent(
     Ok(())
 }
 
-// HOY-254 (Slice 1): delete a custom subagent type's .md. Idempotent; respawns
+// HOY-254 (Slice 1): delete a custom subagent type's.md. Idempotent. Respawns
 // idle sidecars so live sessions drop the removed type from their registry.
 #[tauri::command]
 pub async fn delete_subagent(
@@ -368,13 +368,13 @@ pub fn active_session_id(manager: State<'_, SidecarManager>) -> Option<String> {
 
 // Spawn a thread's own sidecar in its project directory. An empty cwd falls back
 // to the manager's default (temp) dir so threads without a project path still
-// run. `session_file` (M4) reopens a thread's existing transcript; None starts
+// run. `session_file` (M4) reopens a thread's existing transcript. None starts
 // fresh. `subagent_type` (HOY-231) brands a spawned child session's system
-// prompt; `permission_mode` seeds it with the parent's mode. `depth` (HOY-245)
+// prompt. `permission_mode` seeds it with the parent's mode. `depth` (HOY-245)
 // is the subagent chain's recursion depth, relayed to the sidecar as
-// HOY_SUBAGENT_DEPTH; root sessions pass 0. `require_subagent_approval`
+// HOY_SUBAGENT_DEPTH. Root sessions pass 0. `require_subagent_approval`
 // (HOY-248) relays the renderer pref to the sidecar as
-// HOY_REQUIRE_SUBAGENT_APPROVAL; false (default) spawns without a consent
+// HOY_REQUIRE_SUBAGENT_APPROVAL. False (default) spawns without a consent
 // prompt. Returns the new sessionId the thread stores and drives.
 #[tauri::command]
 pub async fn create_session(
@@ -413,7 +413,7 @@ pub fn close_session(session_id: String, manager: State<'_, SidecarManager>) {
     manager.remove(&session_id);
 }
 
-// Load a session's full transcript as raw Pi AgentMessage objects; the renderer
+// Load a session's full transcript as raw Pi AgentMessage objects. The renderer
 // folds them into turns (lib/turns.ts). Used to restore a reopened thread.
 #[tauri::command]
 pub async fn get_messages(
@@ -433,8 +433,8 @@ pub async fn get_messages(
 // Sidecar-free transcript read (HOY-287): parse a thread's session JSONL straight
 // off disk and return the same Vec<AgentMessage> shape get_messages yields. Lets a
 // reopened thread paint its transcript instantly, before a fresh sidecar has
-// spawned; hydrateThread then reconciles with the live get_messages. `session_file`
-// is the absolute path stored on the thread; the parser guards it to the branded
+// spawned. HydrateThread then reconciles with the live get_messages. `session_file`
+// is the absolute path stored on the thread. The parser guards it to the branded
 // sessions dir. A missing file reads as an empty transcript.
 #[tauri::command]
 pub fn read_session_transcript(session_file: String) -> Result<Vec<Value>, String> {
@@ -442,7 +442,7 @@ pub fn read_session_transcript(session_file: String) -> Result<Vec<Value>, Strin
 }
 
 // Read the session's tree entries (0.80.3, HOY-221): the flat, id/parentId-linked
-// SessionEntry list plus the current leafId. Read side of the fork/tree gap; a
+// SessionEntry list plus the current leafId. Read side of the fork/tree gap. A
 // future /tree navigator UI consumes it. `since` (optional) returns only entries
 // after that entry id for incremental reads.
 //
@@ -450,7 +450,7 @@ pub fn read_session_transcript(session_file: String) -> Result<Vec<Value>, Strin
 // union (message/thinking_level_change/model_change/compaction/branch_summary/
 // custom/custom_message/label/session_info) whose `message` variant embeds Pi's
 // AgentMessage, which get_messages already carries opaquely as Value. Mirroring
-// that union in Rust would duplicate a large, still-evolving surface for no gain
+// that union in Rust will duplicate a large, still-evolving surface for no gain
 // at a pure read passthrough. The renderer types the shape (lib/types.ts).
 #[tauri::command]
 pub async fn get_entries(
@@ -469,7 +469,7 @@ pub async fn get_entries(
 
 // Read the session tree snapshot (0.80.3, HOY-221): a recursive SessionTreeNode
 // forest (each node = entry + children + resolved label) plus the current leafId.
-// Same passthrough rationale as get_entries; returned as Value.
+// Same passthrough rationale as get_entries. Returned as Value.
 #[tauri::command]
 pub async fn get_tree(
     session_id: String,
@@ -481,7 +481,7 @@ pub async fn get_tree(
 }
 
 // Branch a new session from an earlier entry (HOY-281). `entry_id` must be a user
-// message entry; Pi truncates before it, writes a NEW session file (the original
+// message entry. Pi truncates before it, writes a NEW session file (the original
 // is preserved on disk with `parentSession` set), and rebinds THIS sidecar to the
 // branch. So after this returns, the session's file has changed (read it back with
 // get_session_stats). Returns `{ text, cancelled }` where `text` is the forked
@@ -533,7 +533,7 @@ pub async fn get_fork_messages(
 pub fn delete_session_file(session_file: String) -> Result<(), String> {
     let sessions_root = pi_config::agent_dir()?.join("sessions");
     let path = PathBuf::from(&session_file);
-    // starts_with is component-wise, so a `..` component would pass the prefix
+    // starts_with is component-wise, so a `..` component will pass the prefix
     // check while resolving outside the sessions dir. Reject any traversal.
     if path
         .components()
@@ -550,7 +550,7 @@ pub fn delete_session_file(session_file: String) -> Result<(), String> {
 }
 
 // Toggle the OS keep-awake behavior at runtime (HOY-188). The renderer syncs the
-// persisted `keepAwakeWhileStreaming` pref here on boot and whenever it changes;
+// persisted `keepAwakeWhileStreaming` pref here on boot and whenever it changes
 // the keep-awake owner thread reads the flag each poll. No session needed: the
 // feature is app-global, not per-thread. Default (before any call) is enabled.
 #[tauri::command]
@@ -570,10 +570,10 @@ pub fn save_workspace(workspace: Workspace) -> Result<(), String> {
 
 // Attach the prompt's Channel to the session, send Pi a `prompt`, and return once
 // preflight is accepted. Tokens, tool calls, and the terminal `done` then stream
-// over the Channel from the reader thread; the renderer drives the UI from those.
+// over the Channel from the reader thread. The renderer drives the UI from those.
 // Assemble the prompt RPC body. images[] and streamingBehavior are omitted when
 // absent so an idle text-only turn sends exactly {type:"prompt",message}.
-// streamingBehavior ("steer" | "followUp") only has meaning while a turn streams;
+// streamingBehavior ("steer" | "followUp") only has meaning while a turn streams
 // Pi ignores it when idle (HOY-205 / HOY-218).
 fn build_prompt_body(
     message: &str,
@@ -603,7 +603,7 @@ pub async fn send_prompt(
 ) -> Result<(), String> {
     let process = manager.get(&session_id)?;
     process.set_sink(on_event);
-    // request_with_dialog_grace, not request: a slash command in this prompt may
+    // request_with_dialog_grace, not request: a slash command in this prompt can
     // block its preflight on an extension UI dialog past REQUEST_TIMEOUT (HOY-215).
     let response = match process
         .request_with_dialog_grace(build_prompt_body(&message, images, streaming_behavior))
@@ -616,7 +616,7 @@ pub async fn send_prompt(
         }
     };
     // The prompt response is a bare {success:true} acknowledgement with no data
-    // (it fires at preflight; the turn streams over the Channel).
+    // (it fires at preflight. The turn streams over the Channel).
     if let Err(e) = check_success(&response, "prompt") {
         process.clear_sink();
         return Err(e);
@@ -666,7 +666,7 @@ pub async fn get_session_stats(
 // transcript, via a one-shot evaluator sidecar. Resolves the live session's JSONL
 // path (only pi knows it, so ask via get_session_stats like respawn does), then
 // spawns the evaluator. Fail-open is enforced sidecar-side: any evaluator failure
-// still returns {met:false, ...}, so Task 5's loop keeps working on uncertainty
+// still returns {met:false,...}, so Task 5's loop keeps working on uncertainty
 // rather than falsely stopping.
 #[tauri::command]
 pub async fn evaluate_goal(
@@ -688,9 +688,9 @@ pub async fn evaluate_goal(
 
 // Goal Mode v2 (HOY-298): run a goal's deterministic verify command via a
 // one-shot sidecar and return {code, stdout, stderr, killed}. Task A plumbing
-// only; Task B calls this from the loop after the transcript evaluator says met,
+// only. Task B calls this from the loop after the transcript evaluator says met,
 // requiring exit 0 before actually declaring the goal met. `cwd` is a per-goal
-// verifyCwd override; when absent the manager runs the command in the session's
+// verifyCwd override. When absent the manager runs the command in the session's
 // own cwd. Fail-soft is enforced sidecar-side: any command failure or timeout
 // still returns a JSON result with a non-zero `code` (a failed gate), and only a
 // genuine spawn/parse failure surfaces as Err.
@@ -705,11 +705,11 @@ pub async fn verify_goal_command(
 }
 
 // Goal Mode v3 (HOY-299): run the independent read-only auditor via a one-shot
-// sidecar and return {met, reason}. Task A plumbing only; Task B calls this from
+// sidecar and return {met, reason}. Task A plumbing only. Task B calls this from
 // the loop to compose the auditor's verdict with the v2 verify gate. `cwd` is a
-// per-goal override; when absent the manager runs the auditor in the session's
+// per-goal override. When absent the manager runs the auditor in the session's
 // own cwd, reading the actual files there. Fail-open is enforced sidecar-side:
-// any auditor failure or timeout still returns {met:false, ...}, so the loop
+// any auditor failure or timeout still returns {met:false,...}, so the loop
 // keeps working on uncertainty rather than falsely stopping.
 #[tauri::command]
 pub async fn audit_goal(
@@ -733,7 +733,7 @@ pub async fn get_usage_stats() -> Result<crate::usage_stats::UsageReport, String
 #[tauri::command]
 pub async fn abort(session_id: String, manager: State<'_, SidecarManager>) -> Result<(), String> {
     let process = manager.get(&session_id)?;
-    // A pending approval dialog blocks the agent before abort can take effect;
+    // A pending approval dialog blocks the agent before abort can take effect
     // cancel it first so the blocked tool_call resumes (as a denial) and the
     // abort lands (HOY-186).
     process.cancel_pending_ui();
@@ -742,7 +742,7 @@ pub async fn abort(session_id: String, manager: State<'_, SidecarManager>) -> Re
 }
 
 // Answer a pending approval card (HOY-186). `value` answers a select dialog,
-// `confirmed` a confirm dialog; `cancelled: true` declines either. Writes the
+// `confirmed` a confirm dialog. `cancelled: true` declines either. Writes the
 // extension_ui_response the blocked sidecar is waiting on.
 #[tauri::command]
 pub fn respond_permission(
@@ -758,7 +758,7 @@ pub fn respond_permission(
 }
 
 // Switch a thread's permission mode (HOY-186). The /hoy_mode extension command
-// executes immediately even mid-stream; the manager mirror keeps the mode
+// executes immediately even mid-stream. The manager mirror keeps the mode
 // across respawns via HOY_PERMISSION_MODE.
 #[tauri::command]
 pub async fn set_permission_mode(
@@ -780,7 +780,7 @@ pub async fn set_permission_mode(
 }
 
 // One entry in the composer @ context picker's file list (HOY-220). `path` is
-// relative to the project root (forward-slashed); `name` is the leaf.
+// relative to the project root (forward-slashed). `name` is the leaf.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PathEntry {
@@ -790,13 +790,13 @@ pub struct PathEntry {
 }
 
 // A single context file is inlined into the prompt text, so cap it: large files
-// would blow the context window and are rarely what the user means to attach.
+// will blow the context window and are rarely what the user means to attach.
 const MAX_CONTEXT_FILE_BYTES: usize = 256 * 1024;
 
 // List paths under a project root for the @ context picker (HOY-220). Pi has no
 // file-listing RPC, so this is Hoy-side. Gitignore-aware (require_git(false) so a
-// .gitignore is honored even without a .git dir); `query` is a case-insensitive
-// substring filter over the relative path; results are capped at `limit`.
+// .gitignore is honored even without a.git dir). `query` is a case-insensitive
+// substring filter over the relative path. Results are capped at `limit`.
 #[tauri::command]
 pub fn list_project_paths(
     root: String,
@@ -846,7 +846,7 @@ pub fn list_project_paths(
 
 // Read a project file for inlining as @ context (HOY-220). Path-guarded to the
 // project root (like delete_session_file) and size-capped. `path` is relative to
-// `root`; a canonicalized prefix re-check defends against symlink escapes.
+// `root`. A canonicalized prefix re-check defends against symlink escapes.
 #[tauri::command]
 pub fn read_context_file(root: String, path: String) -> Result<String, String> {
     let rel = PathBuf::from(&path);

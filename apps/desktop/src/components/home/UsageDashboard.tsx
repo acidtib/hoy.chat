@@ -17,7 +17,7 @@ import { TokenTrendChart } from "./TokenTrendChart";
 import { ActivityHeatmap, HeatmapLegend } from "./ActivityHeatmap";
 
 // The usage-stats section of the home dashboard (HOY-262). Self-loads the
-// report on mount; the report is fetched once and every range is derived
+// report on mount. The report is fetched once and every range is derived
 // client-side so the range switch never re-hits disk.
 export function UsageDashboard() {
   const report = useSessionStore((s) => s.usageReport);
@@ -29,7 +29,7 @@ export function UsageDashboard() {
     void refreshUsage();
   }, [refreshUsage]);
 
-  // The cards, heatmap, and streak are an all-time summary — keyed on `report`
+  // The cards, heatmap, and streak are an all-time summary, keyed on `report`
   // alone so a range toggle does not re-run the (sort + Set) streak/peak math.
   const summary = useMemo(() => {
     if (!report) return null;

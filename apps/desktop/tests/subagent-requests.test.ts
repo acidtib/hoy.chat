@@ -24,7 +24,7 @@ test("frameSubagentResult labels the result with the type", () => {
 test("takeChildRequestsForParent drops and returns only this parent's children", () => {
   // Parent ids are namespaced (rather than plain "p1"/"p2") because
   // subagentRequests is a module-level singleton shared across every test
-  // file in this bun run; other suites (e.g. subagentSpawnSyncSlot.test.ts)
+  // file in this bun run. Other suites (e.g. subagentSpawnSyncSlot.test.ts)
   // record entries under generic ids like "p1" and never clean them up.
   recordSubagentRequest("takeChildren-c1", {
     parentThreadId: "takeChildren-p1",

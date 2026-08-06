@@ -11,7 +11,7 @@
 // call require explicit consent unless autonomous mode pre-approves them. The
 // proxy tool defeats the name-based permission gate, which only ever sees
 // "mcp". Project-scoped servers additionally require project trust before any
-// connect. See docs/plans/HOY-210-mcp-support-findings.md.
+// connect. See docs/plans/__P0__-mcp-support-findings.md.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -63,7 +63,7 @@ function isHttp(spec: McpServerSpec): spec is McpHttpServer & { disabled?: boole
 // ${VAR} -> process.env.VAR, recursively over strings. Missing vars become "".
 // Keeps secrets out of a committed mcp.json (the value is a reference, not the
 // secret). $${VAR} escapes a literal ${VAR}. Single left-to-right pass so an
-// escape can't be re-expanded and a value's own "${" text is never touched.
+// escape cannot be re-expanded and a value's own "${" text is never touched.
 function interpolateEnv<T>(value: T, env: Record<string, string | undefined>): T {
   if (typeof value === "string") {
     return value.replace(/\$(\$?)\{(\w+)\}/g, (_m, esc, k) => (esc ? `\${${k}}` : env[k] ?? "")) as unknown as T;
@@ -112,7 +112,7 @@ export function mergeConfigs(
   );
 }
 
-// Missing or malformed files yield an empty config; a bad mcp.json must never
+// Missing or malformed files yield an empty config. A bad mcp.json must never
 // brick the sidecar (matches pi_config's read-side tolerance).
 function readConfigFile(path: string): McpConfigFile {
   try {
@@ -128,7 +128,7 @@ function readConfigFile(path: string): McpConfigFile {
 // separator (e.g. "./my-server"). On Windows, tries PATHEXT extensions
 // (.exe/.cmd/.bat/.com) when the bare command is not found, so npm-installed
 // CLI shims like bunx.cmd resolve correctly. Throws with a helpful message if
-// the command can't be found.
+// the command cannot be found.
 export function resolveCommand(
   command: string,
   env: Record<string, string | undefined>,
@@ -138,7 +138,7 @@ export function resolveCommand(
   if (/^(\/|[a-zA-Z]:[\\\/])/.test(command) || command.includes("/") || command.includes("\\")) return command;
 
   const pathDirs = (env.PATH ?? "").split(delimiter).filter(Boolean);
-  // PATHEXT is semicolon-delimited on Windows; on other platforms it is unset
+  // PATHEXT is semicolon-delimited on Windows. On other platforms it is unset
   // so the inner loop is a no-op.
   const pathext = (env.PATHEXT ?? "").split(";").filter(Boolean);
   for (const dir of pathDirs) {
@@ -147,7 +147,7 @@ export function resolveCommand(
       accessSync(fullPath, constants.X_OK);
       return fullPath;
     } catch {
-      // not found bare; try each PATHEXT extension
+      // not found bare. Try each PATHEXT extension
     }
     for (const ext of pathext) {
       const withExt = ext.startsWith(".") ? fullPath + ext : fullPath + "." + ext;
@@ -168,13 +168,13 @@ export function resolveCommand(
 }
 
 // Three sources, low to high precedence:
-//   global      $HOY_CODING_AGENT_DIR/mcp.json  (Hoy's agent dir)
-//   project     <cwd>/.mcp.json                 (the standard cross-tool file, so
-//                                                a repo's existing MCP servers,
-//                                                shared with Cursor/Claude Code,
-//                                                just work)
-//   project     <cwd>/.hoy/mcp.json             (Hoy's own, HOY-222; the file the
-//                                                settings UI writes, wins)
+// global $HOY_CODING_AGENT_DIR/mcp.json (Hoy's agent dir)
+// project <cwd>/.mcp.json (the standard cross-tool file, so
+// a repo's existing MCP servers,
+// shared with Cursor/Claude Code,
+//  work)
+// project <cwd>/.hoy/mcp.json (Hoy's own, HOY-222. The file the
+// settings UI writes, wins)
 // Both project files are project-scoped, so trust gating applies to servers a
 // cloned repo declares. ${ENV} in values is interpolated from the sidecar env.
 export function loadMcpConfig(agentDir: string, cwd: string, env: Record<string, string | undefined> = process.env): McpConfig {
@@ -366,7 +366,7 @@ export function createHoyMcp(config: McpConfig, permissionState: PermissionState
         try {
           await s.client?.close();
         } catch {
-          // best effort; the child dies with the sidecar regardless
+          // best effort. The child dies with the sidecar regardless
         }
       }
     });

@@ -1,5 +1,5 @@
 // Renderer-owned UI preferences. These are NOT Pi settings (Pi owns model,
-// thinking level, permission mode, auto-compaction per session); they are local
+// thinking level, permission mode, auto-compaction per session). They are local
 // app behavior the user controls. Kept in a dedicated store, separate from the
 // session store, so the delicate workspace autosave is untouched. Persisted to
 // localStorage via zustand's persist middleware, which the Tauri webview scopes
@@ -19,7 +19,7 @@ export type AppTheme = "light" | "dark" | "system";
 export interface AppPrefs {
   // Applied to <html>. "system" follows prefers-color-scheme.
   theme: AppTheme;
-  // First-run setup gate. Provider credentials still live in Pi's auth.json;
+  // First-run setup gate. Provider credentials still live in Pi's auth.json
   // this only records that the local UI flow has been completed.
   onboardingCompleted: boolean;
   // Composer: Enter sends. When false, Enter inserts a newline and Cmd/Ctrl+Enter
@@ -36,7 +36,7 @@ export interface AppPrefs {
   confirmCloseStreaming: boolean;
   // Starting directory for the "Open project" picker. Empty = OS default.
   defaultProjectDir: string;
-  // Open a panel for each subagent a thread spawns. Off by default; Fleet
+  // Open a panel for each subagent a thread spawns. Off by default. Fleet
   // is the intended way to watch spawned agents instead.
   autoOpenSpawnedThreads: boolean;
   // Prompt for consent before a thread spawns each subagent type. Off by
@@ -44,14 +44,14 @@ export interface AppPrefs {
   // intervenes via Fleet. On restores the per-type "Allow / Allow for this
   // session / Deny" prompt. Threaded to the sidecar as HOY_REQUIRE_SUBAGENT_APPROVAL.
   requireSubagentApproval: boolean;
-  // How many spawned subagent initial runs may stream at once; the rest queue
+  // How many spawned subagent initial runs can stream at once. The rest queue
   // FIFO (HOY-247). Clamped to at least 1 at the call site. The depth cap stays
   // a hard constant, not a pref, so the fork-bomb guard cannot be tuned away.
   maxConcurrentAgents: number;
   // Keep the machine awake while any thread is mid-turn (HOY-188), so a long
   // unattended run does not idle-sleep out from under the user. On by default.
-  // Synced to the Rust keep-awake owner thread via the set_keep_awake command;
-  // when off, the wake lock is never taken and the machine may idle-sleep.
+  // Synced to the Rust keep-awake owner thread via the set_keep_awake command
+  // when off, the wake lock is never taken and the machine can idle-sleep.
   keepAwakeWhileStreaming: boolean;
   // Global default for Pi's auto-compaction (HOY-275): when a thread's context
   // approaches the window, Pi summarizes older turns instead of overflowing. On
@@ -108,7 +108,7 @@ export const usePrefsStore = create<PrefsStore>()(
       storage: createJSONStorage(() =>
         typeof localStorage !== "undefined" ? localStorage : memoryStorage,
       ),
-      // Data fields only; actions are recreated on hydrate. New fields fall back
+      // Data fields only. Actions are recreated on hydrate. New fields fall back
       // to their default because persist merges the stored partial over initial
       // state.
       partialize: (s) => ({

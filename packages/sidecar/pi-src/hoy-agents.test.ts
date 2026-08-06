@@ -11,7 +11,7 @@ function registryFrom(types: SubagentRegistry[string][]): SubagentRegistry {
 const builtinRegistry: SubagentRegistry = registryFrom(BUILTIN_SUBAGENTS);
 
 // Fake ExtensionAPI: capture the registered tool. requireApproval defaults to
-// true here so the consent-gate tests below exercise the prompt; the default-off
+// true here so the consent-gate tests below exercise the prompt. The default-off
 // no-prompt behavior (HOY-248) gets its own test that passes false.
 function mountAgentTool(registry: SubagentRegistry, requireApproval = true) {
   let tool: any;
@@ -114,7 +114,7 @@ describe("agent tool", () => {
       undefined,
       c,
     );
-    // No consent prompt, and the spawn proceeds regardless of what select would return.
+    // No consent prompt, and the spawn proceeds regardless of what select will return.
     expect(asks).toBe(0);
     expect(inputs).toHaveLength(1);
     expect(inputs[0].startsWith(SPAWN_SYNC_PREFIX)).toBe(true);
@@ -170,7 +170,7 @@ describe("agent tool", () => {
   });
 
   test("a global-scope type is not trust-gated when the project is untrusted", async () => {
-    // Only project-scope types are gated on project trust; global (user agent
+    // Only project-scope types are gated on project trust. Global (user agent
     // dir) types are the user's own and spawn regardless.
     const registry = {
       Glob: { name: "Glob", scope: "global", tools: ["read"], promptMode: "replace", enabled: true },

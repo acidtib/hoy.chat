@@ -32,7 +32,7 @@ esac
 BIN="$SIDECAR_DIR/hoy-pi-$TRIPLE$BIN_EXT"
 
 echo "[1/3] installing pinned Pi into sidecar/pi-src"
-( cd "$SIDECAR_DIR/pi-src" && npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund )
+( cd "$SIDECAR_DIR/pi-src" && bun install --frozen-lockfile )
 
 if [ ! -f "$ENTRY" ]; then
   echo "ERROR: sidecar entry not found at $ENTRY" >&2

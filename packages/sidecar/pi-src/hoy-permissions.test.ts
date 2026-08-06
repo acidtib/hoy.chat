@@ -33,7 +33,7 @@ describe("gate policy table", () => {
     ["acceptEdits", "some_custom_tool", "ask"],
     ["plan", "read", "allow"],
     ["plan", "grep", "allow"],
-    // write/edit with no path context fall through to ask (HOY-213); the
+    // write/edit with no path context fall through to ask (HOY-213). The
     // plan-file allow path is covered in its own block below.
     ["plan", "edit", "ask"],
     ["plan", "write", "ask"],
@@ -111,7 +111,7 @@ describe("plan-mode file gate (HOY-213)", () => {
 });
 
 // Spike: drive the real entry over stdio. Collect every JSONL record on
-// stdout; helpers wait for a record matching a predicate.
+// stdout. Helpers wait for a record matching a predicate.
 describe("/hoy_mode over RPC", () => {
   const agentDir = mkdtempSync(join(tmpdir(), "hoy-rpc-agent-"));
   const cwd = mkdtempSync(join(tmpdir(), "hoy-rpc-cwd-"));
@@ -122,7 +122,7 @@ describe("/hoy_mode over RPC", () => {
       ...process.env,
       // Under `bun` the real Pi package.json (name absent) makes Pi read
       // PI_CODING_AGENT_DIR, while our entry reads HOY_CODING_AGENT_DIR
-      // (HOY-261); set both so the whole run stays in the temp dir.
+      // (HOY-261). Set both so the whole run stays in the temp dir.
       PI_CODING_AGENT_DIR: agentDir,
       HOY_CODING_AGENT_DIR: agentDir,
       HOY_PERMISSION_MODE: "default",
@@ -199,7 +199,7 @@ describe("/hoy_mode over RPC", () => {
 
 // Regression (HOY-234): a child spawned for a type absent from the registry
 // must fail closed, not fall through to the parent branch (HOY_TOOLS +
-// createHoyAgents, which would defeat the depth cap). The factory throws
+// createHoyAgents, which will defeat the depth cap). The factory throws
 // synchronously during createAgentSessionRuntime, before runRpcMode is ever
 // reached, so the process exits non-zero without producing any RPC output.
 describe("child factory fails closed on unknown subagent type (HOY-234)", () => {

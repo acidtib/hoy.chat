@@ -9,7 +9,7 @@ import type { ModelRef } from "@/lib/types";
 // distinguishable at a glance instead of all sharing the same star (HOY-267).
 // Falls back to the neutral Sparkle for session-less/new threads with no chosen
 // model (or a provider with no mapped glyph). The caller owns size/color via
-// className; both the glyph and the fallback render in currentColor.
+// className. Both the glyph and the fallback render in currentColor.
 export function ThreadModelIcon({
   model,
   className,

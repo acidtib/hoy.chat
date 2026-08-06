@@ -10,7 +10,7 @@ const OPEN_TAG = "<proposed_plan>";
 const CLOSE_TAG = "</proposed_plan>";
 
 // The plan text inside the last proposed_plan block of `text`, trimmed, or null
-// when there is none. Non-greedy so a single well-formed block is extracted; the
+// when there is none. Non-greedy so a single well-formed block is extracted. The
 // caller passes the concatenated assistant-turn text.
 export function extractProposedPlan(text: string): string | null {
   const match = PROPOSED_PLAN_RE.exec(text);
@@ -20,7 +20,7 @@ export function extractProposedPlan(text: string): string | null {
 }
 
 // A rendered slice of an assistant text block: either inline markdown prose or a
-// proposed_plan block that should be drawn as its own card (HOY-259).
+// proposed_plan block that must be drawn as its own card (HOY-259).
 export type PlanSegment =
   | { kind: "markdown"; text: string }
   | { kind: "plan"; text: string; streaming: boolean };
@@ -37,7 +37,7 @@ export function splitPlanSegments(content: string): PlanSegment[] {
   for (;;) {
     const openIdx = indexOfCI(rest, OPEN_TAG);
     if (openIdx === -1) {
-      // No further complete plan block; withhold a dangling partial open tag.
+      // No further complete plan block. Withhold a dangling partial open tag.
       pushMarkdown(segments, dropTrailingPartial(rest, OPEN_TAG));
       break;
     }
@@ -45,7 +45,7 @@ export function splitPlanSegments(content: string): PlanSegment[] {
     const afterOpen = rest.slice(openIdx + OPEN_TAG.length);
     const closeIdx = indexOfCI(afterOpen, CLOSE_TAG);
     if (closeIdx === -1) {
-      // Body still streaming; withhold a dangling partial close tag.
+      // Body still streaming. Withhold a dangling partial close tag.
       segments.push({
         kind: "plan",
         text: dropTrailingPartial(afterOpen, CLOSE_TAG),
@@ -69,7 +69,7 @@ function indexOfCI(haystack: string, needle: string): number {
 }
 
 // Drop the longest suffix of `text` that is a nonempty proper prefix of `tag`, so
-// a tag arriving one chunk at a time (e.g. ending "<proposed_pl") isn't shown as
+// a tag arriving one chunk at a time (e.g. ending "<proposed_pl") is not shown as
 // raw text before it completes.
 function dropTrailingPartial(text: string, tag: string): string {
   const max = Math.min(text.length, tag.length - 1);
@@ -83,7 +83,7 @@ function dropTrailingPartial(text: string, tag: string): string {
 }
 
 // The synthetic prompt that kicks off execution once the user approves a plan.
-// Mirrors the pi-plan-mode handoff string; the plan itself is already in the
+// Mirrors the pi-plan-mode handoff string. The plan itself is already in the
 // thread context, but restating it as the opening instruction makes the turn
 // unambiguous.
 export function planKickoffPrompt(plan: string | undefined): string {
@@ -126,14 +126,14 @@ export function planSubagentKickoffPrompt(plan: string | undefined): string {
 // a false positive yanks the user into a write-gated mode, so we only fire on
 // clear "make me a plan" phrasings and bail on the many innocuous uses of the
 // word "plan" (executing an existing plan, domain nouns like "pricing plan",
-// the plan file itself). Recall gaps are acceptable — the user can always pick
-// Plan Mode by hand; annoying false switches are not.
+// the plan file itself). Recall gaps are acceptable, the user can always pick
+// Plan Mode by hand. Annoying false switches are not.
 export function detectPlanIntent(raw: string): boolean {
   const text = raw.toLowerCase();
   // Fast bail: no standalone "plan"/"plans" token at all.
   if (!/\bplans?\b/.test(text)) return false;
 
-  // Negative — asking to EXECUTE/FOLLOW an existing plan, not to write one.
+  // Negative, asking to EXECUTE/FOLLOW an existing plan, not to write one.
   // This also covers the plan-kickoff prompt ("implement this approved plan").
   if (
     /\b(implement|execut\w+|carry out|carry-out|follow|apply|code up|ship|write the code for|stick to|according to)\b[^.!?\n]{0,24}\bplans?\b/.test(
@@ -141,15 +141,15 @@ export function detectPlanIntent(raw: string): boolean {
     )
   )
     return false;
-  // Negative — "plan" as a domain noun, not a unit of work to design.
+  // Negative, "plan" as a domain noun, not a unit of work to design.
   if (
     /\b(pricing|price|subscription|payment|billing|data|phone|meal|travel|floor|business|game|lesson|study|savings|health|insurance|retirement|seating|dinner|wedding|birthday)\s+plans?\b/.test(
       text,
     )
   )
     return false;
-  // Negative — the plan artifact itself (the file/dir/document), not a request.
-  // dir(ectory/ectories/s) is spelled out rather than `dir\w*` so it doesn't also
+  // Negative, the plan artifact itself (the file/dir/document), not a request.
+  // dir(ectory/ectories/s) is spelled out rather than `dir\w*` so it does not also
   // swallow "plan directly"/"plan direction" and suppress a real plan request.
   if (
     /\bplans?\s+(file|files|dir(?:ectory|ectories|s)?|folder|document|doc|\.md)\b/.test(
@@ -158,7 +158,7 @@ export function detectPlanIntent(raw: string): boolean {
   )
     return false;
 
-  // Positive — explicit requests to produce a plan.
+  // Positive, explicit requests to produce a plan.
   return (
     // "<verb> ... a/the plan": make a plan, come up with a plan, give me a plan.
     /\b(make|create|craft|write|draft|come up with|put together|outline|sketch|propose|prepare|formulate|devise|design|give me|show me|need|want|lay out|develop)\b[^.!?\n]{0,32}\bplans?\b/.test(

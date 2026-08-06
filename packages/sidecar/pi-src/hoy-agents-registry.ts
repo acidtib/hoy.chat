@@ -2,7 +2,7 @@
 // `.hoy/agents/*.md` are parsed with Pi's parseFrontmatter, merged by precedence
 // (builtin < global < project), tools validated and `agent` stripped (depth cap),
 // and disabled state overlaid from subagents.json. The sidecar is the single
-// parser; Rust reads this only via the one-shot list mode (hoy-sidecar.ts).
+// parser. Rust reads this only via the one-shot list mode (hoy-sidecar.ts).
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -32,7 +32,7 @@ export interface SubagentType {
 export type SubagentRegistry = Record<string, SubagentType>;
 
 // The real registered built-in tool set (hoy-sidecar.ts HOY_TOOLS) minus `agent`
-// (a child never spawns). `mcp` is included; unknown names in a .md are dropped.
+// (a child never spawns). `mcp` is included. Unknown names in a.md are dropped.
 export const KNOWN_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"];
 const GENERAL_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"];
 const EXPLORE_TOOLS = ["read", "grep", "find", "ls"];
@@ -88,7 +88,7 @@ function validateTools(declared: unknown): string[] {
   return declared.filter((t): t is string => typeof t === "string" && t !== "agent" && KNOWN_TOOLS.includes(t));
 }
 
-// Parse one .md into a SubagentType, or null if unreadable/malformed.
+// Parse one.md into a SubagentType, or null if unreadable/malformed.
 function parseAgentFile(path: string, name: string, scope: SubagentScope): SubagentType | null {
   let raw: string;
   try {
@@ -116,7 +116,7 @@ function parseAgentFile(path: string, name: string, scope: SubagentScope): Subag
     model: typeof fm.model === "string" ? fm.model : undefined,
     thinking: typeof fm.thinking === "string" ? fm.thinking : undefined,
     source: path,
-    // Frontmatter default (HOY-244): a type ships disabled with `enabled: false`;
+    // Frontmatter default (HOY-244): a type ships disabled with `enabled: false`
     // anything else defaults on. The subagents.json overlay below can force it on
     // (the settings toggle) or off, overriding this default.
     enabled: fm.enabled !== false,
@@ -126,7 +126,7 @@ function parseAgentFile(path: string, name: string, scope: SubagentScope): Subag
   };
 }
 
-// All *.md in a directory as [name, path]; missing dir -> [].
+// All *.md in a directory as [name, path]. Missing dir -> [].
 function agentFiles(dir: string): Array<{ name: string; path: string }> {
   let names: string[];
   try {
@@ -155,7 +155,7 @@ export function loadSubagentRegistry(agentDir: string, cwd: string): SubagentReg
   const reg: SubagentRegistry = {};
   // Base layer: built-ins.
   for (const b of BUILTIN_SUBAGENTS) reg[b.name] = { ...b };
-  // Global then project files (later wins on name; winner's scope sticks).
+  // Global then project files (later wins on name. Winner's scope sticks).
   const layers: Array<{ dir: string; scope: SubagentScope }> = [
     { dir: join(agentDir, "agents"), scope: "global" },
     { dir: join(cwd, ".hoy", "agents"), scope: "project" },
@@ -168,7 +168,7 @@ export function loadSubagentRegistry(agentDir: string, cwd: string): SubagentReg
   }
   // Overlay explicit enable/disable overrides from subagents.json, global then
   // project so the project scope wins. `enabled` forces a type on (overriding a
-  // frontmatter `enabled: false`), `disabled` forces it off; a name in neither
+  // frontmatter `enabled: false`), `disabled` forces it off. A name in neither
   // keeps its frontmatter default. The settings toggle writes into these lists.
   for (const dir of [join(agentDir, "subagents.json"), join(cwd, ".hoy", "subagents.json")]) {
     const on = nameSet(dir, "enabled");

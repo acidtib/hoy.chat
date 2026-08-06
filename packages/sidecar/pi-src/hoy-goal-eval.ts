@@ -1,7 +1,7 @@
 // Goal Mode (HOY-263) one-shot transcript evaluator. Like hoy-oauth, this is a
 // short-lived invocation of the SAME compiled sidecar binary, selected by the
 // HOY_GOAL_EVAL env var in hoy-sidecar.ts. Rust (sidecar.rs::evaluate_goal)
-// spawns us, captures stdout, and exits us; we never reach runRpcMode. Task 5's
+// spawns us, captures stdout, and exits us. We never reach runRpcMode. Task 5's
 // loop calls this once per check to judge whether a thread's goal condition is
 // met, then decides whether to keep working.
 //
@@ -12,15 +12,15 @@
 // because option (b) reuses the exact bootstrap the rest of hoy-sidecar already
 // relies on: ModelRegistry resolves auth (API key AND OAuth) internally, and
 // createAgentSession + SessionManager.inMemory + DefaultResourceLoader are all
-// concretely typed in the shipped .d.ts and demonstrated in the SDK examples
-// (examples/sdk/01,02,03,11). Option (a) would force us to resolve request auth
+// concretely typed in the shipped.d.ts and demonstrated in the SDK examples
+// (examples/sdk/01,02,03,11). Option (a) will force us to resolve request auth
 // headers and drive the provider stream by hand - a lower, more fragile surface
 // with more ways to mishandle OAuth. The completion is a single tool-less turn,
 // so the heavier session machinery costs nothing extra here.
 //
 // FAIL OPEN: every error path yields {met:false, reason:"evaluator error: ..."}
-// and exits 0 with that JSON on stdout. A false "met" would falsely stop the
-// loop; a false "not met" merely lets it keep working, which is the safe bias.
+// and exits 0 with that JSON on stdout. A false "met" will falsely stop the
+// loop. A false "not met" merely lets it keep working, which is the safe bias.
 
 import {
   AuthStorage,
@@ -57,7 +57,7 @@ const STRICT_EVALUATOR_PROMPT = [
   "Do not wrap the JSON in code fences. Do not add commentary before or after it.",
 ].join("\n");
 
-// Extract readable text from a Pi message content field, which may be a plain
+// Extract readable text from a Pi message content field, which can be a plain
 // string or an array of typed content blocks. Defensive by design: the goal
 // evaluator must never throw on an unexpected shape, so anything we cannot
 // classify is skipped rather than trusted.
@@ -135,7 +135,7 @@ function emit(result: GoalEvaluation): never {
 //
 // The session-provider preference is deliberate: a bare cross-provider cheap-tier
 // match can resolve to a decommissioned id (e.g. an old anthropic haiku) that
-// still lists as "available" but returns empty output, which would fail the goal
+// still lists as "available" but returns empty output, which will fail the goal
 // open ("not met") every turn and never let it complete. The session's provider
 // shares the thread's working credentials, so its cheap model is the safe default.
 function pickModel(
@@ -201,7 +201,7 @@ export async function runGoalEval(agentDir: string, cwd: string): Promise<never>
     // the cheap model without corrupting the JSON result.
     console.error(`hoy-goal-eval: model=${model!.provider}/${model!.id}`);
 
-    // Strict evaluator prompt replaces pi's coding prompt entirely; the empty
+    // Strict evaluator prompt replaces pi's coding prompt entirely. The empty
     // appendSystemPromptOverride stops DefaultResourceLoader appending any
     // APPEND_SYSTEM.md, and noContextFiles keeps project context out of the
     // judge's view (cost + focus).

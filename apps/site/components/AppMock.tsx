@@ -330,7 +330,7 @@ export function AppWindow() {
         <div className="aw-body">
           {/* Title bar spans the main body AND the right dock (Zed-style): the
               left threads sidebar keeps the top-left corner, but the tree dock
-              sits below this bar, so the window controls own the top-right. */}
+ sits below this bar, so the window controls own the top-right. */}
           <div className="aw-titlebar">
             <div className="aw-tb-left">
               <span className="aw-tb-project">hoy</span>

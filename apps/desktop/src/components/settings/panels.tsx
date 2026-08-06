@@ -46,7 +46,7 @@ import { SkillsPanel } from "./SkillsPanel";
 import { useSessionStore } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 
-// Pinned Pi version (packages/sidecar; see docs/pi-version-bump.md). Surfaced in About.
+// Pinned Pi version (packages/sidecar. See docs/pi-version-bump.md). Surfaced in About.
 const PI_VERSION = "0.80.7";
 
 export function PanelHeader({
@@ -132,7 +132,7 @@ function Field({
 }
 
 // Controlled toggle row. Every toggle in these panels is backed by real state
-// (a preference or a Pi session setting); there are no cosmetic switches.
+// (a preference or a Pi session setting). There are no cosmetic switches.
 function ToggleRow({
   label,
   description,
@@ -220,7 +220,7 @@ function groupByProvider(models: ModelInfo[]): [string, ModelInfo[]][] {
 
 const MODEL_VALUE_SEP = ":::";
 
-// The auxiliary-model assignments Pi's SDK supports but its RPC does not expose;
+// The auxiliary-model assignments Pi's SDK supports but its RPC does not expose
 // kept as a planned list until a command backs them.
 const AUX_TASKS = [
   "Vision (image analysis)",
@@ -232,7 +232,7 @@ const AUX_TASKS = [
 
 // Model selection is per-session in Pi (set_model), and Pi remembers the last
 // pick as the default for new sessions. So the panel drives the ACTIVE session's
-// model (which then becomes the default); with no live session it shows the
+// model (which then becomes the default). With no live session it shows the
 // current default read-only. This mirrors the session-gated AutoCompaction row.
 function ModelPanel() {
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
@@ -487,7 +487,7 @@ function WorkspacePanel() {
 // Auto-compaction is a global default (HOY-275): Pi persists it per its own
 // settings and defaults it on, but that value is unreachable when the toggle is
 // set from Settings with no thread open, so the renderer pref is the source of
-// truth. Every session adopts it on spawn (store.applyAutoCompaction); toggling
+// truth. Every session adopts it on spawn (store.applyAutoCompaction). Toggling
 // also fans the change out to every already-live session so open conversations
 // reflect it at once. The control is therefore always enabled.
 function AutoCompactionRow() {

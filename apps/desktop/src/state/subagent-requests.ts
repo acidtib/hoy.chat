@@ -1,5 +1,5 @@
 // HOY-300: pending synchronous-subagent requests. When the parent's agent tool
-// blocks on ctx.ui.input, Rust surfaces a subagentSpawnSync event; the store
+// blocks on ctx.ui.input, Rust surfaces a subagentSpawnSync event. The store
 // records the child->request mapping here and, on the child's done, answers the
 // parent's blocked request with the child's result. Pure (no Tauri imports).
 export type SubagentRequest = {

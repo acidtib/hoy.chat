@@ -33,7 +33,7 @@ function OSIcon({ os }: { os: OS }) {
 }
 
 // The signed [hoy] pacman repo: trust the key over HTTPS, add the repo, install.
-// Unlike the .deb/.AppImage, these packages are signed with our key, so there is
+// Unlike the.deb/.AppImage, these packages are signed with our key, so there is
 // no first run warning and `pacman -Syu` keeps Hoy current.
 const ARCH_SETUP = `curl -fsSL https://pkgs.hoy.chat/hoy-packages.pub | sudo pacman-key --add -
 sudo pacman-key --lsign-key DC196437C706CF3B2FE583FBCEEBA907B734C05F

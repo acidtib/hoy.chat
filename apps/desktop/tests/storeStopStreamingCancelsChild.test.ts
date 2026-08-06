@@ -12,7 +12,7 @@ import {
 // already answers the parent's blocked ctx.ui.input as cancelled, but the
 // child thread it spawned keeps running. stopStreaming on the parent must
 // also stop the still-running child and drop its pending-request mapping so
-// a late child `done` doesn't try to answer an already-cancelled request.
+// a late child `done` does not try to answer an already-cancelled request.
 const abort = mock<(sessionId: string) => Promise<void>>();
 
 mockIpcModule({ abort });

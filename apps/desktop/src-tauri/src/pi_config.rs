@@ -2,7 +2,7 @@
 // store. Rationale: Pi's RPC has no auth command, and Pi's getApiKey resolves
 // auth.json (api_key entries) above environment variables, so writing the file is
 // the authoritative way to configure a provider from the GUI. We only ever write
-// or remove {type:"api_key"} entries; OAuth entries (written by a `pi`/Hoy login)
+// or remove {type:"api_key"} entries. OAuth entries (written by a `pi`/Hoy login)
 // are read-modify-write preserved untouched. Key values never leave Rust: the
 // renderer receives only configured/not-configured status.
 //
@@ -10,13 +10,13 @@
 // ~/.pi, so it never touches a user's stock pi install. HOY-255 flattened this up
 // one level from the inherited ~/.hoy/agent nesting (pi's default is ~/.pi/agent,
 // where the extra segment keeps the agent dir out of ~/.pi; for Hoy ~/.hoy is only
-// the agent's home, so the segment was redundant). Rust writes auth.json here; the
+// the agent's home, so the segment was redundant). Rust writes auth.json here. The
 // sidecar reads the same dir because sidecar.rs passes it as HOY_CODING_AGENT_DIR
-// (HOY-261; the env both Pi and our SDK entry honor, since the payload sets
+// (HOY-261. The env both Pi and our SDK entry honor, since the payload sets
 // piConfig.name="hoy"). Override which dir with HOY_AGENT_DIR (tests / power users).
 //
 // Schema (verified against pi-coding-agent 0.78.0 core/auth-storage.d.ts):
-//   auth.json = Record<provider, {type:"api_key", key} | {type:"oauth", ...tokens}>
+// auth.json = Record<provider, {type:"api_key", key} | {type:"oauth",...tokens}>
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -25,7 +25,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 // Serializes auth.json mutations. save/remove are async Tauri commands that can
-// interleave; without this, one read-modify-write working from a stale snapshot
+// interleave. Without this, one read-modify-write working from a stale snapshot
 // drops the other's entry, and concurrent writers collide on the shared
 // process-id tmp file. Reads stay lock-free: the atomic rename guarantees they
 // see a complete old or new file.
@@ -43,7 +43,7 @@ pub struct ProviderAuth {
     pub kind: Option<String>,
     // "authFile" | "environment" | null
     pub source: Option<String>,
-    // Only api_key entries in auth.json may be removed from the GUI; OAuth logins
+    // Only api_key entries in auth.json can be removed from the GUI. OAuth logins
     // are left to Pi so we never strip a user's `pi` session.
     pub removable: bool,
 }
@@ -78,8 +78,8 @@ const BRANDED_DIR: &str = if cfg!(debug_assertions) {
 };
 
 // Pure resolution split out so the branded-path logic is testable without
-// mutating process env. HOY_AGENT_DIR override wins; otherwise <home>/BRANDED_DIR
-// (HOY-255 dropped the legacy trailing "agent" segment; see migrate_flatten_agent_dir).
+// mutating process env. HOY_AGENT_DIR override wins. Otherwise <home>/BRANDED_DIR
+// (HOY-255 dropped the legacy trailing "agent" segment. See migrate_flatten_agent_dir).
 fn agent_dir_from(override_dir: Option<PathBuf>, home: Option<PathBuf>) -> Result<PathBuf, String> {
     if let Some(dir) = override_dir.filter(|d| !d.as_os_str().is_empty()) {
         return Ok(dir);
@@ -109,7 +109,7 @@ pub fn migrate_flatten_agent_dir() {
 // Move each top-level entry of `legacy` into its parent `dest` (legacy is
 // dest/agent). Each entry moves via fs::rename, which is atomic on the same
 // filesystem, so a crash mid-run leaves every entry either fully in `legacy` or
-// fully in `dest`; a rerun finishes the rest. Never clobbers: an entry whose name
+// fully in `dest`. A rerun finishes the rest. Never clobbers: an entry whose name
 // already exists in `dest` (a prior partial migration, or new-layout data) is left
 // untouched in `legacy`. `legacy` is removed only once it has been fully drained.
 fn migrate_dir_contents_up(legacy: &Path, dest: &Path) -> Result<(), String> {
@@ -163,11 +163,11 @@ struct ProviderDef {
 }
 
 // API-key providers Hoy exposes. Pi's built-ins come from pi-coding-agent 0.80.7
-// core/provider-display-names.js (BUILT_IN_PROVIDER_DISPLAY_NAMES); Alibaba's
+// core/provider-display-names.js (BUILT_IN_PROVIDER_DISPLAY_NAMES). Alibaba's
 // Hoy-owned providers are registered by createHoyAlibaba. Excludes
 // amazon-bedrock and google-vertex, which use cloud auth (AWS creds / gcloud ADC)
 // rather than a plain api_key entry. `env` is Pi's actual env var for that
-// provider; several differ from the id (google -> GEMINI_API_KEY). Pinned to the
+// provider. Several differ from the id (google -> GEMINI_API_KEY). Pinned to the
 // Pi version: re-verify against provider-display-names.js when bumping Pi.
 const PROVIDERS: &[ProviderDef] = &[
     ProviderDef {
@@ -371,7 +371,7 @@ pub fn supported_providers() -> Vec<ProviderInfo> {
 }
 
 // Env var Pi reads for a provider key. Known providers use Pi's actual name (some
-// differ from the id); unknown ids fall back to the uppercase convention. Used
+// differ from the id). Unknown ids fall back to the uppercase convention. Used
 // only for the "configured via environment" status signal.
 fn env_var_for(provider: &str) -> Option<String> {
     if let Some(def) = PROVIDERS.iter().find(|p| p.id == provider) {
@@ -551,7 +551,7 @@ mod tests {
     #[test]
     fn preserves_existing_oauth_entry_when_adding_api_key() {
         let path = temp_auth_path("preserve");
-        // Seed an OAuth entry like `pi` login would write.
+        // Seed an OAuth entry like `pi` login will write.
         let mut seed = Map::new();
         let mut oauth = Map::new();
         oauth.insert("type".into(), Value::String("oauth".into()));
@@ -586,7 +586,7 @@ mod tests {
     #[test]
     fn concurrent_mutations_do_not_lose_updates() {
         // save_provider_key / remove_provider_key are async Tauri commands and
-        // can interleave; the read-modify-write must be serialized or a writer
+        // can interleave. The read-modify-write must be serialized or a writer
         // working from a stale snapshot drops the other's entry.
         let path = temp_auth_path("race");
         let handles: Vec<_> = (0..8)
@@ -645,7 +645,7 @@ mod tests {
     }
 
     // cargo test compiles with debug_assertions, so this pins the dev half of
-    // the HOY-206 namespace split; the release half is the const's else arm.
+    // the HOY-206 namespace split. The release half is the const's else arm.
     #[test]
     fn debug_builds_use_the_hoyd_namespace() {
         assert_eq!(BRANDED_DIR, ".hoyd");
@@ -671,7 +671,7 @@ mod tests {
     }
 
     // HOY-255 migration helper. Each test gets its own scratch dir so they can run
-    // in parallel; `dest` plays the role of the flat agent dir and `dest/agent` the
+    // in parallel. `dest` plays the role of the flat agent dir and `dest/agent` the
     // legacy nested dir.
     fn migration_scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("hoy-migrate-{tag}-{}", std::process::id()));

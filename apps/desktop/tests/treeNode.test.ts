@@ -68,7 +68,7 @@ describe("messageFacet (HOY-280 opaque-message peek)", () => {
   });
 });
 
-// Tree fixtures. msg() builds a message entry; the tree nests children directly
+// Tree fixtures. msg() builds a message entry. The tree nests children directly
 // (pi pre-nests), so we assemble SessionTreeNode by hand.
 function msg(id: string, parentId: string | null, role: string, extra: Record<string, unknown> = {}): SessionEntry {
   return { type: "message", id, parentId, timestamp: id, message: { role, ...extra } } as SessionEntry;

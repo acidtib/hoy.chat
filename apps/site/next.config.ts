@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import path from "node:path";
 
 // Cloudflare Pages serves the site as plain static assets, so we pre-render
-// everything to HTML at build time. There is no server runtime; downloads and
+// everything to HTML at build time. There is no server runtime. Downloads and
 // the changelog data are resolved during the build, not at request time.
 const nextConfig: NextConfig = {
   output: "export",
@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   images: { unoptimized: true },
   turbopack: {
     // Pin the workspace root to the monorepo root so Next does not guess when
-    // several lockfiles are present (e.g. inside a git worktree); deps are
+    // several lockfiles are present (e.g. inside a git worktree). Deps are
     // hoisted there by the Bun workspace.
     root: path.resolve(import.meta.dirname, "../.."),
   },

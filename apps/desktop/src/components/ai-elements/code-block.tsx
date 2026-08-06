@@ -23,7 +23,7 @@ import oneDarkPro from "@shikijs/themes/one-dark-pro";
 
 // Fine-grained shiki bundle: only the grammars/themes we render, on the JS regex
 // engine. codeToHtml from "shiki" pulls a dynamic-import map for every bundled
-// language (a chunk each) plus the oniguruma wasm; this loads just what we use.
+// language (a chunk each) plus the oniguruma wasm. This loads what we use.
 let highlighterPromise: Promise<HighlighterCore> | null = null;
 
 function getHighlighter() {
@@ -200,4 +200,3 @@ export const CodeBlockCopyButton = ({
     </Button>
   );
 };
-

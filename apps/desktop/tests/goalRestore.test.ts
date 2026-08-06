@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { ThreadGoal, Workspace } from "@/lib/types";
 import { mockIpcModule } from "./ipcMock";
 
-// Named mock this file asserts against; the shared helper fills in the rest of
+// Named mock this file asserts against. The shared helper fills in the rest of
 // the ipc surface the store needs at import time.
 const loadWorkspace = mock<() => Promise<Workspace>>();
 
@@ -24,7 +24,7 @@ function goal(overrides: Partial<ThreadGoal>): ThreadGoal {
 }
 
 // HOY-263 load semantics (restoreGoal, called from initWorkspace's per-thread
-// .map()): a restored goal must never auto-run just because the app reopened.
+// .map()): a restored goal must never auto-run because the app reopened.
 describe("initWorkspace goal restore", () => {
   test("an active goal restores as paused with counters reset", async () => {
     loadWorkspace.mockResolvedValue({

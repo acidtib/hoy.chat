@@ -84,7 +84,7 @@ export const Reasoning = memo(
       }
     }, [isStreaming, startTime, setDuration]);
 
-    // Tick a live elapsed count while thinking (HOY-211); clear when it stops.
+    // Tick a live elapsed count while thinking (HOY-211). Clear when it stops.
     useEffect(() => {
       if (!isStreaming || startTime === null) {
         setElapsed(undefined);
@@ -155,7 +155,7 @@ export type ReasoningTriggerProps = ComponentProps<typeof CollapsibleTrigger> & 
 // Local change from the registry copy: only an actively streaming block
 // shimmers. The upstream `duration === 0` branch conflated a falsy-zero
 // duration with streaming state and shimmered forever on finished blocks.
-// While streaming, show a live elapsed count (HOY-211); on restore there is no
+// While streaming, show a live elapsed count (HOY-211). On restore there is no
 // timing so we keep the honest "a few seconds" fallback.
 const defaultGetThinkingMessage = (
   isStreaming: boolean,
@@ -222,10 +222,10 @@ export const ReasoningContent = memo(
         {/* While thinking streams, render the growing text as plain preformatted
             text rather than re-parsing the whole markdown through Streamdown on
             every token. An open reasoning block re-renders on each delta, so the
-            Streamdown parse is O(n) per token, O(n^2) across the block — the
+            Streamdown parse is O(n) per token, O(n^2) across the block, the
             source of the "thinking open" lag (HOY-258 follow-up). Reasoning is a
-            raw thought stream, so plain text reads fine live; once streaming ends
-            we render the settled text through Streamdown for real formatting. */}
+            raw thought stream, so plain text reads fine live. Once streaming ends
+ we render the settled text through Streamdown for real formatting. */}
         {isStreaming ? (
           <div className="whitespace-pre-wrap break-words">{children}</div>
         ) : (

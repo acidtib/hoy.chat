@@ -53,7 +53,7 @@ export function ContextBar({
       {collapsed ? (
         // With the sidebar collapsed the panels start at the window edge, so the
         // open button floats over the slices (solid bg masks anything scrolled
-        // beneath) instead of taking a cell that would push them out of line;
+        // beneath) instead of taking a cell that will push them out of line
         // the first slice clears it with extra padding.
         <div className="absolute inset-y-0 left-0 z-10 flex items-center bg-sidebar pl-1.5">
           <FooterIconButton
@@ -91,8 +91,8 @@ export function ContextBar({
         </div>
       )}
 
-      {/* overflow-x-hidden: no scrollbar of its own; App mirrors the panel
-          strip's scrollLeft here so each slice stays under its panel. */}
+      {/*overflow-x-hidden: no scrollbar of its own. App mirrors the panel
+ strip's scrollLeft here so each slice stays under its panel. */}
       <div ref={slicesRef} className="flex flex-1 items-stretch overflow-x-hidden">
         {expandedPanel ? (
           <PanelStats
@@ -195,7 +195,7 @@ function FooterIconButton({
   className?: string;
   tooltipSide?: "top" | "right";
   active?: boolean;
-  // Color when active; defaults to the brand navigation color, overridden by
+  // Color when active. Defaults to the brand navigation color, overridden by
   // callers representing a different surface (e.g. text-agent for Fleet).
   activeClassName?: string;
 }) {

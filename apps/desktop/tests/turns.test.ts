@@ -32,7 +32,7 @@ describe("messagesToTurns entry ids (HOY-304)", () => {
     expect(user.entryId).toBe("u1");
 
     const a = assistantTurn(turns, 1);
-    // Turn anchors to the first assistant entry; blocks carry their own entry.
+    // Turn anchors to the first assistant entry. Blocks carry their own entry.
     expect(a.entryId).toBe("a1");
     expect(a.blocks[0]).toMatchObject({ kind: "text", content: "on it", entryId: "a1" });
     expect(a.blocks[1]).toMatchObject({ kind: "tool", entryId: "a1" });

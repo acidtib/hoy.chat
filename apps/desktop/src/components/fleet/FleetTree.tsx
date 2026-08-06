@@ -11,7 +11,7 @@ import type { Thread } from "@/lib/types";
 // Depth-based indentation, generalizing Sidebar.tsx's ThreadRow convention
 // (pl-3 at depth 0, pl-9 at depth 1) by the same +24px-per-level step. Written
 // as literal class strings (not built from a template) so Tailwind's scanner
-// can see them; MAX_SUBAGENT_DEPTH caps real depth at 3, so five entries cover
+// can see them. MAX_SUBAGENT_DEPTH caps real depth at 3, so five entries cover
 // every reachable fleet with room to spare. The assertion below fails loudly
 // (rather than silently flattening indentation) if that cap is ever raised
 // past what this table covers.
@@ -291,7 +291,7 @@ function ActionsRow({
 }
 
 // Inline steer control: replaces the action row (not stacked below it) while
-// active. Enter/the send button submit; Escape or a blur that isn't the send
+// active. Enter/the send button submit. Escape or a blur that is not the send
 // button collapses without sending. onMouseDown on the button keeps it from
 // stealing focus (and firing the blur) before its click handler runs.
 function SteerBox({

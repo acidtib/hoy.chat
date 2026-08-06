@@ -6,6 +6,12 @@ surface is still evolving, so every bump is deliberate. Currently pinned:
 
 On every bump:
 
+- Update `@earendil-works/pi-coding-agent` in `dependencies` **and**
+  `@earendil-works/pi-agent-core`, `pi-ai`, `pi-tui` in `overrides` in
+  `packages/sidecar/pi-src/package.json` to the same version — those three
+  ship as caret ranges and drift ahead of `pi-coding-agent` on their own patch
+  releases if left unpinned. Then `bun install` in `pi-src/` to refresh
+  `bun.lock`.
 - Re-verify the tool `promptGuidelines` in `hoy-system-prompt.ts` against Pi
   source (the edit guidelines are load-bearing).
 - Compare custom-prompt assembly, especially Pi-appended context such as the

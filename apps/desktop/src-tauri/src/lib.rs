@@ -28,8 +28,8 @@ pub fn run() {
     #[cfg(desktop)]
     {
         // HOY-206: debug builds use the hoyd namespace (chat.hoy.desktop.dev) so
-        // the single-instance lock doesn't collide with a running production app.
-        // Pass the dev identifier explicitly as the DBus id; the config merge via
+        // the single-instance lock does not collide with a running production app.
+        // Pass the dev identifier explicitly as the DBus id. The config merge via
         // --config / TAURI_CONFIG env var is unreliable for this plugin's setup.
         #[cfg(debug_assertions)]
         let single_instance = tauri_plugin_single_instance::Builder::new()
@@ -63,7 +63,7 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build());
 
     // Auto-updater (HOY-187), desktop-only. The frontend drives the check via
-    // the About panel; updates are pulled from GitHub releases.
+    // the About panel. Updates are pulled from GitHub releases.
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
@@ -85,7 +85,7 @@ pub fn run() {
         .setup(|app| {
             // HOY-255: migrate the pre-flatten ~/.hoy/agent layout up to ~/.hoy
             // before anything reads the agent dir (the sidecar spawn below is the
-            // first consumer). Best effort; it logs and continues on failure.
+            // first consumer). Best effort. It logs and continues on failure.
             pi_config::migrate_flatten_agent_dir();
             alibaba_config::migrate_legacy_files();
 
@@ -96,7 +96,7 @@ pub fn run() {
                 let _ = window.set_title("Hoyd Desktop");
             }
 
-            // Construct the manager here, not at .manage time: new_with_resolver
+            // Construct the manager here, not at.manage time: new_with_resolver
             // needs an AppHandle to locate the bundled pi-payload in $RESOURCE.
             tauri::Manager::manage(
                 app,
@@ -104,7 +104,7 @@ pub fn run() {
             );
             tauri::Manager::manage(app, oauth::OAuthLogin::default());
 
-            // Spawn one sidecar on startup. MVP has a single session; the manager
+            // Spawn one sidecar on startup. MVP has a single session. The manager
             // is keyed by SessionId so adding more is a data change, not a rewrite.
             let manager = tauri::Manager::state::<SidecarManager>(app);
             match manager.spawn_session() {

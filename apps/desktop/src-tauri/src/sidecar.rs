@@ -1,5 +1,5 @@
 // Owns the spawned Pi processes. One PiProcess per session, keyed by SessionId
-// in the SidecarManager from day one (MVP has one session; orchestration adds
+// in the SidecarManager from day one (MVP has one session. Orchestration adds
 // more without restructuring). We drive Pi's RPC over stdio directly rather
 // than via the shell plugin so the JSONL framing (reader.rs) stays under our
 // control, per the protocol's LF-only requirement.
@@ -91,11 +91,11 @@ pub struct PiProcess {
 
 /// Host environment variables the sanitized sidecar is allowed to inherit.
 /// Everything else is stripped at spawn (see `apply_sanitized_env`) so a value
-/// in the desktop app's ambient environment can't steer the bundled Pi agent
+/// in the desktop app's ambient environment cannot steer the bundled Pi agent
 /// (HOY-261): Pi reads a range of PI_* knobs (share-viewer URL, session dir,
 /// offline/telemetry toggles) and interpolates `$ENVVAR` in config values, none
-/// of which an untrusted parent env should control. We forward only what the
-/// headless RPC sidecar genuinely needs; the vars we set per spawn
+/// of which an untrusted parent env must control. We forward only what the
+/// headless RPC sidecar genuinely needs. The vars we set per spawn
 /// (PI_PACKAGE_DIR, HOY_CODING_AGENT_DIR, HOY_*) layer on top afterward.
 const HOST_ENV_ALLOWLIST: &[&str] = &[
     // POSIX essentials: locating tools, temp extraction (bun single-file exec),
@@ -111,7 +111,7 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
     "LC_ALL",
     "LC_CTYPE",
     "LC_MESSAGES",
-    // Proxies: forwarded deliberately so the agent honors a real system proxy;
+    // Proxies: forwarded deliberately so the agent honors a real system proxy
     // an injected proxy already implies control of the local environment.
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -121,7 +121,7 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
     "https_proxy",
     "no_proxy",
     "all_proxy",
-    // Windows essentials (absent on Unix; keep a cross-platform build working).
+    // Windows essentials (absent on Unix. Keep a cross-platform build working).
     "USERPROFILE",
     "HOMEDRIVE",
     "HOMEPATH",
@@ -175,7 +175,7 @@ fn cached_login_path(
 /// Build the ordered, deduplicated list of login shells to try when
 /// recovering a user's real PATH. Order: `$SHELL` first, then the user's
 /// passwd login shell (resolved via getpwuid on Unix so NixOS/Guix store
-/// paths work; HOY-345), then hardcoded FHS fallbacks. Each candidate is
+/// paths work. HOY-345), then hardcoded FHS fallbacks. Each candidate is
 /// only included once (HOY-341).
 fn resolve_login_shells() -> Vec<String> {
     let mut shells = Vec::new();
@@ -205,9 +205,9 @@ fn resolve_login_shells() -> Vec<String> {
 
 /// Get the user's login shell from the passwd database via getpwuid_r.
 /// On NixOS/Guix this returns the store path (e.g. `/nix/store/...-zsh/bin/zsh`)
-/// which hardcoded FHS paths would miss (HOY-345).
+/// which hardcoded FHS paths will miss (HOY-345).
 ///
-/// Uses a stack buffer for the common case; grows the buffer and retries
+/// Uses a stack buffer for the common case. Grows the buffer and retries
 /// on ERANGE so deeply nested Nix store paths are not silently dropped.
 #[cfg(unix)]
 fn get_user_login_shell() -> Option<String> {
@@ -226,8 +226,8 @@ fn get_user_login_shell() -> Option<String> {
                 &mut result,
             );
             if ret == 0 {
-                // result may be valid but pw_shell can be NULL on accounts
-                // with no login shell (POSIX permits this; NSS/LDAP edge).
+                // result can be valid but pw_shell can be NULL on accounts
+                // with no login shell (POSIX permits this. NSS/LDAP edge).
                 return if !result.is_null() && !(*result).pw_shell.is_null() {
                     std::ffi::CStr::from_ptr((*result).pw_shell)
                         .to_str()
@@ -240,7 +240,7 @@ fn get_user_login_shell() -> Option<String> {
             if ret != libc::ERANGE {
                 return None;
             }
-            // Buffer too small; double and retry.
+            // Buffer too small. Double and retry.
             bufsz = bufsz.saturating_mul(2);
         }
     }
@@ -248,9 +248,9 @@ fn get_user_login_shell() -> Option<String> {
 
 fn resolve_login_path_inner() -> Option<String> {
     let shells = resolve_login_shells();
-    // A login shell (`-l`) sources the user's profile/rc files, which may
+    // A login shell (`-l`) sources the user's profile/rc files, which can
     // contain arbitrary commands. Retain ownership of the child handle
-    // to kill it on timeout; no leaked OS thread or orphaned child
+    // to kill it on timeout. No leaked OS thread or orphaned child
     // process (HOY-337).
     use std::process::Stdio;
     for shell in &shells {
@@ -298,14 +298,14 @@ fn resolve_login_path_inner() -> Option<String> {
 
 /// Reset `command`'s environment to the sanitized base: the host allowlist plus
 /// any `${VAR}` referenced in the MCP config files (so MCP server secrets keep
-/// resolving, HOY-261). Call BEFORE setting the dir vars / per-spawn HOY_*; those
+/// resolving, HOY-261). Call BEFORE setting the dir vars / per-spawn HOY_*. Those
 /// layer on top of the cleared base.
 fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
     command.env_clear();
     for key in HOST_ENV_ALLOWLIST {
         if *key == "PATH" {
             // Use the login shell's PATH, not the desktop app's own PATH.
-            // When launched from a .desktop shortcut the Tauri app gets a
+            // When launched from a.desktop shortcut the Tauri app gets a
             // minimal PATH that lacks version-manager entries (nvm, fnm, etc.),
             // so tools like bun/bunx are invisible. Spawning $SHELL -l captures
             // the fully-initialized PATH. The short cache avoids shell-spawn
@@ -318,7 +318,7 @@ fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
         }
     }
     // Keep the secrets referenced by MCP server configs (chosen over a strict
-    // allowlist so `${GITHUB_TOKEN}`-style refs still resolve; HOY-261).
+    // allowlist so `${GITHUB_TOKEN}`-style refs still resolve. HOY-261).
     for key in mcp_referenced_env_vars(agent_dir, cwd) {
         if key == "PATH" {
             continue;
@@ -330,7 +330,7 @@ fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
     // Pi's `enableInstallTelemetry` setting defaults to true, which tags
     // outbound requests to OpenRouter/NVIDIA NIM/Cloudflare/Vercel AI Gateway
     // with "pi"/pi.dev attribution headers. Force it off unconditionally (not
-    // just an allowlisted passthrough) so Hoy never sends that branding
+    //  an allowlisted passthrough) so Hoy never sends that branding
     // regardless of the host env or a stale settings.json.
     command.env("PI_TELEMETRY", "0");
 }
@@ -356,7 +356,7 @@ fn mcp_referenced_env_vars(agent_dir: &Path, cwd: &Path) -> BTreeSet<String> {
 
 /// Collect `${VAR}` names from `text` (VAR = ASCII word chars), mirroring
 /// hoy-mcp.ts's `/\$\{(\w+)\}/`. Over-collecting a name written as an escaped
-/// `$${VAR}` is harmless: the value just becomes available and interpolation
+/// `$${VAR}` is harmless: the value becomes available and interpolation
 /// still treats the escaped form as a literal.
 fn collect_env_refs(text: &str, out: &mut BTreeSet<String>) {
     let bytes = text.as_bytes();
@@ -398,7 +398,7 @@ impl PiProcess {
         }
         let mut command = Command::new(bin);
         // HOY-261: strip the ambient environment and forward only the allowlist
-        // (+ MCP ${VAR} secrets) so a value in the desktop app's env can't steer
+        // (+ MCP ${VAR} secrets) so a value in the desktop app's env cannot steer
         // the bundled Pi agent. Must precede the explicit vars set below.
         apply_sanitized_env(&mut command, agent_dir, cwd);
         command
@@ -428,7 +428,7 @@ impl PiProcess {
         // sessions are depth 0). Read by the TS sidecar entry to cap recursion.
         command.env("HOY_SUBAGENT_DEPTH", depth.to_string());
         // HOY-248: when the renderer pref requireSubagentApproval is on, the
-        // sidecar's `agent` tool raises a per-type consent prompt; off (default)
+        // sidecar's `agent` tool raises a per-type consent prompt. Off (default)
         // spawns without gating. Always set so a respawn restores the behavior.
         command.env(
             "HOY_REQUIRE_SUBAGENT_APPROVAL",
@@ -436,7 +436,7 @@ impl PiProcess {
         );
         // HOY-244: when a subagent type sets `inherit_context: true`, the renderer
         // passes the parent's transcript path here. The sidecar forks a fresh child
-        // session seeded with the parent's history (only on first spawn; a respawn
+        // session seeded with the parent's history (only on first spawn. A respawn
         // opens the child's own file, which already holds the fork, so this is None
         // there). Absent -> the child starts with a clean context, as usual.
         if let Some(parent) = inherit_from_session {
@@ -489,7 +489,7 @@ impl PiProcess {
                         message: "sidecar exited mid-stream".into(),
                     });
                     // No agent_end/Done will arrive from a dead child, so emit the
-                    // terminal Done ourselves; otherwise the panel's composer stays
+                    // terminal Done ourselves. Otherwise the panel's composer stays
                     // disabled forever (the error path deliberately does not stop
                     // streaming, to keep auto-retry turns intact).
                     let _ = channel.send(AgentEvent::Done);
@@ -563,7 +563,7 @@ impl PiProcess {
     }
 
     // Send an RPC command and await its correlated response. Subject to a flat
-    // REQUEST_TIMEOUT; use this for everything except the prompt that may carry
+    // REQUEST_TIMEOUT. Use this for everything except the prompt that can carry
     // a dialog-opening slash command (see request_with_dialog_grace).
     pub async fn request(&self, command: Value) -> Result<Value, String> {
         let (id, rx) = self.send_command(command)?;
@@ -611,7 +611,7 @@ impl PiProcess {
     }
 
     // Answer a pending extension UI dialog (HOY-186). `value` answers select,
-    // `confirmed` answers confirm, `cancelled` declines either; the sidecar's
+    // `confirmed` answers confirm, `cancelled` declines either. The sidecar's
     // blocked tool_call handler resumes on receipt.
     pub fn respond_ui(
         &self,
@@ -645,7 +645,7 @@ impl PiProcess {
     }
 
     // Cancel every pending dialog so the sidecar's blocked tool_call handlers
-    // resume (as denials). Called on abort; a killed process needs no answers.
+    // resume (as denials). Called on abort. A killed process needs no answers.
     pub fn cancel_pending_ui(&self) {
         let ids: Vec<String> = self.pending_ui.lock().unwrap().drain(..).collect();
         for id in ids {
@@ -689,9 +689,9 @@ fn route_message(
     }
 
     // Extension UI sub-protocol (HOY-186). Dialog methods block the sidecar
-    // until a response lands on stdin; forward the renderable ones, immediately
+    // until a response lands on stdin. Forward the renderable ones, immediately
     // cancel anything we cannot render so the agent never deadlocks, and drop
-    // fire-and-forget methods (notify, setStatus, ...) which expect no answer.
+    // fire-and-forget methods (notify, setStatus,...) which expect no answer.
     if ty == Some("extension_ui_request") {
         let Some(id) = value.get("id").and_then(Value::as_str) else {
             return;
@@ -699,7 +699,7 @@ fn route_message(
         let method = value.get("method").and_then(Value::as_str).unwrap_or("");
         match classify_extension_ui(id, method, &value) {
             // Blocking dialog: forward to the streaming prompt and track it so
-            // teardown can cancel it; cancel now if no prompt is attached so the
+            // teardown can cancel it. Cancel now if no prompt is attached so the
             // agent never deadlocks.
             ExtUiOutcome::Dialog(event) => match sink.lock().unwrap().as_ref() {
                 Some(channel) => {
@@ -760,7 +760,7 @@ fn route_message(
 }
 
 // Map an unsolicited Pi RPC event to a frontend AgentEvent, or None to ignore it
-// (start/end-of-text markers, thinking deltas, queue updates, ...). agent lifecycle and
+// (start/end-of-text markers, thinking deltas, queue updates,...). agent lifecycle and
 // command responses are handled by the caller. Mapping is pinned to Pi 0.80.7's
 // AgentSessionEvent + AssistantMessageEvent shapes.
 #[derive(Debug, PartialEq, Eq)]
@@ -799,7 +799,7 @@ enum ExtUiOutcome {
 
 // Map an extension_ui_request to a frontend event. Dialogs become
 // PermissionRequest (input/editor carry placeholder/prefill and answer with the
-// same {value} shape as select); fire-and-forget methods become their own
+// same {value} shape as select). Fire-and-forget methods become their own
 // events. Mirrors Pi 0.80.7's RpcExtensionUIRequest union.
 fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome {
     let str_field = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
@@ -814,7 +814,7 @@ fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome 
     match method {
         "select" | "confirm" => {
             let raw_title = str_field("title").unwrap_or_default();
-            // HOY-199: title may embed tool metadata as a JSON prefix:
+            // HOY-199: title can embed tool metadata as a JSON prefix:
             // "HOY_TOOL_DATA:{...json...}\n{label}".
             let (tool_call_id, tool_name, tool_args, title) =
                 if let Some(rest) = raw_title.strip_prefix("HOY_TOOL_DATA:") {
@@ -863,7 +863,7 @@ fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome 
                 .strip_prefix(SPAWN_SYNC_PREFIX)
                 .and_then(|j| serde_json::from_str::<Value>(j).ok())
             {
-                // HOY-300: synchronous subagent spawn — a Dialog so route_message
+                // HOY-300: synchronous subagent spawn, a Dialog so route_message
                 // tracks request_id in pending_ui (abort cancels the blocked tool).
                 Some(p) => ExtUiOutcome::Dialog(AgentEvent::SubagentSpawnSync {
                     request_id: id.to_string(),
@@ -936,8 +936,8 @@ fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
     match ty? {
         "message_update" => {
             let inner = value.get("assistantMessageEvent")?;
-            // Token deltas live in assistantMessageEvent.delta, NOT .text. Thinking
-            // phases map to Reasoning (HOY-211); start/end carry no text.
+            // Token deltas live in assistantMessageEvent.delta, NOT.text. Thinking
+            // phases map to Reasoning (HOY-211). Start/end carry no text.
             match inner.get("type").and_then(Value::as_str) {
                 Some("text_delta") => Some(AgentEvent::Text {
                     delta: inner.get("delta").and_then(Value::as_str)?.to_string(),
@@ -958,7 +958,7 @@ fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
             }
         }
         "message_end" => {
-            // Surface a failed/aborted turn; agent_end still follows to finalize.
+            // Surface a failed/aborted turn. Agent_end still follows to finalize.
             // Abort is a user action, not a failure: it renders inline on the
             // turn, not as the error banner (HOY-197).
             let message = value.get("message")?;
@@ -1044,7 +1044,7 @@ fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
             follow_up: string_array(value.get("followUp")),
         }),
         // The sidecar rebound to a new session file (fork/clone, HOY-282). Carries
-        // reason + the previous file; the new file is read via get_session_stats.
+        // reason + the previous file. The new file is read via get_session_stats.
         "session_start" => Some(AgentEvent::SessionStart {
             reason: value
                 .get("reason")
@@ -1088,8 +1088,8 @@ fn tool_name(value: &Value) -> String {
         .to_string()
 }
 
-// Pi tool results are { content: [{type:"text", text}], ... }. Flatten the text
-// blocks; fall back to a raw string or JSON dump for non-text payloads.
+// Pi tool results are { content: [{type:"text", text}],... }. Flatten the text
+// blocks. Fall back to a raw string or JSON dump for non-text payloads.
 fn tool_output(result: Option<&Value>) -> Option<String> {
     let result = result?;
     if let Some(items) = result.get("content").and_then(Value::as_array) {
@@ -1113,7 +1113,7 @@ pub struct SidecarManager {
     sessions: Mutex<HashMap<SessionId, Arc<PiProcess>>>,
     active: Mutex<Option<SessionId>>,
     // Per-session permission mode (HOY-186). The live value lives in the
-    // sidecar's extension closure; this mirror feeds HOY_PERMISSION_MODE on
+    // sidecar's extension closure. This mirror feeds HOY_PERMISSION_MODE on
     // respawn so the mode survives the process swap.
     modes: Mutex<HashMap<SessionId, String>>,
     // Per-session spawn cwd (HOY-196), so a respawn rebuilds the session in
@@ -1123,25 +1123,25 @@ pub struct SidecarManager {
     cwds: Mutex<HashMap<SessionId, PathBuf>>,
     // Per-session subagent type (HOY-231), e.g. "Explore" for a read-only
     // child. Mirrors modes/cwds: without this, respawn (credential/MCP-config
-    // changes respawn all idle sessions) would drop HOY_SUBAGENT_TYPE and a
-    // restricted child would come back as a full parent session. Only entries
-    // for restricted sessions are present; a normal session has none.
+    // changes respawn all idle sessions) will drop HOY_SUBAGENT_TYPE and a
+    // restricted child will come back as a full parent session. Only entries
+    // for restricted sessions are present. A normal session has none.
     subagent_types: Mutex<HashMap<SessionId, String>>,
     // Per-session recursion depth (HOY-245). Mirrors subagent_types: respawn
-    // (credential/MCP-config changes respawn all idle sessions) would otherwise
-    // drop HOY_SUBAGENT_DEPTH and a child would come back reporting depth 0.
+    // (credential/MCP-config changes respawn all idle sessions) will otherwise
+    // drop HOY_SUBAGENT_DEPTH and a child will come back reporting depth 0.
     // Every session has an entry, root sessions included, since depth is always
     // set (unlike subagent_type, which is optional).
     depths: Mutex<HashMap<SessionId, u32>>,
     // Per-session subagent-approval flag (HOY-248). Mirrors depths so respawn
-    // restores HOY_REQUIRE_SUBAGENT_APPROVAL; without it a respawn would drop
+    // restores HOY_REQUIRE_SUBAGENT_APPROVAL. Without it a respawn will drop
     // the gate a user had turned on. Every session has an entry.
     require_approvals: Mutex<HashMap<SessionId, bool>>,
     handle_counter: AtomicUsize,
     bin: PathBuf,
     payload: PathBuf,
     // Branded agent dir (~/.hoy by default, HOY-255), passed to each sidecar as
-    // HOY_CODING_AGENT_DIR (HOY-261). Resolved once here; the same dir Rust writes
+    // HOY_CODING_AGENT_DIR (HOY-261). Resolved once here. The same dir Rust writes
     // auth.json to in pi_config, so Rust and the sidecar agree on credentials.
     agent_dir: PathBuf,
     cwd: PathBuf,
@@ -1149,14 +1149,14 @@ pub struct SidecarManager {
 
 impl SidecarManager {
     // No-resolver construction: dev/env paths only (no bundled resource lookup).
-    // Used by the live tests; the app uses new_with_resolver from .setup.
+    // Used by the live tests. The app uses new_with_resolver from.setup.
     pub fn new() -> Self {
         Self::from_paths(resolve_sidecar_paths(None))
     }
 
     // App construction: resolves the bundled payload against Tauri's resource dir
     // ($RESOURCE/pi-payload) so a packaged install finds it. Requires an
-    // AppHandle, so it runs in .setup, not at .manage time.
+    // AppHandle, so it runs in.setup, not at.manage time.
     pub fn new_with_resolver<R: tauri::Runtime>(resolver: &tauri::path::PathResolver<R>) -> Self {
         let resource_payload = resolver
             .resolve("pi-payload", tauri::path::BaseDirectory::Resource)
@@ -1231,7 +1231,7 @@ impl SidecarManager {
     // Spawn a sidecar in `cwd` (a thread's project dir), register it under a fresh
     // SessionId, and return that id. Does not touch the active session: the boot
     // control session stays active for list_models. This is session-per-thread.
-    // `session_file` opens an existing transcript (M4 restore); None starts fresh.
+    // `session_file` opens an existing transcript (M4 restore). None starts fresh.
     pub fn spawn_session_in(
         &self,
         cwd: &Path,
@@ -1282,7 +1282,7 @@ impl SidecarManager {
 
     // Build the command for a one-shot OAuth login (HOY_OAUTH_LOGIN). Same
     // binary and branded dir as an RPC sidecar, so login writes the oauth entry
-    // into the same auth.json; the entry runs hoy-oauth instead of runRpcMode.
+    // into the same auth.json. The entry runs hoy-oauth instead of runRpcMode.
     // stdio is left for the caller to wire (piped in oauth.rs).
     pub fn oauth_login_command(&self, provider: &str) -> Result<Command, String> {
         if !self.bin.exists() {
@@ -1307,7 +1307,7 @@ impl SidecarManager {
     // HOY-234: dump the resolved subagent registry via a one-shot sidecar run. Mirrors
     // the OAuth one-shot (a spawn of self.bin with a mode env), but non-interactive:
     // spawn with HOY_LIST_SUBAGENTS=1, capture stdout JSON, exit. cwd selects the
-    // project's .hoy/agents.
+    // project's.hoy/agents.
     pub fn list_subagents(&self, cwd: &Path) -> Result<serde_json::Value, String> {
         if !self.bin.exists() {
             return Err(format!(
@@ -1368,7 +1368,7 @@ impl SidecarManager {
     // Goal Mode (HOY-263): judge a thread's transcript against `condition` via a
     // one-shot sidecar run. Mirrors list_subagents: spawn self.bin with a mode env
     // (HOY_GOAL_EVAL=1), capture stdout JSON, exit. `session_file` is the thread's
-    // JSONL the evaluator opens; `evaluator_model`, when set, pins the judge model
+    // JSONL the evaluator opens. `evaluator_model`, when set, pins the judge model
     // (else the sidecar picks a cheap available one). Fail-open lives in the
     // sidecar, which writes {met:false, reason:"evaluator error: ..."} and exits 0
     // on any failure, so a clean parse here still means "keep working".
@@ -1421,7 +1421,7 @@ impl SidecarManager {
     // explicit `cwd` (a per-goal verifyCwd) when given, else the session's own cwd
     // from the cwds map (same fallback respawn uses), else self.cwd. The sidecar
     // always writes JSON and exits 0 (fail-soft), so a non-success process status
-    // here is a genuine spawn failure and surfaces as Err; Task B fails that open
+    // here is a genuine spawn failure and surfaces as Err. Task B fails that open
     // (gate not met) exactly as it does for evaluate_goal. A non-zero `code` inside
     // the JSON (a failed command / timeout) is a clean result, not an Err.
     pub fn verify_goal_command(
@@ -1476,7 +1476,7 @@ impl SidecarManager {
     // (HOY_GOAL_AUDIT=1, HOY_GOAL_CONDITION=<condition>) in the project cwd,
     // capture the {met, reason} JSON on stdout, exit. The audit cwd is the
     // explicit `cwd` (a per-goal cwd) when given, else the session's own cwd from
-    // the cwds map (same fallback verify_goal_command uses), else self.cwd; the
+    // the cwds map (same fallback verify_goal_command uses), else self.cwd. The
     // auditor reads the ACTUAL files there. Unlike evaluate_goal this is a genuine
     // agentic loop, so `.output()` (no timeout of its own) relies on the one-shot's
     // INTERNAL self-termination: hoy-goal-audit.ts arms a turn budget AND an
@@ -1561,10 +1561,10 @@ impl SidecarManager {
     // Replace a session's child with a fresh one under the same SessionId. Used
     // after writing auth.json so the running sidecar reloads credentials (Pi
     // caches auth in memory at startup). The session's cwd and permission mode
-    // come from the manager mirrors; `session_file` (captured live by the
+    // come from the manager mirrors. `session_file` (captured live by the
     // caller via get_session_stats) reopens the transcript so pi-side context
     // survives the swap. Model selection survives because Pi persists
-    // defaultModel to settings.json and re-reads it on spawn; a thread pick is
+    // defaultModel to settings.json and re-reads it on spawn. A thread pick is
     // reconciled by the renderer. The old Arc is dropped outside the lock so
     // its Drop (kill + wait) does not hold it.
     pub fn respawn(&self, id: &str, session_file: Option<&str>) -> Result<(), String> {
@@ -1643,7 +1643,7 @@ fn resolve_sidecar_paths(resource_payload: Option<PathBuf>) -> (PathBuf, PathBuf
     let env_bin = std::env::var_os("HOY_SIDECAR_BIN").map(PathBuf::from);
     let env_payload = std::env::var_os("HOY_SIDECAR_PAYLOAD").map(PathBuf::from);
 
-    // CARGO_MANIFEST_DIR is apps/desktop/src-tauri; the sidecar lives at
+    // CARGO_MANIFEST_DIR is apps/desktop/src-tauri. The sidecar lives at
     // packages/sidecar off the repo root, three levels up (src-tauri -> desktop
     // -> apps -> root).
     let dev_sidecar = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1677,7 +1677,7 @@ fn resolve_sidecar_paths(resource_payload: Option<PathBuf>) -> (PathBuf, PathBuf
 // `dev_bin`/`dev_payload` are passed Some only when they exist on disk. The
 // bundled binary sits next to the executable as `hoy-pi`(`.exe`): Tauri's
 // externalBin strips the target triple build.sh wrote. The bundled payload comes from the
-// Tauri resource dir; a final exe-dir join is a legacy fallback.
+// Tauri resource dir. A final exe-dir join is a legacy fallback.
 fn select_sidecar_paths(
     env_bin: Option<PathBuf>,
     env_payload: Option<PathBuf>,
@@ -1712,7 +1712,7 @@ mod live_tests {
     // the manager, then round-trip get_state against the live process. Requires
     // sidecar/hoy-pi-<triple> + pi-payload (run sidecar/build.sh), so it is ignored
     // by default to keep `cargo test` hermetic. Run with:
-    //   cargo test --test-threads=1 -- --ignored live_get_state_round_trip
+    // cargo test --test-threads=1, --ignored live_get_state_round_trip
     #[tokio::test]
     #[ignore]
     async fn live_get_state_round_trip() {
@@ -1737,7 +1737,7 @@ mod live_tests {
     // (the renderer boundary), send a prompt, and confirm route_message/map_pi_event
     // forward text deltas and a terminal done. Needs the sidecar binary AND a
     // configured credential in ~/.hoy (model from settings.json). Run with:
-    //   cargo test live_send_prompt_streams -- --ignored --nocapture
+    // cargo test live_send_prompt_streams, --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn live_send_prompt_streams() {
@@ -1801,7 +1801,7 @@ mod live_tests {
     // Probes the tool-call mapping: a prompt that forces a bash tool, confirming
     // tool_execution_start -> end map to Tool events with extracted output. Same
     // prerequisites as live_send_prompt_streams. Run with:
-    //   cargo test live_send_prompt_tool -- --ignored --nocapture
+    // cargo test live_send_prompt_tool, --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn live_send_prompt_tool() {
@@ -1870,7 +1870,7 @@ mod live_tests {
     // session, capture its sessionFile from stats, tear it down, then spawn a new
     // sidecar opening that file and confirm get_messages returns the prior turn.
     // Same prerequisites as the streaming tests (a configured credential). Run:
-    //   cargo test live_persist_and_restore -- --ignored --nocapture
+    // cargo test live_persist_and_restore, --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn live_persist_and_restore() {
@@ -2122,7 +2122,7 @@ mod live_tests {
     }
 
     // Extension UI coverage: input/editor become text dialogs carrying
-    // placeholder/prefill; the five display methods become fire-and-forget events.
+    // placeholder/prefill. The five display methods become fire-and-forget events.
     #[test]
     fn input_dialog_carries_placeholder() {
         let v = json!({ "method": "input", "title": "Name?", "placeholder": "type here" });
@@ -2242,7 +2242,7 @@ mod live_tests {
     }
 
     // HOY-215: await_with_dialog_grace charges its budget only against dead air
-    // (no response and no outstanding dialog). Hermetic; start_paused
+    // (no response and no outstanding dialog). Hermetic. Start_paused
     // auto-advances tokio's virtual clock so these run instantly.
     #[tokio::test(start_paused = true)]
     async fn grace_returns_value_before_budget() {
@@ -2270,7 +2270,7 @@ mod live_tests {
 
     #[tokio::test(start_paused = true)]
     async fn grace_times_out_on_dead_air() {
-        // Keep the sender alive so the receiver is not Closed; with no dialog
+        // Keep the sender alive so the receiver is not Closed. With no dialog
         // outstanding the dead-air budget elapses and the wait times out.
         let (_tx, rx) = oneshot::channel::<Value>();
         let out =
@@ -2284,7 +2284,7 @@ mod live_tests {
     #[tokio::test(start_paused = true)]
     async fn grace_suspends_budget_while_dialog_outstanding() {
         let (tx, rx) = oneshot::channel();
-        // Answer well past the 15s budget; an outstanding dialog must keep the
+        // Answer well past the 15s budget. An outstanding dialog must keep the
         // countdown suspended so the late value still resolves, not times out.
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(45)).await;
@@ -2368,7 +2368,7 @@ mod live_tests {
             r#"{"env":{"A":"${GITHUB_TOKEN}","B":"literal","C":"$${ESCAPED}","D":"${A_1}x${B2}"}}"#,
             &mut out,
         );
-        // ${VAR} names collected; the escaped $${ESCAPED} inner name is harmlessly
+        // ${VAR} names collected. The escaped $${ESCAPED} inner name is harmlessly
         // included, and adjacent refs on one line both land.
         assert!(out.contains("GITHUB_TOKEN"));
         assert!(out.contains("A_1"));
@@ -2416,7 +2416,7 @@ mod live_tests {
         );
     }
 
-    // Pi's install-telemetry attribution headers default to on; prove the
+    // Pi's install-telemetry attribution headers default to on. Prove the
     // sanitized env forces PI_TELEMETRY=0 even when an ambient value in the
     // host env tries to turn it on.
     #[cfg(unix)]
@@ -2467,7 +2467,7 @@ mod live_tests {
             path_value.contains(':'),
             "resolved PATH should have multiple entries (colon-separated), got: {path_value}"
         );
-        // The login shell PATH should contain /usr/bin at minimum
+        // The login shell PATH must contain /usr/bin at minimum
         assert!(
             path_value.split(':').any(|p| p == "/usr/bin"),
             "resolved PATH should contain /usr/bin, got: {path_value}"
@@ -2546,7 +2546,7 @@ mod live_tests {
         }
 
         assert_eq!(shells[0], "/usr/local/bin/foo", "env shell must be first");
-        // The passwd shell may add an extra entry, so at minimum the env
+        // The passwd shell can add an extra entry, so at minimum the env
         // shell + fallbacks are present.
         let has_zsh = shells.iter().any(|s| s == "/bin/zsh");
         let has_bash = shells.iter().any(|s| s == "/bin/bash");
@@ -2568,7 +2568,7 @@ mod live_tests {
             std::env::set_var("SHELL", val);
         }
 
-        // The passwd shell should be first if retrieved successfully.
+        // The passwd shell must be first if retrieved successfully.
         let has_zsh = shells.iter().any(|s| s == "/bin/zsh");
         let has_bash = shells.iter().any(|s| s == "/bin/bash");
         let has_sh = shells.iter().any(|s| s == "/bin/sh");
@@ -2579,7 +2579,7 @@ mod live_tests {
 
     // HOY-345: verify the passwd login shell is included in the list.
     // If getpwuid_r returns a shell, it must appear before the hardcoded
-    // fallbacks. This guards against regressions that would drop the
+    // fallbacks. This guards against regressions that will drop the
     // NixOS/Guix store path from the chain.
     #[cfg(unix)]
     #[test]
@@ -2599,7 +2599,7 @@ mod live_tests {
                 "passwd shell {pw} missing from list: {shells:?}"
             );
             // The passwd shell (if present) must come before any hardcoded
-            // fallback that it doesn't match.
+            // fallback that it does not match.
             if pw != "/bin/zsh" && pw != "/bin/bash" && pw != "/bin/sh" {
                 let pw_idx = shells.iter().position(|s| s == pw).unwrap();
                 let hardcoded_positions: Vec<usize> = ["/bin/zsh", "/bin/bash", "/bin/sh"]

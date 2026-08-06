@@ -60,7 +60,7 @@ function draftToWrite(draft: SubagentDraft): SubagentWrite {
     name: draft.name.trim(),
     description: draft.description.trim() || null,
     // Tools pass through verbatim, empty list included. Rust always serializes the
-    // key (`tools: []` for none), which the registry reads as zero tools -- so an
+    // key (`tools: []` for none), which the registry reads as zero tools, so an
     // empty selection stays zero, never a silent escalation to a default set, and a
     // hand-authored zero-tool agent survives an edit unchanged.
     tools: draft.tools,
@@ -173,8 +173,8 @@ export function SubagentsPanel() {
       setError(null);
       const list = await listSubagents(projectPath ?? "");
       setDefs(list);
-      // Warm the store cache from this same fetch -- no second list_subagents
-      // call (HOY-274) -- so spawnChildThread can resolve project-scoped agents
+      // Warm the store cache from this same fetch, no second list_subagents
+      // call (HOY-274), so spawnChildThread can resolve project-scoped agents
       // as soon as this panel has been opened (HOY-234).
       useSessionStore.setState({ subagents: list });
     } catch (e) {
@@ -214,7 +214,7 @@ export function SubagentsPanel() {
   };
 
   const openDuplicate = (def: SubagentDef) => {
-    // A built-in duplicate lands in the global scope; a scoped agent copies within
+    // A built-in duplicate lands in the global scope. A scoped agent copies within
     // its own scope. The name defaults to a fresh -copy slug (still validated).
     const scope: WriteScope = def.scope === "builtin" ? "global" : def.scope;
     setEditor({ mode: "new", scope, draft: { ...draftFromDef(def), name: slugCopy(def.name) } });
@@ -227,7 +227,7 @@ export function SubagentsPanel() {
     setBusy(true);
     void (async () => {
       try {
-        // An edit replaces the existing .md in place (overwrite=true): one atomic
+        // An edit replaces the existing.md in place (overwrite=true): one atomic
         // write, so a failed write can never lose the agent. A new agent is a
         // create-only write (overwrite=false).
         await writeSubagent(draftToWrite(draft), scope, proj, mode === "edit");
@@ -266,13 +266,13 @@ export function SubagentsPanel() {
 
   return (
     <div className="space-y-6">
-      <PanelHeader title="Subagents" description="Specialized agent types the model can spawn. Author them here or as .hoy/agents/*.md; built-ins are always available." />
+      <PanelHeader title="Subagents" description="Specialized agent types the model can spawn. Author them here or as .hoy/agents/*.md. Built-ins are always available." />
       {error && <div className="border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>}
       {shown === null && !error && <p className="text-xs text-muted-foreground">Loading agents...</p>}
       {shown !== null && (["builtin", "global", "project"] as SubagentScope[]).map((scope) => {
-        const rows = byScope(scope);
-        if (scope === "project" && !projectPath) return null;
-        const writable = scope !== "builtin";
+        const rows = byScope(scope)
+        if (scope === "project" && !projectPath) return null
+        const writable = scope !== "builtin"
         return (
           <div key={scope} className="space-y-3">
             <div className="flex items-center justify-between">
@@ -311,7 +311,7 @@ export function SubagentsPanel() {
               )}
             </div>
           </div>
-        );
+        )
       })}
 
       {editor && (
@@ -333,7 +333,7 @@ export function SubagentsPanel() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {confirmDelete?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the agent's .md file. Running sessions reload the registry; this cannot be undone.
+              This removes the agent's.md file. Running sessions reload the registry. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -342,10 +342,10 @@ export function SubagentsPanel() {
               disabled={busy}
               className="bg-destructive text-white hover:bg-destructive/90"
               onClick={(e) => {
-                // Keep the dialog controlled: run the delete, don't let the action
+                // Keep the dialog controlled: run the delete, do not let the action
                 // auto-close before it resolves.
-                e.preventDefault();
-                if (confirmDelete) remove(confirmDelete);
+                e.preventDefault()
+                if (confirmDelete) remove(confirmDelete)
               }}
             >
               Delete
@@ -354,5 +354,5 @@ export function SubagentsPanel() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
+  )
 }

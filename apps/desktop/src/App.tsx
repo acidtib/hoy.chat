@@ -116,7 +116,7 @@ function App() {
         if (cancelled) return;
         setActiveSessionId(id);
 
-        // Provider/auth/model hydration is owned by refreshProviderData; the
+        // Provider/auth/model hydration is owned by refreshProviderData. The
         // providers and statuses are sessionless, so it runs with no session
         // too (first-key setup). Only getState needs the session.
         const [piState] = await Promise.all([
@@ -204,7 +204,7 @@ function App() {
             (sidebarView === "history" ? <ThreadHistory /> : <Sidebar />)}
 
           {/* Main column: the title bar spans the main body only (the sidebar
-              keeps the top-left corner, Zed-style); panels render below it. */}
+keeps the top-left corner, Zed-style). Panels render below it.*/}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {showChrome ? (
               <TitleBar />
@@ -218,8 +218,8 @@ function App() {
             )}
             {/* Content row below the title bar: the panel area (bodyRef, which
                 measures only the panels so their widths fit) and, to its right,
-                the global tree dock (HOY-280) — a panel-independent sidebar that
-                follows the active thread. */}
+                the global tree dock (HOY-280), a panel-independent sidebar that
+ follows the active thread. */}
             <div className="flex min-h-0 flex-1 overflow-hidden">
             <div
               ref={bodyRef}
@@ -341,7 +341,7 @@ function PanelResizeHandle({ index }: { index: number }) {
 
   // Zero-width in flow (the panel's border-r is the visible divider) with an
   // absolutely positioned drag strip straddling the seam, so the handle never
-  // adds layout width and can't push a spurious horizontal scroll.
+  // adds layout width and cannot push a spurious horizontal scroll.
   return (
     <div className="relative z-20 w-0 shrink-0">
       <div

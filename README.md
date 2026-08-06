@@ -62,9 +62,9 @@ spawned agent process):
 
 ## Build from source
 
-Requirements: [Bun](https://bun.sh), a [Rust](https://rustup.rs) toolchain, Node (for
-the sidecar's `npm ci`), and the Tauri Linux system dependencies
-(`libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev`, `patchelf`) on Linux.
+Requirements: [Bun](https://bun.sh), a [Rust](https://rustup.rs) toolchain, and the
+Tauri Linux system dependencies (`libwebkit2gtk-4.1-dev`, `libappindicator3-dev`,
+`librsvg2-dev`, `patchelf`) on Linux.
 
 ```
 bun install            # wire the workspace

@@ -2,7 +2,7 @@
 // hoy-verify-command, this is a short-lived invocation of the SAME compiled
 // sidecar binary, selected by the HOY_GOAL_AUDIT env var in hoy-sidecar.ts. Rust
 // (sidecar.rs::audit_goal) spawns us, captures the {met, reason} JSON on stdout,
-// and exits us; we never reach runRpcMode. Task B's loop calls this as an
+// and exits us. We never reach runRpcMode. Task B's loop calls this as an
 // independent check: instead of trusting only the tool-less transcript
 // evaluator, it spawns a read-only subagent that inspects the ACTUAL repo files
 // and reports whether the condition holds.
@@ -13,25 +13,25 @@
 // built-in "Explore" type and then defensively strip any mutate tool (bash,
 // edit, write, agent) in case a project override widened it. The SDK's
 // `tools` option is a name allowlist applied to the base tool registry
-// (createAllToolDefinitions builds all seven; the allowlist activates only the
+// (createAllToolDefinitions builds all seven. The allowlist activates only the
 // listed names), so a non-empty read-only allowlist yields a real file-reading
 // agent that CANNOT mutate the repo.
 //
-// SELF-TERMINATION (load-bearing): Rust calls us via a synchronous .output()
+// SELF-TERMINATION (load-bearing): Rust calls us via a synchronous.output()
 // with no timeout of its own (mirroring evaluate_goal/verify_goal_command), so
-// the one-shot MUST self-terminate. A full agentic loop could otherwise hang. We
+// the one-shot MUST self-terminate. A full agentic loop can otherwise hang. We
 // apply BOTH guards, mirroring hoy-verify-command's teardown discipline:
-//   1. A TURN BUDGET: we count turn_end events and abort the session once the
-//      budget (default 12) is spent, so a runaway tool loop stops.
-//   2. An ABSOLUTE wall-clock FAILSAFE: an env-overridable timeout
-//      (HOY_GOAL_AUDIT_TIMEOUT_MS, default 180s, clamped) after which, if the run
-//      has not settled, we abort the session and force-emit a timed-out result,
-//      exiting UNCONDITIONALLY. A settled/emitted flag guards against a double
-//      emit (normal completion vs. the failsafe firing).
+// 1. A TURN BUDGET: we count turn_end events and abort the session once the
+// budget (default 12) is spent, so a runaway tool loop stops.
+// 2. An ABSOLUTE wall-clock FAILSAFE: an env-overridable timeout
+// (HOY_GOAL_AUDIT_TIMEOUT_MS, default 180s, clamped) after which, if the run
+// has not settled, we abort the session and force-emit a timed-out result,
+// exiting UNCONDITIONALLY. A settled/emitted flag guards against a double
+// emit (normal completion vs. the failsafe firing).
 //
 // FAIL OPEN: every error, unparseable output, or timeout yields
 // {met:false, reason:"auditor ..."} and exits 0 with that JSON on stdout. A
-// false "met" would falsely stop the loop; a false "not met" merely lets it keep
+// false "met" will falsely stop the loop. A false "not met" merely lets it keep
 // working, which is the safe bias.
 
 import {
@@ -51,15 +51,15 @@ export interface GoalAudit {
 }
 
 // Hard ceiling on wall-clock time before we force a timed-out result. A hung or
-// runaway auditor must never wedge the goal loop. Default 180s;
+// runaway auditor must never wedge the goal loop. Default 180s
 // HOY_GOAL_AUDIT_TIMEOUT_MS overrides it (clamped) so tests can drive a short
 // timeout without waiting three minutes.
 const DEFAULT_AUDIT_TIMEOUT_MS = 180_000;
 const MIN_AUDIT_TIMEOUT_MS = 1_000;
 const MAX_AUDIT_TIMEOUT_MS = 600_000;
 
-// Turn budget: cap the agentic loop's completed turns. The auditor should reach a
-// verdict in a handful of read/grep/find/ls turns; this stops a model that keeps
+// Turn budget: cap the agentic loop's completed turns. The auditor must reach a
+// verdict in a handful of read/grep/find/ls turns. This stops a model that keeps
 // exploring. HOY_GOAL_AUDIT_MAX_TURNS overrides it (clamped) for tuning/tests.
 const DEFAULT_AUDIT_MAX_TURNS = 12;
 const MIN_AUDIT_MAX_TURNS = 1;
@@ -70,7 +70,7 @@ const MAX_AUDIT_MAX_TURNS = 50;
 const CHEAP_MODEL_RE = /(haiku|mini|flash|small|lite|nano)/i;
 
 // Tools that mutate state, reach external systems, or spawn further agents. The
-// auditor must never hold any of these; we strip them from the resolved toolset
+// auditor must never hold any of these. We strip them from the resolved toolset
 // defensively. "mcp" is included so a project Explore override that added an MCP
 // tool cannot survive into the read-only auditor even if such a tool were ever
 // registered in this one-shot.
@@ -151,7 +151,7 @@ function parseAudit(text: string): GoalAudit {
 }
 
 // Read the user's configured default provider/model from <agentDir>/settings.json
-// (the same file the app writes: { "defaultProvider": ..., "defaultModel": ... }).
+// (the same file the app writes: { "defaultProvider":..., "defaultModel":... }).
 // Guarded: a missing or malformed file yields null so pickModel skips to the next
 // step rather than throwing.
 function readSettingsDefault(
@@ -172,9 +172,9 @@ function readSettingsDefault(
 }
 
 // Pick the auditor model. Order: (1) an explicit HOY_GOAL_AUDIT_MODEL
-// ("provider/id"); (2) a cheap-tier model FROM the settings default provider;
-// (3) the exact settings default provider/model if available; (4) any cheap-tier
-// model from another provider; (5) any available model. Returns undefined only
+// ("provider/id"). (2) a cheap-tier model FROM the settings default provider;
+// (3) the exact settings default provider/model if available. (4) any cheap-tier
+// model from another provider. (5) any available model. Returns undefined only
 // when no model has usable auth at all.
 //
 // The settings-default preference mirrors the v1 evaluator's session-provider
@@ -223,8 +223,8 @@ function emit(result: GoalAudit): never {
     process.exitCode = 0;
     process.stdout.end(JSON.stringify({ met: result.met, reason: result.reason }), () => process.exit(0));
   }
-  // Already emitted: do NOT write again and do NOT process.exit here (that could
-  // truncate the still-flushing first write); the pending end() callback exits.
+  // Already emitted: do NOT write again and do NOT process.exit here (that can
+  // truncate the still-flushing first write). The pending end() callback exits.
   return undefined as never;
 }
 
@@ -236,7 +236,7 @@ export async function runGoalAudit(agentDir: string, cwd: string): Promise<never
   const maxTurns = resolveMaxTurns();
 
   // `settled` is the single source of truth shared by the normal path and the
-  // failsafe timer; whichever fires first wins and the other becomes a no-op.
+  // failsafe timer. Whichever fires first wins and the other becomes a no-op.
   let settled = false;
   let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
 
@@ -250,7 +250,7 @@ export async function runGoalAudit(agentDir: string, cwd: string): Promise<never
     try {
       void session?.abort();
     } catch {
-      // best effort; we are exiting regardless
+      // best effort. We are exiting regardless
     }
     emit({ met: false, reason: "auditor timed out" });
   }, timeoutMs);
@@ -278,7 +278,7 @@ export async function runGoalAudit(agentDir: string, cwd: string): Promise<never
     }
     console.error(`hoy-goal-audit: model=${model.provider}/${model.id}`);
 
-    // The auditor prompt replaces pi's coding prompt entirely; the empty
+    // The auditor prompt replaces pi's coding prompt entirely. The empty
     // appendSystemPromptOverride stops DefaultResourceLoader appending any
     // APPEND_SYSTEM.md, and noContextFiles keeps ambient project context out so
     // the verdict rests only on files the auditor itself reads via tools.
@@ -306,7 +306,7 @@ export async function runGoalAudit(agentDir: string, cwd: string): Promise<never
 
     // Turn budget: count completed turns and abort once the budget is spent, so a
     // runaway tool loop cannot exhaust the wall-clock. abort() is the same clean
-    // stop as a user cancel; prompt() then resolves and we read whatever the
+    // stop as a user cancel. Prompt() then resolves and we read whatever the
     // model last said (fail open if it is not a verdict).
     let turns = 0;
     session.subscribe((event) => {
@@ -326,7 +326,7 @@ export async function runGoalAudit(agentDir: string, cwd: string): Promise<never
     ].join("\n");
     await session.prompt(userPrompt);
 
-    // The failsafe may have fired while prompt() was in flight; if so it already
+    // The failsafe can have fired while prompt() was in flight. If so it already
     // emitted and we must not emit again.
     if (settled) return undefined as never;
     settled = true;
@@ -345,7 +345,7 @@ export async function runGoalAudit(agentDir: string, cwd: string): Promise<never
     try {
       session?.dispose();
     } catch {
-      // ignore teardown errors; we are exiting
+      // ignore teardown errors. We are exiting
     }
   }
 }

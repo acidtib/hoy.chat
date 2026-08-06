@@ -18,7 +18,7 @@ export interface ThreadGoal {
   // HOY-298 (Goal Mode v2): optional deterministic verify gate. When set, the
   // loop runs `verifyCommand` (in `verifyCwd`, default the project cwd) and
   // requires exit 0 before declaring the goal met. Persisted on the goal so the
-  // gate survives restart. Task A plumbs these through; Task B wires the gate.
+  // gate survives restart. Task A plumbs these through. Task B wires the gate.
   verifyCommand?: string;
   verifyCwd?: string;
   // HOY-298: exit code of the LAST verify-command run, for the card display.
@@ -26,10 +26,10 @@ export interface ThreadGoal {
   // naturally dropped on save/restart like the continuation-pending state.
   lastVerifyExit?: number;
   // HOY-299 (Goal Mode v3): which evaluator the loop uses. "transcript" (the
-  // default when absent, i.e. v1 behavior) judges the thread's own transcript;
+  // default when absent, i.e. v1 behavior) judges the thread's own transcript
   // "auditor" spawns an independent READ-ONLY subagent that inspects the ACTUAL
   // repo files and returns {met, reason}. Persisted on the goal (see WsGoal) so
-  // the chosen mode survives restart. Task A plumbs this through; Task B wires
+  // the chosen mode survives restart. Task A plumbs this through. Task B wires
   // the auditor into the loop.
   evaluatorKind?: "transcript" | "auditor";
 }
@@ -48,8 +48,8 @@ export type GoalCommand =
 const CLEAR_ALIASES = new Set(["clear", "stop", "off", "reset", "none", "cancel"]);
 
 // HOY-298: a trailing `--verify "<cmd>"` on a set command pins a deterministic
-// verify gate. Double-quoted and anchored to the end so a condition may freely
-// contain the word "verify" without triggering it; only the exact flag form is
+// verify gate. Double-quoted and anchored to the end so a condition can freely
+// contain the word "verify" without triggering it. Only the exact flag form is
 // stripped. An empty quoted value ("") is treated as "no verify" (the flag is
 // still stripped from the condition). A bare `--verify` with no quoted value
 // does not match, so it stays part of the condition rather than erroring.
@@ -58,7 +58,7 @@ const VERIFY_FLAG_RE = /\s*--verify\s+"([^"]*)"\s*$/;
 // HOY-299: a trailing bare `--audit` flag selects the independent read-only
 // auditor evaluator. Anchored to the end (like --verify) and matched only as the
 // exact `--audit` token, so the plain word "audit" inside a condition is never
-// mistaken for the flag. It composes with --verify: both may appear in either
+// mistaken for the flag. It composes with --verify: both can appear in either
 // order, and each is peeled off the end before the condition length cap applies.
 const AUDIT_FLAG_RE = /\s*--audit\s*$/;
 
@@ -81,10 +81,10 @@ export function parseGoalCommand(raw: string): GoalCommand | null {
   if (CLEAR_ALIASES.has(lower)) return { kind: "clear" };
 
   // Peel trailing --verify "<cmd>" and --audit flags off before validating the
-  // condition, so the length cap applies to the condition alone. Both flags may
+  // condition, so the length cap applies to the condition alone. Both flags can
   // appear in either order (and are stripped whichever comes last first), so we
   // loop until neither matches the current tail. An empty quoted --verify value
-  // yields no verify command; a non-empty one is trimmed.
+  // yields no verify command. A non-empty one is trimmed.
   let condition = arg;
   let verifyCommand: string | undefined;
   let evaluatorKind: "auditor" | undefined;
@@ -128,7 +128,7 @@ export type GoalAction =
   | { type: "yield" }
   | { type: "evaluate"; turns: number; tokensUsed: number };
 
-// Decides what happens after a turn ends while a goal may be in effect.
+// Decides what happens after a turn ends while a goal can be in effect.
 // Pure: takes the current goal and turn outcome, returns the next action
 // without mutating anything or performing any evaluator call itself.
 export function nextGoalAction(
@@ -160,7 +160,7 @@ export type EvaluationOutcome =
 
 // Maps the cheap evaluator's verdict to the next goal-loop outcome. Kept
 // separate from nextGoalAction because the evaluator call itself is
-// asynchronous and effectful; this half stays pure.
+// asynchronous and effectful. This half stays pure.
 export function applyEvaluation(
   _goal: ThreadGoal,
   evaluation: EvaluationResult,

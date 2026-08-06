@@ -1,10 +1,10 @@
 // Unit tests for the MCP extension (HOY-232). Two parts:
 // - mergeConfigs: pure precedence + scope tagging + ${ENV} interpolation.
 // - the `mcp` proxy tool driven directly against a REAL stdio MCP server
-//   (mcp-test-server.mjs), covering search/describe/call, per-server connect
-//   consent, per-tool call consent + caching, deny paths, and project-trust
-//   gating of project-scoped servers.
-// Run with: bun test  (in sidecar/pi-src)
+// (mcp-test-server.mjs), covering search/describe/call, per-server connect
+// consent, per-tool call consent + caching, deny paths, and project-trust
+// gating of project-scoped servers.
+// Run with: bun test (in sidecar/pi-src)
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
@@ -99,7 +99,7 @@ describe("mergeConfigs", () => {
     const dup = merged.servers.find((x) => x.name === "dup")!;
     expect((dup.spec as any).command).toBe("branded");
     expect(dup.scope).toBe("project");
-    // the standard .mcp.json server is present and project-scoped (trust-gated)
+    // the standard.mcp.json server is present and project-scoped (trust-gated)
     const shared = merged.servers.find((x) => x.name === "s")!;
     expect(shared.scope).toBe("project");
   });
@@ -159,7 +159,7 @@ describe("mcp proxy tool (real stdio server)", () => {
       },
     });
     await expect(tool.execute("c5", { action: "search" }, undefined, undefined, c)).resolves.toBeDefined();
-    // search swallows per-server errors into the summary; assert it surfaced the decline
+    // search swallows per-server errors into the summary. Assert it surfaced the decline
     const res = await tool.execute("c5b", { action: "search" }, undefined, undefined, c);
     expect(res.content[0].text).toContain("unavailable");
     expect(asked).toBe(true);
@@ -177,7 +177,7 @@ describe("mcp proxy tool (real stdio server)", () => {
     });
     await tool.execute("c6", { action: "call", server: "test", tool: "echo", args: { text: "1" } }, undefined, undefined, c);
     await tool.execute("c7", { action: "call", server: "test", tool: "echo", args: { text: "2" } }, undefined, undefined, c);
-    // connect consent once + tool consent once; second call reuses both grants
+    // connect consent once + tool consent once. Second call reuses both grants
     expect(prompts.filter((p) => p.startsWith("Start MCP server"))).toHaveLength(1);
     expect(prompts.filter((p) => p.startsWith("Run MCP tool"))).toHaveLength(1);
     await shutdown();
@@ -252,7 +252,7 @@ describe("mcp proxy tool (real stdio server)", () => {
     expect(enabled).toContain("Explore");
     expect(enabled).toContain("Reviewer");
     expect(enabled).toContain("reviews diffs");
-    // HOY-300: the agent tool is synchronous — the prompt tells the model the
+    // HOY-300: the agent tool is synchronous, the prompt tells the model the
     // call blocks and returns the subagent's result in-band (not "delivered back").
     expect(enabled).toContain("BLOCKS until the subagent finishes and returns its result");
     expect(enabled).not.toContain("Fire-and-forget");
@@ -297,7 +297,7 @@ describe("resolveCommand", () => {
   });
 
   test("resolves command from PATH", () => {
-    // "node" should be in PATH on any system with Node installed
+    // "node" must be in PATH on any system with Node installed
     const result = resolveCommand("node", { PATH: process.env.PATH });
     expect(result).toContain("node");
     expect(result.startsWith("/")).toBe(true);
@@ -306,7 +306,7 @@ describe("resolveCommand", () => {
   test("throws descriptive error for missing command", () => {
     try {
       resolveCommand("definitely-not-a-real-command-abc123", { PATH: "/usr/bin:/bin" });
-      expect(true).toBe(false); // should not reach here
+      expect(true).toBe(false); // must not reach here
     } catch (e) {
       expect((e as Error).message).toContain("definitely-not-a-real-command-abc123");
       expect((e as Error).message).toContain("not found in PATH");
@@ -322,7 +322,7 @@ describe("resolveCommand", () => {
 
   test("resolves command via PATHEXT extensions", () => {
     const dir = mkdtempSync("/tmp/hoy-test-pathext-");
-    // Windows filesystem is case-insensitive but the test runs on Linux;
+    // Windows filesystem is case-insensitive but the test runs on Linux
     // use lowercase extensions to match the actual filename.
     const exe = join(dir, "bunx.cmd");
     writeFileSync(exe, "", { mode: 0o755 });

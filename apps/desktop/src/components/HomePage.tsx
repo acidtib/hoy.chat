@@ -19,7 +19,7 @@ import { cn, formatRelativeTime } from "@/lib/utils";
 
 // The home screen shown when no thread panel is open and the body is not the
 // fleet/usage view (HOY-264). A clean "start a new thread" hero built on the
-// real composer; usage stats live in their own Usage view.
+// real composer. Usage stats live in their own Usage view.
 const MAX_RECENTS = 6;
 
 export function HomePage() {

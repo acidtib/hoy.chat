@@ -91,7 +91,7 @@ describe("submitPrompt steering (HOY-218)", () => {
 
     await useSessionStore.getState().submitPrompt("t1", "go left", undefined, "steer");
 
-    // No second sendPrompt (no new channel / sink swap); the steer goes over the
+    // No second sendPrompt (no new channel / sink swap). The steer goes over the
     // no-channel enqueue path, and no transcript turn is appended.
     expect(sendPrompt).toHaveBeenCalledTimes(1);
     expect(enqueuePrompt).toHaveBeenCalledTimes(1);
@@ -121,7 +121,7 @@ describe("submitPrompt steering (HOY-218)", () => {
 
     await useSessionStore.getState().submitPrompt("t1", "new turn", undefined, "steer");
 
-    // Idle path: a fresh assistant turn + a new sendPrompt with no behavior; the
+    // Idle path: a fresh assistant turn + a new sendPrompt with no behavior. The
     // enqueue path is not used.
     expect(turnCount()).toBe(before + 2);
     expect(enqueuePrompt).not.toHaveBeenCalled();
