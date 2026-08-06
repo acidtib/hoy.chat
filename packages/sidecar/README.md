@@ -63,7 +63,7 @@ and event shapes were confirmed against the installed version's
 `dist/modes/rpc/rpc-types.d.ts` and the published RPC doc.
 
 Pi ships its `@earendil-works/pi-agent-core`, `pi-ai`, and `pi-tui` companion
-packages as caret ranges (`^0.80.7`), and those packages cut patch releases
+packages as caret ranges (`^0.84.0`), and those packages cut patch releases
 independently of `pi-coding-agent` — a plain `bun install` without a pin lets
 them float ahead and can pull in breaking changes (see HOY pi-version-bump
 history). The `overrides` block in `pi-src/package.json` pins all three to the
@@ -74,7 +74,7 @@ bumping the Pi version.
 
 If a future Pi release breaks `bun build --compile`: ship Node alongside and
 invoke `node dist/cli.js`, or bundle Pi's source with a minimal Node runtime.
-Neither was required at 0.80.7.
+Neither was required through 0.84.0.
 
 ## Files
 

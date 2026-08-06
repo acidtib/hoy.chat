@@ -761,7 +761,7 @@ fn route_message(
 
 // Map an unsolicited Pi RPC event to a frontend AgentEvent, or None to ignore it
 // (start/end-of-text markers, thinking deltas, queue updates,...). agent lifecycle and
-// command responses are handled by the caller. Mapping is pinned to Pi 0.80.7's
+// command responses are handled by the caller. Mapping is pinned to Pi 0.84.0's
 // AgentSessionEvent + AssistantMessageEvent shapes.
 #[derive(Debug, PartialEq, Eq)]
 enum AgentLifecycle {
@@ -800,7 +800,7 @@ enum ExtUiOutcome {
 // Map an extension_ui_request to a frontend event. Dialogs become
 // PermissionRequest (input/editor carry placeholder/prefill and answer with the
 // same {value} shape as select). Fire-and-forget methods become their own
-// events. Mirrors Pi 0.80.7's RpcExtensionUIRequest union.
+// events. Mirrors Pi 0.84.0's RpcExtensionUIRequest union.
 fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome {
     let str_field = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
     let str_array = |key: &str| {
@@ -1035,6 +1035,16 @@ fn map_pi_event(ty: Option<&str>, value: &Value) -> Option<AgentEvent> {
                     .and_then(Value::as_u64),
             })
         }
+        // Pi 0.81.1: retry lifecycle for a compaction/branch-summary that hit a
+        // transient provider error. All three phases collapse to one Status label
+        // (Hoy's Status variant has no attempt/reason detail slot, matching how
+        // auto_retry_start is handled above); previously silently dropped by the
+        // catch-all below.
+        "summarization_retry_scheduled"
+        | "summarization_retry_attempt_start"
+        | "summarization_retry_finished" => Some(AgentEvent::Status {
+            label: "summarization_retry".into(),
+        }),
         // The sink is per-active-prompt (set in send_prompt, taken on agent_settled),
         // so a queue_update emitted with no active turn is dropped. In practice
         // every queue mutation we care about (enqueue on steer/followUp, dequeue
@@ -2052,6 +2062,22 @@ mod live_tests {
                 assert_eq!(tokens_before, None);
             }
             other => panic!("expected CompactionEnd, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn summarization_retry_events_map_to_status() {
+        for ty in [
+            "summarization_retry_scheduled",
+            "summarization_retry_attempt_start",
+            "summarization_retry_finished",
+        ] {
+            match map_pi_event(Some(ty), &json!({})) {
+                Some(AgentEvent::Status { label }) => {
+                    assert_eq!(label, "summarization_retry", "for event type {ty}");
+                }
+                other => panic!("expected Status for {ty}, got {other:?}"),
+            }
         }
     }
 

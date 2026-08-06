@@ -669,7 +669,7 @@ export type OAuthEvent =
   | { kind: "progress"; message: string }
   | {
       kind: "prompt";
-      promptType: "text" | "manual_code";
+      promptType: "text" | "secret" | "manual_code";
       message: string;
       placeholder?: string;
     }

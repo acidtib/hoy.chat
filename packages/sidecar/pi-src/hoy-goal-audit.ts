@@ -35,7 +35,7 @@
 // working, which is the safe bias.
 
 import {
-  AuthStorage,
+  ModelRuntime,
   ModelRegistry,
   DefaultResourceLoader,
   SessionManager,
@@ -264,8 +264,11 @@ export async function runGoalAudit(agentDir: string, cwd: string): Promise<never
 
     // Resolve auth + models from Hoy's agent dir, same files the RPC
     // sidecar reads. getAvailable() is the set with usable credentials.
-    const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
-    const registry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
+    const modelRuntime = await ModelRuntime.create({
+      authPath: join(agentDir, "auth.json"),
+      modelsPath: join(agentDir, "models.json"),
+    });
+    const registry = new ModelRegistry(modelRuntime);
     const available = registry.getAvailable();
     const model = pickModel(registry, available, agentDir);
     if (!model) {
@@ -294,8 +297,7 @@ export async function runGoalAudit(agentDir: string, cwd: string): Promise<never
     const created = await createAgentSession({
       model,
       thinkingLevel: "off",
-      authStorage,
-      modelRegistry: registry,
+      modelRuntime,
       // Non-empty READ-ONLY allowlist: activates only these names on the base
       // tool registry, so the agent can read files but cannot mutate the repo.
       tools,

@@ -15,7 +15,7 @@
 // (HOY-261. The env both Pi and our SDK entry honor, since the payload sets
 // piConfig.name="hoy"). Override which dir with HOY_AGENT_DIR (tests / power users).
 //
-// Schema (verified against pi-coding-agent 0.78.0 core/auth-storage.d.ts):
+// Schema (verified against pi-coding-agent 0.84.0 core/auth-storage.d.ts):
 // auth.json = Record<provider, {type:"api_key", key} | {type:"oauth",...tokens}>
 
 use std::path::{Path, PathBuf};
@@ -162,7 +162,7 @@ struct ProviderDef {
     env: &'static str,
 }
 
-// API-key providers Hoy exposes. Pi's built-ins come from pi-coding-agent 0.80.7
+// API-key providers Hoy exposes. Pi's built-ins come from pi-coding-agent 0.84.0
 // core/provider-display-names.js (BUILT_IN_PROVIDER_DISPLAY_NAMES). Alibaba's
 // Hoy-owned providers are registered by createHoyAlibaba. Excludes
 // amazon-bedrock and google-vertex, which use cloud auth (AWS creds / gcloud ADC)
@@ -208,7 +208,7 @@ const PROVIDERS: &[ProviderDef] = &[
     ProviderDef {
         id: "radius",
         label: "Radius",
-        env: "PI_GATEWAY_API_KEY",
+        env: "RADIUS_API_KEY",
     },
     ProviderDef {
         id: "google",
@@ -344,6 +344,21 @@ const PROVIDERS: &[ProviderDef] = &[
         id: "xiaomi-token-plan-sgp",
         label: "Xiaomi MiMo Token Plan (Singapore)",
         env: "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+    },
+    ProviderDef {
+        id: "qwen-token-plan",
+        label: "Qwen Token Plan",
+        env: "QWEN_TOKEN_PLAN_API_KEY",
+    },
+    ProviderDef {
+        id: "qwen-token-plan-cn",
+        label: "Qwen Token Plan (China)",
+        env: "QWEN_TOKEN_PLAN_CN_API_KEY",
+    },
+    ProviderDef {
+        id: "baseten",
+        label: "Baseten",
+        env: "BASETEN_API_KEY",
     },
 ];
 
@@ -511,6 +526,24 @@ pub fn statuses(providers: &[String]) -> Result<Vec<ProviderAuth>, String> {
                     removable: false,
                 };
             }
+            // Pi 0.82.1 added ANTHROPIC_AUTH_TOKEN (Bearer, for Anthropic-compatible
+            // gateways) alongside ANTHROPIC_OAUTH_TOKEN as env-discoverable auth for
+            // "anthropic", both skipped by env_var_for (which only names the
+            // api_key env). Surface either as "environment configured" so a user
+            // with a gateway bearer token set doesn't see a false "not configured".
+            // Hoy never writes either var itself; the write path stays api_key-only.
+            if provider == "anthropic"
+                && (std::env::var_os("ANTHROPIC_AUTH_TOKEN").is_some()
+                    || std::env::var_os("ANTHROPIC_OAUTH_TOKEN").is_some())
+            {
+                return ProviderAuth {
+                    provider: provider.clone(),
+                    configured: true,
+                    kind: Some("api_key".to_string()),
+                    source: Some("environment".to_string()),
+                    removable: false,
+                };
+            }
             ProviderAuth {
                 provider: provider.clone(),
                 configured: false,
@@ -628,7 +661,7 @@ mod tests {
             env_var_for("vercel-ai-gateway").as_deref(),
             Some("AI_GATEWAY_API_KEY")
         );
-        assert_eq!(env_var_for("radius").as_deref(), Some("PI_GATEWAY_API_KEY"));
+        assert_eq!(env_var_for("radius").as_deref(), Some("RADIUS_API_KEY"));
         // Unknown id falls back to the uppercase convention.
         assert_eq!(
             env_var_for("totally-unknown").as_deref(),
@@ -747,7 +780,7 @@ mod tests {
         assert_eq!(google.env.as_deref(), Some("GEMINI_API_KEY"));
         let radius = list.iter().find(|p| p.id == "radius").unwrap();
         assert_eq!(radius.label, "Radius");
-        assert_eq!(radius.env.as_deref(), Some("PI_GATEWAY_API_KEY"));
+        assert_eq!(radius.env.as_deref(), Some("RADIUS_API_KEY"));
         assert!(list
             .iter()
             .filter(|p| p.id.starts_with("alibaba-"))

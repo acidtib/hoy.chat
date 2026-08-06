@@ -23,7 +23,7 @@
 // loop. A false "not met" merely lets it keep working, which is the safe bias.
 
 import {
-  AuthStorage,
+  ModelRuntime,
   ModelRegistry,
   DefaultResourceLoader,
   SessionManager,
@@ -191,8 +191,11 @@ export async function runGoalEval(agentDir: string, cwd: string): Promise<never>
 
     // Resolve auth + models from Hoy's agent dir, same files the RPC
     // sidecar reads. getAvailable() is the set with usable credentials.
-    const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
-    const registry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
+    const modelRuntime = await ModelRuntime.create({
+      authPath: join(agentDir, "auth.json"),
+      modelsPath: join(agentDir, "models.json"),
+    });
+    const registry = new ModelRegistry(modelRuntime);
     const available = registry.getAvailable();
     const model = pickModel(registry, available, sessionModel);
     if (!model) emit({ met: false, reason: "evaluator error: no model with usable auth available for evaluation" });
@@ -217,8 +220,7 @@ export async function runGoalEval(agentDir: string, cwd: string): Promise<never>
     const { session } = await createAgentSession({
       model: model!,
       thinkingLevel: "off",
-      authStorage,
-      modelRegistry: registry,
+      modelRuntime,
       tools: [],
       resourceLoader: loader,
       sessionManager: SessionManager.inMemory(cwd),

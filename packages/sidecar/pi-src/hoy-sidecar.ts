@@ -19,6 +19,7 @@ import {
   SessionManager,
   type CreateAgentSessionRuntimeFactory,
 } from "@earendil-works/pi-coding-agent";
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { createHoyPermissions, createPermissionState, isPermissionMode, type PermissionMode } from "./hoy-permissions";
 import { createHoyMcp, loadMcpConfig } from "./hoy-mcp";
 import { createHoyAgents } from "./hoy-agents";
@@ -33,6 +34,19 @@ import { runGoalEval } from "./hoy-goal-eval";
 import { runVerifyCommand } from "./hoy-verify-command";
 import { runGoalAudit } from "./hoy-goal-audit";
 import { runListSkills } from "./hoy-list-skills";
+
+// pi-ai loads each OAuth provider's flow module (token exchange, PKCE, device
+// code) through a variable import() specifier ON PURPOSE, so bundlers cannot
+// follow it into Node-only code (auth/oauth/load.js). That import fails at
+// runtime inside a bun --compile single-file binary ("Cannot find module
+// './openai-codex.js' from '/$bunfs/...'"). Pi's own stock bun CLI entry
+// (dist/bun/cli.js) works around this by calling registerBunOAuthFlows()
+// before anything else, which swaps in the flow modules already bundled
+// statically via pi-ai's bun-oauth.js. hoy-sidecar.ts is our OWN entry (not
+// dist/bun/cli.js), so nothing called this for us. Must run before ANY code
+// path below: normal RPC sessions resolving/refreshing an existing OAuth
+// credential hit the same lazy loader, not just the explicit login flow.
+registerBunOAuthFlows();
 
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore

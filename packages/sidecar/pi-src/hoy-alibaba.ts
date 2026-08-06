@@ -225,7 +225,7 @@ export function createHoyAlibaba(agentDir: string) {
       }
       pi.registerProvider(item.provider, {
         name: PROVIDER_NAMES[item.provider],
-        // Pi 0.80.7 requires apiKey or oauth when an extension registers models.
+        // Pi 0.84.0 requires apiKey or oauth when an extension registers models.
         // Stored auth.json credentials resolve first. This fallback is never
         // injected into Hoy's sanitized sidecar environment.
         apiKey: PROVIDER_API_KEY_FALLBACKS[item.provider],
