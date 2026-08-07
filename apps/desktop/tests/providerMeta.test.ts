@@ -70,6 +70,16 @@ describe("Alibaba providers", () => {
   });
 });
 
+describe("Meta provider", () => {
+  test("has connection metadata and stays out of FEATURED", () => {
+    const meta = PROVIDER_META.meta;
+    expect(meta.description).toBe("Muse Spark models via Meta Model API");
+    expect(meta.consoleUrl).toBe("https://dev.meta.ai/api-keys");
+    expect(meta.placeholder.length).toBeGreaterThan(0);
+    expect(FEATURED).not.toContain("meta");
+  });
+});
+
 describe("partitionProviders", () => {
   const p = (id: string, label: string): ProviderInfo => ({
     id,

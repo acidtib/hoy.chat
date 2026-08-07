@@ -85,6 +85,11 @@ export const PROVIDER_META: Record<string, ProviderMeta> = {
     consoleLabel: "Token Plan",
     placeholder: "sk-sp-xxxxxxxx",
   },
+  meta: {
+    description: "Muse Spark models via Meta Model API",
+    consoleUrl: "https://dev.meta.ai/api-keys",
+    placeholder: "Paste API key",
+  },
 };
 
 export function metaFor(id: string, label: string): ProviderMeta {

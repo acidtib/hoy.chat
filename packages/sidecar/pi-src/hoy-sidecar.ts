@@ -27,6 +27,7 @@ import { createHoyAskQuestion } from "./hoy-ask-question";
 import { createHoyInit } from "./hoy-init";
 import { createHoyTurnBudget } from "./hoy-turn-budget";
 import { createHoyAlibaba } from "./hoy-alibaba";
+import { createHoyMeta } from "./hoy-meta";
 import { loadSubagentRegistry, enabledTypes, effectiveChildPrompt } from "./hoy-agents-registry";
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
@@ -208,6 +209,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       // root-vs-child. A child at or beyond the cap never gets it.
       extensionFactories: [
         createHoyAlibaba(agentDir),
+        createHoyMeta(),
         createHoyPermissions(permissionState),
         createHoyMcp(mcpConfig, permissionState),
         // HOY-253: ask_question is a user-interaction tool, not a side
