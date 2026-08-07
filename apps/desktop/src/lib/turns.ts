@@ -1,6 +1,6 @@
 // Thin mapper from streaming AgentEvents to the per-thread transcript. Each
 // submit appends a user turn followed by an in-flight assistant turn (the last
-// element); every event folds into that assistant turn. Pure: returns a new list.
+// element). Every event folds into that assistant turn. Pure: returns a new list.
 
 import type { AgentEvent, ImageContent, ToolUI, Turn } from "./types";
 
@@ -59,7 +59,7 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
           if (block.kind === "tool") {
             const tool = { ...block.tool };
             // Any post-start event means the gate cleared and the tool is
-            // executing or done; it is no longer awaiting approval (HOY-199).
+            // executing or done. It is no longer awaiting approval (HOY-199).
             tool.pending = false;
             if (event.output !== undefined) tool.output = event.output;
             if (event.phase === "end") {
@@ -81,14 +81,14 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
       break;
     case "aborted":
       // The user stopped the turn (HOY-197). Flag it so the transcript shows a
-      // subtle inline marker; Done follows to clear the streaming state.
+      // subtle inline marker. Done follows to clear the streaming state.
       assistant.aborted = true;
       break;
     case "reasoning": {
       // Fold Pi's thinking stream into a single reasoning block across the
       // turn's tool loop (HOY-211). Create it lazily so a delta with no prior
       // start (redacted thinking) still opens the block. active drives the live
-      // "Thinking for Ns" timer; end stops it.
+      // "Thinking for Ns" timer. End stops it.
       const current = assistant.reasoning ?? {
         text: "",
         active: true,
@@ -145,7 +145,7 @@ type RawMessage = {
 
 // Fold a persisted Pi transcript (get_messages) into the same Turn[] the live
 // stream produces. Pi emits one assistant message per LLM step, so a tool loop is
-// assistant, toolResult, assistant, ...; we merge each run between user messages
+// assistant, toolResult, assistant,.... We merge each run between user messages
 // into a single assistant turn so restored and streamed views render identically.
 // Within each message, content parts are pushed as ordered blocks so the model's
 // natural interleaving (text -> toolCall -> text -> toolCall) is preserved.
@@ -154,8 +154,8 @@ type AssistantTurn = Extract<Turn, { role: "assistant" }>;
 // `entryIds`, when supplied, is a parallel array: entryIds[i] is the session
 // entry id of messages[i] (HOY-304). Stamped onto the produced turn/blocks so the
 // /tree navigator can scroll the transcript to a clicked node. The caller only
-// passes it when the ids align 1:1 with the messages (see store.entryIdsFor);
-// omitted, every turn/block is simply unaddressed and renders exactly as before.
+// passes it when the ids align 1:1 with the messages (see store.entryIdsFor)
+// omitted, every turn/block is unaddressed and renders exactly as before.
 export function messagesToTurns(
   messages: unknown[],
   entryIds?: (string | undefined)[],
@@ -202,7 +202,7 @@ export function messagesToTurns(
               title: toolTitle(part.name ?? "tool", part.arguments),
               command: commandArg(part.arguments),
               // Keep the diff on restore so an approved or denied edit always
-              // shows what changed, not just the tool's result text (HOY-199).
+              // shows what changed, not the tool's result text (HOY-199).
               diff: buildDiff(part.name ?? "tool", part.arguments),
               output: "",
               running: false,
@@ -266,7 +266,7 @@ function contentText(content: string | RawContentPart[] | undefined): string {
 }
 
 // Strip a leading @ context block from a restored user message (HOY-220). The
-// content is inlined into the message text on submit; on restore we show the
+// content is inlined into the message text on submit. On restore we show the
 // user's actual text, not the inlined files/transcripts. Matches our own
 // <context>...</context> prefix only, so ordinary messages are untouched.
 function stripContextBlock(text: string): string {
@@ -294,7 +294,7 @@ function contentImages(
 }
 
 // A readable one-line title from the tool's name and arguments. Bash shows its
-// command; file tools show the path; search tools show the pattern.
+// command. File tools show the path. Search tools show the pattern.
 function toolTitle(name: string, args: unknown): string {
   const a = (args ?? {}) as Record<string, unknown>;
   if (typeof a.command === "string") return a.command;
@@ -331,7 +331,7 @@ export function buildPendingToolBlock(
 }
 
 // HOY-199: mark a tool call as awaiting approval. Pi emits the tool `start`
-// event before the permission gate, so the block almost always already exists;
+// event before the permission gate, so the block almost always already exists
 // flip it to pending in place. If a permission request ever arrives before the
 // start event, insert a fresh pending block instead so the diff still shows.
 export function markToolPending(
@@ -370,8 +370,8 @@ function buildDiff(toolName: string, args: unknown): string | undefined {
     const parts: string[] = [];
     for (const raw of a.edits) {
       const edit = raw as { oldText?: unknown; newText?: unknown };
-      // A restored or variant edit call may carry an element without string
-      // oldText/newText; skip it rather than throwing and blanking the whole
+      // A restored or variant edit call can carry an element without string
+      // oldText/newText. Skip it rather than throwing and blanking the whole
       // thread render.
       if (typeof edit.oldText !== "string" || typeof edit.newText !== "string") {
         continue;

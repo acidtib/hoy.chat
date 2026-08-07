@@ -5,7 +5,7 @@
 import type { SessionEntry, SessionTreeNode } from "@/lib/types";
 
 // A loose view of pi's normalized message (mirrors turns.ts's RawMessage). A
-// `message` entry types its payload as `unknown` over get_tree; we read only the
+// `message` entry types its payload as `unknown` over get_tree. We read only the
 // fields a node preview needs. Pi owns the canonical schema.
 type RawPart = { type?: string; text?: string; name?: string };
 type RawMessage = {
@@ -65,7 +65,7 @@ function firstLine(text: string): string {
 
 // Read role, a one-line preview, and whether the message carries tool calls out
 // of pi's opaque message payload. Tool CALLS are `type:"toolCall"` content blocks
-// on an assistant message (there is no separate toolCalls field / role); a tool
+// on an assistant message (there is no separate toolCalls field / role). A tool
 // RESULT is its own `role:"toolResult"` message, not a tool call.
 export function messageFacet(message: unknown): MessageFacet {
   const m = (message ?? {}) as RawMessage;
@@ -77,7 +77,7 @@ export function messageFacet(message: unknown): MessageFacet {
         .filter((p) => p.type === "toolCall" && typeof p.name === "string")
         .map((p) => p.name as string)
     : [];
-  // bashExecution has no `content` text; preview its command. branchSummary /
+  // bashExecution has no `content` text. Preview its command. branchSummary /
   // compactionSummary carry a `summary` string.
   const raw =
     role === "bashExecution"
@@ -85,12 +85,12 @@ export function messageFacet(message: unknown): MessageFacet {
       : role === "branchSummary" || role === "compactionSummary"
         ? (m.summary ?? "")
         : contentText(m.content);
-  // A tool-only assistant step has no prose; preview the tools it ran.
+  // A tool-only assistant step has no prose. Preview the tools it ran.
   const preview = firstLine(raw) || (toolNames.length ? toolNames.join(", ") : "");
   return { role, preview, hasToolCall: toolNames.length > 0, toolNames };
 }
 
-// An assistant message that is only tool calls (no prose) — the noise a
+// An assistant message that is only tool calls (no prose), the noise a
 // "no tools" view collapses along with tool-result messages.
 function isToolOnlyAssistant(node: FlatNode): boolean {
   const m = node.message;
@@ -146,13 +146,13 @@ export function toFlatNode(
 }
 
 // The depth a node's children render at: a branch point (>1 child) indents its
-// divergent lines; a single child stays on the same spine (the linear case).
+// divergent lines. A single child stays on the same spine (the linear case).
 export function childDepth(node: SessionTreeNode, depth: number): number {
   return node.children.length > 1 ? depth + 1 : depth;
 }
 
-// Depth-first flatten of pi's pre-nested tree (children already nested — no
-// childrenMap build, unlike FleetTree). Preserves order; records depth so the
+// Depth-first flatten of pi's pre-nested tree (children already nested, no
+// childrenMap build, unlike FleetTree). Preserves order. Records depth so the
 // renderer can indent branches and draw connectors. Order matches the recursive
 // renderer, so it doubles as the keyboard-navigation sequence.
 export function flattenTree(
@@ -172,8 +172,8 @@ export function flattenTree(
 
 // Whether a row is visible under a filter. The active leaf is never hidden (you
 // always see where you are). `default` drops meta noise (model / thinking-level
-// changes, standalone label entries) and tool-result messages; `no-tools` drops
-// only tool results; `user-only` and `labeled-only` are literal; `all` shows
+// changes, standalone label entries) and tool-result messages. `no-tools` drops
+// only tool results. `user-only` and `labeled-only` are literal. `all` shows
 // everything.
 export function matchesFilter(node: FlatNode, mode: FilterMode): boolean {
   if (node.isActive) return true;
@@ -194,7 +194,7 @@ export function matchesFilter(node: FlatNode, mode: FilterMode): boolean {
   return true;
 }
 
-// The ordered ids of the `message` entries on the current leaf's parent chain —
+// The ordered ids of the `message` entries on the current leaf's parent chain,
 // the exact sequence get_messages returns (proven by session_transcript.rs, which
 // walks the same chain). Zipped positionally against getMessages output to make the
 // restored transcript entry-addressable for the /tree navigator (HOY-304). Walking

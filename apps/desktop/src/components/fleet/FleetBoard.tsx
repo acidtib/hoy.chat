@@ -18,7 +18,7 @@ export function FleetBoard() {
 
   const roots = useMemo(() => fleetRoots(projects), [projects]);
 
-  // Union of every fleet's member ids for the whole-app rollup line; a Set
+  // Union of every fleet's member ids for the whole-app rollup line. A Set
   // dedupes in case a member ever resolved under two roots.
   const allMemberIds = useMemo(() => {
     const ids = new Set<string>();

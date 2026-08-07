@@ -58,7 +58,7 @@ export function OAuthLoginDialog({
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Guards StrictMode's double effect; ties the flow to the open provider.
+  // Guards StrictMode's double effect. Ties the flow to the open provider.
   const startedFor = useRef<string | null>(null);
   const doneRef = useRef(false);
 

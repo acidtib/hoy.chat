@@ -1,6 +1,6 @@
 // HOY-253: renderer-side mirror of the ask_question payload the sidecar smuggles
 // through the extension-UI select title (packages/sidecar/pi-src/hoy-ask-question.ts).
-// The tool calls ctx.ui.select("HOY_ASK:" + JSON.stringify(payload), ...); Rust
+// The tool calls ctx.ui.select("HOY_ASK:" + JSON.stringify(payload),...). Rust
 // passes the unknown-prefixed title through untouched, so the ApprovalCard keys
 // off HOY_ASK_PREFIX and renders a QuestionnaireCard. The card answers with
 // respondPermission({ value: JSON.stringify({ answers }) }), which the sidecar

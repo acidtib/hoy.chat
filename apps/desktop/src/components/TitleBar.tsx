@@ -29,7 +29,7 @@ export function TitleBar() {
   const bodyView = useSessionStore((s) => s.bodyView);
   const setBodyView = useSessionStore((s) => s.setBodyView);
 
-  // The focused thread's project; with no thread focused (home page) the left
+  // The focused thread's project. With no thread focused (home page) the left
   // side stays empty.
   const projectName = activeThreadId
     ? (findThread(projects, activeThreadId)?.project.name ?? null)
@@ -49,9 +49,9 @@ export function TitleBar() {
             >
               {projectName}
             </span>
-            {/* Mocked branch chip to match the website app mock; real git
+            {/*Mocked branch chip to match the website app mock. Real git
                 status (branch/dirty/stash) is not wired yet. Tracked in
-                HOY-306. */}
+ HOY-306. */}
             <span
               data-tauri-drag-region
               className="flex shrink-0 items-center gap-1"
@@ -67,7 +67,7 @@ export function TitleBar() {
       {/* Global view/app controls, left → right: Usage toggle, Fleet
           toggle, Settings cog, then the window controls. The two body-view
           toggles keep their footer active treatment (brand for Usage,
-          text-agent for the agents/fleet view). */}
+ text-agent for the agents/fleet view). */}
       <div className="flex shrink-0 items-center gap-0.5">
         <TitleBarButton
           label={bodyView === "usage" ? "Show Panels" : "Show Usage Stats"}
@@ -122,7 +122,7 @@ function useMaximized(): boolean {
 // With decorations off the window manager provides no resize borders, so thin
 // invisible strips along the window edges hand the gesture to the WM via
 // startResizeDragging. Hidden while maximized (nothing to resize, and the top
-// strip would shadow the title bar's first pixels).
+// strip will shadow the title bar's first pixels).
 const RESIZE_HANDLES: { dir: ResizeDirection; className: string }[] = [
   { dir: "North", className: "inset-x-2 top-0 h-1 cursor-n-resize" },
   { dir: "South", className: "inset-x-2 bottom-0 h-1 cursor-s-resize" },
@@ -213,7 +213,7 @@ function TitleBarButton({
   className?: string;
   children: React.ReactNode;
   active?: boolean;
-  // Color when active; defaults to the brand navigation color, overridden by
+  // Color when active. Defaults to the brand navigation color, overridden by
   // callers representing a different surface (e.g. text-agent for Fleet).
   activeClassName?: string;
 }) {

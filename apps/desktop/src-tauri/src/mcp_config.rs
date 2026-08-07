@@ -1,8 +1,8 @@
 // MCP server config for the settings UI (HOY-232). Two branded files, both in
 // the standard `{ "mcpServers": { name: spec } }` shape so a server declared for
 // Cursor/Claude Code pastes straight in:
-//   global  -> <agent_dir>/mcp.json          (~/.hoy/agent, ~/.hoyd/agent debug)
-//   project -> <project>/.hoy/mcp.json        (branded project dir, HOY-222)
+// global -> <agent_dir>/mcp.json (~/.hoy/agent, ~/.hoyd/agent debug)
+// project -> <project>/.hoy/mcp.json (branded project dir, HOY-222)
 //
 // The sidecar reads and merges these itself (packages/sidecar/pi-src/hoy-mcp.ts,
 // loadMcpConfig): project wins on a name collision, ${ENV} in values is
@@ -26,7 +26,7 @@ use crate::pi_config::agent_dir;
 const PROJECT_CONFIG_DIR: &str = ".hoy";
 
 // Serializes mcp.json mutations, same rationale as pi_config's auth lock: async
-// commands can interleave and a stale read-modify-write would drop an entry.
+// commands can interleave and a stale read-modify-write will drop an entry.
 static MCP_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,7 +57,7 @@ pub struct McpServerList {
     // Editable: <project>/.hoy/mcp.json (the file this UI writes).
     pub project: Vec<McpServerEntry>,
     // Read-only here: <project>/.mcp.json, the standard cross-tool file. The
-    // sidecar reads it so a repo's existing MCP servers work; users edit it
+    // sidecar reads it so a repo's existing MCP servers work. Users edit it
     // directly (it is shared with other MCP-aware tools), not through this UI.
     pub project_shared: Vec<McpServerEntry>,
 }
@@ -75,7 +75,7 @@ fn project_path(project: &str) -> Result<PathBuf, String> {
         .join("mcp.json"))
 }
 
-// The standard cross-tool file at the project root. Read-only from this UI; the
+// The standard cross-tool file at the project root. Read-only from this UI. The
 // sidecar merges it (packages/sidecar/pi-src/hoy-mcp.ts).
 fn project_shared_path(project: &str) -> PathBuf {
     PathBuf::from(project).join(".mcp.json")

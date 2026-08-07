@@ -8,8 +8,8 @@
 // each an entry with a `type` discriminant. We only need the linear conversation
 // path the sidecar's get_messages returns, which is the AgentMessage carried by
 // every `{"type":"message"}` entry on the current leaf's parent chain. Non-message
-// entries (session header, model_change, thinking_level_change, ...) participate
-// in the id/parentId chain but carry no message; abandoned fork branches are off
+// entries (session header, model_change, thinking_level_change,...) participate
+// in the id/parentId chain but carry no message. Abandoned fork branches are off
 // the leaf's chain and are correctly excluded.
 //
 // Output matches commands::get_messages exactly: a Vec<serde_json::Value>, each
@@ -33,7 +33,7 @@ use crate::pi_config;
 pub fn read_transcript(session_file: &str) -> Result<Vec<Value>, String> {
     let sessions_root = pi_config::agent_dir()?.join("sessions");
     let path = PathBuf::from(session_file);
-    // starts_with is component-wise, so a `..` component would pass the prefix
+    // starts_with is component-wise, so a `..` component will pass the prefix
     // check while resolving outside the sessions dir. Reject any traversal
     // (mirrors delete_session_file's guard).
     if path
@@ -62,12 +62,12 @@ fn read_transcript_at(path: &Path) -> Result<Vec<Value>, String> {
 // Walks the current leaf's parent chain rather than filtering in file order so a
 // branched/forked session yields only the active path (the same path Pi resolves
 // server-side), never entries from an abandoned branch. The leaf is the last
-// valid entry that carries an id (Pi appends the current leaf); the chain is
+// valid entry that carries an id (Pi appends the current leaf). The chain is
 // followed back through parentId to the root, then reversed to chronological
 // order and reduced to each `message` entry's inner AgentMessage.
 //
 // Robust to a partially written or corrupt log: a line that is not valid JSON, or
-// an entry missing its id, is skipped rather than aborting the read — an instant
+// an entry missing its id, is skipped rather than aborting the read, an instant
 // best-effort render that the sidecar reconcile will replace regardless.
 pub fn messages_from_jsonl(contents: &str) -> Vec<Value> {
     let mut by_id: HashMap<String, Value> = HashMap::new();
@@ -109,7 +109,7 @@ pub fn messages_from_jsonl(contents: &str) -> Vec<Value> {
             .map(str::to_string);
     }
 
-    // chain is leaf -> root; reverse to chronological order, then keep each
+    // chain is leaf -> root. Reverse to chronological order, then keep each
     // message entry's inner AgentMessage (the exact get_messages element shape).
     chain
         .into_iter()
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn skips_malformed_and_partial_lines() {
         // A truncated final line (interrupted write) and a garbage line must not
-        // abort the read; the well-formed messages still come through.
+        // abort the read. The well-formed messages still come through.
         let input = concat!(
             r#"{"type":"message","id":"u1","parentId":null,"message":{"role":"user","content":"hi"}}"#,
             "\n",
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn follows_leaf_chain_and_excludes_abandoned_fork_branch() {
         // u1 -> a1, then the conversation forks: a1 has two children. b_old is an
-        // abandoned branch; the leaf (last written) is on the b_new branch, so only
+        // abandoned branch. The leaf (last written) is on the b_new branch, so only
         // the b_new path must appear.
         let input = concat!(
             r#"{"type":"message","id":"u1","parentId":null,"message":{"role":"user","content":"root"}}"#,
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn tolerates_a_broken_parent_link() {
-        // The leaf's parentId points at an id that was never written; the walk
+        // The leaf's parentId points at an id that was never written. The walk
         // stops at the leaf rather than looping or panicking.
         let input = concat!(
             r#"{"type":"message","id":"orphan","parentId":"missing","message":{"role":"user","content":"lonely"}}"#,

@@ -115,7 +115,7 @@ export const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_DEFAULT_WIDTH = 256;
 
 // Thread panels tile the main body left to right. A new panel fills the unused
-// space (so the first one spans the whole body); once the body is full it
+// space (so the first one spans the whole body). Once the body is full it
 // borrows width from the others, never below this minimum.
 export const PANEL_MIN_WIDTH = 460;
 
@@ -135,7 +135,7 @@ function initialBodyWidth(): number {
 
 // Reduce the combined width of `panels` by `amount`, taking from each in
 // proportion to its room above the minimum. Panels already at the minimum are
-// left alone; if there isn't enough headroom the panels overflow and the body
+// left alone. If there is not enough headroom the panels overflow and the body
 // scrolls horizontally rather than crushing anything below the minimum.
 function shrinkPanels(panels: Panel[], amount: number): Panel[] {
   const headroom = panels.map((p) => Math.max(0, p.width - PANEL_MIN_WIDTH));
@@ -144,14 +144,14 @@ function shrinkPanels(panels: Panel[], amount: number): Panel[] {
   const take = Math.min(amount, total);
   return panels.map((p, i) => ({
     ...p,
-    // Floor so rounding never sums above the body width (which would force a
-    // spurious horizontal scroll); a sub-pixel remainder stays as empty space.
+    // Floor so rounding never sums above the body width (which will force a
+    // spurious horizontal scroll). A sub-pixel remainder stays as empty space.
     width: Math.floor(p.width - (headroom[i] / total) * take),
   }));
 }
 
 // Distribute `amount` of extra width across `panels`, in proportion to their
-// current width; the remainder goes to the last panel so the widths grow by
+// current width. The remainder goes to the last panel so the widths grow by
 // exactly `amount`. The inverse of shrinkPanels.
 function growPanels(panels: Panel[], amount: number): Panel[] {
   const total = panels.reduce((a, p) => a + p.width, 0);
@@ -168,7 +168,7 @@ function growPanels(panels: Panel[], amount: number): Panel[] {
 }
 
 // Grow or shrink `panels` so they exactly fill `bodyWidth`. Shrinking respects
-// the per-panel minimum (and may leave the strip overflowing); growing fills the
+// the per-panel minimum (and can leave the strip overflowing). Growing fills the
 // reclaimed space so the panels never leave a gap beside them.
 function fitPanels(panels: Panel[], bodyWidth: number): Panel[] {
   const used = panels.reduce((a, p) => a + p.width, 0);
@@ -196,7 +196,7 @@ function placeNewPanel(
 }
 
 // Items present in `prev` but no longer in `next` (multiset-aware). Used to detect
-// which queued steer/follow-up messages Pi just delivered from a queueUpdate.
+// which queued steer/follow-up messages Pi delivered from a queueUpdate.
 function removedItems(prev: string[], next: string[]): string[] {
   const remaining = [...next];
   const removed: string[] = [];
@@ -209,7 +209,7 @@ function removedItems(prev: string[], next: string[]): string[] {
 }
 
 // Join a project root with a relative path for an ipc call (HOY-220). Paths are
-// forward-slashed from list_project_paths; a trailing slash on root is tolerated.
+// forward-slashed from list_project_paths. A trailing slash on root is tolerated.
 function joinPath(root: string, rel: string): string {
   if (!root) return rel;
   return `${root.replace(/\/+$/, "")}/${rel}`;
@@ -219,7 +219,7 @@ const MAX_THREAD_TRANSCRIPT_CHARS = 50000;
 
 // Flatten a referenced thread's transcript to text for inlining as @ context
 // (HOY-220). Built from the in-memory turns, so an unopened thread contributes
-// nothing (its turns are not loaded); capped to bound token blowup.
+// nothing (its turns are not loaded). Capped to bound token blowup.
 function threadTranscript(threadId: string): string {
   const turns = useSessionStore.getState().turns[threadId] ?? [];
   const lines: string[] = [];
@@ -257,7 +257,7 @@ async function buildContextBlock(
         const content = await readContextFile(root, ref.path);
         parts.push(`<file path="${attr(ref.path)}">\n${content}\n</file>`);
       } catch {
-        // Skip an unreadable file; the rest of the send proceeds.
+        // Skip an unreadable file. The rest of the send proceeds.
       }
     } else if (ref.kind === "directory") {
       if (!root) continue;
@@ -281,8 +281,8 @@ async function buildContextBlock(
   return `<context>\n${parts.join("\n")}\n</context>`;
 }
 
-// Sanitize a value for an XML-ish attribute in the context block; the model reads
-// it as text, so a double quote just becomes a single quote.
+// Sanitize a value for an XML-ish attribute in the context block. The model reads
+// it as text, so a double quote becomes a single quote.
 function attr(value: string): string {
   return value.replace(/"/g, "'");
 }
@@ -302,7 +302,7 @@ type SpawnPayload = {
 // Session list is keyed by sessionId from the start so multi-session is a data
 // change, not a redesign. Models, supported providers, and provider auth status
 // are cached here so the top bar and settings page render from our state.
-// Projects/threads drive the sidebar; `panels` is the set of threads open in the
+// Projects/threads drive the sidebar. `panels` is the set of threads open in the
 // main body and `activeThreadId` is the focused one (null = home page).
 interface SessionStore {
   projects: Project[];
@@ -310,7 +310,7 @@ interface SessionStore {
   activeThreadId: string | null;
   // The last project the user worked in (opened/focused a thread, or added a
   // project). Survives closing all panels, so the home launcher can default a
-  // new thread to it. Not persisted across restart; the recency fallback covers
+  // new thread to it. Not persisted across restart. The recency fallback covers
   // a cold start.
   activeProjectId: string | null;
   bodyWidth: number;
@@ -319,7 +319,7 @@ interface SessionStore {
   // time-bucketed history (toggled from the bottom-bar clock).
   sidebarView: "projects" | "history";
   // When history is opened scoped to one project (the sidebar's "N more" row,
-  // HOY-257), this holds that project's id so ThreadHistory filters to it;
+  // HOY-257), this holds that project's id so ThreadHistory filters to it
   // null = all threads. Cleared whenever the sidebar view is toggled directly.
   historyProjectId: string | null;
   sidebarWidth: number;
@@ -329,13 +329,13 @@ interface SessionStore {
   activeSessionId: string | null;
   models: ModelInfo[];
   // Subagent type registry (HOY-234): builtin + global + project types merged
-  // with their enabled/disabled overrides. Cached like models/providerAuth;
+  // with their enabled/disabled overrides. Cached like models/providerAuth
   // refreshSubagents repopulates it, spawnChildThread reads it to resolve a
   // child's model/thinking, the settings panel reads it to render the toggle.
   subagents: SubagentDef[];
   supportedProviders: ProviderInfo[];
   providerAuth: ProviderAuth[];
-  // Pi's global defaultModel (boot-hydrated from the control session's state);
+  // Pi's global defaultModel (boot-hydrated from the control session's state)
   // what a thread shows before it has its own pick.
   defaultModel: ModelRef | null;
   // Per-thread selector busy flag, keyed by threadId like the records below.
@@ -348,7 +348,7 @@ interface SessionStore {
   streaming: Record<string, boolean>;
   stats: Record<string, SessionStats | null>;
   // HOY-262: aggregate local usage stats for the home dashboard. Loaded lazily
-  // when the dashboard mounts; null until the first fetch resolves.
+  // when the dashboard mounts. Null until the first fetch resolves.
   usageReport: UsageReport | null;
   usageLoading: boolean;
   // Wall-clock of the last successful usage fetch, so refreshUsage can skip
@@ -357,58 +357,58 @@ interface SessionStore {
   threadErrors: Record<string, string | null>;
   // Plan-mode handoff (HOY-213): a plan-mode turn that finished carrying a
   // proposed_plan block sets planReady[threadId] to the extracted plan text.
-  // Drives the "Plan ready" card; transient (not persisted), cleared on
+  // Drives the "Plan ready" card. Transient (not persisted), cleared on
   // implement/dismiss and when the thread streams again.
   planReady: Record<string, string>;
-  // Manual compaction in flight, keyed by threadId; gates the Compact affordance
+  // Manual compaction in flight, keyed by threadId. Gates the Compact affordance
   // and shows a compacting chip (HOY-229).
   compacting: Record<string, boolean>;
   // Approval cards awaiting an answer, keyed by threadId (HOY-186). Usually at
-  // most one; pi preflights sibling tool calls sequentially, but a queue keeps
+  // most one. Pi preflights sibling tool calls sequentially, but a queue keeps
   // any overlap safe. Cleared on done and on panel close.
   pendingPermissions: Record<string, PermissionRequest[]>;
   // Extension UI display state, keyed by threadId (ext UI coverage). `notices`
-  // are transient (notify); `statuses` are keyed footer chips (setStatus);
+  // are transient (notify). `statuses` are keyed footer chips (setStatus);
   // `widgets` are keyed panels around the composer (setWidget). statuses and
-  // widgets persist across turns; all three are cleared on panel close.
+  // widgets persist across turns. All three are cleared on panel close.
   notices: Record<string, Notice[]>;
   statuses: Record<string, Record<string, string>>;
   widgets: Record<string, Record<string, ExtWidget>>;
   // Slash commands available to each thread's session (HOY-223), keyed by
-  // threadId. Fetched once the session is acquired and cached; the composer "/"
+  // threadId. Fetched once the session is acquired and cached. The composer "/"
   // autocomplete reads it. Empty until a session exists (degrades to built-ins).
   slashCommands: Record<string, SlashCommand[]>;
   // Skills for the active project context (HOY-323), as slash commands
   // (`skill:<name>`). Sourced from disk via list_skills, so they are available in
-  // the composer "/" and "@skill:" pickers even before a session exists — unlike
+  // the composer "/" and "@skill:" pickers even before a session exists, unlike
   // slashCommands, which is session-gated. Refreshed when the active project
   // changes.
   skillCommands: SlashCommand[];
   // Session entry tree per thread (HOY-279), keyed by threadId, feeding the
-  // `/tree` navigator. Absent until the navigator is opened for a thread; a
+  // `/tree` navigator. Absent until the navigator is opened for a thread. A
   // present entry means the tree is being observed, so refreshSessionTree keeps
   // only those fresh (turn done, fork). Session-scoped: dropped on panel close.
   sessionTree: Record<string, SessionTree | null>;
   // Which view the app's right-side dock shows (HOY-280), or null when closed.
   // A single global, app-level sidebar (Zed right-dock) mounted next to the whole
   // body, independent of any one thread panel: its content follows the active
-  // thread. `/tree` is the first tenant; a git panel is a planned second.
+  // thread. `/tree` is the first tenant. A git panel is a planned second.
   rightDock: RightDockView | null;
   // The /fork picker (HOY-284): the active thread's forkable user messages, or
   // null when closed. Picking one branches to a new thread via branchFromEntry.
   forkPicker: { threadId: string; messages: ForkMessage[] } | null;
   // Composer drafts keyed by threadId. Store-held so hidden panels and app
-  // restarts keep unsent text; persisted via the workspace autosave as each
+  // restarts keep unsent text. Persisted via the workspace autosave as each
   // thread's draft field. Never cleared on panel close.
   drafts: Record<string, string>;
   // Pending image attachments for the composer, keyed by threadId (HOY-205).
-  // In-memory only (base64 never touches disk); cleared on submit and on panel
+  // In-memory only (base64 never touches disk). Cleared on submit and on panel
   // close, revoking each preview object URL.
   composerAttachments: Record<string, ImageAttachment[]>;
   // Concurrency limiter for subagent spawns (HOY-245). All transient, never
   // persisted. `runningAgents` holds the child thread ids whose INITIAL run is
-  // streaming (a slot each); `agentQueue` is the FIFO of child ids waiting for a
-  // slot; `queuedPayloads` carries each queued child's spawn args so the pump
+  // streaming (a slot each). `agentQueue` is the FIFO of child ids waiting for a
+  // slot. `queuedPayloads` carries each queued child's spawn args so the pump
   // can replay them when a slot frees. Foreground and resume runs never touch
   // any of these.
   runningAgents: Set<string>;
@@ -416,7 +416,7 @@ interface SessionStore {
   queuedPayloads: Record<string, { payload: SpawnPayload; childDepth: number }>;
   // Pi's per-session steering/follow-up queues, keyed by threadId (HOY-218). Fed
   // by queueUpdate events (Pi sends full arrays, so we replace). Drives the
-  // read-only queued-message chips. Cleared on panel close; abort leaves it
+  // read-only queued-message chips. Cleared on panel close. Abort leaves it
   // intact (Pi keeps the queue and delivers it on the next turn).
   queued: Record<string, { steering: string[]; followUp: string[] }>;
   // Full screen within the panel strip: the one panel rendered while set.
@@ -459,7 +459,7 @@ interface SessionStore {
   dismissNotice: (threadId: string, id: number) => void;
   setDraft: (threadId: string, value: string) => void;
   // Image attachment management for the composer (HOY-205). addAttachments
-  // encodes files to base64 in the renderer; removeAttachment/clearAttachments
+  // encodes files to base64 in the renderer. RemoveAttachment/clearAttachments
   // revoke the preview object URLs they drop.
   addAttachments: (threadId: string, files: File[]) => Promise<void>;
   removeAttachment: (threadId: string, id: string) => void;
@@ -534,7 +534,7 @@ interface SessionStore {
   setDefaultModel: (model: ModelRef | null) => void;
   // Pick a model for one thread. Live session: set_model goes to that thread's
   // own sidecar. No session yet: the pick is recorded on the thread and applied
-  // when its session spawns (defer, don't spawn).
+  // when its session spawns (defer, do not spawn).
   selectModel: (
     threadId: string,
     provider: string,
@@ -576,7 +576,7 @@ interface SessionStore {
 
   // Send a prompt. When a turn is already streaming, `behavior` queues the
   // message ("steer" delivers after the current tool calls, "followUp" after the
-  // turn drains); it is ignored when idle (HOY-218).
+  // turn drains). It is ignored when idle (HOY-218).
   submitPrompt: (
     threadId: string,
     message: string,
@@ -589,7 +589,7 @@ interface SessionStore {
   ) => Promise<void>;
   // Create a thread from the home hero and send its first prompt in one step
   // (HOY-264). Records the chosen model/permission/thinking on the new
-  // session-less thread, opens it (addThread), and submits; submitPrompt lazily
+  // session-less thread, opens it (addThread), and submits. SubmitPrompt lazily
   // spawns the session and applies the deferred picks. The thread is only minted
   // here, on send, so opening home and leaving creates no empty thread.
   startThread: (
@@ -603,23 +603,23 @@ interface SessionStore {
     },
   ) => void;
   // Abort the thread's streaming turn (HOY-195). The turn's terminal events
-  // arrive over the channel as usual; no state is flipped here.
+  // arrive over the channel as usual. No state is flipped here.
   stopStreaming: (threadId: string) => Promise<void>;
   refreshStats: (threadId: string) => Promise<void>;
   refreshUsage: () => Promise<void>;
   // Pull the session's slash commands into the store (HOY-223). No-op without a
-  // live session; a failure degrades quietly to the built-ins.
+  // live session. A failure degrades quietly to the built-ins.
   refreshSlashCommands: (threadId: string) => Promise<void>;
   // Pull the active project's skills into skillCommands from disk (HOY-323).
   // Session-independent (spawns a one-shot), so the composer shows skills before
   // any message is sent. A failure leaves the prior list.
   refreshSkills: (projectPath: string | null) => Promise<void>;
   // Pull the session's entry tree into the store for the `/tree` navigator
-  // (HOY-279). No-op without a live session; a failure leaves the prior tree.
+  // (HOY-279). No-op without a live session. A failure leaves the prior tree.
   refreshSessionTree: (threadId: string) => Promise<void>;
   // Global right-side dock host (HOY-280). toggleRightDock opens the view (and
-  // primes the active thread's data — for "tree", a getTree read) or closes it
-  // if already showing; closeRightDock just closes it.
+  // primes the active thread's data, for "tree", a getTree read) or closes it
+  // if already showing. CloseRightDock closes it.
   toggleRightDock: (view: RightDockView) => void;
   closeRightDock: () => void;
   // Branch a new thread from a session entry (HOY-283): opens a sidecar on the
@@ -630,7 +630,7 @@ interface SessionStore {
   // clone RPC (HOY-284): the source is untouched, no composer prefill.
   cloneThread: (threadId: string) => Promise<void>;
   // The /fork picker (HOY-284). openForkPicker fetches the thread's forkable user
-  // messages and opens the palette; pickFork branches from the chosen entry;
+  // messages and opens the palette. PickFork branches from the chosen entry;
   // closeForkPicker dismisses it.
   openForkPicker: (threadId: string) => Promise<void>;
   pickFork: (entryId: string) => void;
@@ -641,7 +641,7 @@ interface SessionStore {
   // Fan a changed auto-compaction pref out to every currently-live session so a
   // mid-conversation toggle takes effect at once (HOY-275). The pref itself
   // (usePrefsStore.autoCompaction) is the source of truth, applied to each
-  // session on spawn; this only reaches sessions that are already live.
+  // session on spawn. This only reaches sessions that are already live.
   setAutoCompaction: (enabled: boolean) => Promise<void>;
   // Goal Mode (HOY-263): builtin /goal commands, intercepted in submitPrompt the
   // same way /compact is, so none of these ever round-trip through Pi.
@@ -720,7 +720,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   focusRequest: null,
   pendingTeardown: null,
 
-  // Open the thread in a panel, or just focus it if it's already open. A
+  // Open the thread in a panel, or focus it if it is already open. A
   // persisted thread (has a sessionFile, no live sidecar, nothing loaded) is
   // hydrated from disk in the background.
   openThread: (id) => {
@@ -762,7 +762,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setActiveProject: (id) => set({ activeProjectId: id }),
 
   requestTeardown: (action, threadId) => {
-    // The confirm dialog only guards a live stream; when the user has turned that
+    // The confirm dialog only guards a live stream. When the user has turned that
     // guard off, or nothing is streaming, tear down immediately.
     const confirmStreaming = usePrefsStore.getState().confirmCloseStreaming;
     if (!get().streaming[threadId] || !confirmStreaming) {
@@ -791,7 +791,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // events are ignored rather than re-populating this thread's state.
     activeChannels.delete(id);
     // Drop any buffered (not-yet-flushed) streaming deltas for this thread so a
-    // pending rAF flush can't re-populate the transcript we just dropped (HOY-292).
+    // pending rAF flush cannot re-populate the transcript we dropped (HOY-292).
     streamDeltaBuffers.delete(id);
     // Manually closing a RUNNING subagent kills its sidecar above, so its
     // trailing done is dropped by the activeChannels guard and the done-path
@@ -813,7 +813,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         : false;
       // Re-fit the survivors to the body, so closing re-flows the strip
       // instead of leaving a gap. Fit, not grow: when the strip was
-      // overflowing, handing the closed panel's width to the survivors would
+      // overflowing, handing the closed panel's width to the survivors will
       // stack it (close all but one and that panel keeps the combined width).
       const panels = fitPanels(
         s.panels.filter((p) => p.id !== id),
@@ -832,26 +832,26 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const { [id]: _sg, ...streaming } = s.streaming;
       const { [id]: _er, ...threadErrors } = s.threadErrors;
       const { [id]: _ms, ...modelSelecting } = s.modelSelecting;
-      // Pending approval cards die with the sidecar; the killed process needs
+      // Pending approval cards die with the sidecar. The killed process needs
       // no answers.
       const { [id]: _pp, ...pendingPermissions } = s.pendingPermissions;
-      // Extension UI display state is tied to the live sidecar; drop it too.
+      // Extension UI display state is tied to the live sidecar. Drop it too.
       const { [id]: _nt, ...notices } = s.notices;
       const { [id]: _ss, ...statuses } = s.statuses;
       const { [id]: _wg, ...widgets } = s.widgets;
-      // The draft survives the close (it is user work, like thread.model);
+      // The draft survives the close (it is user work, like thread.model)
       // only a discarded thread takes its (whitespace-only) entry with it.
       const { [id]: _dr, ...remainingDrafts } = s.drafts;
-      // Attachments are tied to the live composer session; drop them and revoke
+      // Attachments are tied to the live composer session. Drop them and revoke
       // their preview URLs (HOY-205).
       const { [id]: closedAttachments, ...composerAttachments } =
         s.composerAttachments;
       for (const a of closedAttachments ?? []) URL.revokeObjectURL(a.previewUrl);
       // Queued messages die with the sidecar (HOY-218).
       const { [id]: _q, ...queued } = s.queued;
-      // Slash commands are session-scoped; drop them so a reopen re-fetches.
+      // Slash commands are session-scoped. Drop them so a reopen re-fetches.
       const { [id]: _slc, ...slashCommands } = s.slashCommands;
-      // The session tree is session-scoped too; drop it so a reopen re-fetches
+      // The session tree is session-scoped too. Drop it so a reopen re-fetches
       // and a closed thread stops being refreshed on done (HOY-279).
       const { [id]: _tree, ...sessionTree } = s.sessionTree;
       return {
@@ -884,7 +884,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   requestPanelClose: (threadId) => {
-    // Closing a subagent's panel should never stop its work: dismiss the view and
+    // Closing a subagent's panel must never stop its work: dismiss the view and
     // leave the sidecar running (reopenable from Fleet). Only a root thread's
     // panel is torn down on close, keeping the existing kill-on-close + streaming
     // confirm (HOY-301).
@@ -900,9 +900,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set((s) => {
       const index = s.panels.findIndex((p) => p.id === id);
       if (index < 0) return s;
-      // Remove from the strip and re-fit survivors, exactly like closePanel -- but
+      // Remove from the strip and re-fit survivors, exactly like closePanel, but
       // keep the sidecar, the channel, and every per-thread slice (turns, streaming,
-      // sessionId, ...) so the thread keeps running and reopens with state intact.
+      // sessionId,...) so the thread keeps running and reopens with state intact.
       const panels = fitPanels(
         s.panels.filter((p) => p.id !== id),
         s.bodyWidth,
@@ -967,7 +967,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   toggleFullScreen: (threadId) =>
     set((s) => ({
       expandedThreadId: s.expandedThreadId === threadId ? null : threadId,
-      // Entering or exiting full screen remounts panels; drop any pending
+      // Entering or exiting full screen remounts panels. Drop any pending
       // request so the remount cannot replay it.
       focusRequest: null,
     })),
@@ -982,7 +982,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }),
 
   // Drag the divider on panel `index`'s right edge. Growing borrows from the
-  // neighbor down to its minimum; once the neighbor is already at the minimum
+  // neighbor down to its minimum. Once the neighbor is already at the minimum
   // (the panels overflow), the panel keeps growing and the strip scrolls instead
   // of the drag getting stuck. Shrinking hands the freed width to the neighbor.
   resizePanelEdge: (index, deltaPx) =>
@@ -1021,7 +1021,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   addProject: (path) => {
     const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
     // Seed a new project with one starter thread so it opens ready to use
-    // (HOY-226). On the dedup path (path already open) add nothing; just surface
+    // (HOY-226). On the dedup path (path already open) add nothing. Surface
     // the existing project's most recent thread. openThread runs after set,
     // mirroring addThread.
     let openId: string | null = null;
@@ -1065,8 +1065,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const { project, thread: parent } = found;
     const childDepth = threadDepth(get().projects, parentThreadId) + 1;
     if (childDepth > MAX_SUBAGENT_DEPTH) {
-      // Belt-and-suspenders: a parent at max depth should not have had the agent
-      // tool at all (the sidecar withholds it), so this should be unreachable.
+      // Belt-and-suspenders: a parent at max depth must not have had the agent
+      // tool at all (the sidecar withholds it), so this must be unreachable.
       // Guard against a stale sidecar rather than spawning past the cap.
       console.warn(`HOY-245: refusing spawn at depth ${childDepth} > ${MAX_SUBAGENT_DEPTH}`);
       return;
@@ -1083,14 +1083,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       });
     }
     const def = get().subagents.find((d) => d.name === payload.subagentType);
-    // A type with no model inherits the parent's (closes HOY-237); thinking
+    // A type with no model inherits the parent's (closes HOY-237). Thinking
     // likewise. A type with a model that fails to resolve also falls back to
     // the parent's rather than spawning on an arbitrary default.
     const childModel = def?.model
       ? (resolveModelRef(get(), def.model) ?? parent.model ?? null)
       : (parent.model ?? null);
     // Validate the registry-supplied thinking string rather than casting it
-    // blind (HOY-243); a malformed value falls back to the parent's level.
+    // blind (HOY-243). A malformed value falls back to the parent's level.
     const childThinking =
       (isThinkingLevel(def?.thinking) ? def.thinking : undefined) ??
       parent.thinkingLevel ??
@@ -1127,7 +1127,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // (HOY-246), off by default to avoid a panel-per-subagent storm at scale.
     if (usePrefsStore.getState().autoOpenSpawnedThreads) get().openThread(childId);
     // Concurrency gate (HOY-245): an initial run takes a slot only if one is
-    // free; otherwise the child waits FIFO. A slot releases on the run's first
+    // free. Otherwise the child waits FIFO. A slot releases on the run's first
     // done. Foreground and resume runs bypass this entirely (they never reach
     // here), which is what keeps deep trees deadlock-free under a small cap.
     if (get().runningAgents.size < concurrencyCap()) {
@@ -1164,7 +1164,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       queuedPayloads: restPayloads,
     });
     void startChildRun(next, entry.payload, entry.childDepth);
-    // Fill any further free slots (cap may allow more than one).
+    // Fill any further free slots (cap can allow more than one).
     get().pumpAgentQueue();
   },
   removeProject: (projectId) => {
@@ -1234,7 +1234,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     try {
       set({ subagents: await listSubagents(cwd) });
     } catch {
-      // Leave the prior cache; a stale registry beats an empty one.
+      // Leave the prior cache. A stale registry beats an empty one.
     }
   },
   setSubagentEnabled: async (scope, name, enabled, projectPath) => {
@@ -1259,7 +1259,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }));
     try {
       // Live session: apply to the sidecar first so a rejection leaves model
-      // state untouched. No session: defer, don't spawn; the pick is applied
+      // state untouched. No session: defer, do not spawn. The pick is applied
       // by the session-spawn path. defaultModel mirrors Pi, which persists the
       // pick globally on set_model but knows nothing of a deferred pick.
       if (thread.sessionId) await setModel(thread.sessionId, provider, modelId);
@@ -1294,7 +1294,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (!thread.sessionId) return;
     try {
       await setThinkingLevel(thread.sessionId, level);
-      // Pi may clamp the level internally; sync the effective value back.
+      // Pi can clamp the level internally. Sync the effective value back.
       const synced = await getState(thread.sessionId).catch(() => null);
       if (synced?.thinkingLevel) {
         set((s) => ({
@@ -1321,7 +1321,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (!thread) return;
     const previous = thread.permissionMode ?? "default";
     if (previous === mode) return;
-    // Optimistic: the selector reflects the pick immediately; a live-session
+    // Optimistic: the selector reflects the pick immediately. A live-session
     // failure reverts it. No session: the pick is applied on spawn.
     set((s) => ({
       projects: patchThread(s.projects, threadId, (th) => ({
@@ -1361,13 +1361,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // subagent execution, so the agent tool is advertised to the parent), then
     // send the plan as the opening instruction of the execution turn.
     await get().setPermissionMode(threadId, mode);
-    // HOY-295: inline execution implements in this thread; subagent execution
+    // HOY-295: inline execution implements in this thread. Subagent execution
     // orchestrates the plan one step per dispatched subagent.
     const kickoff =
       execution === "subagent"
         ? planSubagentKickoffPrompt(plan)
         : planKickoffPrompt(plan);
-    // autoPlanMode: false — the kickoff instruction says "implement this approved
+    // autoPlanMode: false, the kickoff instruction says "implement this approved
     // plan", which must not bounce the freshly-restored mode back into plan.
     await get().submitPrompt(threadId, kickoff, undefined, undefined, {
       autoPlanMode: false,
@@ -1377,7 +1377,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   answerPermission: async (threadId, requestId, answer) => {
     const sessionId = findThread(get().projects, threadId)?.thread.sessionId;
     if (!sessionId) return;
-    // Remove the card first so a double click cannot answer twice; the backend
+    // Remove the card first so a double click cannot answer twice. The backend
     // treats an unknown request id as a no-op write.
     set((s) => ({
       pendingPermissions: {
@@ -1407,7 +1407,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     get().dismissPlanReady(threadId);
 
     // The message is the composer draft with @ mentions encoded inline (HOY-220).
-    // `text` is the human-readable message (markers -> labels); `contexts` are the
+    // `text` is the human-readable message (markers -> labels). `contexts` are the
     // referenced files/threads, inlined as a <context> block prepended to the text
     // Pi receives. The draft is cleared by the composer (setDraft "") on submit.
     const contexts = draftContexts(message);
@@ -1415,7 +1415,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     // Hoy built-in /compact (HOY-223): intercept before the prompt path so it
     // never reaches Pi and never appends turns. Trailing text becomes the custom
-    // summarization instructions; "/compact" alone compacts with the default.
+    // summarization instructions. "/compact" alone compacts with the default.
     // Every other "/" message is a Pi command and flows through unchanged.
     const compactMatch = /^\/compact(?:\s+([\s\S]+))?$/.exec(text);
     if (compactMatch) {
@@ -1423,10 +1423,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return;
     }
 
-    // Hoy built-in /goal (HOY-263): same shape as /compact above -- intercept
+    // Hoy built-in /goal (HOY-263): same shape as /compact above, intercept
     // before the prompt path so "/goal ...", "/goal pause", etc. never reach Pi
     // and never append turns of their own. parseGoalCommand is the single
-    // source of truth for what counts as a /goal subcommand; a non-goal "/"
+    // source of truth for what counts as a /goal subcommand. A non-goal "/"
     // message (including "/goalish" typos) falls through unchanged.
     const goalCommand = parseGoalCommand(text);
     if (goalCommand) {
@@ -1455,7 +1455,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     // Hoy built-in /tree (HOY-280): toggle the session-tree navigator dock.
     // Intercepted before the prompt path so it never reaches Pi. Bare "/tree"
-    // only; "/treeish" and "/tree foo" fall through unchanged.
+    // only. "/treeish" and "/tree foo" fall through unchanged.
     if (/^\/tree$/.test(text)) {
       get().toggleRightDock("tree");
       return;
@@ -1463,7 +1463,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     // Hoy built-in /fork and /clone (HOY-284): branch commands intercepted before
     // the prompt path so they never reach Pi. Bare "/clone" duplicates the active
-    // branch into a new thread; bare "/fork" opens the forkable-message picker.
+    // branch into a new thread. Bare "/fork" opens the forkable-message picker.
     // "/forkish" and any trailing args fall through to Pi unchanged.
     if (/^\/clone$/.test(text)) {
       void get().cloneThread(threadId);
@@ -1477,13 +1477,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const hasImages = !!images && images.length > 0;
     if (!text && !hasImages && contexts.length === 0) return;
 
-    // The composer's attachments are consumed by this send; clear them (and
+    // The composer's attachments are consumed by this send. Clear them (and
     // revoke their previews) so they cannot be sent twice (HOY-205).
     get().clearAttachments(threadId);
     const contextBlock = await buildContextBlock(contexts, project.path ?? "");
     // Skill commands (HOY-323): the composer inserts a skill by its bare name
     // (/demo-review) like Claude Code, but Pi only expands the /skill:<name>
-    // form. Rewrite the leading command for the message Pi receives; the visible
+    // form. Rewrite the leading command for the message Pi receives. The visible
     // user turn keeps the bare text the user typed.
     const promptText = rewriteSkillCommand(text, [
       ...(get().slashCommands[threadId] ?? []),
@@ -1567,7 +1567,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       let sessionId = thread.sessionId ?? null;
       if (!sessionId) {
         // Reopen the thread's existing transcript when it has one (e.g. the
-        // sidecar was killed on panel close); else start a fresh session.
+        // sidecar was killed on panel close). Else start a fresh session.
         // acquireSession dedups with a concurrent hydrateThread so the two never
         // spawn two sidecars for the same thread.
         sessionId = await acquireSession(threadId, project.path ?? "", thread.sessionFile);
@@ -1576,9 +1576,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         void get().refreshSlashCommands(threadId);
       }
 
-      // Apply a deferred pick (or adopt the session's model) before the prompt;
+      // Apply a deferred pick (or adopt the session's model) before the prompt
       // a failure throws into the catch below so the prompt never rides on a
-      // model the user didn't choose. The guard makes repeat calls free.
+      // model the user did not choose. The guard makes repeat calls free.
       await applyThreadModel(threadId, sessionId);
       // Same for a deferred permission mode (HOY-186): the gate must be in
       // place before the prompt streams.
@@ -1669,14 +1669,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         }
       }
     } catch {
-      // Stats are best-effort; a failure leaves the bar on its last value.
+      // Stats are best-effort. A failure leaves the bar on its last value.
     }
   },
 
   refreshUsage: async () => {
     // Re-reading the whole ~/.hoy/sessions transcript tree is expensive, so skip
     // it when a recent report is already loaded: repeated home <-> panel
-    // navigation should not re-walk disk each visit. A short TTL still picks up
+    // navigation must not re-walk disk each visit. A short TTL still picks up
     // new usage as the user keeps working.
     const last = get().usageFetchedAt;
     if (get().usageReport && last != null && Date.now() - last < USAGE_TTL_MS) {
@@ -1723,7 +1723,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       }));
       set({ skillCommands: commands });
     } catch {
-      // Best-effort: leave the prior skills list; the composer degrades to
+      // Best-effort: leave the prior skills list. The composer degrades to
       // whatever the session's get_commands provides.
     } finally {
       if (skillsRefreshInFlight === cwd) skillsRefreshInFlight = null;
@@ -1748,7 +1748,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
     set({ rightDock: view });
     // Opening the tree observes the active thread: prime its slice so it renders
-    // now; the on-done refresh keeps the active thread's tree fresh.
+    // now. The on-done refresh keeps the active thread's tree fresh.
     const active = get().activeThreadId;
     if (view === "tree" && active) void get().refreshSessionTree(active);
   },
@@ -1779,7 +1779,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       pushNotice(threadId, "Can't fork yet: this thread has no live session.", "error");
       return;
     }
-    // get_fork_messages reads the session file; wait for a settled point, matching
+    // get_fork_messages reads the session file. Wait for a settled point, matching
     // the branch/clone gate.
     if (get().streaming[threadId]) {
       pushNotice(threadId, "Finish the current turn before forking.", "info");
@@ -1809,7 +1809,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   compact: async (threadId, customInstructions) => {
     const thread = findThread(get().projects, threadId)?.thread;
     if (!thread?.sessionId) return;
-    // Pi rejects compaction mid-turn; gate on idle, and block a double trigger.
+    // Pi rejects compaction mid-turn. Gate on idle, and block a double trigger.
     if (get().streaming[threadId] || get().compacting[threadId]) return;
     set((s) => ({ compacting: { ...s.compacting, [threadId]: true } }));
     try {
@@ -1832,7 +1832,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   // Goal Mode (HOY-263) command actions. Dispatched from submitPrompt's /goal
-  // intercept above; none of these send anything to Pi except via the normal
+  // intercept above. None of these send anything to Pi except via the normal
   // submitPrompt path (setGoal's kickoff prompt, resumeGoal's continuation).
   setGoal: async (threadId, condition, opts) => {
     if (!findThread(get().projects, threadId)) return;
@@ -1860,7 +1860,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }));
     pushNotice(threadId, `Goal set: "${condition}"`, "info");
     // Sent through the normal path so session spawn, permission mode, and
-    // auto-compaction all apply exactly as they would for any other prompt.
+    // auto-compaction all apply exactly as they will for any other prompt.
     // Awaited so submitPrompt's own promise (and thus the /goal intercept
     // above) only resolves once this kickoff turn is actually underway.
     await get().submitPrompt(threadId, condition);
@@ -1888,8 +1888,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     pushNotice(threadId, "Goal resumed.", "info");
     // Re-arm to active above and send the continuation prompt through the same
     // helper the done-handler loop uses, so a user resume and an auto-continue
-    // read identically in the transcript. A capped/paused goal may carry a
-    // lastReason from a prior evaluation; fall back to a manual-resume note when
+    // read identically in the transcript. A capped/paused goal can carry a
+    // lastReason from a prior evaluation. Fall back to a manual-resume note when
     // it does not. The done handler drives the rest of the evaluate/continue
     // cycle once this continuation turn ends.
     await sendGoalContinuation(
@@ -1943,7 +1943,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   // Internal: pin a thread to the sidecar session it spawned. Not part of the
-  // public action surface, just shared between submitPrompt and (later) restore.
+  // public action surface, shared between submitPrompt and (later) restore.
   setThreadSessionIdInternal: (threadId: string, sessionId: string) =>
     set((s) => ({
       projects: patchThread(s.projects, threadId, (th) => ({
@@ -1958,7 +1958,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const ws = await loadWorkspace();
       // Backfill for workspaces saved before the renamed flag existed: a
       // custom title on a never-prompted thread can only have come from a
-      // manual rename, and without the flag the untouched filter would drop
+      // manual rename, and without the flag the untouched filter will drop
       // it. Threads with a transcript are protected by sessionFile already.
       const drafts: Record<string, string> = {};
       const projects = (ws.projects ?? []).map((p) => ({
@@ -2006,19 +2006,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     try {
       const diskMessages = await readSessionTranscript(thread.sessionFile);
       // Only paint if nothing populated turns while we read (a concurrent
-      // submitPrompt wins); an empty transcript leaves turns untouched.
+      // submitPrompt wins). An empty transcript leaves turns untouched.
       if ((get().turns[threadId]?.length ?? 0) === 0 && diskMessages.length > 0) {
         diskTurns = messagesToTurns(diskMessages);
         const painted = diskTurns;
         set((s) => ({ turns: { ...s.turns, [threadId]: painted } }));
       }
     } catch {
-      // Best-effort: a failed disk read just means no early paint; the sidecar
+      // Best-effort: a failed disk read means no early paint. The sidecar
       // path below still restores the transcript.
     }
 
-    // A concurrent submitPrompt could have populated turns while we read from
-    // disk. Its live/streaming turns must win, so don't clobber and don't
+    // A concurrent submitPrompt can have populated turns while we read from
+    // disk. Its live/streaming turns must win, so do not clobber and do not
     // re-render from disk: it will spawn the sidecar itself. (turns present, not
     // our disk array -> a real prompt got there first.)
     const afterDisk = get().turns[threadId];
@@ -2034,7 +2034,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Populate the composer "/" autocomplete for the restored session (HOY-223).
       void get().refreshSlashCommands(threadId);
       // Reconcile the thread's model and permission mode with the restored
-      // session off the critical path; hydration must not block the
+      // session off the critical path. Hydration must not block the
       // transcript restore.
       void applyThreadModel(threadId, sessionId).catch((e) => {
         set((s) => ({
@@ -2047,10 +2047,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         }));
       });
       // Push the global auto-compaction default to the restored session
-      // (HOY-275), off the critical path; the helper is best-effort.
+      // (HOY-275), off the critical path. The helper is best-effort.
       void applyAutoCompaction(sessionId);
-      // A concurrent submitPrompt may have populated turns and sent a prompt
-      // while we were spawning; don't clobber it with the restored transcript.
+      // A concurrent submitPrompt can have populated turns and sent a prompt
+      // while we were spawning. Do not clobber it with the restored transcript.
       // The disk render we painted is ours to replace, so only bail when turns
       // exist AND are not our disk array (a real prompt's turns win).
       const beforeFetch = get().turns[threadId];
@@ -2059,7 +2059,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       }
       const messages = await getMessages(sessionId);
       // Align entry ids so tree-node clicks can scroll here (HOY-304). Best-effort
-      // and off the transcript's critical shape: undefined just means unaddressed.
+      // and off the transcript's critical shape: undefined means unaddressed.
       const entryIds = await entryIdsFor(sessionId, messages.length);
       const beforeSet = get().turns[threadId];
       if (beforeSet && beforeSet !== diskTurns && beforeSet.length > 0) return;
@@ -2091,12 +2091,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   archiveThread: (threadId) => {
     // Cascade first so a child is never left rootless when its parent is
-    // filtered out of the tree; archiveThread on each child reuses the same
+    // filtered out of the tree. ArchiveThread on each child reuses the same
     // untouched-delete + closePanel teardown. HOY-238.
     for (const childId of childThreadIdsOf(get().projects, threadId)) {
       get().archiveThread(childId);
     }
-    // An untouched thread has nothing worth keeping in history; archiving it
+    // An untouched thread has nothing worth keeping in history. Archiving it
     // deletes it instead.
     const found = findThread(get().projects, threadId);
     if (found && isUntouched(found.thread, get().turns, get().drafts)) {
@@ -2146,7 +2146,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       };
     });
     // HOY-245: same purge as archive. A deleted subtree never starts or leaks a
-    // slot; the cascade above visits each descendant.
+    // slot. The cascade above visits each descendant.
     purgeFromLimiter(threadId);
     get().pumpAgentQueue();
   },
@@ -2168,13 +2168,13 @@ export function useThreadHasRunningSubagents(threadId: string): boolean {
 }
 
 // Dedup concurrent session spawns for one thread: openThread fires hydrateThread
-// while the user may submitPrompt before it resolves. Sharing the in-flight
+// while the user can submitPrompt before it resolves. Sharing the in-flight
 // promise means both get the same sidecar instead of spawning (and leaking) two.
 const pendingSessions = new Map<string, Promise<string>>();
 
 // The project cwd whose skills refresh is currently in flight (HOY-323), or null.
 // refreshSkills spawns a one-shot sidecar, and ThreadView + HomeComposer both
-// fire it on mount for the same project (home -> thread hands off in a moment);
+// fire it on mount for the same project (home -> thread hands off in a moment)
 // deduping concurrent refreshes for the same cwd avoids a redundant spawn. A
 // later refresh (after the in-flight one resolves) still re-reads disk.
 let skillsRefreshInFlight: string | null = null;
@@ -2193,12 +2193,12 @@ const continuationPending = new Set<string>();
 
 // HOY-292: coalesce high-frequency streaming deltas (text + reasoning) into one
 // state write per animation frame instead of one per token. Pi emits these many
-// times a second; a setState per token re-renders the streaming turn (and, before
+// times a second. A setState per token re-renders the streaming turn (and, before
 // this ticket's memoization, the whole transcript) on every token, and makes the
 // markdown renderer re-parse the growing tail block O(n) times per turn. Buffering
 // per rAF collapses a burst of tokens into a single render/parse while keeping the
-// stream visually live. Only text/reasoning are buffered; every structural event
-// (tool, permission, done, ...) flushes the buffer first so ordering is exact.
+// stream visually live. Only text/reasoning are buffered. Every structural event
+// (tool, permission, done,...) flushes the buffer first so ordering is exact.
 const streamDeltaBuffers = new Map<string, AgentEvent[]>();
 const streamFlushScheduled = new Set<string>();
 
@@ -2247,7 +2247,7 @@ async function startChildRun(
     ? findThread(useSessionStore.getState().projects, child.parentThreadId)?.thread
     : undefined;
   useSessionStore.setState((s) => ({
-    // Seed the in-flight assistant turn streamPromptOnThread folds events into;
+    // Seed the in-flight assistant turn streamPromptOnThread folds events into
     // applyEvent is a no-op unless the last turn is an assistant turn. The user
     // turn was seeded at insert time, so replace to the full [user, assistant].
     turns: {
@@ -2262,7 +2262,7 @@ async function startChildRun(
   try {
     const cwd = project.path ?? "";
     // HOY-244: if the child's type opts into inherit_context, fork it from the
-    // parent's transcript. Only when the parent has an established session file;
+    // parent's transcript. Only when the parent has an established session file
     // a child spawned before the parent has one has no meaningful context to
     // inherit, so it starts fresh. The sidecar also gates on the env being set.
     const childDef = useSessionStore
@@ -2310,9 +2310,9 @@ async function startChildRun(
 // from any termination path (done, startChildRun error / early return) without
 // double-releasing.
 // HOY-247: the live concurrency cap. Its default lives in limits.ts and seeds
-// the maxConcurrentAgents pref; the pref is the effective value, clamped to at
+// the maxConcurrentAgents pref. The pref is the effective value, clamped to at
 // least 1 so a malformed stored value can never stall spawns. The depth cap
-// stays a hard constant (a tunable depth would weaken the fork-bomb guard).
+// stays a hard constant (a tunable depth will weaken the fork-bomb guard).
 function concurrencyCap(): number {
   const n = usePrefsStore.getState().maxConcurrentAgents;
   return Number.isFinite(n) ? Math.max(1, Math.floor(n)) : MAX_CONCURRENT_AGENTS;
@@ -2349,8 +2349,8 @@ function purgeFromLimiter(threadId: string): void {
   });
   // HOY-300: if this torn-down thread was a synchronous child still awaiting
   // (closePanel/archive/delete killed its sidecar before its `done`), drop its
-  // pending-request mapping so it can't leak. Its blocked parent request is left
-  // for Rust's cancel_pending_ui / a stale-id no-op; nothing else reads the entry.
+  // pending-request mapping so it cannot leak. Its blocked parent request is left
+  // for Rust's cancel_pending_ui / a stale-id no-op. Nothing else reads the entry.
   takeSubagentRequest(threadId);
 }
 
@@ -2359,7 +2359,7 @@ function purgeFromLimiter(threadId: string): void {
 // turn, HOY-231), so a child thread streams through the exact same event
 // handling as any other thread. Module-level (outside the store creator), so
 // it uses useSessionStore.getState()/setState() in place of the creator's
-// bound get()/set(); those are the same functions under the hood.
+// bound get()/set(). Those are the same functions under the hood.
 async function streamPromptOnThread(
   threadId: string,
   sessionId: string,
@@ -2376,13 +2376,13 @@ async function streamPromptOnThread(
   channel.onmessage = (event) => {
     // Ignore events from a superseded channel: closing a panel kills the
     // sidecar, which makes the reader emit a (now-expected) error + done over
-    // this channel. Without this guard that stale error would resurface as a
+    // this channel. Without this guard that stale error will resurface as a
     // banner and orphaned turns when the thread is reopened.
     if (activeChannels.get(threadId) !== channel) return;
     // HOY-292: buffer the high-frequency text/reasoning deltas and apply them on
     // the next animation frame (one render per frame instead of one per token).
     // These carry no side effects beyond folding into the transcript, so batching
-    // is safe; the visual delay is at most a frame.
+    // is safe. The visual delay is at most a frame.
     if (event.kind === "text" || event.kind === "reasoning") {
       const buffered = streamDeltaBuffers.get(threadId) ?? [];
       buffered.push(event);
@@ -2390,7 +2390,7 @@ async function streamPromptOnThread(
       scheduleStreamFlush(threadId);
       return;
     }
-    // Every other event is structural (tool, permission, done, ...) and its
+    // Every other event is structural (tool, permission, done,...) and its
     // handling below reads the transcript, so flush any buffered deltas first to
     // preserve exact event ordering before this event folds in.
     flushStreamDeltas(threadId);
@@ -2405,7 +2405,7 @@ async function streamPromptOnThread(
       if (!parentSessionId) return; // parent must be live to have issued the request
       // HOY-300: this parent is about to block on the child's result. If it holds
       // a concurrency slot (it is itself a running subagent), release it so the
-      // child can start even under a full cap — a blocked agent isn't computing.
+      // child can start even under a full cap, a blocked agent is not computing.
       if (useSessionStore.getState().runningAgents.has(threadId)) {
         useSessionStore.setState((s) => {
           const runningAgents = new Set(s.runningAgents);
@@ -2460,7 +2460,7 @@ async function streamPromptOnThread(
     } else if (event.kind === "done") {
       activeChannels.delete(threadId);
       stopStreaming();
-      // A turn cannot end with a dialog still blocking it; drop any
+      // A turn cannot end with a dialog still blocking it. Drop any
       // leftovers so no orphaned card survives the turn. Also remove
       // pending tool blocks that were never replaced (HOY-199).
       useSessionStore.setState((s) => {
@@ -2469,7 +2469,7 @@ async function streamPromptOnThread(
         const last = turns[turns.length - 1];
         if (last && last.role === "assistant") {
           const filtered = { ...last, blocks: last.blocks.filter((b) => b.kind !== "tool" || !b.tool.pending) };
-          // A delivered steer/follow-up opens a fresh assistant turn; if the
+          // A delivered steer/follow-up opens a fresh assistant turn. If the
           // run ended before it produced anything, drop the empty shell so no
           // blank bubble is left behind.
           const isEmpty =
@@ -2489,7 +2489,7 @@ async function streamPromptOnThread(
       });
       void useSessionStore.getState().refreshStats(threadId);
       // HOY-279/280: a completed turn appends entries, so keep the `/tree`
-      // navigator fresh — but only when the dock is open and showing THIS thread
+      // navigator fresh, but only when the dock is open and showing THIS thread
       // (it follows the active thread). Otherwise the get_tree call is wasted.
       {
         const s = useSessionStore.getState();
@@ -2498,7 +2498,7 @@ async function streamPromptOnThread(
         }
       }
       // HOY-245: release this thread's concurrency slot on its INITIAL run's
-      // first done. Membership in runningAgents is what marks an initial run;
+      // first done. Membership in runningAgents is what marks an initial run
       // resume runs (a delivered child resuming its parent) and foreground turns
       // are not in the set, so this is a no-op for them. Free the slot before
       // delivery so a still-queued sibling can start immediately.
@@ -2522,8 +2522,8 @@ async function streamPromptOnThread(
       // so it must never block or throw back into this event handler.
       void maybeContinueGoal(threadId, sessionId);
     } else if (event.kind === "queueUpdate") {
-      // Pi sends the full queue arrays each time; replace, don't append. The
-      // chips reflect what is still queued; anything that left the queue was
+      // Pi sends the full queue arrays each time. Replace, do not append. The
+      // chips reflect what is still queued. Anything that left the queue was
       // delivered into the run, so render it as a user turn followed by a
       // fresh assistant turn (HOY-218). This keeps the live transcript in
       // order and identical to a reloaded thread.
@@ -2558,7 +2558,7 @@ async function streamPromptOnThread(
         return { queued, turns: { ...s.turns, [threadId]: appended } };
       });
     } else if (event.kind === "notify") {
-      // Transient notice; auto-expire so it does not pile up (ext UI).
+      // Transient notice. Auto-expire so it does not pile up (ext UI).
       const id = ++noticeSeq;
       useSessionStore.setState((s) => ({
         notices: {
@@ -2571,7 +2571,7 @@ async function streamPromptOnThread(
       }));
       setTimeout(() => useSessionStore.getState().dismissNotice(threadId, id), NOTICE_TTL_MS);
     } else if (event.kind === "setStatus") {
-      // Keyed footer status; an absent statusText clears that key.
+      // Keyed footer status. An absent statusText clears that key.
       useSessionStore.setState((s) => {
         const thread = { ...(s.statuses[threadId] ?? {}) };
         if (event.statusText === undefined) delete thread[event.statusKey];
@@ -2579,7 +2579,7 @@ async function streamPromptOnThread(
         return { statuses: { ...s.statuses, [threadId]: thread } };
       });
     } else if (event.kind === "setWidget") {
-      // Keyed composer widget; absent widgetLines clears that key.
+      // Keyed composer widget. Absent widgetLines clears that key.
       useSessionStore.setState((s) => {
         const thread = { ...(s.widgets[threadId] ?? {}) };
         if (event.widgetLines === undefined) delete thread[event.widgetKey];
@@ -2598,13 +2598,13 @@ async function streamPromptOnThread(
       // Tool output is added to context, so the usage bar slides (HOY-208).
       void useSessionStore.getState().refreshStats(threadId);
     } else if (event.kind === "status" && event.label === "compacting") {
-      // Compaction rewrites context; refresh after it's done (the next
-      // text/tool event will update the bar; this is a best-effort interim).
+      // Compaction rewrites context. Refresh after it is done (the next
+      // text/tool event will update the bar. This is a best-effort interim).
       void useSessionStore.getState().refreshStats(threadId);
     } else if (event.kind === "compactionEnd") {
       // Auto-path compaction finished (threshold/overflow). Clear the manual
       // flag defensively, refresh the usage meter, and surface an honest
-      // notice; failures are shown, not swallowed (HOY-229).
+      // notice. Failures are shown, not swallowed (HOY-229).
       useSessionStore.setState((s) => ({ compacting: { ...s.compacting, [threadId]: false } }));
       if (event.aborted || event.errorMessage) {
         pushNotice(
@@ -2655,7 +2655,7 @@ function goalContinuationPrompt(condition: string, reason: string): string {
 }
 
 // HOY-298: cap on the verify-command output tail folded into a continuation
-// reason. Task A already tail-bounds each stream to ~8000 chars; this keeps the
+// reason. Task A already tail-bounds each stream to ~8000 chars. This keeps the
 // combined snippet from bloating the transcript.
 const VERIFY_REASON_MAX_CHARS = 1500;
 
@@ -2683,7 +2683,7 @@ function buildVerifyFailReason(
 // HOY-263: send the continuation through the normal submitPrompt path (a fresh
 // per-prompt sink), shared by resumeGoal (a user resume) and the done-handler
 // loop (an auto-continue) so both read identically in the transcript. A second
-// sendPrompt on a still-live channel would orphan delivery, so this must go via
+// sendPrompt on a still-live channel will orphan delivery, so this must go via
 // submitPrompt, which opens a new turn.
 async function sendGoalContinuation(
   threadId: string,
@@ -2708,7 +2708,7 @@ function patchGoal(threadId: string, patch: Partial<ThreadGoal>): void {
 // cleanup: if the finished thread is running an active goal, the pure
 // nextGoalAction reducer decides the next step from the turn outcome, and only
 // the evaluate branch does anything async/effectful. Fire-and-forget from the
-// done handler; every failure (including a rejected evaluator) is contained here
+// done handler. Every failure (including a rejected evaluator) is contained here
 // so nothing throws back into the event stream and the loop never falsely stops.
 async function maybeContinueGoal(
   threadId: string,
@@ -2731,7 +2731,7 @@ async function maybeContinueGoal(
   try {
     // Turn outcome (Task 1 TurnOutcome). `aborted`/`errored` come from the
     // finished turn's last assistant bubble (the done cleanup keeps its
-    // aborted/error flags); `hasPendingUserPrompt` from Pi's steer/follow-up
+    // aborted/error flags). `hasPendingUserPrompt` from Pi's steer/follow-up
     // queue for this thread, so a message the user typed mid-turn runs before
     // the next auto-continuation (nextGoalAction yields).
     const state = useSessionStore.getState();
@@ -2768,7 +2768,7 @@ async function maybeContinueGoal(
       case "none":
       case "yield":
         // none: not our turn to act. yield: leave the goal active so the
-        // queued user prompt runs; the loop re-checks after that turn ends.
+        // queued user prompt runs. The loop re-checks after that turn ends.
         return;
       case "pause":
         // An aborted/errored turn parks the goal until the user resumes.
@@ -2800,14 +2800,14 @@ async function maybeContinueGoal(
           // falsely stopping the goal.
           res = { met: false, reason: `evaluator error: ${String(e)}` };
         }
-        // Re-read the goal after the await: it may have been cleared, paused,
+        // Re-read the goal after the await: it can have been cleared, paused,
         // replaced, or had its condition changed while the evaluator ran. Abort
         // the continuation unless it is the SAME goal object we captured at the
         // top of this call. Object identity is the load-bearing check: every
         // user pause/resume/clear/replace goes through patchThread's immutable
         // goal-patch path, which produces a NEW goal object, so identity catches
         // a pause+resume interleaving (resume already sent its own continuation)
-        // that field equality would miss -- the resumed goal is active with the
+        // that field equality will miss, the resumed goal is active with the
         // same condition, yet a different object. An uninterrupted loop keeps the
         // same reference and proceeds. The field checks are kept for clarity and
         // to short-circuit the cleared/paused cases readably.
@@ -2826,12 +2826,12 @@ async function maybeContinueGoal(
         const outcome = applyEvaluation(current, res);
         if (outcome.type === "met") {
           // The reason recorded/shown on a successful met transition. v1 uses the
-          // transcript evaluator's reason; the auditor gate below overrides it
+          // transcript evaluator's reason. The auditor gate below overrides it
           // with the auditor's reason when that gate is what confirmed the goal.
           let metReason = outcome.reason;
           // HOY-298 verify gate: the transcript evaluator said met. If the goal
           // pins a deterministic verify command, it must ALSO exit 0 before we
-          // declare the goal met; otherwise we fall through to continue and carry
+          // declare the goal met. Otherwise we fall through to continue and carry
           // the command output forward. No verifyCommand => v1 behavior exactly.
           if (current.verifyCommand) {
             let verify: GoalVerifyResult;
@@ -2854,7 +2854,7 @@ async function maybeContinueGoal(
               };
             }
             // CRITICAL second re-read (HOY-298): verifyGoalCommand is a SECOND
-            // await of up to 120s AFTER the evaluateGoal re-read. The goal may
+            // await of up to 120s AFTER the evaluateGoal re-read. The goal can
             // have been cleared/paused/replaced during the command run, so re-read
             // and re-apply the exact object-identity guard against `current` (the
             // object captured before this await). A since-changed goal aborts the
@@ -2889,20 +2889,20 @@ async function maybeContinueGoal(
             patchGoal(threadId, { lastVerifyExit: 0 });
           }
           // HOY-299 auditor gate: composes AFTER the (cheaper, deterministic) v2
-          // command gate so that gate short-circuits first; if it already forced a
+          // command gate so that gate short-circuits first. If it already forced a
           // continue, the auditor never runs. Only when the goal selected the
           // read-only auditor. The transcript evaluator already said met and the
-          // command gate (if any) already passed; now an independent read-only
+          // command gate (if any) already passed. Now an independent read-only
           // subagent inspects the ACTUAL repo files and must ALSO return met:true
           // before we declare the goal met. undefined/"transcript" => skip
-          // entirely (pure v1/v2 behavior; auditGoal is never called).
+          // entirely (pure v1/v2 behavior. AuditGoal is never called).
           if (current.evaluatorKind === "auditor") {
             // Baseline for the third identity guard, captured SYNCHRONOUSLY right
             // before the audit await. It is `current` when no command gate ran,
             // but the verify-pass path above called patchGoal({lastVerifyExit:0}),
-            // which replaced the goal object; that patch is synchronous (no user
+            // which replaced the goal object. That patch is synchronous (no user
             // action can interleave before this line), so re-reading here yields
-            // the same LOGICAL goal, just its current object identity. Comparing
+            // the same LOGICAL goal, its current object identity. Comparing
             // the post-audit re-read against THIS baseline is what detects a user
             // pause/clear/replace during the (long) audit run.
             const preAudit = findThread(
@@ -2928,11 +2928,11 @@ async function maybeContinueGoal(
             }
             // CRITICAL third re-read (HOY-299): auditGoal is a THIRD long await (up
             // to ~180s) AFTER the evaluateGoal and verifyGoalCommand re-reads. The
-            // goal may have been cleared/paused/replaced during the audit run, so
+            // goal can have been cleared/paused/replaced during the audit run, so
             // re-read and re-apply the exact object-identity guard against
-            // `preAudit` (the object captured just before this await). A
+            // `preAudit` (the object captured before this await). A
             // since-changed goal aborts the transition cleanly: no met, no
-            // continuation. This is the v1 finding-#1 bug class; do not reintroduce
+            // continuation. This is the v1 finding-#1 bug class. Do not reintroduce
             // it across this third await.
             const c3 = findThread(
               useSessionStore.getState().projects,
@@ -2963,8 +2963,8 @@ async function maybeContinueGoal(
             metReason = audit.reason;
           }
           // Bump turns onto the met transition too (Fix 3): a goal met on its
-          // Nth turn should read `turn N/cap`, not `N-1/cap`. Same action.turns
-          // the continue arm below persists; met termination is unchanged.
+          // Nth turn must read `turn N/cap`, not `N-1/cap`. Same action.turns
+          // the continue arm below persists. Met termination is unchanged.
           patchGoal(threadId, {
             status: "met",
             turns: action.turns,
@@ -2992,7 +2992,7 @@ async function maybeContinueGoal(
 // HOY-213: after a plan-mode turn finishes, surface the "Plan ready" handoff card
 // when the final assistant turn carried a proposed_plan block (inline plan mode
 // or a delivered Plan-subagent result, both of which land as assistant text on
-// this thread). Detection only reads state; the card drives the actual handoff.
+// this thread). Detection only reads state. The card drives the actual handoff.
 function flagPlanReadyIfPresent(threadId: string): void {
   const s = useSessionStore.getState();
   const thread = findThread(s.projects, threadId)?.thread;
@@ -3025,7 +3025,7 @@ function flagPlanReadyIfPresent(threadId: string): void {
 // HOY-300: a finished child answers its parent's blocked agent-tool request with
 // its result (in-band), replacing HOY-233's turn-injection delivery. The parent's
 // ctx.ui.input resolves to this value and its turn continues with the result in
-// context. The child stays a watchable thread; its panel auto-closes.
+// context. The child stays a watchable thread. Its panel auto-closes.
 export function respondSubagentResult(childThreadId: string): void {
   const req = takeSubagentRequest(childThreadId);
   if (!req) return; // not a sync child (or already answered)
@@ -3095,9 +3095,9 @@ function acquireSession(
 }
 
 // Idempotence: submitPrompt and hydrateThread both call this after the deduped
-// acquireSession resolves; the Set is marked synchronously so a concurrent
+// acquireSession resolves. The Set is marked synchronously so a concurrent
 // second call returns while the first is still in flight, and unmarked on
-// failure so the next prompt retries the reconcile (a poisoned guard would
+// failure so the next prompt retries the reconcile (a poisoned guard will
 // silently send prompts on whatever model the session has). Pruned on session
 // close via releaseSession.
 const modelApplied = new Set<string>();
@@ -3153,14 +3153,14 @@ async function applyAutoCompaction(sessionId: string): Promise<void> {
   try {
     await ipcSetAutoCompaction(sessionId, usePrefsStore.getState().autoCompaction);
   } catch {
-    // Non-fatal; retry on the next spawn. Pi's persisted global still applies.
+    // Non-fatal. Retry on the next spawn. Pi's persisted global still applies.
     autoCompactionApplied.delete(sessionId);
   }
 }
 
 // Entry ids aligned to a session's getMessages output (HOY-304), for
 // entry-addressable transcript restore. Fetches the tree entries and derives the
-// leaf chain's message ids; returns them ONLY when they align 1:1 with the
+// leaf chain's message ids. Returns them ONLY when they align 1:1 with the
 // message count, so a divergence (or a get_entries failure) degrades to an
 // unaddressed transcript rather than mis-mapping tree clicks to wrong turns.
 async function entryIdsFor(
@@ -3179,7 +3179,7 @@ async function entryIdsFor(
 // The shared fork/clone flow (HOY-283 branch, HOY-284 clone). Opens a FRESH
 // sidecar on the source thread's file, runs `op` to rebind it to a new branch
 // file (source untouched), then surfaces that file as a child thread. `op`
-// returns the composer prefill (fork's forked user message) or nothing (clone);
+// returns the composer prefill (fork's forked user message) or nothing (clone)
 // a cancelled result tears the sidecar down and adds no thread. `copy` carries the
 // fork-vs-clone wording so the one flow serves both.
 async function branchIntoChildThread(
@@ -3195,7 +3195,7 @@ async function branchIntoChildThread(
     pushNotice(threadId, "Can't branch yet: this thread has no saved session.", "error");
     return;
   }
-  // The op reads the source file; branching mid-write risks a torn read, so wait
+  // The op reads the source file. Branching mid-write risks a torn read, so wait
   // for a settled point (the spike's double-open note).
   if (store.getState().streaming[threadId]) {
     pushNotice(threadId, copy.busy, "info");
@@ -3237,13 +3237,13 @@ async function branchIntoChildThread(
     return;
   }
 
-  // The sidecar now points at the branch; read its new file and transcript.
+  // The sidecar now points at the branch. Read its new file and transcript.
   let branchFile: string | undefined;
   try {
     branchFile = (await getSessionStats(branchSessionId)).sessionFile ?? undefined;
   } catch {
-    // Best-effort: without the file the thread still works live; a reopen after
-    // restart just can't restore it. Surfaced by the missing sessionFile.
+    // Best-effort: without the file the thread still works live. A reopen after
+    // restart cannot restore it. Surfaced by the missing sessionFile.
   }
   let branchTurns: Turn[] = [];
   try {
@@ -3276,7 +3276,7 @@ async function branchIntoChildThread(
     turns: { ...s.turns, [childId]: branchTurns },
   }));
   // Open the branch (its sessionId is already live, so hydrateThread no-ops), and
-  // prefill the composer with the forked user message (pi's behavior; clone has none).
+  // prefill the composer with the forked user message (pi's behavior. Clone has none).
   store.getState().openThread(childId);
   if (forkText) store.getState().setDraft(childId, forkText);
   pushNotice(childId, copy.done(source.title), "info");
@@ -3285,7 +3285,7 @@ async function branchIntoChildThread(
 // Resolve a subagent def's fuzzy `model` string (a free-text name in the
 // registry file, not a validated ModelRef) against the loaded model list
 // (HOY-234). Exact id match first, else a case-insensitive substring match on
-// id or name; null when nothing matches, so the caller falls back to the
+// id or name. Null when nothing matches, so the caller falls back to the
 // parent thread's model rather than spawning on a bogus pick.
 function resolveModelRef(
   state: SessionStore,
@@ -3301,8 +3301,8 @@ function resolveModelRef(
 }
 
 // Reconcile the thread's pending model pick with a freshly available session.
-// get_state gives the session truth; set_model fires only when the pick differs
-// (a redundant call would append a model_change JSONL entry on every reopen).
+// get_state gives the session truth. Set_model fires only when the pick differs
+// (a redundant call will append a model_change JSONL entry on every reopen).
 // With no pick, the thread adopts the session's model (restore hydration).
 async function applyThreadModel(
   threadId: string,
@@ -3326,7 +3326,7 @@ async function applyThreadModel(
       : null;
 
     // Thinking level: reconcile the deferred pick with the session truth, the
-    // same shape as the model below (HOY-204). No pick adopts pi's level; a
+    // same shape as the model below (HOY-204). No pick adopts pi's level. A
     // differing pick is sent, reverting to truth if pi rejects it. Unlike the
     // model, a failure here does not abort: the prompt can still go out.
     const thinkPick =
@@ -3344,7 +3344,7 @@ async function applyThreadModel(
     } else {
       try {
         await setThinkingLevel(sessionId, thinkPick);
-        // Pi may clamp the level; re-read to sync the effective value.
+        // Pi can clamp the level. Re-read to sync the effective value.
         const fresh = await getState(sessionId);
         setThreadThinking(fresh.thinkingLevel);
       } catch (e) {
@@ -3364,10 +3364,10 @@ async function applyThreadModel(
 
     try {
       await setModel(sessionId, pick.provider, pick.id);
-      // Pi persisted the pick as the global defaultModel; mirror it.
+      // Pi persisted the pick as the global defaultModel. Mirror it.
       store.setState({ defaultModel: pick });
     } catch (e) {
-      // Revert to the session truth so the selector snaps back; a re-pick on
+      // Revert to the session truth so the selector snaps back. A re-pick on
       // the now-live session goes through selectModel directly.
       setThreadModel(truth);
       throw e;
@@ -3416,13 +3416,13 @@ function persistProjects(
           parentThreadId: t.parentThreadId ?? null,
           spawnedBy: t.spawnedBy ?? null,
           // Cached so the sidebar shows the thread's model glyph on load without
-          // spawning the session; reconciled against get_state on open (HOY-267).
+          // spawning the session. Reconciled against get_state on open (HOY-267).
           model: t.model ?? null,
           // Goal Mode (HOY-263): persisted as-is (omitted entirely, rather than
-          // null, when absent -- the brief's `goal?: ThreadGoal` has no null
+          // null, when absent, the brief's `goal?: ThreadGoal` has no null
           // arm). loadWorkspace resets counters and demotes "active" to
           // "paused" on the way back in, so a running loop never auto-resumes
-          // just from reopening the app.
+          //  from reopening the app.
           goal: t.goal,
         })),
     })),
@@ -3430,7 +3430,7 @@ function persistProjects(
   const json = JSON.stringify(payload);
   if (json === lastSaved) return;
   // Record the saved content only after the write succeeds, so a transient
-  // failure doesn't make an identical next state skip the (still-needed) retry.
+  // failure does not make an identical next state skip the (still-needed) retry.
   void saveWorkspace(payload).then(
     () => {
       lastSaved = json;
@@ -3449,7 +3449,7 @@ useSessionStore.subscribe((state, prev) => {
   if (!hydrated) return;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    // Read at fire time: the debounce window may batch several changes, and
+    // Read at fire time: the debounce window can batch several changes, and
     // the untouched filter needs the turns that exist when the write happens.
     const s = useSessionStore.getState();
     persistProjects(s.projects, s.turns, s.drafts, s.activeProjectId);
@@ -3473,7 +3473,7 @@ function isUntouched(
   );
 }
 
-// Dispatch one of the three teardown actions; shared by requestTeardown's
+// Dispatch one of the three teardown actions. Shared by requestTeardown's
 // immediate path and confirmTeardown.
 function runTeardown(
   s: SessionStore,
@@ -3486,7 +3486,7 @@ function runTeardown(
 }
 
 // Locate a thread and its owning project by id. Threads live nested under
-// projects; the one traversal shared by store actions and components.
+// projects. The one traversal shared by store actions and components.
 export function findThread(
   projects: Project[],
   threadId: string,
@@ -3511,9 +3511,9 @@ function patchThread(
 }
 
 // Goal Mode (HOY-263) load semantics: a persisted goal must never auto-run
-// just because the app reopened. "met"/"cleared" goals are done, so they are
+//  because the app reopened. "met"/"cleared" goals are done, so they are
 // dropped rather than restored. An "active" goal is demoted to "paused" and
-// its per-run counters reset -- turns and startedAt start over, and the
+// its per-run counters reset, turns and startedAt start over, and the
 // baseline absorbs whatever was already used so the next evaluate() call (once
 // the user explicitly resumes and a sidecar is live again) measures a fresh
 // delta instead of replaying stale usage against a since-restarted session.

@@ -1,7 +1,7 @@
 // Provider brand marks. Monochrome glyphs rendered in currentColor so they stay
 // legible on the dark theme and inherit the mark tile color (muted, or brand
 // when connected). Paths are normalized to a 24x24 viewBox. Sourced from
-// LobeHub icons (github.com/lobehub/lobe-icons, MIT); vendored as inline SVG so
+// LobeHub icons (github.com/lobehub/lobe-icons, MIT). Vendored as inline SVG so
 // the app carries no icon runtime dependency. Provider trademarks belong to
 // their owners. Unmapped providers fall back to a monogram in ProviderMark.
 

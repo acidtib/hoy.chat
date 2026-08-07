@@ -12,10 +12,10 @@ import { formatElapsed, formatTokens } from "@/lib/utils";
 // file are wired.
 //
 // HOY-258 (a persistent "working" indicator) is a sibling ticket and is not
-// merged as of this task -- there is nothing in ThreadView to reconcile with,
+// merged as of this task, there is nothing in ThreadView to reconcile with,
 // so this card ships its own compact active indicator (pulsing dot) rather
 // than folding into a shared surface. If HOY-258 lands later, that indicator
-// should learn to read "working toward goal" when a goal is active instead of
+// must learn to read "working toward goal" when a goal is active instead of
 // this card growing a second one.
 
 const STATUS_LABEL: Record<ThreadGoal["status"], string> = {
@@ -104,7 +104,7 @@ export function GoalCard({
           )}
           {/* HOY-299: mark a goal that is checked by the independent read-only
               auditor, matching the verify metadata treatment above. Absent or
-              "transcript" (v1/v2) renders nothing. */}
+ "transcript" (v1/v2) renders nothing. */}
           {goal.evaluatorKind === "auditor" && (
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
               <span className="font-mono">auditor</span>

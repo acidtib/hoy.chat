@@ -1,19 +1,19 @@
 // HOY-253: the `ask_question` tool. Lets the agent put a structured,
 // multiple-choice questionnaire to the user instead of guessing or asking a
 // fragile free-text question. Primary use is the plan-mode architect nailing
-// intent before finalizing a plan; equally useful in default mode when a request
+// intent before finalizing a plan. Equally useful in default mode when a request
 // is underspecified.
 //
 // It rides the existing extension-UI path (HOY-186) with zero Rust changes. The
 // rich questionnaire does not fit `ctx.ui.select`'s flat `options: string[]`, so
 // the payload is smuggled through the `title` as a JSON prefix, exactly as
 // HOY-199 smuggles tool-diff metadata via "HOY_TOOL_DATA:{json}\n". Rust's
-// classify_extension_ui only special-cases the HOY_TOOL_DATA prefix; any other
+// classify_extension_ui only special-cases the HOY_TOOL_DATA prefix. Any other
 // title passes through untouched, so the renderer's ApprovalCard sees "HOY_ASK:"
 // and renders a QuestionnaireCard. The card answers with a JSON `value` string,
 // which pi's RPC `select` returns to us verbatim (it is not constrained to the
 // `options` array). On cancel/teardown the value is undefined and we degrade to a
-// cancelled result rather than throwing, which would abort the agent turn.
+// cancelled result rather than throwing, which will abort the agent turn.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 

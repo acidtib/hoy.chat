@@ -7,7 +7,7 @@ import { __resetSubagentRequests } from "@/state/subagent-requests";
 // HOY-300 Task 5: a parent that issues a synchronous spawn (subagentSpawnSync)
 // is about to block on ctx.ui.input awaiting its child. If that parent is
 // itself a running subagent (holds a runningAgents slot), it must release the
-// slot before the child spawns — otherwise a full concurrency cap deadlocks a
+// slot before the child spawns, otherwise a full concurrency cap deadlocks a
 // deep tree (every slot held by an agent blocked on a queued descendant).
 //
 // This drives the exact store path the real event handler uses: start a live
@@ -115,14 +115,14 @@ describe("subagentSpawnSync releases the parent's concurrency slot (HOY-300)", (
       task: "child task",
     });
 
-    // p1 is about to block on ctx.ui.input; it must not keep holding its slot.
+    // p1 is about to block on ctx.ui.input. It must not keep holding its slot.
     expect(useSessionStore.getState().runningAgents.has("p1")).toBe(false);
     // The queued sibling was waiting for exactly this: freeing the slot must
     // pump it in.
     expect(useSessionStore.getState().runningAgents.has("qc1")).toBe(true);
 
     // The cap (1) is now spent again by qc1, so the newly spawned child from
-    // the subagentSpawnSync event itself has to queue behind it — proof the
+    // the subagentSpawnSync event itself has to queue behind it, proof the
     // release+pump ran BEFORE the new spawn attempted to take a slot.
     const newChildId = useSessionStore
       .getState()

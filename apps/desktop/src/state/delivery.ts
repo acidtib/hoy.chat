@@ -1,7 +1,7 @@
 // HOY-233 Phase 2: pure helpers around subagent threads. No Tauri imports (import
 // type only) so bun test can load this module standalone. The side-effectful
 // wiring lives in store.ts. HOY-300 removed the async-delivery layer (results now
-// return in-band via respondSubagentResult); the tree/identity helpers remain.
+// return in-band via respondSubagentResult). The tree/identity helpers remain.
 import type { Project, Turn } from "../lib/types";
 
 const NO_OUTPUT = "(the subagent produced no output.)";
@@ -36,7 +36,7 @@ export function isSubagentThread(thread: {
   return !!thread.parentThreadId;
 }
 
-// Ids of the direct children of parentId only (single-level; callers that need
+// Ids of the direct children of parentId only (single-level. Callers that need
 // the whole subtree self-recurse). Used to cascade archive/delete so a child
 // is never left rootless when its parent leaves the tree. HOY-238.
 export function childThreadIdsOf(projects: Project[], parentId: string): string[] {
@@ -47,7 +47,7 @@ export function childThreadIdsOf(projects: Project[], parentId: string): string[
 }
 
 // Whether a thread has a live fleet (HOY-302): any transitive descendant subagent
-// is currently running -- streaming, holding a concurrency slot (runningAgents),
+// is currently running, streaming, holding a concurrency slot (runningAgents),
 // or queued for one (agentQueue). Drives the model glyph's fleet color, so an idle
 // thread (even one that has spawned children in the past) reads neutral.
 export function threadHasRunningSubagents(
@@ -78,8 +78,8 @@ export function threadDepth(projects: Project[], threadId: string): number {
   return depth;
 }
 
-// Every transitive descendant of ancestorId (children, grandchildren, ...).
-// For aggregate rollups; the archive/delete cascade uses childThreadIdsOf
+// Every transitive descendant of ancestorId (children, grandchildren,...).
+// For aggregate rollups. The archive/delete cascade uses childThreadIdsOf
 // (single-level) because it self-recurses. Visited-guarded.
 export function descendantThreadIdsOf(projects: Project[], ancestorId: string): string[] {
   const all = projects.flatMap((p) => p.threads);

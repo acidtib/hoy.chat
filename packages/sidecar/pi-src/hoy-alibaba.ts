@@ -225,8 +225,8 @@ export function createHoyAlibaba(agentDir: string) {
       }
       pi.registerProvider(item.provider, {
         name: PROVIDER_NAMES[item.provider],
-        // Pi 0.80.7 requires apiKey or oauth when an extension registers models.
-        // Stored auth.json credentials resolve first; this fallback is never
+        // Pi 0.84.0 requires apiKey or oauth when an extension registers models.
+        // Stored auth.json credentials resolve first. This fallback is never
         // injected into Hoy's sanitized sidecar environment.
         apiKey: PROVIDER_API_KEY_FALLBACKS[item.provider],
         api: "anthropic-messages",
@@ -236,7 +236,7 @@ export function createHoyAlibaba(agentDir: string) {
       });
     }
     // Purge stale cache entries whose endpoints changed but whose fetch
-    // failed, then always persist so stale data doesn't survive a restart.
+    // failed, then always persist so stale data does not survive a restart.
     for (const item of loaded) {
       if (!item.fresh) {
         const prior = cache.providers?.[item.provider];

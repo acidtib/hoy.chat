@@ -30,7 +30,7 @@ struct Session {
 
 impl OAuthLogin {
     // Store the new login, reaping any previous child. Reaping here (not in the
-    // reader thread) avoids a race where a finished login's thread would kill a
+    // reader thread) avoids a race where a finished login's thread will kill a
     // freshly started one.
     fn replace(&self, session: Session) {
         let mut guard = self.inner.lock().unwrap();
@@ -123,7 +123,7 @@ fn map_event(v: &Value) -> Option<OAuthEvent> {
     }
 }
 
-// Start a login. Returns immediately; progress arrives on `on_event`. The
+// Start a login. Returns immediately. Progress arrives on `on_event`. The
 // browser URL is opened by the renderer (it also keeps a fallback link), so this
 // stays free of an opener dependency.
 #[tauri::command]
@@ -173,7 +173,7 @@ pub fn oauth_login_start(
             let _ = on_event.send(event);
             if is_done {
                 terminal = true;
-                // Credentials landed in auth.json; reload idle sidecars so the
+                // Credentials landed in auth.json. Reload idle sidecars so the
                 // new provider is usable without a restart (mirrors key save).
                 let handle = app.clone();
                 tauri::async_runtime::spawn(async move {
@@ -193,7 +193,7 @@ pub fn oauth_login_start(
             });
         }
         // The loop ended, so this child is finished (done, error, or closed
-        // pipe). Reap it — but only if it is still the current login, since a
+        // pipe). Reap it, but only if it is still the current login, since a
         // newer one started via replace() now owns `inner`.
         app.state::<OAuthLogin>().reap_if_current(pid);
     });

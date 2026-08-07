@@ -1,6 +1,6 @@
 // Recently used @ context refs for the picker's Recent section (HOY-220),
 // persisted in localStorage and keyed by project path so a file from one project
-// never shows in another. Kept small; most-recent first.
+// never shows in another. Kept small. Most-recent first.
 
 import { contextKey } from "./types";
 import type { ContextRef } from "./types";
@@ -37,6 +37,6 @@ export function addRecentContext(
   try {
     localStorage.setItem(KEY, JSON.stringify(store));
   } catch {
-    // Ignore quota/availability errors; recents are best-effort.
+    // Ignore quota/availability errors. Recents are best-effort.
   }
 }

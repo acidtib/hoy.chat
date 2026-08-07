@@ -4,20 +4,20 @@
 // against Codex CLI, Claude Code, opencode, and Windsurf).
 //
 // Replacement freezes the parts pi normally assembles, so two invariants hold:
-// - The "Tool guidelines" entries are pi 0.80.7's promptGuidelines verbatim
-//   (core/tools/{read,edit,write}.js); the prefer-dedicated-tools, batch-reads,
-//   and no-read-back lines are ours, replacing pi's bash-for-file-ops guideline,
-//   which pi itself drops when grep/find/ls are registered. The bash tool's
-//   parenthetical also diverges from pi's promptSnippet on purpose (HOY-203):
-//   it names bash's actual jobs instead of the file ops the guidelines steer to
-//   dedicated tools. Re-verify against pi source on every version bump; the
-//   edit guidelines are load-bearing for edit correctness.
+// - The "Tool guidelines" entries are pi 0.84.0's promptGuidelines verbatim
+// (core/tools/{read,edit,write}.js). The prefer-dedicated-tools, batch-reads,
+// and no-read-back lines are ours, replacing pi's bash-for-file-ops guideline,
+// which pi itself drops when grep/find/ls are registered. The bash tool's
+// parenthetical also diverges from pi's promptSnippet on purpose (HOY-203):
+// it names bash's actual jobs instead of the file ops the guidelines steer to
+// dedicated tools. Re-verify against pi source on every version bump. The
+// edit guidelines are load-bearing for edit correctness.
 // - The docs block pins the GitHub tag matching the pinned pi version. Bump it
-//   with the dependency.
+// with the dependency.
 //
 // The core "Available tools" list is the built-in set that every session
 // registers, passed as the tools allowlist in hoy-sidecar.ts (HOY-186). The
-// mcp and agent tools are not in that list; each is advertised via its own
+// mcp and agent tools are not in that list. Each is advertised via its own
 // block, appended only when the tool is actually available in the session.
 // The agent block (HOY-234 Phase 3) is built dynamically from the enabled
 // types in the loaded subagent registry (hoy-agents-registry.ts), not a
@@ -76,8 +76,8 @@ Git:
 - Use gh for GitHub operations.
 
 Pi documentation (consult only when the user asks about pi itself, its SDK, extensions, packages, themes, skills, or prompt templates; Hoy is built on pi):
-- The pi source and docs live at https://github.com/earendil-works/pi, version v0.80.7, under packages/coding-agent/
-- Fetch files with curl from the raw mirror, for example: curl -s https://raw.githubusercontent.com/earendil-works/pi/v0.80.7/packages/coding-agent/docs/extensions.md
+- The pi source and docs live at https://github.com/earendil-works/pi, version v0.84.0, under packages/coding-agent/
+- Fetch files with curl from the raw mirror, for example: curl -s https://raw.githubusercontent.com/earendil-works/pi/v0.84.0/packages/coding-agent/docs/extensions.md
 - Main documentation: packages/coding-agent/README.md
 - Additional docs: packages/coding-agent/docs/
 - Examples: packages/coding-agent/examples/ (extensions, custom tools, SDK)
@@ -87,14 +87,14 @@ Pi documentation (consult only when the user asks about pi itself, its SDK, exte
 
 // Appended to the base prompt only when at least one MCP server is configured,
 // so the agent is told about the `mcp` tool exactly when it can actually use one
-// (avoids advertising a tool that would report "no servers"). The tool is always
-// registered, but the model should reach for it only when servers exist.
+// (avoids advertising a tool that will report "no servers"). The tool is always
+// registered, but the model must reach for it only when servers exist.
 export const MCP_TOOLS_PROMPT = `MCP tools:
 - The mcp tool bridges to configured Model Context Protocol servers. Discover before calling: mcp({action:"search"}) lists available tools as server/tool with descriptions; mcp({action:"describe", server, tool}) returns a tool's input schema; mcp({action:"call", server, tool, args}) invokes it.
 - Search or describe before calling an unfamiliar tool so you pass the right arguments. Starting a server and each tool call may require user approval.`;
 
 // Built from the enabled registry types so the model sees exactly what it can
-// spawn. HOY-300: the agent tool is synchronous — it blocks and returns the
+// spawn. HOY-300: the agent tool is synchronous, it blocks and returns the
 // subagent's result in-band, so the model must be told to wait, not keep working.
 export function agentToolsPrompt(agentTypes: Array<{ name: string; description?: string }>): string {
   const lines = agentTypes.map((t) => `  - ${t.name}${t.description ? `: ${t.description}` : ""}`).join("\n");
@@ -119,7 +119,7 @@ export function buildHoySystemPrompt(
 
 // Per-turn suffixes appended to the assembled system prompt by the permission
 // extension (before_agent_start) for the two modes that change model behavior.
-// Plan blocks mutation and asks for a plan; Autonomous overrides the static
+// Plan blocks mutation and asks for a plan. Autonomous overrides the static
 // confirm-first Safety line because the mode itself is the pre-approval.
 // The final plan output contract, shared by inline plan mode and the Plan
 // subagent (hoy-agents-registry.ts) so both emit the same detectable block. The
@@ -168,7 +168,7 @@ export const PROPOSED_PLAN_FORMAT = [
 
 // PLAN_MODE_PROMPT revised per HOY-212 (role identity, structured process,
 // self-review) and HOY-213 (delegate exploration to subagents, write plan files
-// under .hoy/plans, emit the plan in a proposed_plan block for the execution
+// under.hoy/plans, emit the plan in a proposed_plan block for the execution
 // handoff). Informed by Claude Code's plan mode and the pi-plan-mode /
 // superpowers writing-plans conventions.
 export const PLAN_MODE_PROMPT = [

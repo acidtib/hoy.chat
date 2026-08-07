@@ -3,7 +3,7 @@ import type { PermissionRequest, Thread } from "@/lib/types";
 
 import { mockIpcModule } from "./ipcMock";
 
-// Named mocks these tests assert against; the shared helper fills in the rest
+// Named mocks these tests assert against. The shared helper fills in the rest
 // of the ipc surface the store needs at import time.
 const setPermissionMode =
   mock<(sessionId: string, mode: string) => Promise<void>>();

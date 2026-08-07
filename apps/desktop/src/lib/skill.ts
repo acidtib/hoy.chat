@@ -3,7 +3,7 @@
 // `<skill name=... location=...>...</skill>` block (optionally followed by the
 // user's own args), and that block is what arrives back over RPC as the user
 // message text. This mirrors Pi's parseSkillBlock (core/agent-session.ts) so the
-// renderer can show a `[skill] name` chip instead of raw XML. It's a pure
+// renderer can show a `[skill] name` chip instead of raw XML. It is a pure
 // function, so it stays testable and cheap to call per user turn.
 
 export interface ParsedSkillBlock {
@@ -35,7 +35,7 @@ export function parseSkillBlock(text: string): ParsedSkillBlock | null {
 }
 
 // Strip the `skill:` prefix from a skill command's name. Skills arrive from
-// get_commands / list_skills as `skill:<name>`; this is the bare `<name>` the
+// get_commands / list_skills as `skill:<name>`. This is the bare `<name>` the
 // user sees in the picker and types. Shared so the display, the `@skill:`
 // filter, and the submit rewrite agree on one convention (HOY-323).
 export function bareSkillName(name: string): string {
@@ -44,7 +44,7 @@ export function bareSkillName(name: string): string {
 
 // The minimal shape rewriteSkillCommand needs from a Pi slash command
 // (get_commands): its name and where it came from. Skills arrive as
-// `skill:<name>`; every other source keeps its bare name.
+// `skill:<name>`. Every other source keeps its bare name.
 interface NamedCommand {
   name: string;
   source: string;
@@ -52,12 +52,12 @@ interface NamedCommand {
 
 // In the composer a skill is invoked by its bare name (`/demo-review`), matching
 // Claude Code, but Pi only expands the `/skill:<name>` form (HOY-323). Rewrite a
-// leading `/<name>` to `/skill:<name>` when `<name>` is a known skill that isn't
+// leading `/<name>` to `/skill:<name>` when `<name>` is a known skill that is not
 // shadowed by a non-skill command of the same name (an extension/prompt command
-// wins, so its literal `/<name>` reaches Pi unchanged). Anything that isn't a
+// wins, so its literal `/<name>` reaches Pi unchanged). Anything that is not a
 // bare `/<name>` (plain prose, an already-prefixed `/skill:x`, or a name with no
 // matching skill) is returned untouched. Only the leading command token is
-// considered; trailing args are preserved verbatim.
+// considered. Trailing args are preserved verbatim.
 export function rewriteSkillCommand(
   text: string,
   commands: NamedCommand[],

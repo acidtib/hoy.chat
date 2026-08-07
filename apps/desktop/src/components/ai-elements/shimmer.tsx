@@ -62,4 +62,3 @@ const ShimmerComponent = ({
 };
 
 export const Shimmer = memo(ShimmerComponent);
-

@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 // Streaming event delivered to the renderer over a Tauri Channel. Constructed in
-// sidecar.rs::route_message from Pi's raw RPC events; mirrored in lib/types.ts.
+// sidecar.rs::route_message from Pi's raw RPC events. Mirrored in lib/types.ts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentEvent {
@@ -12,7 +12,7 @@ pub enum AgentEvent {
         delta: String,
     },
     // Live thinking/reasoning stream (Pi's message_update thinking_* events).
-    // phase is "start" | "delta" | "end"; delta carries text only on "delta".
+    // phase is "start" | "delta" | "end". Delta carries text only on "delta".
     // Folds into the assistant turn's collapsible reasoning block (HOY-211).
     Reasoning {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -37,7 +37,7 @@ pub enum AgentEvent {
     },
     // An extension UI dialog (Pi's extension_ui_request) awaiting a user answer.
     // The agent is blocked until respond_permission writes the matching
-    // extension_ui_response; HOY-186 renders it as an inline approval card.
+    // extension_ui_response. HOY-186 renders it as an inline approval card.
     PermissionRequest {
         #[serde(rename = "requestId")]
         request_id: String,
@@ -62,7 +62,7 @@ pub enum AgentEvent {
         tool_args: Option<serde_json::Value>,
     },
     // Fire-and-forget extension UI display methods (Pi's extension_ui_request
-    // with no response). Forwarded to the renderer to surface; never answered.
+    // with no response). Forwarded to the renderer to surface. Never answered.
     Notify {
         message: String,
         #[serde(rename = "notifyType", skip_serializing_if = "Option::is_none")]
@@ -92,7 +92,7 @@ pub enum AgentEvent {
         text: String,
     },
     // HOY-300: a SYNCHRONOUS subagent spawn. Carries the request id of the
-    // parent's blocked agent-tool `ctx.ui.input`; the renderer answers it with
+    // parent's blocked agent-tool `ctx.ui.input`. The renderer answers it with
     // the child's result via respond_permission -> respond_ui when the child is
     // done. A Dialog outcome, so route_message abort-tracks request_id.
     SubagentSpawnSync {
@@ -132,10 +132,10 @@ pub enum AgentEvent {
     },
     // Pi's session_start: the sidecar rebound to a different session file, e.g.
     // after a fork/clone branches to a new file (HOY-282). `reason` is Pi's
-    // ("fork" | "clone" | "resume" | "new" | ...); `previousSessionFile` is the
-    // file left behind. The NEW file path is NOT in this event; read it via
+    // ("fork" | "clone" | "resume" | "new" |...). `previousSessionFile` is the
+    // file left behind. The NEW file path is NOT in this event. Read it via
     // get_session_stats. Only reaches the renderer when a streaming sink is
-    // attached (a mid-turn switch); a fork RPC issued while idle has no sink.
+    // attached (a mid-turn switch). A fork RPC issued while idle has no sink.
     SessionStart {
         reason: String,
         #[serde(
@@ -180,8 +180,8 @@ pub struct PiState {
 }
 
 // Subset of Pi's SessionStats (core/agent-session.d.ts) returned by
-// get_session_stats; powers the bottom context bar. Pi sends more fields
-// (message counts, sessionId, ...); serde ignores the extras.
+// get_session_stats. Powers the bottom context bar. Pi sends more fields
+// (message counts, sessionId,...). Serde ignores the extras.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStats {
@@ -199,7 +199,7 @@ pub struct SessionStats {
 }
 
 // Pi's ContextUsage. tokens/percent are null until the next LLM response after a
-// compaction; contextWindow is always known.
+// compaction. ContextWindow is always known.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextUsage {
@@ -219,7 +219,7 @@ pub struct TokenUsage {
 }
 
 // Pi's RpcSlashCommand (dist/modes/rpc/rpc-types.d.ts) from get_commands, driving
-// the composer's "/" autocomplete (HOY-223). `name` has no leading slash; skills
+// the composer's "/" autocomplete (HOY-223). `name` has no leading slash. Skills
 // are "skill:<name>". `source` is "extension" | "prompt" | "skill". sourceInfo is
 // not surfaced, so it is dropped rather than modeled.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -230,7 +230,7 @@ pub struct SlashCommand {
     pub source: String,
 }
 
-// Pi's Model object. Extra fields are ignored; these are the ones the UI needs.
+// Pi's Model object. Extra fields are ignored. These are the ones the UI needs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
@@ -246,7 +246,7 @@ pub struct ModelInfo {
     #[serde(default)]
     pub reasoning: Option<bool>,
     // Pi's Model.input: ["text","image",...]. Gates the composer's image
-    // attachment affordance (HOY-205). Absent on older payloads; treated as
+    // attachment affordance (HOY-205). Absent on older payloads. Treated as
     // vision-capable when unknown (fail soft).
     #[serde(default)]
     pub input: Option<Vec<String>>,
@@ -261,9 +261,9 @@ pub struct ModelRef {
 }
 
 // Goal Mode (HOY-263): the one-shot evaluator's verdict. Mirrors GoalEvaluation
-// in apps/desktop/src/lib/types.ts. `met` is only ever true on clear evidence;
+// in apps/desktop/src/lib/types.ts. `met` is only ever true on clear evidence
 // every error path in the sidecar fails open to {met:false, reason:"evaluator
-// error: ..."} so the loop never stops on uncertainty.
+// error:..."} so the loop never stops on uncertainty.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoalEvaluation {
     pub met: bool,
@@ -272,7 +272,7 @@ pub struct GoalEvaluation {
 
 // Goal Mode v2 (HOY-298): the deterministic verify command's result. Mirrors
 // GoalVerifyResult in apps/desktop/src/lib/types.ts (serde camelCase). The
-// one-shot sidecar always emits this JSON and exits 0; a non-zero `code` (spawn
+// one-shot sidecar always emits this JSON and exits 0. A non-zero `code` (spawn
 // failure, timeout/kill with `killed:true`, or a real non-zero exit) means the
 // verify gate FAILED, which Task B treats as "not met, keep working".
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,7 +286,7 @@ pub struct GoalVerifyResult {
 
 // Goal Mode v3 (HOY-299): the independent read-only auditor's verdict. Mirrors
 // GoalAudit in apps/desktop/src/lib/types.ts. Like GoalEvaluation, `met` is only
-// ever true on clear evidence; every error path in the auditor one-shot fails
+// ever true on clear evidence. Every error path in the auditor one-shot fails
 // open to {met:false, reason:"auditor ..."} (or a timed-out result), so the loop
 // never stops on uncertainty.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -296,7 +296,7 @@ pub struct GoalAudit {
 }
 
 // Mirror of Pi's ImageContent (pi-ai). Sent on the prompt command's images[].
-// `data` is raw base64 with NO data: URI prefix; the renderer strips it before
+// `data` is raw base64 with NO data: URI prefix. The renderer strips it before
 // invoke.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageContent {
@@ -316,7 +316,7 @@ mod tests {
     use super::*;
 
     // rename_all on the enum only renames the "kind" tag, not struct-variant
-    // field names; multi-word fields need their own #[serde(rename)]. This
+    // field names. Multi-word fields need their own #[serde(rename)]. This
     // caught SubagentSpawnSync shipping snake_case to the renderer (HOY-300).
     #[test]
     fn subagent_spawn_sync_serializes_camelcase() {
@@ -336,7 +336,7 @@ mod tests {
 
 // OAuth login (subscription sign-in) events streamed to the renderer over a
 // Tauri Channel while the one-shot login sidecar runs (HOY_OAUTH_LOGIN). Built
-// in oauth.rs from the login process's JSONL; mirrored in lib/types.ts. This is
+// in oauth.rs from the login process's JSONL. Mirrored in lib/types.ts. This is
 // a separate channel from AgentEvent: login is not part of the RPC/agent stream.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -370,7 +370,7 @@ pub enum OAuthEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         placeholder: Option<String>,
     },
-    // A choice the flow needs (e.g. login method); submit the chosen id.
+    // A choice the flow needs (e.g. login method). Submit the chosen id.
     Select {
         message: String,
         options: Vec<OAuthSelectOption>,
@@ -388,7 +388,7 @@ pub struct OAuthSelectOption {
 }
 
 // Pi's CompactionResult (core/compaction/compaction.d.ts), the `data` of a
-// successful compact command. Only the fields the UI surfaces; serde ignores the
+// successful compact command. Only the fields the UI surfaces. Serde ignores the
 // rest (summary, firstKeptEntryId, details).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -41,7 +41,7 @@ export interface Category {
   label: string;
   icon: LucideIcon;
   group: number;
-  // Not backed by Pi RPC or a local pref yet; shown as an honest "Not available
+  // Not backed by Pi RPC or a local pref yet. Shown as an honest "Not available
   // yet" panel and grouped under "Coming soon" so the rail leads with what works.
   placeholder?: boolean;
 }

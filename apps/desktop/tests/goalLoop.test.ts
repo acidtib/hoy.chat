@@ -182,7 +182,7 @@ describe("goal continuation loop in the done handler (HOY-263)", () => {
     evaluateGoal.mockRejectedValue(new Error("no live sidecar"));
     const emit = await startTurn();
 
-    // Must not throw out of the handler; loop continues.
+    // Must not throw out of the handler. Loop continues.
     emit({ kind: "done" });
     await flush();
     await flush();

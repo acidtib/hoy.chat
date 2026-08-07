@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { mockIpcModule } from "./ipcMock";
 
 // HOY-301: closing a subagent panel dismisses it (keeps the sidecar running and
-// the transcript intact); closing a root thread's panel tears it down as before.
+// the transcript intact). Closing a root thread's panel tears it down as before.
 const closeSession = mock<(s: string) => Promise<void>>();
 mockIpcModule({ closeSession });
 

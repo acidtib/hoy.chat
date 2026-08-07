@@ -1,5 +1,5 @@
 // Quarantine for the AI SDK type shapes that AI Elements blocks expect. We do
-// not install the Vercel AI SDK (`ai` / `@ai-sdk/*`); these local definitions
+// not install the Vercel AI SDK (`ai` / `@ai-sdk/*`). These local definitions
 // let the presentational blocks compile while our own state drives them. Keep
 // this file as the single place AI-SDK prop-shape adaptation lives.
 

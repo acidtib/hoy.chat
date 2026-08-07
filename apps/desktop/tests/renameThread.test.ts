@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mockIpcModule } from "./ipcMock";
 
-// None of the ipc surface is exercised here; the store just needs it mocked
+// None of the ipc surface is exercised here. The store needs it mocked
 // at import time.
 mockIpcModule();
 

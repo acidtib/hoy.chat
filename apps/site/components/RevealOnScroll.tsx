@@ -3,7 +3,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
 // Scroll-reveal wrapper. Robustness rules from the design system: content is
-// visible by default (no-JS and reduced-motion both render it immediately); the
+// visible by default (no-JS and reduced-motion both render it immediately). The
 // pre-reveal hidden state is gated behind the `.js` class (set before paint in
 // layout) so a headless renderer or a failed observer never ships a blank
 // section. The observer only adds `.in`, which animates the already-mounted node.

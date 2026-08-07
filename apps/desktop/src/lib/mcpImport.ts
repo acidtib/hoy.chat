@@ -1,5 +1,5 @@
 // Parse a pasted MCP server config (the shape people copy from a README) into
-// name → spec entries the settings form can add (HOY-273). Pure so it's testable.
+// name → spec entries the settings form can add (HOY-273). Pure so it is testable.
 
 export interface ParsedMcpServer {
   name: string;
@@ -12,7 +12,7 @@ function isObject(v: unknown): v is Record<string, unknown> {
 }
 
 // Map one raw server object onto the internal spec. stdio (command) and http
-// (url) are told apart by which field is present; args/env/headers pass through.
+// (url) are told apart by which field is present. Args/env/headers pass through.
 function toSpec(name: string, raw: unknown): Record<string, unknown> {
   if (!isObject(raw)) throw new Error(`Server "${name}" must be an object.`);
   const command = typeof raw.command === "string" ? raw.command.trim() : "";
@@ -37,9 +37,9 @@ function toSpec(name: string, raw: unknown): Record<string, unknown> {
 }
 
 // Parse a pasted config into one or more (name, spec) pairs. Accepts, in order:
-//   { "mcpServers": { "<name>": { … } } }   the standard wrapper people copy
-//   { "<name>": { … }, … }                   a bare name → server map
-//   { "command" | "url": … }                 a single unnamed server (uses `fallbackName`)
+// { "mcpServers": { "<name>": { … } } } the standard wrapper people copy
+// { "<name>": { … }, … } a bare name → server map
+// { "command" | "url": … } a single unnamed server (uses `fallbackName`)
 // Throws a human-readable Error on malformed JSON or an unrecognized shape.
 export function parseMcpServersJson(
   text: string,
@@ -56,7 +56,7 @@ export function parseMcpServersJson(
   }
   if (!isObject(parsed)) throw new Error("Expected a JSON object.");
 
-  // A single, unnamed server pasted on its own — needs a name from the form.
+  // A single, unnamed server pasted on its own, needs a name from the form.
   if (typeof parsed.command === "string" || typeof parsed.url === "string") {
     const name = fallbackName?.trim();
     if (!name) {

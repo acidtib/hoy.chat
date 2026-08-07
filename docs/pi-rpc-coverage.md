@@ -1,10 +1,75 @@
 # Pi RPC coverage
 
-What Hoy uses of pi 0.80.7's RPC surface (`--mode rpc`, JSONL over stdio), against
+What Hoy uses of pi 0.84.0's RPC surface (`--mode rpc`, JSONL over stdio), against
 the full command and event set in
 `@earendil-works/pi-coding-agent/dist/modes/rpc/rpc-types.d.ts`. Snapshot from a
-docs-and-source review on 2026-07-14 (bumped 0.80.6 -> 0.80.7); re-check on every
-pi version bump.
+docs-and-source review on 2026-08-06 (bumped 0.80.7 -> 0.84.0, verified against a
+real installed 0.84.0 copy, not release-note summaries); re-check on every pi
+version bump.
+
+## Bump review: 0.80.7 -> 0.84.0
+
+A real breaking-change migration (`AuthStorage`/`ModelRegistry.create()` removed
+from the SDK's construction path at 0.80.8, OAuth's callback interface redesigned
+into a unified `prompt()`/`notify()` shape), not a version-string edit. The RPC
+wire surface itself barely moved. Verified by installing the actual 0.84.0
+package and reading its shipped `.d.ts` files directly:
+
+- **RPC command union grew by exactly one, `get_available_thinking_levels`**
+  (added 0.81.0, confirmed absent from 0.80.7's `rpc-types.d.ts`, present in
+  0.84.0's — 32 `RpcCommand` variants total now, up from 31). Left `unused`:
+  Hoy's static `THINKING_LEVELS` union plus Pi-side per-model clamping already
+  covers this; no dynamic-level UI need.
+- **Two new events added a mapping this bump: `summarization_retry_scheduled` /
+  `attempt_start` / `finished`** (0.81.1, compaction/branch-summary retry
+  lifecycle) now map to `AgentEvent::Status{label:"summarization_retry"}` in
+  `map_pi_event`, mirroring the existing `auto_retry_start`/`compaction_start`
+  pattern — previously silently dropped by the catch-all arm, same as at 0.80.7.
+  **`bash_execution_update`** (0.82.0) stays `unused`: it only fires for the RPC
+  `bash` command, which Hoy's Rust code never sends (confirmed via `commands.rs`
+  — Hoy's own bash tool calls surface as `tool_execution_*` instead, already
+  mapped).
+- **`message_update`'s cumulative fields were removed (deltas-only, 0.84.0).**
+  No Hoy impact: `map_pi_event` already only ever read
+  `assistantMessageEvent.delta`, never the cumulative fields.
+- **`StopReason` union unchanged at the type level**
+  (`pending|stop|length|toolUse|error|aborted|deferred`), so the "raw provider
+  stop reasons now surface as errors" behavior change (0.83.0) needs no code
+  change — Rust's `message_end` arm already treats any non-`aborted` failure as
+  `error` and silently ignores non-failure reasons via its catch-all.
+- **OAuth SDK migration is internal, not an RPC/wire change.**
+  `hoy-oauth.ts` moved from `AuthStorage.create(...).login(providerId,
+  callbacks)` (5 separate callbacks) to `ModelRuntime.create({authPath}).login
+  (providerId, "oauth", interaction)` (unified `prompt()`/`notify()`). The JSONL
+  vocabulary Rust's `oauth.rs::map_event` parses (`auth_url`, `device_code`,
+  `progress`, `prompt{promptType,message,placeholder}`,
+  `select{message,options:[{id,label}]}`, `done`, `error`) is unchanged — zero
+  Rust changes. `hoy-goal-audit.ts`/`hoy-goal-eval.ts` made the equivalent
+  `AuthStorage`+`ModelRegistry.create(authStorage,...)` ->
+  `ModelRuntime.create({authPath,modelsPath})` + `new ModelRegistry(modelRuntime)`
+  swap; `ModelRegistry`'s `.find()`/`.getAvailable()` are unchanged (it's still a
+  compatibility facade, just constructed from a `ModelRuntime` now).
+- **`hoy-sidecar.ts` needed zero changes.** It never passes
+  `authStorage`/`modelRegistry`/`modelRuntime` to `createAgentSessionServices()`
+  — that factory builds its own default `ModelRuntime` internally when none is
+  given.
+- **Provider registry**: added `qwen-token-plan` / `qwen-token-plan-cn`
+  (built-in since 0.81.0) and `baseten` (new in 0.84.0); renamed `radius`'s env
+  from `PI_GATEWAY_API_KEY` to `RADIUS_API_KEY` (renamed upstream at 0.80.8, no
+  back-compat fallback); `anthropic`'s status check now also recognizes
+  `ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_OAUTH_TOKEN` (0.82.1 bearer-token support)
+  as "environment configured", write path unchanged (`ANTHROPIC_API_KEY` only).
+  Verified byte-for-byte against the real `pi-ai/dist/env-api-keys.js`; no other
+  provider id/env/label changed.
+- **TypeBox bumped to `1.3.7`** (matches `pi-coding-agent`'s own pin). The
+  removed aliases (`Type.Base/Awaited/Promise/AsyncIterator/Iterator/Options`,
+  `Value.Mutate`) have zero hits anywhere in `packages/sidecar/pi-src/`.
+- **Edit-tool `promptGuidelines` byte-identical** to 0.80.7
+  (`core/tools/{read,edit,write}.js`), independently diffed against the real
+  0.84.0 source. `hoy-system-prompt.ts`'s docs-block tag repointed to `v0.84.0`.
+- **Extension UI request/response types unchanged** (`select`/`confirm`/
+  `input`/`editor`/`notify`/`setStatus`/`setWidget`/`setTitle`/
+  `set_editor_text`); `classify_extension_ui` needed no structural change.
 
 ## Bump review: 0.80.6 -> 0.80.7
 
@@ -159,11 +224,12 @@ settlement are now dropped instead of emitting stale `tool_execution_update`
 Status key: **used** (wired end to end), **partial** (some of the surface wired),
 **planned** (Linear ticket filed), **unused** (never invoked or mapped).
 
-## Client inputs (15 of 32 used, on pinned 0.80.7)
+## Client inputs (15 of 33 used, on pinned 0.84.0)
 
-The 32 rows are the 31 `RpcCommand` variants plus the separate
-`extension_ui_response` input. The last two command additions (`get_entries`,
-`get_tree`) arrived in 0.80.3 and are now wired through the `/tree` navigator.
+The 33 rows are the 32 `RpcCommand` variants plus the separate
+`extension_ui_response` input. `get_entries`/`get_tree` arrived in 0.80.3 and are
+wired through the `/tree` navigator; `get_available_thinking_levels` arrived in
+0.81.0 and is the newest addition (left unused, see bump review above).
 
 | RPC command | What it does | Hoy status | Notes |
 |---|---|---|---|
@@ -181,6 +247,7 @@ The 32 rows are the 31 `RpcCommand` variants plus the separate
 | `set_follow_up_mode` | Same for follow-ups | unused | |
 | `set_thinking_level` | Set thinking: off, minimal, low, medium, high, xhigh, max | used (HOY-204) | `commands.rs:90`; composer dropdown drives it via `store.selectThinkingLevel`, re-synced from `get_state` (pi clamps per model); `max` added in 0.80.6 |
 | `cycle_thinking_level` | Step through thinking levels | unused | |
+| `get_available_thinking_levels` | Provider-verified levels for the current model | unused | Added 0.81.0; Hoy's static `THINKING_LEVELS` union + Pi-side per-model clamping on `set_thinking_level` already covers this, no dynamic-level UI need identified |
 | `cycle_model` | Step through scoped models | unused | Deferred with keyboard shortcuts |
 | `compact` | Manual compaction, optional custom instructions | used (HOY-229) | "Compact now" popover near the usage meter; reads the CompactionResult from the response (longer request timeout) |
 | `set_auto_compaction` | Toggle auto-compaction | used (HOY-229) | MemoryPanel toggle, per active session; synced from `get_state.autoCompactionEnabled` |
@@ -200,7 +267,7 @@ The 32 rows are the 31 `RpcCommand` variants plus the separate
 | `get_entries` | Read session entries | read surface (HOY-221) | `commands.rs`; typed `getEntries` wrapper; returns `{entries, leafId}`. No UI yet; backs the follow-up `/tree` navigator. Optional `since` for incremental reads |
 | `get_tree` | Read session tree snapshot | read surface (HOY-221) | `commands.rs`; typed `getTree` wrapper; returns `{tree, leafId}`. No UI yet; pairs with `get_entries` for the `/tree` navigator |
 
-## Events (mapped in `map_pi_event`, `sidecar.rs:365`)
+## Events (mapped in `map_pi_event`, `sidecar.rs:935`)
 
 | RPC event | Hoy status | Notes |
 |---|---|---|
@@ -214,6 +281,8 @@ The 32 rows are the 31 `RpcCommand` variants plus the separate
 | `compaction_start` | used | `Status` "compacting"; now also carries `reason` and `willRetry` (0.79.10) and a post-compaction token estimate (0.79.8), unused |
 | `compaction_end` | used (HOY-229) | Maps to `CompactionEnd` (reason, aborted, willRetry, token estimate); auto-path notice + usage refresh over the streaming sink |
 | `auto_retry_end` | unused | |
+| `summarization_retry_scheduled` / `attempt_start` / `finished` | used | Added 0.81.1; all three map to `Status{label:"summarization_retry"}` in `map_pi_event`, mirroring `auto_retry_start`/`compaction_start` (no attempt/reason detail carried, same as `auto_retry_start`) |
+| `bash_execution_update` | unused | Added 0.82.0; only fires for the RPC `bash` command, which Hoy's Rust code never sends (`commands.rs` confirmed) — dead path, Hoy's own bash tool calls surface as `tool_execution_*` instead |
 | `agent_start`, `turn_start/end`, `message_start` | unused | |
 | `queue_update` | used (HOY-205) | Mapped to the `QueueUpdate` AgentEvent; the queued-message chips consume it (HOY-218) |
 | `session_start` | used (HOY-282) | Mapped to `SessionStart` (reason + previousSessionFile) when the sidecar rebinds after fork/clone; the store refreshes stats to repoint `Thread.sessionFile`. Only over the streaming sink (a mid-turn switch); a fork RPC issued while idle has no sink, so the branch action reads the new file via `get_session_stats` instead. The new file path is not in the event |

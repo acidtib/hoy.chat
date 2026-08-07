@@ -26,7 +26,7 @@ export function HomeComposer({
   const projects = useSessionStore((s) => s.projects);
   const startThread = useSessionStore((s) => s.startThread);
   // Skills for the "/" and "@skill:" pickers (HOY-323). No thread exists yet, so
-  // there is no session and thus no get_commands; skills come from disk instead,
+  // there is no session and thus no get_commands. Skills come from disk instead,
   // refreshed for the selected project like ThreadView does.
   const skillCommands = useSessionStore((s) => s.skillCommands);
   const refreshSkills = useSessionStore((s) => s.refreshSkills);

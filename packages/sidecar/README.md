@@ -18,7 +18,8 @@ packages/sidecar/build.sh   # builds hoy-pi-<host-triple> + pi-payload/
 `build.sh` does three things:
 
 1. Installs the pinned Pi (`@earendil-works/pi-coding-agent`, version in
-   `pi-src/package.json`) into `pi-src/node_modules`.
+   `pi-src/package.json`) into `pi-src/node_modules` via `bun install
+   --frozen-lockfile`, isolated from the root workspace.
 2. `bun build --compile` of Pi's **bun entry** (`dist/bun/cli.js`, which restores
    sandbox env and registers bedrock) into `hoy-pi-<target-triple>`, named for
    Tauri's `externalBin` convention.
@@ -56,20 +57,28 @@ JSONL framing is LF-only; strip a trailing `\r`; never split on U+2028/U+2029
 
 ## Version pin
 
-Pinned in `pi-src/package.json` and `pi-src/package-lock.json`. Pi's RPC surface
+Pinned in `pi-src/package.json` and `pi-src/bun.lock`. Pi's RPC surface
 is still evolving; bump deliberately and re-verify the contract. The RPC command
 and event shapes were confirmed against the installed version's
 `dist/modes/rpc/rpc-types.d.ts` and the published RPC doc.
+
+Pi ships its `@earendil-works/pi-agent-core`, `pi-ai`, and `pi-tui` companion
+packages as caret ranges (`^0.84.0`), and those packages cut patch releases
+independently of `pi-coding-agent` — a plain `bun install` without a pin lets
+them float ahead and can pull in breaking changes (see HOY pi-version-bump
+history). The `overrides` block in `pi-src/package.json` pins all three to the
+same exact version as `pi-coding-agent`; **bump all four together** when
+bumping the Pi version.
 
 ## Fallbacks (not needed; recorded for the record)
 
 If a future Pi release breaks `bun build --compile`: ship Node alongside and
 invoke `node dist/cli.js`, or bundle Pi's source with a minimal Node runtime.
-Neither was required at 0.80.7.
+Neither was required through 0.84.0.
 
 ## Files
 
-- `pi-src/` — pinned install workspace (`package.json` + lockfile tracked,
+- `pi-src/` — pinned install workspace (`package.json` + `bun.lock` tracked,
   `node_modules/` gitignored)
 - `build.sh` — produces `hoy-pi-<triple>` + `pi-payload/`
 - `hoy-pi-<triple>`, `pi-payload/` — build artifacts, gitignored

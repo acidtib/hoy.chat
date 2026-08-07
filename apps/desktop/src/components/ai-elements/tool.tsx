@@ -39,7 +39,7 @@ export type ToolHeaderProps = {
 };
 
 const getStatusBadge = (status: ToolUIPart["state"]) => {
-  // Completed tools render as a bare row (Zed style); only surface a badge for
+  // Completed tools render as a bare row (Zed style). Only surface a badge for
   // states that need attention.
   if (status === "output-available") {
     return null;

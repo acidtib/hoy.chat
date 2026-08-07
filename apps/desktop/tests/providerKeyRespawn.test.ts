@@ -4,7 +4,7 @@ import type { Thread } from "@/lib/types";
 import { mockIpcModule } from "./ipcMock";
 
 // A credential change respawns idle sidecars under their existing sessionIds
-// (HOY-196), so the store must clear its per-session reconcile guards; the
+// (HOY-196), so the store must clear its per-session reconcile guards. The
 // next prompt re-applies the thread's permission mode to the fresh process.
 const setPermissionMode =
   mock<(sessionId: string, mode: string) => Promise<void>>();
@@ -39,8 +39,8 @@ function seed(thread: Partial<Thread>) {
 
 async function promptOnce() {
   await useSessionStore.getState().submitPrompt("t1", "hello");
-  // The mocked Channel never delivers a done event; reset the streaming flag
-  // so the next submit isn't refused.
+  // The mocked Channel never delivers a done event. Reset the streaming flag
+  // so the next submit is not refused.
   useSessionStore.setState((s) => ({ streaming: { ...s.streaming, t1: false } }));
 }
 
@@ -68,7 +68,7 @@ describe("provider key save resets session guards", () => {
     await promptOnce();
     expect(setPermissionMode).toHaveBeenCalledTimes(1);
 
-    // Key save respawned the sidecar behind the same sessionId; the guard is
+    // Key save respawned the sidecar behind the same sessionId. The guard is
     // cleared and the next prompt re-applies the mode to the fresh process.
     await useSessionStore.getState().saveProviderKey("anthropic", "sk-test");
     expect(saveProviderKey).toHaveBeenCalledWith("anthropic", "sk-test");

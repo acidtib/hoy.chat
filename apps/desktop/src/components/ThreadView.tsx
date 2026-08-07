@@ -111,8 +111,8 @@ import type {
   Turn,
 } from "@/lib/types";
 
-// Stable empty references so selectors don't return a fresh value each render
-// (which would loop zustand's snapshot equality check).
+// Stable empty references so selectors do not return a fresh value each render
+// (which will loop zustand's snapshot equality check).
 const EMPTY_TURNS: Turn[] = [];
 const EMPTY_PERMISSIONS: PermissionRequest[] = [];
 const EMPTY_NOTICES: Notice[] = [];
@@ -196,7 +196,7 @@ export function ThreadView({
       thinkingLevel: found?.thread.thinkingLevel ?? ("high" as const),
       sessionId: found?.thread.sessionId ?? null,
       goal: found?.thread.goal,
-      // A subagent panel dismisses (keeps running) on close; a root thread tears
+      // A subagent panel dismisses (keeps running) on close. A root thread tears
       // down (HOY-301). Drives the button's label/tooltip.
       isSubagent: found ? !!found.thread.parentThreadId : false,
     };
@@ -210,7 +210,7 @@ export function ThreadView({
   }, [projectPath, refreshSkills]);
 
   // The command list the composer shows: the session's commands (extensions,
-  // prompts, and — once a session exists — skills) merged with the disk skills,
+  // prompts, and, once a session exists, skills) merged with the disk skills,
   // deduped by name so a skill present in both appears once (HOY-323).
   const slashCommands = useMemo(() => {
     const seen = new Set(sessionCommands.map((c) => c.name));
@@ -240,9 +240,9 @@ export function ThreadView({
   const hasMessages = turns.length > 0;
   const shownError = threadError ?? error;
 
-  // Stable per-thread handlers + flags so memoized assistant turns don't
+  // Stable per-thread handlers + flags so memoized assistant turns do not
   // re-render on each streamed token (HOY-292). implementPlan/dismissPlanReady
-  // are stable store references; wrapping them keeps the closures identity-stable
+  // are stable store references. Wrapping them keeps the closures identity-stable
   // across the per-token re-renders of this component.
   const awaitingApproval = pendingPermissions.length > 0;
   const handleImplement = useCallback(
@@ -256,7 +256,7 @@ export function ThreadView({
   );
 
   // Vision gating for the attachment UI (HOY-205). Resolve the active ModelRef to
-  // its full ModelInfo (which carries `input`); fail soft when unknown.
+  // its full ModelInfo (which carries `input`). Fail soft when unknown.
   const activeModelRef = threadModel ?? defaultModel;
   const activeModel = activeModelRef
     ? models.find(
@@ -282,7 +282,7 @@ export function ThreadView({
   function handleSubmit(intent: "enter" | "shiftEnter") {
     const message = draft;
     const images = attachments.map((a) => a.content);
-    // Behavior only applies mid-turn; submitPrompt ignores it when idle.
+    // Behavior only applies mid-turn. SubmitPrompt ignores it when idle.
     const behavior = intent === "shiftEnter" ? "followUp" : "steer";
     setDraft(threadId, "");
     void submitPrompt(
@@ -549,12 +549,12 @@ type UserTurnData = Extract<Turn, { role: "user" }>;
 type AssistantTurnData = Extract<Turn, { role: "assistant" }>;
 
 // A single user turn. Memoized (HOY-292) so that while a later turn streams,
-// settled turns don't re-render on every token — applyEvent preserves the object
+// settled turns do not re-render on every token, applyEvent preserves the object
 // identity of every completed turn, so referential equality on `turn` lets the
 // whole subtree bail out.
 const UserTurn = memo(function UserTurn({ turn }: { turn: UserTurnData }) {
   // A `/skill:<name>` invocation comes back as the turn text rewritten into a
-  // <skill> block by Pi (HOY-323); show a chip instead of the raw XML, with the
+  // <skill> block by Pi (HOY-323). Show a chip instead of the raw XML, with the
   // user's own trailing text (if any) rendered as the message body below it.
   const skill = turn.text ? parseSkillBlock(turn.text) : null;
   return (
@@ -596,7 +596,7 @@ const UserTurn = memo(function UserTurn({ turn }: { turn: UserTurnData }) {
 });
 
 // The `[skill] <name>` chip for a skill invocation. Collapsed by default (the
-// body is instructions the model consumed, not something the user needs open);
+// body is instructions the model consumed, not something the user needs open)
 // expands to the skill's markdown content. Mirrors Pi's SkillInvocationMessage.
 function SkillInvocation({
   name,
@@ -628,7 +628,7 @@ function SkillInvocation({
 
 // A single assistant turn. Memoized (HOY-292) on the same principle as UserTurn:
 // only the in-flight turn (whose `turn` object is replaced per token by
-// applyEvent) re-renders while streaming; settled turns above it are skipped.
+// applyEvent) re-renders while streaming. Settled turns above it are skipped.
 // The handler/flag props are kept referentially stable by the parent so the memo
 // holds. Completed tool/text blocks inside a re-rendering turn are themselves
 // memoized (ToolCall / MessageResponse), so even the streaming turn only re-parses
@@ -724,7 +724,7 @@ const AssistantTurn = memo(function AssistantTurn({
 });
 
 // Inline approval/dialog card for a blocked extension UI request (HOY-186).
-// confirm -> Yes/No; select -> option buttons; input/editor -> a text field with
+// confirm -> Yes/No. Select -> option buttons. Input/editor -> a text field with
 // Submit/Cancel. The agent stays paused until answered. Keyed by requestId at
 // the mount so a text field's local state resets between dialogs.
 function ApprovalCard({
@@ -811,7 +811,7 @@ function ApprovalCard({
 // "Other" row on single-select. Multiple questions are shown one at a time as a
 // stepper (Back / Next / Submit with a progress indicator) rather than stacked,
 // so the card stays compact and focused. Answers serialize to JSON in the select
-// `value`; the sidecar parses them back into structured answers. Cancel declines
+// `value`. The sidecar parses them back into structured answers. Cancel declines
 // the whole dialog, which the sidecar degrades to a cancelled result.
 const ASK_OTHER = " other";
 
@@ -845,7 +845,7 @@ function QuestionnaireCard({
   onAnswer: (answer: { value?: string; cancelled?: boolean }) => void;
 }) {
   // One question at a time (stepper). single-select: one chosen value per
-  // question id (may be ASK_OTHER). multi-select: the chosen values per id.
+  // question id (can be ASK_OTHER). multi-select: the chosen values per id.
   const [step, setStep] = useState(0);
   const [single, setSingle] = useState<Record<string, string>>({});
   const [multi, setMulti] = useState<Record<string, string[]>>({});
@@ -1043,8 +1043,8 @@ function QuestionnaireCard({
 
 // Renders an assistant text block, splitting out any <proposed_plan> block so its
 // body draws as a card (ProposedPlanCard) instead of leaking the raw tag inline
-// (HOY-259). Surrounding prose stays inline markdown; segmentation memoized on
-// the block content so streaming appends don't rebuild settled segments.
+// (HOY-259). Surrounding prose stays inline markdown. Segmentation memoized on
+// the block content so streaming appends do not rebuild settled segments.
 function AssistantTextBlock({
   content,
   planReady,
@@ -1090,7 +1090,7 @@ function AssistantTextBlock({
 // into the card footer (PlanFooter) once the plan is ready, so the plan and its
 // decision are one coherent surface rather than a separate sticky card. While
 // the block still streams, the title shimmers, a pulse shows, and the (possibly
-// empty) body fills in live; `ready` gates the footer to a completed plan the
+// empty) body fills in live. `ready` gates the footer to a completed plan the
 // store has flagged as the thread's active plan.
 function ProposedPlanCard({
   text,
@@ -1141,8 +1141,8 @@ function ProposedPlanCard({
           </Button>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             {/* Inline execution runs the plan in this thread. It runs hands-off
-                (autonomous) by default; the caret offers a review-each-edit run
-                for when the user wants to approve every change. */}
+                (autonomous) by default. The caret offers a review-each-edit run
+ for when the user wants to approve every change. */}
             <ButtonGroup>
               <Button
                 variant="outline"
@@ -1178,7 +1178,7 @@ function ProposedPlanCard({
             </ButtonGroup>
             {/* Recommended path (HOY-295/300): a fresh subagent builds each step
                 autonomously, reviewed before the next. The one filled action, so
-                it reads as the default. */}
+ it reads as the default. */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -1392,13 +1392,13 @@ function toolIcon(kind: ToolKind): ReactNode {
 // lands. It surfaces *what* is happening rather than a bare spinner, and yields
 // to the other honest-state affordances so it never becomes a second competing
 // signal:
-//   - a tool awaiting approval -> silent (the model is blocked on the user, not
-//     working; the approval card carries that state). The authority is the
-//     thread's pending-permission queue, not the tool block's own flag: Pi emits
-//     the tool `start` (running) before the approval gate, so the block reads as
-//     running while the user is actually the one being waited on.
-//   - only thinking -> silent (the reasoning block already shimmers "Thinking");
-//   - a tool running -> "Running <tool>"; otherwise the generic "Working".
+// - a tool awaiting approval -> silent (the model is blocked on the user, not
+// working. The approval card carries that state). The authority is the
+// thread's pending-permission queue, not the tool block's own flag: Pi emits
+// the tool `start` (running) before the approval gate, so the block reads as
+// running while the user is actually the one being waited on.
+// - only thinking -> silent (the reasoning block already shimmers "Thinking")
+// - a tool running -> "Running <tool>". Otherwise the generic "Working".
 // Matches the original pulsing-dot style and honors reduced motion.
 function TurnStatus({
   blocks,
@@ -1441,17 +1441,17 @@ function TurnStatus({
 const ToolCall = memo(function ToolCall({ tool }: { tool: ToolUI }) {
   const kind = toolKind(tool.name);
   const expandToolDetails = usePrefsStore((s) => s.expandToolDetails);
-  // Terminal tools (Bash/exec) are never collapsed: the command it's running is
+  // Terminal tools (Bash/exec) are never collapsed: the command it is running is
   // the point, so the card stays open with no accordion affordance (HOY-288).
   const collapsible = kind !== "terminal";
   // Each tool renders as a bordered card. Collapsed by default (HOY-251) to a
-  // header row; the user clicks it to reveal the body (diff, command + output,
+  // header row. The user clicks it to reveal the body (diff, command + output,
   // or result). Expanded when the pref is on, or when the tool needs attention:
   // an approval-pending tool shows a diff the user must see to approve, and an
   // errored tool surfaces its failure without a hunt.
   const defaultOpen =
     !collapsible || expandToolDetails || tool.pending || tool.isError;
-  // The terminal body already shows the command ($ ...), so the header stays a
+  // The terminal body already shows the command ($...), so the header stays a
   // generic tool label (lowercase, like the other tools) instead of repeating it.
   const headerTitle = kind === "terminal" ? tool.name : tool.title;
 

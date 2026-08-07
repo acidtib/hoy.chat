@@ -3,7 +3,7 @@
 // force-killed (SIGKILL to the whole process group) so the one-shot NEVER hangs.
 // We drive the real sidecar entry as a subprocess (the exact shape Rust spawns),
 // with a short HOY_VERIFY_TIMEOUT_MS, and assert it returns PROMPTLY with a
-// non-zero code -- well under the command's own sleep. Run with: bun test
+// non-zero code, well under the command's own sleep. Run with: bun test
 // (in sidecar/pi-src).
 
 import { describe, expect, test } from "bun:test";
@@ -53,7 +53,7 @@ async function runOneShot(command: string, timeoutMs?: number): Promise<RunResul
 describe("verify-command one-shot teardown", () => {
   // The Critical: a TERM-trapping `sleep 30` must be force-killed via SIGKILL to
   // the group at the grace boundary. If the old dead-code escalation were still
-  // here, this would hang for 30s and blow the test timeout. It must return in a
+  // here, this will hang for 30s and blow the test timeout. It must return in a
   // few seconds (1s timeout + 5s grace), far under the 30s sleep.
   test(
     "force-kills a SIGTERM-trapping command and returns promptly",
@@ -67,7 +67,7 @@ describe("verify-command one-shot teardown", () => {
     30_000,
   );
 
-  // Happy path still emits {code:0}; the teardown changes do not regress a normal
+  // Happy path still emits {code:0}. The teardown changes do not regress a normal
   // fast command (and it returns far under any timeout).
   test("passes a zero-exit command through as code 0", async () => {
     const { json, elapsedMs } = await runOneShot("echo hi; exit 0");

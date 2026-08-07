@@ -1,6 +1,6 @@
 // The thread model glyph's color is a "live fleet" signal (HOY-302): a thread's
 // icon reads teal (text-agent) only while it has one or more subagents actually
-// running, and neutral/muted otherwise -- regardless of whether the thread is
+// running, and neutral/muted otherwise, regardless of whether the thread is
 // active or open.
 //
 // This narrows HOY-256's static per-thread identity coloring for this glyph:

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { CloneResult, ForkMessages, SessionStats } from "@/lib/types";
 import { mockIpcModule } from "./ipcMock";
 
-// HOY-284: /clone duplicates the current thread into a new child thread; /fork
+// HOY-284: /clone duplicates the current thread into a new child thread. /fork
 // opens a get_fork_messages-backed picker whose pick branches a new thread.
 const createSession = mock<(...a: unknown[]) => Promise<string>>();
 const cloneSession = mock<(s: string) => Promise<CloneResult>>();
@@ -132,7 +132,7 @@ describe("fork picker (HOY-284)", () => {
   test("pickFork closes the picker and branches from the chosen entry", async () => {
     await useSessionStore.getState().openForkPicker("t1");
     useSessionStore.getState().pickFork("e2");
-    // Picker closes immediately; the branch runs via branchFromEntry -> fork.
+    // Picker closes immediately. The branch runs via branchFromEntry -> fork.
     expect(useSessionStore.getState().forkPicker).toBeNull();
     await Promise.resolve();
     await Promise.resolve();

@@ -10,7 +10,7 @@ export function dateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// Trailing-window filter. "all" returns every day; "7d"/"30d" keep days whose
+// Trailing-window filter. "all" returns every day. "7d"/"30d" keep days whose
 // key is on or after the window's first day (inclusive of today).
 export function daysInRange(
   days: UsageDay[],
@@ -39,7 +39,7 @@ function emptyDay(date: string): UsageDay {
 
 // A continuous, gap-filled day series for the trend chart: every calendar day
 // in the window, with real data where present and a zero day otherwise. "7d"/
-// "30d" are the trailing window ending today; "all" spans the first active day
+// "30d" are the trailing window ending today. "all" spans the first active day
 // through today. Keeps the x-axis time-accurate instead of collapsing gaps.
 export function trendDays(
   days: UsageDay[],
@@ -107,7 +107,7 @@ export function streaks(days: UsageDay[], today: Date = new Date()): Streaks {
   }
   let current = 0;
   const cursor = new Date(today);
-  // Allow today to be empty (streak may end yesterday) before walking back.
+  // Allow today to be empty (streak can end yesterday) before walking back.
   if (!set.has(dateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
   while (set.has(dateKey(cursor))) {
     current += 1;
@@ -122,7 +122,7 @@ function isNextDay(a: string, b: string): boolean {
   return dateKey(da) === b;
 }
 
-// Busiest local hour (0-23) by token total across the given days; null if idle.
+// Busiest local hour (0-23) by token total across the given days. Null if idle.
 export function peakHour(days: UsageDay[]): number | null {
   const buckets = new Array(24).fill(0);
   for (const d of days) for (let h = 0; h < 24; h++) buckets[h] += d.byHour[h] ?? 0;
@@ -182,7 +182,7 @@ export function heatmapGrid(
 }
 
 // Stable, distinct colors for the model charts (trend stacks, donut, legend,
-// ranking). Assigned by descending token rank; models past the palette fold
+// ranking). Assigned by descending token rank. Models past the palette fold
 // into "Other models" with the last color.
 export const MODEL_PALETTE = [
   "#4c9dff", // blue

@@ -2,22 +2,22 @@
 // this is a short-lived invocation of the SAME compiled sidecar binary, selected
 // by the HOY_VERIFY_COMMAND env var in hoy-sidecar.ts. Rust
 // (sidecar.rs::verify_goal_command) spawns us, captures the JSON result on
-// stdout, and exits us; we never reach runRpcMode. Task B's gate calls this once
+// stdout, and exits us. We never reach runRpcMode. Task B's gate calls this once
 // the transcript evaluator says a goal is met AND the goal pins a verifyCommand:
 // the command must exit 0 for the goal to actually be declared met.
 //
 // SHELL INVOCATION: we run the command through Pi's OWN shell resolution rather
 // than hard-coding a shell. Recon said to import Pi's `execCommand` from the
-// package root, but in the pinned Pi (0.80.7) `execCommand` is NOT re-exported
+// package root, but in the pinned Pi (0.84.0) `execCommand` is NOT re-exported
 // from the package root (only `getShellConfig`, `truncateTail`, and
 // `createLocalBashOperations` are) and its dist subpath is blocked by the
 // package `exports` map, so it cannot be imported. Instead we resolve the shell
-// with the root-exported `getShellConfig()` -- the exact function Pi's real bash
-// tool (createLocalBashOperations) uses -- and spawn it the same way the bash
+// with the root-exported `getShellConfig()`, the exact function Pi's real bash
+// tool (createLocalBashOperations) uses, and spawn it the same way the bash
 // tool does: `spawn(shell, [...args, command])`, i.e. `/bin/bash -c "<cmd>"` on
-// Unix (NOT `bash -lc`; Pi uses `-c`). We capture stdout/stderr separately with
+// Unix (NOT `bash -lc`. Pi uses `-c`). We capture stdout/stderr separately with
 // Node's built-in child_process.spawn (the same primitive execCommand and the
-// bash tool use internally) so we can report them as distinct fields; we do not
+// bash tool use internally) so we can report them as distinct fields. We do not
 // introduce any new generic exec surface. getShellConfig also handles the legacy
 // WSL bash `commandTransport: "stdin"` case, which we mirror.
 //
@@ -29,7 +29,7 @@
 // exactly like Pi's real bash tool. SIGTERM, then SIGKILL after a grace period,
 // escalated on ACTUAL exit state (child.exitCode/signalCode), never on
 // `child.killed` (which flips true the instant a signal is DISPATCHED, so a
-// TERM-trapping command would otherwise never be force-killed). Finally, an
+// TERM-trapping command will otherwise never be force-killed). Finally, an
 // ABSOLUTE failsafe timer emits a fail-soft result and exits UNCONDITIONALLY, so
 // the one-shot ALWAYS emits parseable JSON and exits within timeout+grace no
 // matter what the child does. This is what lets Rust's `.output()` (which has no
@@ -39,7 +39,7 @@
 // JSON object and exits 0. A spawn failure, a timeout, or a kill emits a
 // non-zero `code` (and, for timeout/kill, `killed: true`) rather than throwing
 // or exiting non-zero, so Rust always gets JSON. A non-zero code means the gate
-// FAILED, which Task B treats as "not met, keep working" -- the safe bias.
+// FAILED, which Task B treats as "not met, keep working", the safe bias.
 
 import { getShellConfig } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
@@ -51,9 +51,9 @@ export interface GoalVerifyResult {
   killed: boolean;
 }
 
-// Hard ceiling on how long a verify command may run before we kill it. A hung
-// command must never wedge the goal loop; a kill counts as a failed gate. The
-// default is 120s; HOY_VERIFY_TIMEOUT_MS overrides it (clamped to a sane range)
+// Hard ceiling on how long a verify command can run before we kill it. A hung
+// command must never wedge the goal loop. A kill counts as a failed gate. The
+// default is 120s. HOY_VERIFY_TIMEOUT_MS overrides it (clamped to a sane range)
 // so tests can drive a short timeout without waiting two minutes.
 const DEFAULT_VERIFY_TIMEOUT_MS = 120_000;
 const MIN_VERIFY_TIMEOUT_MS = 1_000;
@@ -83,7 +83,7 @@ function capTail(s: string): string {
   return s.length <= MAX_STREAM_CHARS ? s : s.slice(s.length - MAX_STREAM_CHARS);
 }
 
-// `buf` is already tail-capped to MAX_STREAM_CHARS; `total` is the full number of
+// `buf` is already tail-capped to MAX_STREAM_CHARS. `total` is the full number of
 // chars seen so we can report an accurate dropped-count marker.
 function formatStream(buf: string, total: number): string {
   if (total <= MAX_STREAM_CHARS) return buf;
@@ -106,8 +106,8 @@ function emit(result: GoalVerifyResult): never {
     process.exitCode = 0;
     process.stdout.end(json, () => process.exit(0));
   }
-  // Already emitted: do NOT write again and do NOT process.exit here (that could
-  // truncate the still-flushing first write); the pending end() callback exits.
+  // Already emitted: do NOT write again and do NOT process.exit here (that can
+  // truncate the still-flushing first write). The pending end() callback exits.
   return undefined as never;
 }
 
@@ -120,8 +120,8 @@ export async function runVerifyCommand(): Promise<never> {
     return emit({ code: -1, stdout: "", stderr: "verify error: no command provided", killed: false });
   }
 
-  // Resolve the shell exactly as Pi's bash tool does. getShellConfig may throw on
-  // a misconfigured Windows host; treat that as a failed gate rather than a crash.
+  // Resolve the shell exactly as Pi's bash tool does. getShellConfig can throw on
+  // a misconfigured Windows host. Treat that as a failed gate rather than a crash.
   let shell: string;
   let args: string[];
   let fromStdin: boolean;
@@ -148,7 +148,7 @@ export async function runVerifyCommand(): Promise<never> {
         windowsHide: true,
         // Own process group on Unix so we can signal the WHOLE tree (bash plus
         // any grandchildren holding the pipes) on timeout. Windows has no groups
-        // here; we fall back to child.kill().
+        // here. We fall back to child.kill().
         detached: process.platform !== "win32",
       });
     } catch (e) {
@@ -175,7 +175,7 @@ export async function runVerifyCommand(): Promise<never> {
 
     // Signal the child's whole process group (negative pid) on Unix, so bash AND
     // its grandchildren die and the pipes close. Windows falls back to the
-    // direct child. All wrapped in try/catch: the group may already be gone.
+    // direct child. All wrapped in try/catch: the group can already be gone.
     const killGroup = (signal: NodeJS.Signals) => {
       try {
         if (process.platform !== "win32" && typeof child.pid === "number") {
@@ -184,13 +184,13 @@ export async function runVerifyCommand(): Promise<never> {
           child.kill(signal);
         }
       } catch {
-        // Group already reaped, or no permission; nothing to do.
+        // Group already reaped, or no permission. Nothing to do.
       }
     };
 
     // These two escalation timers are armed only AFTER the SIGTERM fires (inside
-    // the timeout callback below), never at spawn time -- otherwise, with a 120s
-    // timeout and a 5s grace, a legitimately long-running command would be
+    // the timeout callback below), never at spawn time, otherwise, with a 120s
+    // timeout and a 5s grace, a legitimately long-running command will be
     // SIGKILLed at 5s. Declared here so `finish` can clear whichever are pending.
     let graceTimer: ReturnType<typeof setTimeout> | undefined;
     let failsafeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -201,8 +201,8 @@ export async function runVerifyCommand(): Promise<never> {
 
       // Escalate to SIGKILL after a grace period, but only if the child has NOT
       // actually exited. We check real exit state (exitCode/signalCode), never
-      // child.killed -- that flips true the instant SIGTERM is DISPATCHED, so a
-      // TERM-trapping command would never be force-killed if we guarded on it.
+      // child.killed, that flips true the instant SIGTERM is DISPATCHED, so a
+      // TERM-trapping command will never be force-killed if we guarded on it.
       graceTimer = setTimeout(() => {
         if (child.exitCode === null && child.signalCode === null) killGroup("SIGKILL");
       }, KILL_GRACE_MS);
@@ -254,7 +254,7 @@ export async function runVerifyCommand(): Promise<never> {
     });
 
     child.on("close", (code, signal) => {
-      // A killed (timeout) run has a null exit code; report a non-zero code so the
+      // A killed (timeout) run has a null exit code. Report a non-zero code so the
       // gate fails. Otherwise pass the real exit code straight through.
       const exit = code ?? (killed || signal ? -1 : 0);
       finish({

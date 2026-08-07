@@ -48,7 +48,7 @@ export type AgentEvent =
     }
   | { kind: "error"; message: string }
   // HOY-282: the sidecar rebound to a new session file (fork/clone). The new file
-  // path is not carried; read it via getSessionStats. Only arrives when a
+  // path is not carried. Read it via getSessionStats. Only arrives when a
   // streaming sink is attached (a mid-turn switch).
   | { kind: "sessionStart"; reason: string; previousSessionFile?: string }
   | { kind: "aborted" }
@@ -82,7 +82,7 @@ export interface ExtWidget {
 }
 
 // An extension UI dialog awaiting an answer (HOY-186). The agent is blocked
-// until respondPermission resolves it; rendered as an inline approval card.
+// until respondPermission resolves it. Rendered as an inline approval card.
 export interface PermissionRequest {
   requestId: string;
   // "select" (options), "confirm" (yes/no message), "input" (text + placeholder),
@@ -101,7 +101,7 @@ export interface PermissionRequest {
   toolArgs?: unknown;
 }
 
-// The four thread permission modes (HOY-186). Wire values; the composer maps
+// The four thread permission modes (HOY-186). Wire values. The composer maps
 // them to display labels.
 export type PermissionMode = "default" | "acceptEdits" | "plan" | "autonomous";
 
@@ -122,13 +122,13 @@ export interface SessionStats {
     total: number;
   };
   cost: number;
-  // Durable path of the session's JSONL on disk (M4); persisted onto the thread
+  // Durable path of the session's JSONL on disk (M4). Persisted onto the thread
   // so it can be reopened after restart. Null for an in-memory session.
   sessionFile?: string | null;
 }
 
 // Mirror of usage_stats.rs UsageReport (HOY-262). Per-day buckets in ascending
-// date order; the frontend derives ranges/streaks/peak-hour from these.
+// date order. The frontend derives ranges/streaks/peak-hour from these.
 export interface UsageTokenBreakdown {
   input: number;
   output: number;
@@ -177,7 +177,7 @@ export interface ToolUI {
 // order the model produced it.
 // `entryId` (HOY-304) is the session entry this block was restored from, so the
 // /tree navigator can scroll the transcript to a clicked node. Present only on a
-// restored transcript (get_entries-aligned); undefined on live-streamed blocks.
+// restored transcript (get_entries-aligned). Undefined on live-streamed blocks.
 export type AssistantBlock =
   | { kind: "text"; content: string; entryId?: string }
   | { kind: "tool"; tool: ToolUI; entryId?: string };
@@ -198,7 +198,7 @@ export interface ImageAttachment {
   id: string;
   name: string;
   mimeType: string;
-  // Object URL for the <img> preview; revoked on remove and after send.
+  // Object URL for the <img> preview. Revoked on remove and after send.
   previewUrl: string;
   content: ImageContent;
 }
@@ -207,7 +207,7 @@ export interface ImageAttachment {
 export type StreamingBehavior = "steer" | "followUp";
 
 // One entry in the @ context picker's file list (HOY-220). Mirror of commands.rs
-// PathEntry; `path` is relative to the project root.
+// PathEntry. `path` is relative to the project root.
 export interface PathEntry {
   path: string;
   name: string;
@@ -235,7 +235,7 @@ export type Turn =
       // @ context attached to this send (HOY-220), for display pills. Not
       // restored from disk (the content is inlined into the message text).
       contexts?: ContextRef[];
-      // Session entry this turn was restored from (HOY-304); undefined when live.
+      // Session entry this turn was restored from (HOY-304). Undefined when live.
       entryId?: string;
     }
   | {
@@ -250,7 +250,7 @@ export type Turn =
       };
       blocks: AssistantBlock[];
       // Session entry of the first assistant message folded into this turn
-      // (HOY-304); the per-block entryId is the precise scroll target.
+      // (HOY-304). The per-block entryId is the precise scroll target.
       entryId?: string;
       streaming: boolean;
       // The user stopped this turn (HOY-197). Renders a subtle inline marker
@@ -312,7 +312,7 @@ export interface PiState {
 }
 
 // Mirror of events.rs SlashCommand: a command for the composer "/" autocomplete
-// (HOY-223). `name` has no leading slash; skills are "skill:<name>". "hoy" is a
+// (HOY-223). `name` has no leading slash. Skills are "skill:<name>". "hoy" is a
 // Hoy built-in (e.g. /compact) added client-side, not returned by get_commands.
 export interface SlashCommand {
   name: string;
@@ -392,7 +392,7 @@ export interface SessionTree {
 }
 
 // Branch RPC results (HOY-281). fork returns the forked user message text (for
-// composer prefill) and a cancelled flag; clone just a cancelled flag;
+// composer prefill) and a cancelled flag. Clone a cancelled flag;
 // get_fork_messages the forkable user-message entries for a picker.
 export interface ForkResult {
   text?: string;
@@ -410,7 +410,7 @@ export interface ForkMessages {
 }
 
 // Which view the ThreadView's right-side dock is showing (HOY-280). The dock is
-// a reusable right-sidebar host, Zed-style; the `/tree` navigator is the first
+// a reusable right-sidebar host, Zed-style. The `/tree` navigator is the first
 // tenant. A git tooling panel is a planned second view, so this is a union, not
 // a bool. `null` / absent means the dock is closed for that thread.
 export type RightDockView = "tree";
@@ -424,7 +424,7 @@ export interface ModelRef {
 
 // Goal Mode (HOY-263): the one-shot evaluator's verdict on whether a thread's
 // goal condition is met. Mirrors GoalEvaluation in src-tauri/src/events.rs.
-// `met` is only true on clear evidence; the evaluator fails open to
+// `met` is only true on clear evidence. The evaluator fails open to
 // { met: false, reason: "evaluator error: ..." } on any failure, so the loop
 // keeps working on uncertainty rather than falsely stopping.
 export interface GoalEvaluation {
@@ -434,7 +434,7 @@ export interface GoalEvaluation {
 
 // Goal Mode v2 (HOY-298): the deterministic verify command's result. Mirrors
 // GoalVerifyResult in src-tauri/src/events.rs (serde camelCase). The one-shot
-// sidecar always emits this and exits 0; a non-zero `code` (spawn failure,
+// sidecar always emits this and exits 0. A non-zero `code` (spawn failure,
 // timeout/kill with `killed`, or a real non-zero exit) means the verify gate
 // FAILED, which Task B treats as "not met, keep working".
 export interface GoalVerifyResult {
@@ -446,7 +446,7 @@ export interface GoalVerifyResult {
 
 // Goal Mode v3 (HOY-299): the independent read-only auditor's verdict on whether
 // a thread's goal condition holds against the ACTUAL repo files. Mirrors GoalAudit
-// in src-tauri/src/events.rs. `met` is only true on clear file evidence; the
+// in src-tauri/src/events.rs. `met` is only true on clear file evidence. The
 // auditor fails open to { met: false, reason: "auditor ..." } on any error or
 // timeout, so the loop keeps working on uncertainty rather than falsely stopping.
 export interface GoalAudit {
@@ -460,9 +460,9 @@ export interface GoalAudit {
 export interface Thread {
   id: string;
   title: string;
-  // Epoch ms of last activity; drives the relative timestamp in the sidebar.
+  // Epoch ms of last activity. Drives the relative timestamp in the sidebar.
   updatedAt: number;
-  // The live sidecar process this thread drives right now (ephemeral; null when
+  // The live sidecar process this thread drives right now (ephemeral. Null when
   // no sidecar is running, e.g. after a panel close or a fresh app start).
   sessionId?: string | null;
   // The durable Pi session JSONL on disk (M4). This is the thread's stable
@@ -473,35 +473,35 @@ export interface Thread {
   archived?: boolean;
   // Set once the user manually renames the thread. Recorded as a flag rather
   // than inferred from the title text, so renaming to the literal default still
-  // counts. A renamed-but-never-prompted thread is user work and persists;
+  // counts. A renamed-but-never-prompted thread is user work and persists
   // untouched threads never reach workspace.json.
   renamed?: boolean;
-  // Unsent composer text, present only in the persisted workspace shape; the
+  // Unsent composer text, present only in the persisted workspace shape. The
   // live value lives in the store's drafts slice.
   draft?: string | null;
   // Selected model. Set on pick (deferred until a session exists), hydrated from
-  // get_state after spawn. The session JSONL owns it after the first prompt;
+  // get_state after spawn. The session JSONL owns it after the first prompt
   // persistProjects also caches it in workspace.json so the sidebar can render
   // the thread's provider glyph on load without spawning (HOY-267), reconciled
   // against get_state when the thread is opened.
   model?: ModelRef | null;
-  // Permission mode (HOY-186). Persisted with the thread; absent means default.
+  // Permission mode (HOY-186). Persisted with the thread. Absent means default.
   // Applied to the live sidecar via /hoy_mode, re-applied after spawn/restore.
   permissionMode?: PermissionMode | null;
-  // Set on a spawned child thread (HOY-231); null/absent on user threads. Kept
-  // flat in project.threads; the sidebar derives nesting from this link.
+  // Set on a spawned child thread (HOY-231). Null/absent on user threads. Kept
+  // flat in project.threads. The sidebar derives nesting from this link.
   parentThreadId?: string | null;
   // The subagent type + parent handle that produced this child.
   spawnedBy?: { type: string; agentId: string } | null;
   // Epoch ms a child delivered its result to its parent. Terminal marker: set
-  // once, on first delivery; gates deliver-once and signals a done child. HOY-239/240.
+  // once, on first delivery. Gates deliver-once and signals a done child. HOY-239/240.
   completedAt?: number | null;
-  // Thinking level (HOY-204). Session-local only, not persisted; workspace.rs
+  // Thinking level (HOY-204). Session-local only, not persisted. workspace.rs
   // knows nothing of this field. Hydrated from get_state on session open.
   thinkingLevel?: ThinkingLevel | null;
   // Goal Mode (HOY-263): the thread's active/paused goal loop, if any. Persisted
   // through workspace.json (see workspace.rs WsThread.goal) so the goal card
-  // renders before a sidecar spawns; loadWorkspace resets counters and demotes
+  // renders before a sidecar spawns. LoadWorkspace resets counters and demotes
   // "active" to "paused" on restore (see store.ts initWorkspace).
   goal?: ThreadGoal;
 }
@@ -552,7 +552,7 @@ export interface ProviderAuth {
 }
 
 // Mirror of mcp_config. Which file a server lives in: the global agent dir or
-// the active project's .hoy/mcp.json.
+// the active project's.hoy/mcp.json.
 export type McpScope = "global" | "project";
 
 // Mirror of mcp_config::McpServerEntry. `spec` is the raw JSON object under
@@ -567,7 +567,7 @@ export interface McpServerEntry {
 }
 
 // Mirror of mcp_config::McpServerList. `global` and `project` (<project>/.hoy/
-// mcp.json) are editable here; `projectShared` (<project>/.mcp.json, the
+// mcp.json) are editable here. `projectShared` (<project>/.mcp.json, the
 // standard cross-tool file) is read-only, shown so the user sees what the agent
 // will use.
 export interface McpServerList {
@@ -579,7 +579,7 @@ export interface McpServerList {
 // Skills management (HOY-323). One discovered skill, from the sidecar's
 // HOY_LIST_SKILLS dump (which reads Pi's DefaultResourceLoader.getSkills). Scope
 // mirrors Pi's SourceScope: "user" is the global ~/.hoy/skills dir, "project" is
-// the active project's .hoy/skills, "temporary" is a one-off path.
+// the active project's.hoy/skills, "temporary" is a one-off path.
 export interface SkillInfo {
   name: string;
   description: string;
@@ -604,11 +604,11 @@ export interface SkillList {
 
 // Mirror of subagents_config::SubagentScope. Which file a subagent type lives
 // in: builtin (Pi's own, read-only), the global agent dir, or the active
-// project's .hoy/subagents dir.
+// project's.hoy/subagents dir.
 export type SubagentScope = "builtin" | "global" | "project";
 
 // Mirror of subagents_config's registry entry (list_subagents). `enabled`
-// reflects the per-scope on/off toggle (set_subagent_enabled); `model`/
+// reflects the per-scope on/off toggle (set_subagent_enabled). `model`/
 // `thinking` are fuzzy picks resolved against the live model list when a
 // child thread spawns (see resolveModelRef in store.ts), not identities.
 export interface SubagentDef {
@@ -623,20 +623,20 @@ export interface SubagentDef {
   enabled: boolean;
   // HOY-244: type forks the parent's transcript at spawn instead of a fresh start.
   inheritContext?: boolean;
-  // HOY-244: per-type turn budget; the run is aborted once it is spent.
+  // HOY-244: per-type turn budget. The run is aborted once it is spent.
   maxTurns?: number | null;
   // HOY-254: the system prompt body, emitted by the list one-shot so an edit
   // form can pre-fill it. Present for global/project types and built-ins with a
-  // static body (Explore, Plan); null for general-purpose (no body, inherits base).
+  // static body (Explore, Plan). Null for general-purpose (no body, inherits base).
   body?: string | null;
 }
 
 // HOY-254: the payload for authoring a custom subagent type (writeSubagent). Rust
-// serializes these fields into the type's .md frontmatter + body; the field names
+// serializes these fields into the type's.md frontmatter + body. The field names
 // mirror SubagentDef, and Rust omits any null/empty ones so the file stays minimal
 // and the sidecar registry applies its own defaults on read. `enabled` is not part
 // of this write: a new type is enabled by default and the on/off state is owned by
-// the separate two-sided override (setSubagentEnabled), not the .md.
+// the separate two-sided override (setSubagentEnabled), not the.md.
 export interface SubagentWrite {
   name: string;
   description?: string | null;
@@ -669,7 +669,7 @@ export type OAuthEvent =
   | { kind: "progress"; message: string }
   | {
       kind: "prompt";
-      promptType: "text" | "manual_code";
+      promptType: "text" | "secret" | "manual_code";
       message: string;
       placeholder?: string;
     }

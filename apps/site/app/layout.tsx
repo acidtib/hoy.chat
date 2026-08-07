@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     "local coding agent",
     "bring your own API keys",
   ],
-  // Every deploy consolidates to the production apex; the beta stays out of the
+  // Every deploy consolidates to the production apex. The beta stays out of the
   // index entirely until it becomes that apex.
   alternates: { canonical: canonical("/") },
   robots: IS_PRODUCTION ? undefined : { index: false, follow: false },
@@ -60,12 +60,12 @@ export default function RootLayout({
   return (
     // suppressHydrationWarning: the beforeInteractive js-flag script adds the
     // `js` class to <html> before hydration (intentionally not server-rendered,
-    // so no-JS never hides reveal content); body suppression absorbs attributes
+    // so no-JS never hides reveal content). Body suppression absorbs attributes
     // injected by browser extensions (e.g. cz-shortcut-listen).
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        {/* Set .js before paint so scroll-reveal pre-states apply only when JS
-            can undo them; no-JS and headless renders stay fully visible. */}
+        {/* Set.js before paint so scroll-reveal pre-states apply only when JS
+can undo them. No-JS and headless renders stay fully visible.*/}
         <Script id="js-flag" strategy="beforeInteractive">
           {`document.documentElement.classList.add('js')`}
         </Script>

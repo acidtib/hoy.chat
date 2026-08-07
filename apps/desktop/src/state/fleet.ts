@@ -8,7 +8,7 @@ import { childThreadIdsOf, descendantThreadIdsOf } from "./delivery";
 export type FleetStatus = "running" | "queued" | "done" | "error";
 
 // Narrow a store record to only the given ids (HOY-249). A fleet component
-// subscribes to just its members' slice via useShallow, so a streaming delta
+// subscribes to its members' slice via useShallow, so a streaming delta
 // from an unrelated thread does not re-render it. The selectors below look up
 // by id, so a member-only slice yields identical results to the full record.
 export function pickByIds<V>(record: Record<string, V>, ids: string[]): Record<string, V> {
@@ -18,7 +18,7 @@ export function pickByIds<V>(record: Record<string, V>, ids: string[]): Record<s
 }
 
 // A fleet root: a non-subagent thread with at least one child. A single
-// direct child is enough to qualify; depth >= 2 is not required.
+// direct child is enough to qualify. Depth >= 2 is not required.
 export function fleetRoots(projects: Project[]): Thread[] {
   return projects
     .flatMap((p) => p.threads)

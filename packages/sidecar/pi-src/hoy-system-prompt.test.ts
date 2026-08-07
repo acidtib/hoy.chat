@@ -20,8 +20,8 @@ import {
   PROPOSED_PLAN_FORMAT,
 } from "./hoy-system-prompt";
 
-// Pi 0.80.7 edit guidelines (core/tools/edit.js). The prompt must carry these
-// verbatim; replacement strips pi's ability to inject them.
+// Pi 0.84.0 edit guidelines (core/tools/edit.js). The prompt must carry these
+// verbatim. Replacement strips pi's ability to inject them.
 const PI_EDIT_GUIDELINES = [
   "Use edit for precise changes (edits[].oldText must match exactly)",
   "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
@@ -66,7 +66,7 @@ describe("hoy system prompt assembly", () => {
 
     // Docs block points at the pinned GitHub tag, never at local package paths.
     expect(prompt).toContain(
-      "https://raw.githubusercontent.com/earendil-works/pi/v0.80.7/packages/coding-agent/docs/extensions.md",
+      "https://raw.githubusercontent.com/earendil-works/pi/v0.84.0/packages/coding-agent/docs/extensions.md",
     );
     expect(prompt).not.toContain("node_modules");
 
@@ -130,7 +130,7 @@ describe("plan mode: two-phase design gate (HOY-276 follow-up)", () => {
     expect(PROPOSED_PLAN_FORMAT).toContain("**Global Constraints:**");
     expect(PROPOSED_PLAN_FORMAT).toContain("Consumes:");
     expect(PROPOSED_PLAN_FORMAT).toContain("Produces:");
-    // Global Constraints sits up top (after Tech Stack) before the steps; the
+    // Global Constraints sits up top (after Tech Stack) before the steps. The
     // Consumes/Produces guidance lives in the Steps section.
     expect(PROPOSED_PLAN_FORMAT.indexOf("**Global Constraints:**")).toBeLessThan(
       PROPOSED_PLAN_FORMAT.indexOf("## Steps"),

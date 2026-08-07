@@ -1,5 +1,5 @@
 // Strict JSONL framing for Pi's RPC stream. Mirrors Pi's own jsonl.js:
-// records are delimited by LF only; a trailing CR is stripped. U+2028 and
+// records are delimited by LF only. A trailing CR is stripped. U+2028 and
 // U+2029 are valid inside JSON string values and must NOT split a record, so
 // we scan for b'\n' over raw bytes and never decode-then-split. Do not replace
 // this with a Unicode-aware line reader (Node readline, str::lines on a decoded
@@ -14,14 +14,14 @@ impl JsonlFramer {
         Self { buf: Vec::new() }
     }
 
-    // Feed a raw chunk; return every complete record it completes. Records are
+    // Feed a raw chunk. Return every complete record it completes. Records are
     // returned without the trailing LF and without a trailing CR. Empty lines
     // are skipped.
     pub fn push(&mut self, chunk: &[u8]) -> Vec<String> {
         self.buf.extend_from_slice(chunk);
         let mut out = Vec::new();
         // Scan forward over the buffer, advancing `start` past each record, then
-        // drain the consumed prefix once. Draining per record instead would
+        // drain the consumed prefix once. Draining per record instead will
         // re-shift the trailing bytes on every iteration (quadratic on a chunk
         // that completes many small records).
         let mut start = 0;
@@ -54,7 +54,7 @@ mod tests {
     use super::*;
 
     // The landmine: U+2028 inside a JSON string value must stay inside its
-    // record. A reader that treats U+2028 as a line separator would split this
+    // record. A reader that treats U+2028 as a line separator will split this
     // single record into two and corrupt the JSON.
     #[test]
     fn u2028_inside_string_does_not_split() {
