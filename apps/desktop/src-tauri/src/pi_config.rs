@@ -210,6 +210,13 @@ const PROVIDERS: &[ProviderDef] = &[
         label: "Radius",
         env: "RADIUS_API_KEY",
     },
+    // Hoy-owned provider registered by createHoyMeta in the sidecar. env is the
+    // fallback Pi reads for requests when no auth.json entry exists.
+    ProviderDef {
+        id: "meta",
+        label: "Meta Model API",
+        env: "META_API_KEY",
+    },
     ProviderDef {
         id: "google",
         label: "Google Gemini",
@@ -662,12 +669,78 @@ mod tests {
             Some("AI_GATEWAY_API_KEY")
         );
         assert_eq!(env_var_for("radius").as_deref(), Some("RADIUS_API_KEY"));
+        assert_eq!(env_var_for("meta").as_deref(), Some("META_API_KEY"));
         // Unknown id falls back to the uppercase convention.
         assert_eq!(
             env_var_for("totally-unknown").as_deref(),
             Some("TOTALLY_UNKNOWN_API_KEY")
         );
         assert_eq!(env_var_for("alibaba-cloud"), None);
+    }
+
+    #[test]
+    fn meta_key_writes_exact_api_key_schema() {
+        let path = temp_auth_path("meta-schema");
+        set_api_key_at(&path, "meta", "meta-secret-123").unwrap();
+        let map = read_auth_map_at(&path).unwrap();
+        let entry = map.get("meta").unwrap();
+        assert_eq!(entry["type"], "api_key");
+        assert_eq!(entry["key"], "meta-secret-123");
+        assert_eq!(map.len(), 1);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    // Serializes process-env mutation against itself; no other test reads
+    // HOY_AGENT_DIR or META_API_KEY, so concurrent tests cannot observe it.
+    static ENV_MUTATION_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn meta_statuses_report_auth_file_env_and_missing() {
+        let _guard = ENV_MUTATION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("hoy-meta-status-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let previous_dir = std::env::var_os(ENV_AGENT_DIR);
+        std::env::set_var(ENV_AGENT_DIR, &dir);
+        let previous_key = std::env::var_os("META_API_KEY");
+        std::env::remove_var("META_API_KEY");
+
+        let cleanup = || {
+            match previous_dir {
+                Some(v) => std::env::set_var(ENV_AGENT_DIR, v),
+                None => std::env::remove_var(ENV_AGENT_DIR),
+            }
+            match previous_key {
+                Some(v) => std::env::set_var("META_API_KEY", v),
+                None => std::env::remove_var("META_API_KEY"),
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        };
+
+        // Auth-file entry wins over env.
+        set_api_key_at(&dir.join("auth.json"), "meta", "stored-key").unwrap();
+        std::env::set_var("META_API_KEY", "env-key");
+        let status = statuses(&["meta".to_string()]).unwrap();
+        assert_eq!(status[0].configured, true);
+        assert_eq!(status[0].kind.as_deref(), Some("api_key"));
+        assert_eq!(status[0].source.as_deref(), Some("authFile"));
+        assert_eq!(status[0].removable, true);
+
+        // Env-only presence surfaces as configured but not removable.
+        remove_provider_at(&dir.join("auth.json"), "meta").unwrap();
+        let status = statuses(&["meta".to_string()]).unwrap();
+        assert_eq!(status[0].configured, true);
+        assert_eq!(status[0].source.as_deref(), Some("environment"));
+        assert_eq!(status[0].removable, false);
+
+        // Neither present: not configured.
+        std::env::remove_var("META_API_KEY");
+        let status = statuses(&["meta".to_string()]).unwrap();
+        assert_eq!(status[0].configured, false);
+        assert_eq!(status[0].kind, None);
+        assert_eq!(status[0].source, None);
+
+        cleanup();
     }
 
     #[test]
@@ -776,6 +849,9 @@ mod tests {
         let count = ids.len();
         ids.dedup();
         assert_eq!(ids.len(), count, "provider ids must be unique");
+        let meta = list.iter().find(|p| p.id == "meta").unwrap();
+        assert_eq!(meta.label, "Meta Model API");
+        assert_eq!(meta.env.as_deref(), Some("META_API_KEY"));
         let google = list.iter().find(|p| p.id == "google").unwrap();
         assert_eq!(google.env.as_deref(), Some("GEMINI_API_KEY"));
         let radius = list.iter().find(|p| p.id == "radius").unwrap();
