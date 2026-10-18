@@ -115,9 +115,9 @@ describe("handler mode selection", () => {
     expect(messages[0].content).toContain("Create an AGENTS.md");
   });
 
-  test("idle sends immediately with no deliverAs; streaming queues as followUp", async () => {
+  test("always passes deliverAs followUp, idle or streaming", async () => {
     const idle = await run(() => {}, true);
-    expect(idle.messages[0].options).toBeUndefined();
+    expect(idle.messages[0].options).toEqual({ deliverAs: "followUp" });
 
     const streaming = await run(() => {}, false);
     expect(streaming.messages[0].options).toEqual({ deliverAs: "followUp" });

@@ -87,6 +87,7 @@ pub fn run() {
             // before anything reads the agent dir (the sidecar spawn below is the
             // first consumer). Best effort. It logs and continues on failure.
             pi_config::migrate_flatten_agent_dir();
+            pi_config::migrate_azure_provider_key();
             alibaba_config::migrate_legacy_files();
 
             // Debug builds run in the hoyd namespace (HOY-206): retitle the OS

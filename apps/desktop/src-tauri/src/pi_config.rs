@@ -152,6 +152,32 @@ fn migrate_dir_contents_up(legacy: &Path, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
+// Pi 1.0.3 renamed the provider id `azure-openai-responses` to `azure` and does
+// not migrate auth.json itself. Best effort, never clobbers an existing `azure`
+// entry. User-owned models.json/settings.json references are left alone.
+pub fn migrate_azure_provider_key() {
+    let Ok(path) = auth_path() else { return };
+    if let Err(e) = rename_provider_key_at(&path, "azure-openai-responses", "azure") {
+        eprintln!("[hoy-desktop] azure auth.json migration: {e}");
+    }
+}
+
+fn rename_provider_key_at(path: &Path, from: &str, to: &str) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let _guard = AUTH_MUTATION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut map = read_auth_map_at(path)?;
+    if map.contains_key(to) {
+        return Ok(());
+    }
+    let Some(entry) = map.remove(from) else {
+        return Ok(());
+    };
+    map.insert(to.to_string(), entry);
+    write_auth_map_atomic_at(path, &map)
+}
+
 fn auth_path() -> Result<PathBuf, String> {
     Ok(agent_dir()?.join("auth.json"))
 }
@@ -210,8 +236,6 @@ const PROVIDERS: &[ProviderDef] = &[
         label: "Radius",
         env: "RADIUS_API_KEY",
     },
-    // Hoy-owned provider registered by createHoyMeta in the sidecar. env is the
-    // fallback Pi reads for requests when no auth.json entry exists.
     ProviderDef {
         id: "meta",
         label: "Meta Model API",
@@ -263,7 +287,7 @@ const PROVIDERS: &[ProviderDef] = &[
         env: "HF_TOKEN",
     },
     ProviderDef {
-        id: "azure-openai-responses",
+        id: "azure",
         label: "Azure OpenAI Responses",
         env: "AZURE_OPENAI_API_KEY",
     },
@@ -608,6 +632,22 @@ mod tests {
         assert_eq!(map["anthropic"]["access"], "tok-abc");
         assert_eq!(map["anthropic"]["refresh"], "ref-xyz");
         assert_eq!(map["openrouter"]["type"], "api_key");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn renames_legacy_azure_key_without_clobbering() {
+        let path = temp_auth_path("azure-rename");
+        set_api_key_at(&path, "azure-openai-responses", "sk-legacy").unwrap();
+        rename_provider_key_at(&path, "azure-openai-responses", "azure").unwrap();
+        let map = read_auth_map_at(&path).unwrap();
+        assert_eq!(map["azure"]["key"], "sk-legacy");
+        assert!(!map.contains_key("azure-openai-responses"));
+
+        set_api_key_at(&path, "azure-openai-responses", "sk-stale").unwrap();
+        rename_provider_key_at(&path, "azure-openai-responses", "azure").unwrap();
+        let map = read_auth_map_at(&path).unwrap();
+        assert_eq!(map["azure"]["key"], "sk-legacy");
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

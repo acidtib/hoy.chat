@@ -128,11 +128,10 @@ export function createHoyInit() {
           "info",
         );
         const prompt = buildInitPrompt(mode, ctx.cwd);
-        // Do not block the handler (HOY-215). sendUserMessage always triggers a
-        // turn. When idle it sends immediately, so deliverAs is only needed to
-        // queue behind a turn that is mid-stream (omitting it then throws).
-        if (ctx.isIdle()) pi.sendUserMessage(prompt);
-        else pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+        // Do not block the handler (HOY-215). Pi ignores deliverAs when idle and
+        // throws without it once a run is starting or streaming (Pi 1.2 counts
+        // run startup as busy, so an isIdle() check can race).
+        pi.sendUserMessage(prompt, { deliverAs: "followUp" });
       },
     });
   };

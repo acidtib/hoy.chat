@@ -10,6 +10,10 @@ export const ALIBABA_PROVIDERS = [
 
 export type AlibabaProviderId = (typeof ALIBABA_PROVIDERS)[number];
 
+// Pi 1.2 made ProviderModelConfig a chat/image/classifier union and does not
+// export the chat member; Alibaba only serves chat models.
+type ChatModelConfig = Extract<ProviderModelConfig, { reasoning: boolean }>;
+
 interface EndpointPair {
   openAiBaseUrl: string;
   anthropicBaseUrl: string;
@@ -31,7 +35,7 @@ interface ProviderConfig {
 interface CacheEntry {
   fetchedAt: number;
   endpoints: StoredEndpoints;
-  models: ProviderModelConfig[];
+  models: ChatModelConfig[];
 }
 
 interface AlibabaCache {
@@ -131,7 +135,7 @@ function inferContextWindow(id: string): number {
   return 131_072;
 }
 
-export function modelFromId(id: string, name?: string): ProviderModelConfig {
+export function modelFromId(id: string, name?: string): ChatModelConfig {
   const reasoning = REASONING_MODEL.test(id);
   const vision = VISION_MODEL.test(id) || /^qwen3\.[5-9]-plus\b/i.test(id) || /kimi/i.test(id);
   return {
@@ -147,7 +151,7 @@ export function modelFromId(id: string, name?: string): ProviderModelConfig {
   };
 }
 
-export function buildModels(models: ProviderModelConfig[], endpoints: EndpointPair): ProviderModelConfig[] {
+export function buildModels(models: ChatModelConfig[], endpoints: EndpointPair): ChatModelConfig[] {
   return models.map((model) => {
     const openAi = /deepseek/i.test(model.id);
     return {
@@ -158,7 +162,7 @@ export function buildModels(models: ProviderModelConfig[], endpoints: EndpointPa
   });
 }
 
-async function fetchModels(endpoints: EndpointPair, key: string): Promise<ProviderModelConfig[]> {
+async function fetchModels(endpoints: EndpointPair, key: string): Promise<ChatModelConfig[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   try {
@@ -195,7 +199,7 @@ export function createHoyAlibaba(agentDir: string) {
       ALIBABA_PROVIDERS.map(async (provider) => {
         const endpoints = endpointPair(config, provider);
         const key = apiKey(auth[provider]);
-        if (!key) return { provider, endpoints, models: [] as ProviderModelConfig[], fresh: false };
+        if (!key) return { provider, endpoints, models: [] as ChatModelConfig[], fresh: false };
         const prior = cache.providers?.[provider];
         if (prior?.models.length && sameEndpoints(prior.endpoints, endpoints)) {
           if (Date.now() - prior.fetchedAt >= CACHE_MAX_AGE_MS || Date.now() < prior.fetchedAt) {
@@ -209,7 +213,7 @@ export function createHoyAlibaba(agentDir: string) {
           return { provider, endpoints, models, fresh: true };
         } catch (error) {
           console.warn(`[alibaba] ${provider} catalog unavailable: ${error instanceof Error ? error.message : String(error)}`);
-          return { provider, endpoints, models: [] as ProviderModelConfig[], fresh: false };
+          return { provider, endpoints, models: [] as ChatModelConfig[], fresh: false };
         }
       }),
     );

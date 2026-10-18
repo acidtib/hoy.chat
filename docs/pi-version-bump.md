@@ -2,12 +2,13 @@
 
 Pi (`@earendil-works/pi-coding-agent`) is pinned to an exact version; its SDK/RPC
 surface is still evolving, so every bump is deliberate. Currently pinned:
-**0.84.0** (`packages/sidecar/pi-src/package.json`).
+**1.3.0** (`packages/sidecar/pi-src/package.json`).
 
 On every bump:
 
 - Update `@earendil-works/pi-coding-agent` in `dependencies` **and**
-  `@earendil-works/pi-agent-core`, `pi-ai`, `pi-tui` in `overrides` in
+  `@earendil-works/pi-agent-core`, `pi-ai`, `pi-tui`, `pi-codemode`, `pi-mcp`,
+  `pi-telemetry` in `overrides` in
   `packages/sidecar/pi-src/package.json` to the same version — those three
   ship as caret ranges and drift ahead of `pi-coding-agent` on their own patch
   releases if left unpinned. Also check whether `pi-coding-agent`'s own
@@ -48,5 +49,14 @@ Pi 0.80.7 renamed the custom OpenAI Responses session-affinity option. User-owne
 `~/.hoy/models.json` entries using `compat.sendSessionIdHeader: false` must use
 `compat.sessionAffinityFormat: "openai-nosession"` instead. Hoy does not rewrite
 user-maintained custom model configuration.
+
+Pi 1.0.3 renamed the provider id `azure-openai-responses` to `azure`. Hoy
+renames the `auth.json` key on startup (`migrate_azure_provider_key`); user-owned
+`models.json`/`settings.json` references are not rewritten.
+
+Pi 0.99 ships built-in `mcp`, `codemode`, `tool-search`, and `llama.cpp`
+extensions, but only the CLI's `main.js` loads them. Hoy's SDK entry does not, so
+they do not collide with `createHoyMcp`. Re-check this if `hoy-sidecar.ts` ever
+starts passing Pi's `builtInExtensions`.
 
 RPC surface coverage per version is tracked in `docs/pi-rpc-coverage.md`.
