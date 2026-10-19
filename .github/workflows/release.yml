@@ -33,13 +33,17 @@ jobs:
       release_created: ${{ steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp.outputs.tag_name }}
     steps:
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Release commits, tags, and releases; the release PR; its labels.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
 
-      - uses: googleapis/release-please-action@v5
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: rp
         with:
           token: ${{ steps.app.outputs.token }}
@@ -80,109 +84,31 @@ jobs:
     if: ${{ !cancelled() && needs.prepare.result == 'success' }}
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-latest # Apple Silicon
-            args: '--target aarch64-apple-darwin'
-            triple: aarch64-apple-darwin
-            rust_targets: aarch64-apple-darwin
-            tauri_script: ''
-          - platform: macos-latest # Intel
-            args: '--target x86_64-apple-darwin'
-            triple: x86_64-apple-darwin
-            rust_targets: x86_64-apple-darwin
-            tauri_script: ''
-          - platform: ubuntu-22.04
-            # --verbose is a documented workaround: without it, linuxdeploy's
-            # AppImage step fails on the CI runner (tauri-apps/tauri#14796).
-            args: '--verbose'
-            triple: x86_64-unknown-linux-gnu
-            rust_targets: ''
-            # Linux builds through a wrapper that shelters + repacks the bun
-            # sidecar so the AppImage's sidecar is not corrupted (HOY-217).
-            # tauri-action execs tauriScript directly via execa with cwd set to
-            # projectPath (apps/desktop), with no shell, so workspace variables
-            # do not expand there. A path relative to apps/desktop avoids that.
-            tauri_script: 'bash ../../scripts/linux/build-appimage.sh'
-          - platform: windows-latest
-            args: ''
-            triple: x86_64-pc-windows-msvc
-            rust_targets: ''
-            tauri_script: ''
-
-    runs-on: ${{ matrix.platform }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.prepare.outputs.tag }}
-
-      - name: install system dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: lts/*
-
-      - uses: oven-sh/setup-bun@v2
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust_targets }}
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: ./apps/desktop/src-tauri -> target
-
-      - name: install frontend dependencies
-        run: bun install
-
-      # externalBin is validated when tauri build evaluates the config, so the
-      # per-triple sidecar binary must exist first. bash runs build.sh under Git
-      # Bash on the Windows runner.
-      - name: build sidecar
-        shell: bash
-        run: bash packages/sidecar/build.sh ${{ matrix.triple }}
-
-      - uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          # AppImage bundling workarounds (Linux-only, ignored elsewhere). The
-          # Linux updater consumes the AppImage; deb/rpm are not auto-updatable.
-          # - extract-and-run: linuxdeploy is an AppImage, runner has no FUSE2.
-          # - NO_STRIP: linuxdeploy's strip rejects modern .relr.dyn sections
-          #   (tauri-apps/tauri#14755). Harmless on glibc 2.35 runners.
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-          NO_STRIP: 'true'
-          # Updater signing (HOY-187). Without these the build still produces
-          # installers, but the publish job refuses a release with no latest.json.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: apps/desktop
-          # Upload into the release Release Please created. With releaseId set,
-          # tauri-action does not create or rename the release or touch its
-          # body, so the generated changelog stays intact.
-          releaseId: ${{ needs.prepare.outputs.release_id }}
-          args: ${{ matrix.args }}
-          # Empty on macOS/Windows (tauri-action auto-detects the build command);
-          # Linux runs the shelter+repack wrapper (HOY-217).
-          tauriScript: ${{ matrix.tauri_script }}
+    # Workspace-relative on purpose: actionlint does not parse the newer $/ form yet.
+    uses: ./.github/workflows/build.yml # zizmor: ignore[self-repository]
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
+      release-id: ${{ needs.prepare.outputs.release_id }}
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
   publish:
     needs: [prepare, build]
     if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # build provenance (Sigstore)
+      attestations: write
     steps:
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Read the draft's assets and publish it.
+          permission-contents: write
 
       # The in-app updater reads latest.json from the latest published release,
       # so never publish one that is missing a platform. Drafts have no tag
@@ -200,12 +126,32 @@ jobs:
           fi
           gh api -H "Accept: application/octet-stream" \
             "repos/${GITHUB_REPOSITORY}/releases/assets/${asset}" > latest.json
-          for platform in darwin-aarch64 darwin-x86_64 linux-x86_64 windows-x86_64; do
+          for platform in darwin-aarch64 darwin-x86_64 linux-x86_64 linux-aarch64 windows-x86_64 windows-aarch64; do
             if ! jq -e --arg p "$platform" '.platforms[$p].signature | length > 0' latest.json >/dev/null; then
               echo "::error::latest.json has no signed entry for ${platform}"
               exit 1
             fi
           done
+
+      # Attest the exact files in the draft, i.e. what users download. Check one
+      # with `gh attestation verify <file> -R acidtib/hoy.chat`.
+      - name: download release assets
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+        run: |
+          mkdir -p assets
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            --jq '.assets[] | select(.name | endswith(".sig") | not) | "\(.id) \(.name)"' |
+            while read -r id name; do
+              gh api -H "Accept: application/octet-stream" \
+                "repos/${GITHUB_REPOSITORY}/releases/assets/${id}" > "assets/${name}"
+            done
+          ls -la assets
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'assets/*'
 
       # Published with the App token so the release event starts arch-repo.yml.
       - name: publish release

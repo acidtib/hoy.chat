@@ -10,45 +10,101 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: lts/*
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           components: clippy, rustfmt
 
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: ./apps/desktop/src-tauri -> target
 
       - name: install frontend dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      # externalBin/resources reference the sidecar artifacts; build them so the
-      # tauri config resolves and the live-test fixtures exist. Hermetic tests do
-      # not need the binary, but building keeps CI aligned with a real build.
+      # externalBin/resources reference the sidecar artifacts, so the tauri
+      # config only resolves once they exist; the smoke test below also needs it.
       - name: build sidecar
         run: bash packages/sidecar/build.sh
 
       - name: typecheck, rust check, clippy, fmt
         run: bun run check
 
+      - name: lint (oxlint)
+        run: bun run lint:js
+
       - name: frontend tests
         run: bun run test
 
+      # apps/desktop/bunfig.toml excludes pi-src; its tests need its own install
+      # (done by build.sh) and run from there.
+      - name: sidecar tests
+        working-directory: packages/sidecar/pi-src
+        run: bun test
+
       - name: rust tests
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+      # Exercises the bun-compiled binary itself: RPC, Pi MCP + tool_search, the
+      # permission gate, and the OAuth flow loaders.
+      - name: smoke test compiled sidecar
+        run: bun packages/sidecar/pi-src/smoke/smoke-test.ts packages/sidecar/hoy-pi-x86_64-unknown-linux-gnu
+
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+
+      - name: install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: lint
+        run: bun run site:lint
+
+      # The site refuses to build in CI when the root package.json version
+      # differs from the latest published release. That guard protects deploys;
+      # a PR (the release PR above all) legitimately differs, so build with CI
+      # unset here.
+      - name: build
+        env:
+          CI: ''
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bun run site:build
+
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: zizmor (GitHub Actions security audit)
+        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+        with:
+          advanced-security: false

@@ -1,0 +1,60 @@
+# Weekly grouped dependency updates. Titles use Conventional Commit prefixes so
+# they pass pr-title.yml: `deps:` updates appear in the changelog, `ci:` does not.
+# A cooldown skips versions younger than a few days, so a compromised release
+# has time to be caught before Dependabot proposes it.
+#
+# Pi (@earendil-works/*) and the typebox it pins are excluded: Pi bumps are
+# deliberate (docs/pi-version-bump.md) and pi-drift.yml reports new versions.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: cargo
+    directory: /apps/desktop/src-tauri
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    commit-message:
+      prefix: deps
+    groups:
+      rust-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    commit-message:
+      prefix: deps
+    groups:
+      js-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: bun
+    directory: /packages/sidecar/pi-src
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    commit-message:
+      prefix: deps
+    ignore:
+      - dependency-name: '@earendil-works/*'
+      - dependency-name: typebox
+    groups:
+      sidecar-minor-patch:
+        update-types: [minor, patch]

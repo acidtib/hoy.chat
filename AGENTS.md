@@ -10,8 +10,10 @@ Repo is a Bun-workspaces monorepo (HOY-227): `hoy.chat` at the root, the desktop
 ## Commands (run from repo root)
 - `bun run tauri:dev` — the ONLY dev entry (see landmines: enables `withGlobalTauri` + hoyd namespace for dev).
 - `bun run check` — desktop TS + Rust (`check:ts`, `check:rust`, `clippy`, `check:fmt`) plus sidecar TS. Does NOT cover `apps/site`.
-- `bun run test` — desktop `bun test` (includes sidecar `*.test.ts` factories).
+- `bun run test` — desktop `bun test`.
 - `bun run lint` — `oxlint src` + rust clippy.
+- `cd packages/sidecar/pi-src && bun test` — the sidecar extension tests (not part of `bun run test`; `apps/desktop/bunfig.toml` excludes them).
+- `bun packages/sidecar/pi-src/smoke/smoke-test.ts packages/sidecar/hoy-pi-<triple>` — smoke-test the compiled sidecar binary (RPC, MCP, permission gate, OAuth loaders). CI runs it on every platform (`docs/CI.md`).
 - `bun run sidecar:build` — rebuild the Pi sidecar binary (delegates to `packages/sidecar/build.sh`). Required after ANY `packages/sidecar/pi-src` change, before live-verify (a stale binary runs old prompt/gate code, HOY-200).
 - `bun run site:dev` — the marketing site (Next.js; also `site:build`, `site:start`, `site:lint`). All root scripts delegate to a workspace via `bun run --filter`.
 

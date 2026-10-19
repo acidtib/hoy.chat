@@ -2,7 +2,7 @@
 
 Releases are driven by [Release Please](https://github.com/googleapis/release-please)
 from Conventional Commits on `main`. Nobody edits version numbers or pushes tags
-by hand.
+by hand. The rest of the pipeline is in [CI.md](CI.md).
 
 ## Flow
 
@@ -28,11 +28,14 @@ by hand.
    - `apps/desktop/src-tauri/Cargo.toml` and the `hoy-desktop` entry in `Cargo.lock`
 3. Merging the release PR tags the commit `vX.Y.Z` and creates a **draft** GitHub
    release whose body is the changelog. The same workflow then:
-   - builds the sidecar and app on macOS (arm64, x64), Linux, and Windows, and
-     uploads the installers plus the signed updater manifest into that draft;
-   - checks that `latest.json` has a signed entry for every platform;
+   - builds through `build.yml` on macOS (arm64, x64), Linux (x64, arm64), and
+     Windows (x64, arm64), smoke-testing each native sidecar, and uploads the
+     installers plus the signed updater manifest into that draft;
+   - checks that `latest.json` has a signed entry for all six platforms;
+   - attests build provenance for every asset in the draft (verify a download
+     with `gh attestation verify <file> -R acidtib/hoy.chat`);
    - publishes the release, which makes it visible to the in-app updater and
-     starts `arch-repo.yml`.
+     starts `arch-repo.yml` and `site-deploy.yml`.
 
 If a build fails, the release stays a draft and the updater never sees it. Fix
 the cause on `main` if needed, then rerun the failed jobs, or run the **Release**
@@ -40,7 +43,9 @@ workflow manually with the tag (`workflow_dispatch`) to rebuild and publish an
 existing release.
 
 To force a specific version, add a `Release-As: 0.2.0` footer to a commit on
-`main`.
+`main`. Squash merges use the PR title as the commit message, so footers
+(`Release-As`, `BREAKING CHANGE`) must be typed into the commit description in
+the merge dialog; a `!` in the title (`feat!:`) needs no footer.
 
 `apps/site/package.json` is bumped too, matching the old `set-version.sh`. The
 site itself reads the root `package.json`. `bun.lock` records workspace versions,
@@ -121,8 +126,9 @@ In Settings > Secrets and variables > Actions:
 - `TAURI_SIGNING_PRIVATE_KEY` - the contents of `~/.tauri/hoy.key`
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` - the password you chose
 
-Without these the builds produce installers but no `latest.json`, and the
-publish job refuses to publish.
+Without these, release builds fail: Tauri refuses to bundle updater artifacts
+without the private key ("A public key has been found, but no private key").
+PR builds pass `--no-sign` for that reason.
 
 ### 4. Other workflows
 

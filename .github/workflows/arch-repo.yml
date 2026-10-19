@@ -16,16 +16,23 @@ on:
         description: 'Release tag to publish (e.g. v0.1.2)'
         required: true
 
+permissions:
+  contents: read # download the release .deb
+
 jobs:
   publish:
     runs-on: ubuntu-latest
-    container: archlinux:latest
+    # Digest-pinned. The job runs pacman -Syu, so packages stay current even as
+    # the digest ages; Dependabot does not update workflow container images.
+    container: archlinux:latest@sha256:3c64b538588416593f69a1aebd2f2ec0f2541b29159f32556fa7def2167147a0
     steps:
       - name: install tooling
         run: |
           pacman -Syu --noconfirm --needed base-devel git gnupg github-cli aws-cli-v2 sudo
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # makepkg refuses to run as root; build under a dedicated user.
       - name: create build user
@@ -37,17 +44,19 @@ jobs:
       - name: resolve tag + fetch the release .deb
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          TAG="${{ github.event.release.tag_name || inputs.tag }}"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
-          gh release download "$TAG" -R "${{ github.repository }}" \
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" \
             -p 'Hoy.Desktop_*_amd64.deb' -D "$GITHUB_WORKSPACE"
           chown builder:builder "$GITHUB_WORKSPACE"/*.deb
 
       - name: import signing key
+        env:
+          HOY_PACKAGES_GPG_KEY: ${{ secrets.HOY_PACKAGES_GPG_KEY }}
         run: |
-          echo '${{ secrets.HOY_PACKAGES_GPG_KEY }}' | sudo -u builder gpg --batch --import
+          printf '%s\n' "$HOY_PACKAGES_GPG_KEY" | sudo -u builder gpg --batch --import
           echo "KEYID=$(sudo -u builder gpg --list-keys --with-colons packages@hoy.chat | awk -F: '/^fpr:/{print $10; exit}')" >> "$GITHUB_ENV"
 
       - name: build signed repo

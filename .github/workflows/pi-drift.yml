@@ -1,0 +1,64 @@
+name: Pi drift
+
+# Pi is pinned exactly and Dependabot ignores it (bumps are deliberate, see
+# docs/pi-version-bump.md). Without a nudge the pin drifted from 0.84.0 to 1.3.0
+# unnoticed, so this keeps one open issue current whenever npm has a newer Pi
+# and closes it once the pin catches up.
+
+on:
+  schedule:
+    - cron: '23 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: compare pinned and latest Pi
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pinned=$(jq -r '.dependencies["@earendil-works/pi-coding-agent"]' packages/sidecar/pi-src/package.json)
+          latest=$(npm view @earendil-works/pi-coding-agent version)
+          echo "pinned=${pinned} latest=${latest}"
+
+          label="pi-drift"
+          gh label create "$label" --color FBCA04 --description "Pinned Pi version is behind npm" \
+            --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$label" --state open \
+            --json number --jq '.[0].number // empty')
+
+          newest=$(printf '%s\n%s\n' "$pinned" "$latest" | sort -V | tail -n1)
+          if [ "$pinned" = "$latest" ] || [ "$newest" = "$pinned" ]; then
+            if [ -n "$issue" ]; then
+              gh issue close "$issue" --repo "$GITHUB_REPOSITORY" \
+                --comment "Pin is current (${pinned})."
+            fi
+            exit 0
+          fi
+
+          title="Pi ${latest} is available (pinned ${pinned})"
+          body=$(cat <<EOF
+          npm has \`@earendil-works/pi-coding-agent\` **${latest}**; Hoy pins **${pinned}**
+          (\`packages/sidecar/pi-src/package.json\`).
+
+          - Changelog: https://pi.dev/changelog
+          - Bump checklist: \`docs/pi-version-bump.md\`
+          - RPC coverage notes: \`docs/pi-rpc-coverage.md\`
+
+          Updated weekly by \`.github/workflows/pi-drift.yml\`; closes itself once the pin matches.
+          EOF
+          )
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --label "$label"
+          fi

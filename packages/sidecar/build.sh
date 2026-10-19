@@ -27,6 +27,7 @@ case "$TRIPLE" in
   x86_64-apple-darwin)        BUN_TARGET="bun-darwin-x64" ;;
   aarch64-apple-darwin)       BUN_TARGET="bun-darwin-arm64" ;;
   x86_64-pc-windows-msvc)     BUN_TARGET="bun-windows-x64"; BIN_EXT=".exe" ;;
+  aarch64-pc-windows-msvc)    BUN_TARGET="bun-windows-arm64"; BIN_EXT=".exe" ;;
   *) echo "warning: no bun target mapping for $TRIPLE; building for host" >&2 ;;
 esac
 BIN="$SIDECAR_DIR/hoy-pi-$TRIPLE$BIN_EXT"

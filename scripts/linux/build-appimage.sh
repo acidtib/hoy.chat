@@ -45,10 +45,12 @@ if [ ! -f "$PRISTINE" ]; then
   exit 1
 fi
 
-TOOL="$CACHE/appimagetool-x86_64.AppImage"
+# appimagetool ships per architecture (x86_64, aarch64) and must match the host.
+TOOL_ARCH="$(uname -m)"
+TOOL="$CACHE/appimagetool-${TOOL_ARCH}.AppImage"
 if [ ! -f "$TOOL" ]; then
   curl -fsSL -o "$TOOL" \
-    "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage"
+    "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-${TOOL_ARCH}.AppImage"
   chmod +x "$TOOL"
 fi
 
