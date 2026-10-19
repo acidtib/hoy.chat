@@ -48,6 +48,7 @@ import { leafChainMessageIds } from "@/lib/treeNode";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
 import { issuePrompt } from "@/lib/delegate";
+import { haltingThread, moveQueued, openRuns } from "@/lib/fleet";
 import { rewriteSkillCommand } from "@/lib/skill";
 import {
   detectPlanIntent,
@@ -88,6 +89,7 @@ import type {
   GoalVerifyResult,
   ImageAttachment,
   ImageContent,
+  FleetOutcome,
   LinearIssue,
   LinearLink,
   McpScope,
@@ -561,6 +563,15 @@ interface SessionStore {
     issue: LinearIssue,
     agent: string,
   ) => string | null;
+  // HOY-350: per-agent Fleet queues. A queued issue starts through
+  // delegateIssue once its agent has a free slot and is not halted.
+  enqueueIssue: (projectId: string, issue: LinearIssue, agent: string) => void;
+  unqueueIssue: (projectId: string, issueId: string) => void;
+  moveQueuedIssue: (projectId: string, issueId: string, delta: -1 | 1) => void;
+  setAgentConcurrency: (projectId: string, agent: string, n: number) => void;
+  // Acknowledge the run halting an agent's queue, so the queue moves again.
+  resumeAgent: (projectId: string, agent: string) => void;
+  pumpFleet: () => void;
   // Re-fit panel widths to the body (after the tabs pref flips).
   refitPanelLayout: () => void;
   // Create a child thread for a spawned subagent (HOY-231) and drive it
@@ -1218,6 +1229,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       agent,
       // Nobody watches a delegated thread, so it must not stall on approvals.
       permissionMode: "autonomous",
+      fleetRun: { startedAt: Date.now(), estimate: issue.estimate },
       linearIssue: {
         id: issue.id,
         identifier: issue.identifier,
@@ -1240,6 +1252,99 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       pushNotice(thread.id, `Could not move ${issue.identifier} to In Progress: ${e}`, "warning"),
     );
     return thread.id;
+  },
+  enqueueIssue: (projectId, issue, agent) => {
+    set((s) => ({
+      projects: s.projects.map((p) => {
+        if (p.id !== projectId) return p;
+        const fleet = p.fleet ?? { queue: [], concurrency: {} };
+        if (fleet.queue.some((q) => q.issue.id === issue.id)) return p;
+        return {
+          ...p,
+          fleet: {
+            ...fleet,
+            queue: [...fleet.queue, { agent, issue, queuedAt: Date.now() }],
+          },
+        };
+      }),
+    }));
+    get().pumpFleet();
+  },
+  unqueueIssue: (projectId, issueId) =>
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId && p.fleet
+          ? {
+              ...p,
+              fleet: {
+                ...p.fleet,
+                queue: p.fleet.queue.filter((q) => q.issue.id !== issueId),
+              },
+            }
+          : p,
+      ),
+    })),
+  moveQueuedIssue: (projectId, issueId, delta) =>
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId && p.fleet
+          ? {
+              ...p,
+              fleet: { ...p.fleet, queue: moveQueued(p.fleet.queue, issueId, delta) },
+            }
+          : p,
+      ),
+    })),
+  setAgentConcurrency: (projectId, agent, n) => {
+    set((s) => ({
+      projects: s.projects.map((p) => {
+        if (p.id !== projectId) return p;
+        const fleet = p.fleet ?? { queue: [], concurrency: {} };
+        return {
+          ...p,
+          fleet: {
+            ...fleet,
+            concurrency: { ...fleet.concurrency, [agent]: Math.max(1, Math.floor(n)) },
+          },
+        };
+      }),
+    }));
+    get().pumpFleet();
+  },
+  resumeAgent: (projectId, agent) => {
+    const project = get().projects.find((p) => p.id === projectId);
+    const halting = project && haltingThread(project.threads, agent);
+    if (!halting) return;
+    set((s) => ({
+      projects: patchThread(s.projects, halting.id, (th) => ({
+        ...th,
+        fleetRun: th.fleetRun && { ...th.fleetRun, acknowledged: true },
+      })),
+    }));
+    get().pumpFleet();
+  },
+  pumpFleet: () => {
+    // A thread takes its model and thinking from the agent's def, so nothing
+    // starts until the registry is loaded.
+    const s = get();
+    if (!hydrated || s.subagents.length === 0) return;
+    for (const p of s.projects) {
+      const queue = p.fleet?.queue ?? [];
+      for (const agent of new Set(queue.map((q) => q.agent))) {
+        const def = s.subagents.find((d) => d.name === agent);
+        if (!def?.enabled) continue;
+        const project = get().projects.find((x) => x.id === p.id)!;
+        if (haltingThread(project.threads, agent)) continue;
+        const cap = Math.max(1, project.fleet?.concurrency[agent] ?? 1);
+        let free = cap - openRuns(project.threads, agent).length;
+        for (const item of queue.filter((q) => q.agent === agent)) {
+          if (free <= 0) break;
+          get().unqueueIssue(p.id, item.issue.id);
+          get().delegateIssue(p.id, item.issue, agent);
+          free--;
+        }
+      }
+    }
   },
   refitPanelLayout: () =>
     set((s) => ({ panels: refitPanels(s.panels, s.bodyWidth) })),
@@ -1439,6 +1544,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   refreshSubagents: async (cwd) => {
     try {
       set({ subagents: await listSubagents(cwd) });
+      get().pumpFleet();
     } catch {
       // Leave the prior cache. A stale registry beats an empty one.
     }
@@ -2216,7 +2322,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           const { draft, goal, ...rest } = t;
           if (draft) drafts[rest.id] = draft;
           const restoredGoal = restoreGoal(goal);
-          const withGoal = restoredGoal ? { ...rest, goal: restoredGoal } : rest;
+          let withGoal = restoredGoal ? { ...rest, goal: restoredGoal } : rest;
+          // A run still open on disk died with the app's sidecars.
+          if (withGoal.fleetRun && withGoal.fleetRun.endedAt == null) {
+            withGoal = {
+              ...withGoal,
+              fleetRun: { ...withGoal.fleetRun, endedAt: Date.now(), outcome: "interrupted" },
+            };
+          }
           return !withGoal.renamed && !withGoal.sessionFile && withGoal.title !== "New thread"
             ? { ...withGoal, renamed: true }
             : withGoal;
@@ -2238,6 +2351,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     } finally {
       hydrated = true;
     }
+    get().pumpFleet();
   },
 
   // Restore a reopened thread's transcript. HOY-287: paint the transcript from
@@ -2369,6 +2483,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // start. The cascade above visits each descendant, so each is purged.
     purgeFromLimiter(threadId);
     get().pumpAgentQueue();
+    get().pumpFleet();
   },
 
   unarchiveThread: (threadId) =>
@@ -3698,6 +3813,7 @@ function persistProjects(
       name: p.name,
       path: p.path ?? null,
       linear: p.linear ?? null,
+      fleet: p.fleet ?? null,
       // Untouched threads never reach disk: they vanish on restart even if
       // their panel was left open, and legacy empty rows in an existing
       // workspace.json drop off on the next save.
@@ -3725,6 +3841,7 @@ function persistProjects(
           goal: t.goal,
           agent: t.agent ?? null,
           linearIssue: t.linearIssue ?? null,
+          fleetRun: t.fleetRun ?? null,
         })),
     })),
   };
@@ -3756,6 +3873,56 @@ useSessionStore.subscribe((state, prev) => {
     persistProjects(s.projects, s.turns, s.drafts, s.activeProjectId);
   }, 300);
 });
+
+// HOY-350: close a delegated thread's Fleet run when it first stops streaming,
+// or fails before it ever streams, then let its agent's queue move.
+const fleetStreamed = new Set<string>();
+const fleetFinishing = new Set<string>();
+useSessionStore.subscribe((state, prev) => {
+  if (state.streaming === prev.streaming && state.threadErrors === prev.threadErrors)
+    return;
+  for (const p of state.projects) {
+    for (const t of p.threads) {
+      if (!t.fleetRun || t.fleetRun.endedAt != null) continue;
+      if (state.streaming[t.id]) {
+        fleetStreamed.add(t.id);
+      } else if (fleetStreamed.has(t.id) || state.threadErrors[t.id]) {
+        fleetStreamed.delete(t.id);
+        void finishFleetRun(t.id);
+      }
+    }
+  }
+});
+
+async function finishFleetRun(threadId: string): Promise<void> {
+  if (fleetFinishing.has(threadId)) return;
+  fleetFinishing.add(threadId);
+  try {
+    const endedAt = Date.now();
+    const store = useSessionStore.getState();
+    const last = [...(store.turns[threadId] ?? [])]
+      .reverse()
+      .find((t) => t.role === "assistant");
+    // An abort also carries an error message, so it is checked first.
+    const outcome: FleetOutcome = last?.aborted
+      ? "stopped"
+      : store.threadErrors[threadId] || last?.error
+        ? "error"
+        : "done";
+    await store.refreshStats(threadId).catch(() => {});
+    const cost = useSessionStore.getState().stats[threadId]?.cost ?? null;
+    useSessionStore.setState((s) => ({
+      projects: patchThread(s.projects, threadId, (th) =>
+        th.fleetRun && th.fleetRun.endedAt == null
+          ? { ...th, fleetRun: { ...th.fleetRun, endedAt, outcome, cost } }
+          : th,
+      ),
+    }));
+    useSessionStore.getState().pumpFleet();
+  } finally {
+    fleetFinishing.delete(threadId);
+  }
+}
 
 // A thread the user never invested in: no prompt ever sent (no transcript on
 // disk or in memory), never renamed, and no unsent draft. Untouched threads

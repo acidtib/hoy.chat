@@ -529,6 +529,30 @@ export interface Thread {
   // working on this Linear issue.
   agent?: string | null;
   linearIssue?: LinearIssueRef | null;
+  // HOY-350: the Fleet run that started this thread. Open until endedAt is set.
+  fleetRun?: FleetRun | null;
+}
+
+// Mirrors of workspace.rs WsFleetRun / WsFleet / WsQueuedIssue (HOY-350).
+export type FleetOutcome = "done" | "error" | "stopped" | "interrupted";
+export interface FleetRun {
+  startedAt: number;
+  endedAt?: number | null;
+  outcome?: FleetOutcome | null;
+  // The issue's Linear estimate in points when the run started.
+  estimate?: number | null;
+  cost?: number | null;
+  // Set by Resume: a failed run stops halting its agent's queue.
+  acknowledged?: boolean;
+}
+export interface QueuedIssue {
+  agent: string;
+  issue: LinearIssue;
+  queuedAt: number;
+}
+export interface FleetState {
+  queue: QueuedIssue[];
+  concurrency: Record<string, number>;
 }
 
 // Mirror of workspace.rs Workspace: the persisted projects -> threads tree.
@@ -547,6 +571,7 @@ export interface Project {
   threads: Thread[];
   // HOY-346: the Linear team whose open issues feed the Delegate board.
   linear?: LinearLink | null;
+  fleet?: FleetState | null;
 }
 
 // Mirrors of linear.rs / workspace.rs (HOY-346). The API key never crosses IPC.

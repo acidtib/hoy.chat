@@ -63,7 +63,7 @@ pub struct LinearTeam {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LinearIssue {
     pub id: String,

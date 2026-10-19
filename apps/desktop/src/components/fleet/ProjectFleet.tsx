@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
+  Archive,
+  ArrowDown,
+  ArrowUp,
   Bot,
   Check,
   ChevronDown,
+  Clock,
   ExternalLink,
   GripVertical,
   Loader2,
   RefreshCw,
+  Square,
+  X,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
@@ -21,10 +28,24 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { linearTeams } from "@/lib/ipc";
 import { agentThreads, unassignedIssues } from "@/lib/delegate";
+import {
+  costPerMinute,
+  estimateMinutes,
+  finishedRuns,
+  forecast,
+  formatClock,
+  formatCost,
+  formatMinutes,
+  haltingThread,
+  openRuns,
+  queueOf,
+  type AgentForecast,
+} from "@/lib/fleet";
 import type {
   LinearIssue,
   LinearTeam,
   Project,
+  QueuedIssue,
   SubagentDef,
   Thread,
 } from "@/lib/types";
@@ -36,7 +57,8 @@ const ISSUE_MIME = "application/x-hoy-linear-issue";
 
 // HOY-346: a project's Fleet. Open Linear issues on the left, agents on the
 // right with everything they are working on. Dropping an issue on an agent
-// starts a thread running as that agent.
+// queues it; it starts as a thread running as that agent once a slot is free
+// (HOY-350).
 export function ProjectFleet({ project }: { project: Project }) {
   const status = useLinearStore((s) => s.status);
   const refreshStatus = useLinearStore((s) => s.refreshStatus);
@@ -85,7 +107,10 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
   const refreshIssues = useLinearStore((s) => s.refreshIssues);
   const subagents = useSessionStore((s) => s.subagents);
   const refreshSubagents = useSessionStore((s) => s.refreshSubagents);
-  const delegateIssue = useSessionStore((s) => s.delegateIssue);
+  const enqueueIssue = useSessionStore((s) => s.enqueueIssue);
+  const projects = useSessionStore((s) => s.projects);
+  const [dragged, setDragged] = useState<LinearIssue | null>(null);
+  const now = useNow(30_000);
 
   useEffect(() => {
     if (cache.fetchedAt === null && !cache.loading && !cache.error) {
@@ -105,6 +130,7 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
   }, [subagents.length, project.path, refreshSubagents]);
 
   const agents = useMemo(() => subagents.filter((d) => d.enabled), [subagents]);
+  const queue = project.fleet?.queue ?? EMPTY_QUEUE;
 
   // An agent may have closed its issue or filed follow-ups: re-read the
   // backlog whenever a delegated thread stops running.
@@ -117,21 +143,51 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
     prevRunning.current = running;
   }, [running, project.id, teamId, refreshIssues]);
   const open = useMemo(
-    () => unassignedIssues(cache.items, project.threads),
-    [cache.items, project.threads],
+    () => unassignedIssues(cache.items, project.threads, queue),
+    [cache.items, project.threads, queue],
+  );
+
+  // History spans every project: an agent's pace is not project specific.
+  const allThreads = useMemo(() => projects.flatMap((p) => p.threads), [projects]);
+  const plans = useMemo(
+    () =>
+      new Map(
+        agents.map((def) => [
+          def.name,
+          agentPlan(project, allThreads, def.name, now),
+        ]),
+      ),
+    [agents, project, allThreads, now],
+  );
+  const total = [...plans.values()].reduce(
+    (sum, p) => (p.rate == null ? sum : sum + p.forecast.minutesLeft * p.rate),
+    0,
+  );
+  const unpriced = [...plans.values()].some(
+    (p) => p.rate == null && p.forecast.minutesLeft > 0,
   );
 
   const assign = (issueId: string, agent: string) => {
     const issue = cache.items.find((i) => i.id === issueId);
-    if (issue) delegateIssue(project.id, issue, agent);
+    if (issue) enqueueIssue(project.id, issue, agent);
   };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-3 px-4 pt-3 text-xs text-muted-foreground">
-        <span>Drag an issue onto an agent to start it</span>
+        <span>Drag an issue onto an agent to queue it</span>
         <div className="ml-auto flex items-center gap-3">
-          <Mock className="font-mono">$-- in queues</Mock>
+          <span
+            className="font-mono"
+            title={
+              unpriced
+                ? "Estimate. Agents with no finished runs yet are not counted."
+                : "Estimate from each agent's finished runs."
+            }
+          >
+            {total > 0 ? `~${formatCost(total)}${unpriced ? "+" : ""}` : unpriced ? "$--" : "$0"}{" "}
+            in queues
+          </span>
           <Mock className="flex items-center gap-1.5 border-l border-border pl-3">
             Auto
             <Switch disabled aria-label="Auto assign (mock)" />
@@ -179,6 +235,7 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
                   issue={issue}
                   agents={agents}
                   onAssign={(agent) => assign(issue.id, agent)}
+                  onDrag={(d) => setDragged(d ? issue : null)}
                 />
               ))
             )}
@@ -199,7 +256,10 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
                 <AgentRow
                   key={def.name}
                   def={def}
-                  threads={agentThreads(project.threads, def.name)}
+                  project={project}
+                  plan={plans.get(def.name)!}
+                  dragged={dragged}
+                  now={now}
                   onDropIssue={(issueId) => assign(issueId, def.name)}
                 />
               ))
@@ -211,14 +271,68 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
   );
 }
 
+const EMPTY_QUEUE: QueuedIssue[] = [];
+
+// Everything the row needs about one agent's load, derived once per tick.
+interface AgentPlan {
+  open: Thread[];
+  queued: QueuedIssue[];
+  halting: Thread | null;
+  concurrency: number;
+  rate: number | null;
+  history: ReturnType<typeof finishedRuns>;
+  forecast: AgentForecast;
+  runningMinutes: { startedAt: number; minutes: number }[];
+  queuedMinutes: number[];
+}
+
+function agentPlan(
+  project: Project,
+  allThreads: Thread[],
+  agent: string,
+  now: number,
+): AgentPlan {
+  const history = finishedRuns(allThreads, agent);
+  const open = openRuns(project.threads, agent);
+  const queued = queueOf(project.fleet?.queue ?? [], agent);
+  const concurrency = Math.max(1, project.fleet?.concurrency[agent] ?? 1);
+  const runningMinutes = open.map((t) => ({
+    startedAt: t.fleetRun!.startedAt,
+    minutes: estimateMinutes(history, t.fleetRun!.estimate),
+  }));
+  const queuedMinutes = queued.map((q) => estimateMinutes(history, q.issue.estimate));
+  return {
+    open,
+    queued,
+    halting: haltingThread(project.threads, agent),
+    concurrency,
+    rate: costPerMinute(history),
+    history,
+    forecast: forecast(now, runningMinutes, queuedMinutes, concurrency),
+    runningMinutes,
+    queuedMinutes,
+  };
+}
+
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
 function IssueCard({
   issue,
   agents,
   onAssign,
+  onDrag,
 }: {
   issue: LinearIssue;
   agents: SubagentDef[];
   onAssign: (agent: string) => void;
+  onDrag: (dragging: boolean) => void;
 }) {
   const [dragging, setDragging] = useState(false);
   return (
@@ -228,8 +342,12 @@ function IssueCard({
         e.dataTransfer.setData(ISSUE_MIME, issue.id);
         e.dataTransfer.effectAllowed = "move";
         setDragging(true);
+        onDrag(true);
       }}
-      onDragEnd={() => setDragging(false)}
+      onDragEnd={() => {
+        setDragging(false);
+        onDrag(false);
+      }}
       data-issue-id={issue.id}
       className={cn(
         "group/issue cursor-grab border border-border bg-card p-2.5 active:cursor-grabbing",
@@ -295,18 +413,53 @@ function IssueCard({
   );
 }
 
+const OUTCOME_LABEL: Record<string, string> = {
+  error: "failed",
+  stopped: "was stopped",
+  interrupted: "was interrupted when Hoy closed",
+};
+
 function AgentRow({
   def,
-  threads,
+  project,
+  plan,
+  dragged,
+  now,
   onDropIssue,
 }: {
   def: SubagentDef;
-  threads: Thread[];
+  project: Project;
+  plan: AgentPlan;
+  dragged: LinearIssue | null;
+  now: number;
   onDropIssue: (issueId: string) => void;
 }) {
   const streaming = useSessionStore((s) => s.streaming);
+  const setAgentConcurrency = useSessionStore((s) => s.setAgentConcurrency);
+  const resumeAgent = useSessionStore((s) => s.resumeAgent);
   const [over, setOver] = useState(false);
-  const working = threads.some((t) => streaming[t.id]);
+  const { open, queued, halting, concurrency, rate, history } = plan;
+  const busy = open.length >= concurrency;
+  const others = agentThreads(project.threads, def.name).filter(
+    (t) => !open.includes(t),
+  );
+
+  const preview = useMemo(() => {
+    if (!over || !dragged) return null;
+    const minutes = estimateMinutes(history, dragged.estimate);
+    const after = forecast(
+      now,
+      plan.runningMinutes,
+      [...plan.queuedMinutes, minutes],
+      concurrency,
+    );
+    return { minutes, until: after.busyUntil };
+  }, [over, dragged, history, now, plan, concurrency]);
+
+  const basis =
+    history.length === 0
+      ? "No finished runs yet"
+      : `From ${history.length} finished run${history.length === 1 ? "" : "s"}`;
 
   return (
     <div
@@ -344,7 +497,12 @@ function AgentRow({
             <span className="truncate text-xs text-muted-foreground">
               {def.model ?? "Default model"}
             </span>
-            <Mock className="font-mono text-xs">$--/min</Mock>
+            <span
+              className="font-mono text-xs text-muted-foreground/70"
+              title={`Estimate. ${basis}.`}
+            >
+              {rate == null ? "$--" : formatCost(rate)}/min
+            </span>
           </div>
           {def.description && (
             <p className="truncate text-xs text-muted-foreground">
@@ -352,36 +510,119 @@ function AgentRow({
             </p>
           )}
         </div>
-        {over && (
-          <Mock className="shrink-0 font-mono text-xs text-brand">
-            +$-- · +--m
-          </Mock>
+        {preview && (
+          <span
+            className="shrink-0 font-mono text-xs text-brand"
+            title={`Estimate. ${basis}.`}
+          >
+            {rate != null && `+${formatCost(preview.minutes * rate)} · `}+
+            {formatMinutes(preview.minutes)}
+            {preview.until != null && ` until ${formatClock(preview.until)}`}
+          </span>
         )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex h-6 shrink-0 items-center gap-0.5 border border-border px-1.5 font-mono text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label={`${def.name} runs at once`}
+              title="Runs at once"
+            >
+              x{concurrency}
+              <ChevronDown className="size-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>Runs at once</DropdownMenuLabel>
+            {[1, 2, 3, 4].map((n) => (
+              <DropdownMenuItem
+                key={n}
+                onSelect={() => setAgentConcurrency(project.id, def.name, n)}
+              >
+                {n === concurrency ? <Check className="size-4" /> : <span className="size-4" />}
+                {n}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <span
           className={cn(
             "flex shrink-0 items-center gap-1.5 text-xs",
-            working ? "text-muted-foreground" : "text-emerald-500",
+            halting
+              ? "text-amber-500"
+              : busy
+                ? "text-muted-foreground"
+                : "text-emerald-500",
           )}
+          title={plan.forecast.busyUntil != null ? `Estimate. ${basis}.` : undefined}
         >
           <span
             className={cn(
               "size-1.5 rounded-full",
-              working ? "bg-muted-foreground/60" : "bg-emerald-500",
+              halting
+                ? "bg-amber-500"
+                : busy
+                  ? "bg-muted-foreground/60"
+                  : "bg-emerald-500",
             )}
           />
-          {working ? (
-            <>
-              Busy until <Mock className="font-mono">--</Mock>
-            </>
-          ) : (
-            "Free"
-          )}
+          {halting
+            ? "Halted"
+            : busy && plan.forecast.busyUntil != null
+              ? `Busy until ${formatClock(plan.forecast.busyUntil)}`
+              : open.length > 0
+                ? `${open.length}/${concurrency} running`
+                : "Free"}
         </span>
       </div>
-      {threads.length > 0 && (
+      {halting && (
+        <div className="mt-2 flex items-center gap-2 pl-9.5 text-xs text-amber-500">
+          <AlertTriangle className="size-3.5 shrink-0" />
+          <span className="min-w-0 truncate">
+            {halting.linearIssue?.identifier ?? halting.title}{" "}
+            {OUTCOME_LABEL[halting.fleetRun?.outcome ?? ""] ?? "did not finish"}
+            {queued.length > 0 && `, ${queued.length} queued waiting`}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={() => resumeAgent(project.id, def.name)}
+          >
+            Resume queue
+          </Button>
+        </div>
+      )}
+      {open.length + queued.length + others.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5 pl-9.5">
-          {threads.map((t) => (
-            <WorkChip key={t.id} thread={t} running={!!streaming[t.id]} />
+          {open.map((t) => (
+            <WorkChip
+              key={t.id}
+              thread={t}
+              state={streaming[t.id] ? "running" : "starting"}
+            />
+          ))}
+          {queued.map((q, i) => (
+            <QueuedChip
+              key={q.issue.id}
+              projectId={project.id}
+              item={q}
+              first={i === 0}
+              last={i === queued.length - 1}
+            />
+          ))}
+          {others.map((t) => (
+            <WorkChip
+              key={t.id}
+              thread={t}
+              state={
+                t === halting
+                  ? "failed"
+                  : streaming[t.id]
+                    ? "running"
+                    : "finished"
+              }
+            />
           ))}
         </div>
       )}
@@ -389,31 +630,124 @@ function AgentRow({
   );
 }
 
+type ChipState = "running" | "starting" | "finished" | "failed";
+
 // One piece of an agent's work: a delegated issue, or a subagent another
 // thread spawned.
-function WorkChip({ thread, running }: { thread: Thread; running: boolean }) {
+function WorkChip({ thread, state }: { thread: Thread; state: ChipState }) {
   const openThread = useSessionStore((s) => s.openThread);
+  const stopStreaming = useSessionStore((s) => s.stopStreaming);
+  const archiveThread = useSessionStore((s) => s.archiveThread);
   const issue = thread.linearIssue;
+  const live = state === "running" || state === "starting";
+  // Spawned subagents belong to their parent; only delegated work gets controls.
+  const own = !!thread.fleetRun || !!thread.linearIssue;
   return (
-    <button
-      type="button"
-      onClick={() => openThread(thread.id)}
-      title={issue ? `${issue.identifier} ${issue.title}` : thread.title}
+    <div
       className={cn(
-        "flex h-6 max-w-72 items-center gap-1.5 border px-2 text-xs transition-colors",
-        running
-          ? "border-brand/30 bg-brand/10 text-foreground hover:bg-brand/15"
-          : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+        "group/chip flex h-6 max-w-72 items-center border text-xs transition-colors",
+        live
+          ? "border-brand/30 bg-brand/10 text-foreground"
+          : state === "failed"
+            ? "border-amber-500/40 text-amber-500"
+            : "border-border text-muted-foreground",
       )}
     >
-      {running ? (
-        <Loader2 className="size-3 shrink-0 animate-spin text-brand" />
-      ) : (
-        <Check className="size-3 shrink-0" />
+      <button
+        type="button"
+        onClick={() => openThread(thread.id)}
+        title={issue ? `${issue.identifier} ${issue.title}` : thread.title}
+        className="flex h-full min-w-0 items-center gap-1.5 px-2 hover:bg-accent/60"
+      >
+        {live ? (
+          <Loader2 className="size-3 shrink-0 animate-spin text-brand" />
+        ) : state === "failed" ||
+          (thread.fleetRun?.outcome && thread.fleetRun.outcome !== "done") ? (
+          <AlertTriangle className="size-3 shrink-0" />
+        ) : (
+          <Check className="size-3 shrink-0" />
+        )}
+        {issue && (
+          <span className="shrink-0 whitespace-nowrap font-mono text-[11px]">
+            {issue.identifier}
+          </span>
+        )}
+        <span className="truncate">{issue ? issue.title : thread.title}</span>
+      </button>
+      {own && (
+        <button
+          type="button"
+          onClick={() =>
+            live ? void stopStreaming(thread.id) : archiveThread(thread.id)
+          }
+          disabled={state === "starting"}
+          className="flex h-full w-6 shrink-0 items-center justify-center border-l border-inherit text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+          aria-label={
+            live
+              ? `Stop ${issue?.identifier ?? thread.title}`
+              : `Archive ${issue?.identifier ?? thread.title}`
+          }
+          title={live ? "Stop" : "Archive and release the issue"}
+        >
+          {live ? <Square className="size-2.5" /> : <Archive className="size-3" />}
+        </button>
       )}
-      {issue && <span className="font-mono text-[11px]">{issue.identifier}</span>}
-      <span className="truncate">{issue ? issue.title : thread.title}</span>
-    </button>
+    </div>
+  );
+}
+
+function QueuedChip({
+  projectId,
+  item,
+  first,
+  last,
+}: {
+  projectId: string;
+  item: QueuedIssue;
+  first: boolean;
+  last: boolean;
+}) {
+  const moveQueuedIssue = useSessionStore((s) => s.moveQueuedIssue);
+  const unqueueIssue = useSessionStore((s) => s.unqueueIssue);
+  const { issue } = item;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title={`Queued: ${issue.identifier} ${issue.title}`}
+          aria-label={`Queued ${issue.identifier}`}
+          className="flex h-6 max-w-72 items-center gap-1.5 border border-dashed border-border px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent"
+        >
+          <Clock className="size-3 shrink-0" />
+          <span className="shrink-0 whitespace-nowrap font-mono text-[11px]">
+            {issue.identifier}
+          </span>
+          <span className="truncate">{issue.title}</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem
+          disabled={first}
+          onSelect={() => moveQueuedIssue(projectId, issue.id, -1)}
+        >
+          <ArrowUp className="size-4" />
+          Move up
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={last}
+          onSelect={() => moveQueuedIssue(projectId, issue.id, 1)}
+        >
+          <ArrowDown className="size-4" />
+          Move down
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => unqueueIssue(projectId, issue.id)}>
+          <X className="size-4" />
+          Unassign
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -499,7 +833,7 @@ export function TeamMenu({ project }: { project: Project }) {
   );
 }
 
-// Placeholder for a board value that is not computed yet (cost, ETA, Auto).
+// Placeholder for a board control that is not wired yet (Auto, HOY-353).
 function Mock({
   className,
   children,

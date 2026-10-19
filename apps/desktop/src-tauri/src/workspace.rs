@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::linear::LinearIssue;
 use crate::pi_config::agent_dir;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -37,6 +38,44 @@ pub struct WsProject {
     // HOY-346: the Linear team whose open issues feed the Delegate board.
     #[serde(default)]
     pub linear: Option<WsLinearLink>,
+    #[serde(default)]
+    pub fleet: Option<WsFleet>,
+}
+
+// HOY-350: the project's per-agent queues. Array order is queue order; the
+// full issue is kept so a queued item can start after a restart.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsFleet {
+    #[serde(default)]
+    pub queue: Vec<WsQueuedIssue>,
+    #[serde(default)]
+    pub concurrency: std::collections::BTreeMap<String, u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsQueuedIssue {
+    pub agent: String,
+    pub issue: LinearIssue,
+    pub queued_at: u64,
+}
+
+// One run of a delegated thread, from dispatch to its first stop (HOY-350).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsFleetRun {
+    pub started_at: u64,
+    #[serde(default)]
+    pub ended_at: Option<u64>,
+    #[serde(default)]
+    pub outcome: Option<String>,
+    #[serde(default)]
+    pub estimate: Option<f64>,
+    #[serde(default)]
+    pub cost: Option<f64>,
+    #[serde(default)]
+    pub acknowledged: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,6 +144,8 @@ pub struct WsThread {
     pub agent: Option<String>,
     #[serde(default)]
     pub linear_issue: Option<WsLinearIssueRef>,
+    #[serde(default)]
+    pub fleet_run: Option<WsFleetRun>,
 }
 
 // A provider/model identity pair, mirroring the frontend ModelRef. Cached on the
@@ -227,6 +268,27 @@ mod tests {
                     team_key: "HOY".into(),
                     team_name: "Hoy".into(),
                 }),
+                fleet: Some(WsFleet {
+                    queue: vec![WsQueuedIssue {
+                        agent: "Explore".into(),
+                        issue: LinearIssue {
+                            id: "issue-2".into(),
+                            identifier: "HOY-29".into(),
+                            title: "queued".into(),
+                            description: None,
+                            url: "https://linear.app/hoy/issue/HOY-29".into(),
+                            priority: 2,
+                            priority_label: "High".into(),
+                            estimate: Some(3.0),
+                            state_name: "Todo".into(),
+                            state_type: "unstarted".into(),
+                            assignee: None,
+                            labels: vec!["Bug".into()],
+                        },
+                        queued_at: 1_717_000_000_500,
+                    }],
+                    concurrency: [("Explore".to_string(), 2)].into_iter().collect(),
+                }),
                 threads: vec![WsThread {
                     id: "t1".into(),
                     title: "ticket HOY-28".into(),
@@ -266,6 +328,14 @@ mod tests {
                         title: "ticket".into(),
                         url: "https://linear.app/hoy/issue/HOY-28".into(),
                     }),
+                    fleet_run: Some(WsFleetRun {
+                        started_at: 1_717_000_000_000,
+                        ended_at: Some(1_717_000_600_000),
+                        outcome: Some("done".into()),
+                        estimate: Some(2.0),
+                        cost: Some(0.42),
+                        acknowledged: false,
+                    }),
                 }],
             }],
         }
@@ -283,6 +353,23 @@ mod tests {
         let t = &back.projects[0].threads[0];
         assert_eq!(t.linear_issue.as_ref().unwrap().identifier, "HOY-28");
         assert_eq!(back.projects[0].linear.as_ref().unwrap().team_key, "HOY");
+    }
+
+    #[test]
+    fn fleet_queue_and_runs_round_trip_camel_case() {
+        let json = serde_json::to_string(&sample()).unwrap();
+        assert!(json.contains("\"queuedAt\":1717000000500"));
+        assert!(json.contains("\"concurrency\":{\"Explore\":2}"));
+        assert!(
+            json.contains("\"fleetRun\":{\"startedAt\":1717000000000,\"endedAt\":1717000600000")
+        );
+        let back: Workspace = serde_json::from_str(&json).unwrap();
+        let fleet = back.projects[0].fleet.as_ref().unwrap();
+        assert_eq!(fleet.queue[0].issue.identifier, "HOY-29");
+        assert_eq!(fleet.queue[0].issue.labels, vec!["Bug".to_string()]);
+        let run = back.projects[0].threads[0].fleet_run.as_ref().unwrap();
+        assert_eq!(run.outcome.as_deref(), Some("done"));
+        assert_eq!(run.cost, Some(0.42));
     }
 
     #[test]
@@ -386,6 +473,7 @@ mod tests {
             path: None,
             threads: vec![],
             linear: None,
+            fleet: None,
         });
         save_at(&path, &next).unwrap();
         let loaded = load_at(&path).unwrap();
@@ -429,6 +517,7 @@ mod tests {
                 name: "P".into(),
                 path: None,
                 linear: None,
+                fleet: None,
                 threads: vec![WsThread {
                     id: "t2".into(),
                     title: "child".into(),
@@ -447,6 +536,7 @@ mod tests {
                     goal: None,
                     agent: None,
                     linear_issue: None,
+                    fleet_run: None,
                 }],
             }],
             active_project_id: None,

@@ -1,18 +1,20 @@
 // Pure helpers for the Delegate board (HOY-346).
 
-import type { LinearIssue, Thread } from "./types";
+import type { LinearIssue, QueuedIssue, Thread } from "./types";
 
-// Issues not yet handed to an agent in this project. An archived delegated
-// thread releases its issue back to the column.
+// Issues not yet handed to an agent in this project, running or queued. An
+// archived delegated thread releases its issue back to the column.
 export function unassignedIssues(
   issues: LinearIssue[],
   threads: Thread[],
+  queue: QueuedIssue[] = [],
 ): LinearIssue[] {
-  const taken = new Set(
-    threads
+  const taken = new Set([
+    ...threads
       .filter((t) => !t.archived && t.linearIssue)
       .map((t) => t.linearIssue!.id),
-  );
+    ...queue.map((q) => q.issue.id),
+  ]);
   return issues
     .filter((i) => !taken.has(i.id))
     .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority));
