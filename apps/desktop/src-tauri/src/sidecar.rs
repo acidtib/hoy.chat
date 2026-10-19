@@ -335,6 +335,13 @@ fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
     command.env("PI_TELEMETRY", "0");
 }
 
+/// Pi hardcodes `.pi/mcp.json` in its MCP notices (1.3.0, extensions/mcp) even
+/// though piConfig.configDir makes the project dir `.hoy`. Rewritten here at the
+/// RPC boundary because Hoy does not patch Pi.
+fn brand_project_dir(message: &str) -> String {
+    message.replace(".pi/mcp.json", ".hoy/mcp.json")
+}
+
 /// Env var names referenced as `${VAR}` across the MCP config files Pi merges
 /// (global `<agent_dir>/mcp.json` + project `<cwd>/.mcp.json` and
 /// `<cwd>/.hoy/mcp.json`). Mirrors hoy-mcp-config.ts `loadHoyMcpConfig` search paths so the
@@ -909,7 +916,7 @@ fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome 
             tool_args: None,
         }),
         "notify" => ExtUiOutcome::Notify(AgentEvent::Notify {
-            message: str_field("message").unwrap_or_default(),
+            message: brand_project_dir(&str_field("message").unwrap_or_default()),
             notify_type: str_field("notifyType"),
         }),
         "setStatus" => ExtUiOutcome::Notify(AgentEvent::SetStatus {
@@ -2384,6 +2391,23 @@ mod live_tests {
             Path::new("/app").join(format!("hoy-pi{}", std::env::consts::EXE_SUFFIX))
         );
         assert_eq!(payload, PathBuf::from("/app/resources/pi-payload"));
+    }
+
+    #[test]
+    fn notify_rewrites_pi_project_mcp_path() {
+        match classify_extension_ui(
+            "n",
+            "notify",
+            &json!({ "method": "notify", "message": "No MCP servers configured. Add them to /h/.hoy/mcp.json or .pi/mcp.json." }),
+        ) {
+            ExtUiOutcome::Notify(AgentEvent::Notify { message, .. }) => {
+                assert_eq!(
+                    message,
+                    "No MCP servers configured. Add them to /h/.hoy/mcp.json or .hoy/mcp.json."
+                );
+            }
+            _ => panic!("expected notify"),
+        }
     }
 
     #[test]

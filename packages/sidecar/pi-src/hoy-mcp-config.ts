@@ -8,6 +8,9 @@
 //   model to call tools from codemode scripts that do not exist.
 // - Legacy `disabled: true` (pre-Pi-MCP Hoy files) maps to `enabled: false`.
 // - Project files are read only once the project is trusted, like Pi's.
+// - ${VAR} in command, args, url, and cwd is filled from the sidecar env, as
+//   Hoy's own MCP did. Pi itself only interpolates env and headers values, so
+//   those are left for Pi (expanding them here too would eat $${VAR} escapes).
 // Pi validates nothing here beyond what its runtime does on connect, so the
 // shape checks below reject the entries Pi's loader would have rejected.
 
@@ -20,6 +23,22 @@ const OVERRIDE_KEYS = ["enabled", "exposure", "toolExposure"];
 const EXPOSURES = new Set(["codemode", "deferred", "direct", "hidden"]);
 
 type Scope = "global" | "project";
+type Env = Record<string, string | undefined>;
+
+// ${VAR} -> env.VAR, missing -> "". $${VAR} is a literal ${VAR}. One
+// left-to-right pass, so an expanded value is never re-expanded.
+export function interpolateEnv(value: string, env: Env): string {
+  return value.replace(/\$(\$?)\{(\w+)\}/g, (_m, esc, k) => (esc ? `\${${k}}` : env[k] ?? ""));
+}
+
+function interpolateFields(value: Record<string, unknown>, env: Env): void {
+  for (const key of ["command", "url", "cwd"]) {
+    if (typeof value[key] === "string") value[key] = interpolateEnv(value[key] as string, env);
+  }
+  if (Array.isArray(value.args)) {
+    value.args = value.args.map((a) => (typeof a === "string" ? interpolateEnv(a, env) : a));
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -37,11 +56,14 @@ function adaptExposure(value: unknown): McpExposure | undefined {
 
 // Returns the adapted config or an error string, mirroring Pi's
 // validateMcpServerConfig for the fields Hoy's files actually use.
-export function adaptServer(name: string, raw: unknown): McpServerConfig | string {
+// `env: null` skips interpolation, for an override merged onto a global entry
+// that was already expanded (re-expanding would undo $${VAR} escapes).
+export function adaptServer(name: string, raw: unknown, env: Env | null = process.env): McpServerConfig | string {
   if (!SERVER_NAME.test(name)) return `invalid server name "${name}" (use letters, digits, "_" and "-")`;
   if (!isRecord(raw)) return `server "${name}" must be an object`;
   const { disabled, ...rest } = raw;
   const value: Record<string, unknown> = { ...rest };
+  if (env) interpolateFields(value, env);
   if (disabled === true && value.enabled === undefined) value.enabled = false;
   if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
     return `server "${name}": enabled must be a boolean`;
@@ -80,7 +102,7 @@ export function adaptServer(name: string, raw: unknown): McpServerConfig | strin
   return `server "${name}" needs "command" or "url"`;
 }
 
-function readLayer(path: string, scope: Scope, servers: Map<string, McpServerEntry>, errors: string[]): void {
+function readLayer(path: string, scope: Scope, servers: Map<string, McpServerEntry>, errors: string[], env: Env): void {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -103,13 +125,13 @@ function readLayer(path: string, scope: Scope, servers: Map<string, McpServerEnt
       if (!base) errors.push(`${path}: server "${name}" needs "command" or "url", or a global server to override`);
       else if (extra.length > 0) errors.push(`${path}: server "${name}": an override can only set ${OVERRIDE_KEYS.join(", ")}`);
       else {
-        const config = adaptServer(name, { ...base.config, ...raw });
+        const config = adaptServer(name, { ...base.config, ...raw }, null);
         if (typeof config === "string") errors.push(`${path}: ${config}`);
         else servers.set(name, { ...base, config, override: path });
       }
       continue;
     }
-    const config = adaptServer(name, raw);
+    const config = adaptServer(name, raw, env);
     if (typeof config === "string") {
       errors.push(`${path}: ${config}`);
       continue;
@@ -131,15 +153,17 @@ export function loadHoyMcpConfig(opts: {
   cwd: string;
   projectTrusted: boolean;
   enabled?: boolean;
+  env?: Env;
 }): LoadedMcpConfig {
+  const env = opts.env ?? process.env;
   if (opts.enabled === false) return { servers: [], errors: [], autoEnableCodemode: false };
   const servers = new Map<string, McpServerEntry>();
   const errors: string[] = [];
-  readLayer(join(opts.agentDir, "mcp.json"), "global", servers, errors);
+  readLayer(join(opts.agentDir, "mcp.json"), "global", servers, errors, env);
   const projectConfig = join(opts.cwd, ".hoy", "mcp.json");
   if (opts.projectTrusted) {
-    readLayer(join(opts.cwd, ".mcp.json"), "project", servers, errors);
-    readLayer(projectConfig, "project", servers, errors);
+    readLayer(join(opts.cwd, ".mcp.json"), "project", servers, errors, env);
+    readLayer(projectConfig, "project", servers, errors, env);
   }
   return {
     servers: [...servers.values()],

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { adaptServer, expandToolNames, loadHoyMcpConfig, MCP_TOOL_NAMES } from "./hoy-mcp-config";
+import { adaptServer, expandToolNames, interpolateEnv, loadHoyMcpConfig, MCP_TOOL_NAMES } from "./hoy-mcp-config";
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -111,6 +111,46 @@ describe("adaptServer", () => {
     expect(typeof adaptServer("a", { command: "x", args: "nope" })).toBe("string");
     expect(typeof adaptServer("a", { command: "x", exposure: "loud" })).toBe("string");
     expect(typeof adaptServer("a", {})).toBe("string");
+  });
+});
+
+describe("${VAR} interpolation", () => {
+  const env = { BIN: "/opt/bin", TOKEN: "t0k", HOST: "mcp.example" };
+
+  test("fills command, args, url, and cwd; missing vars become empty", () => {
+    const stdio = adaptServer("a", { command: "${BIN}/srv", args: ["--key=${TOKEN}", "${NOPE}x"], cwd: "${BIN}" }, env) as any;
+    expect(stdio.command).toBe("/opt/bin/srv");
+    expect(stdio.args).toEqual(["--key=t0k", "x"]);
+    expect(stdio.cwd).toBe("/opt/bin");
+    expect((adaptServer("b", { url: "https://${HOST}/mcp" }, env) as any).url).toBe("https://mcp.example/mcp");
+  });
+
+  test("leaves env and headers for Pi to interpolate", () => {
+    const config = adaptServer("a", { command: "x", env: { K: "${TOKEN}" } }, env) as any;
+    expect(config.env).toEqual({ K: "${TOKEN}" });
+    const http = adaptServer("b", { url: "https://h/mcp", headers: { A: "Bearer ${TOKEN}" } }, env) as any;
+    expect(http.headers).toEqual({ A: "Bearer ${TOKEN}" });
+  });
+
+  test("$${VAR} escapes to a literal and expanded values are not re-expanded", () => {
+    expect(interpolateEnv("$${TOKEN}", env)).toBe("${TOKEN}");
+    expect(interpolateEnv("${X}", { X: "${TOKEN}" })).toBe("${TOKEN}");
+  });
+
+  test("a project override does not re-expand an escaped global value", () => {
+    const { agentDir, cwd } = dirs();
+    write(join(agentDir, "mcp.json"), { a: { command: "x", args: ["$${TOKEN}"] } });
+    write(join(cwd, ".hoy", "mcp.json"), { a: { enabled: false } });
+    const [a] = loadHoyMcpConfig({ agentDir, cwd, projectTrusted: true, env }).servers;
+    expect((a.config as any).args).toEqual(["${TOKEN}"]);
+    expect(a.config.enabled).toBe(false);
+  });
+
+  test("loadHoyMcpConfig threads env through every layer", () => {
+    const { agentDir, cwd } = dirs();
+    write(join(agentDir, "mcp.json"), { a: { command: "${BIN}/a" } });
+    const [a] = loadHoyMcpConfig({ agentDir, cwd, projectTrusted: false, env }).servers;
+    expect((a.config as any).command).toBe("/opt/bin/a");
   });
 });
 
