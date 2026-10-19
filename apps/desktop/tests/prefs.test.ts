@@ -26,6 +26,8 @@ describe("usePrefsStore", () => {
       keepAwakeWhileStreaming: true,
       autoCompaction: true,
       sidebarCollapsed: false,
+      preferredModel: null,
+      disabledModels: [],
     });
   });
 

@@ -51,12 +51,12 @@ export interface Category {
 // The rail leads with categories that actually do something (real prefs or Pi
 // session settings), then a "Coming soon" group of honest placeholders.
 export const CATEGORIES: Category[] = [
+  { id: "providers", label: "Providers", icon: Plug, group: 0 },
   { id: "model", label: "Model", icon: Boxes, group: 0 },
   { id: "chat", label: "Chat", icon: MessageSquare, group: 0 },
   { id: "appearance", label: "Appearance", icon: Palette, group: 0 },
   { id: "workspace", label: "Workspace", icon: LayoutGrid, group: 0 },
   { id: "memory", label: "Memory & Context", icon: Brain, group: 0 },
-  { id: "providers", label: "Providers", icon: Plug, group: 1 },
   { id: "mcp", label: "MCP", icon: Cable, group: 1 },
   { id: "integrations", label: "Integrations", icon: SquareKanban, group: 1 },
   { id: "subagents", label: "Subagents", icon: Bot, group: 1 },

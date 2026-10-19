@@ -13,6 +13,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { MAX_CONCURRENT_AGENTS } from "./limits";
+import type { ModelRef } from "@/lib/types";
 
 export type AppTheme = "light" | "dark" | "system";
 
@@ -64,6 +65,10 @@ export interface AppPrefs {
   // naturally appears when chrome first renders. Persisted so the user's
   // manual collapse survives restarts.
   sidebarCollapsed: boolean;
+  // The model new threads start on. Null falls back to Pi's last pick.
+  preferredModel: ModelRef | null;
+  // Models hidden from the pickers, as modelKey() strings. New models start on.
+  disabledModels: string[];
 }
 
 interface PrefsStore extends AppPrefs {
@@ -92,6 +97,8 @@ export const PREFS_DEFAULTS: AppPrefs = {
   keepAwakeWhileStreaming: true,
   autoCompaction: true,
   sidebarCollapsed: false,
+  preferredModel: null,
+  disabledModels: [],
 };
 
 export const usePrefsStore = create<PrefsStore>()(
@@ -125,6 +132,8 @@ export const usePrefsStore = create<PrefsStore>()(
         keepAwakeWhileStreaming: s.keepAwakeWhileStreaming,
         autoCompaction: s.autoCompaction,
         sidebarCollapsed: s.sidebarCollapsed,
+        preferredModel: s.preferredModel,
+        disabledModels: s.disabledModels,
       }),
     },
   ),

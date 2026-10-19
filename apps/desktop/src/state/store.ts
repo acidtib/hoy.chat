@@ -50,6 +50,7 @@ import { draftContexts, draftToMessage } from "@/lib/mentions";
 import { issuePrompt } from "@/lib/delegate";
 import { currentAgentName, haltingThread, moveQueued, openRuns } from "@/lib/fleet";
 import { rewriteSkillCommand } from "@/lib/skill";
+import { resolveDefaultModel } from "@/lib/models";
 import {
   detectPlanIntent,
   extractProposedPlan,
@@ -2530,6 +2531,16 @@ export function useTabPanelCount(threadId: string | null): number {
   });
 }
 
+function appDefaultModel(s: SessionStore): ModelRef | null {
+  return resolveDefaultModel(usePrefsStore.getState().preferredModel, s.models, s.defaultModel);
+}
+
+// The model an unstarted thread will run on.
+export function useDefaultModel(): ModelRef | null {
+  const preferred = usePrefsStore((p) => p.preferredModel);
+  return useSessionStore((s) => resolveDefaultModel(preferred, s.models, s.defaultModel));
+}
+
 export function useThreadHasRunningSubagents(threadId: string): boolean {
   return useSessionStore((s) =>
     threadHasRunningSubagents(
@@ -3695,8 +3706,12 @@ async function applyThreadModel(
     }));
 
   try {
+    // A fresh thread with no pick starts on the app default. A restored one
+    // adopts its session's model below.
+    const thread = findThread(store.getState().projects, threadId)?.thread;
     const pick =
-      findThread(store.getState().projects, threadId)?.thread.model ?? null;
+      thread?.model ??
+      (thread && !thread.sessionFile ? appDefaultModel(store.getState()) : null);
     const piState = await getState(sessionId);
     const truth: ModelRef | null = piState.model
       ? { provider: piState.model.provider, id: piState.model.id }

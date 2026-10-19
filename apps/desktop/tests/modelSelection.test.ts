@@ -15,6 +15,7 @@ const getMessages = mock<() => Promise<unknown[]>>();
 mockIpcModule({ setModel, createSession, getState, sendPrompt, getMessages });
 
 const { useSessionStore } = await import("@/state/store");
+const { usePrefsStore } = await import("@/state/prefs");
 
 function seed(thread: Partial<Thread>) {
   useSessionStore.setState({
@@ -185,6 +186,45 @@ describe("applyThreadModel at spawn", () => {
       id: "claude-opus-4-8",
     });
     expect(setModel).not.toHaveBeenCalled();
+  });
+
+  test("a fresh thread with no pick starts on the preferred model", async () => {
+    seed({ sessionId: null });
+    usePrefsStore.setState({ preferredModel: { provider: "groq", id: "llama-3.3-70b" } });
+    createSession.mockResolvedValue("sess_apply_pref");
+    getState.mockResolvedValue({
+      model: { provider: "anthropic", id: "claude-opus-4-8" },
+    });
+    setModel.mockResolvedValue({});
+    sendPrompt.mockResolvedValue(undefined);
+
+    try {
+      await useSessionStore.getState().submitPrompt("t1", "hello");
+    } finally {
+      usePrefsStore.setState({ preferredModel: null });
+    }
+
+    expect(setModel).toHaveBeenCalledWith("sess_apply_pref", "groq", "llama-3.3-70b");
+  });
+
+  test("restore hydration ignores the preferred model", async () => {
+    seed({ sessionId: null, sessionFile: "/tmp/s2.jsonl" });
+    usePrefsStore.setState({ preferredModel: { provider: "groq", id: "llama-3.3-70b" } });
+    createSession.mockResolvedValue("sess_apply_pref_restore");
+    getState.mockResolvedValue({
+      model: { provider: "anthropic", id: "claude-opus-4-8" },
+    });
+    getMessages.mockResolvedValue([]);
+
+    try {
+      await useSessionStore.getState().hydrateThread("t1");
+      await new Promise((r) => setTimeout(r, 0));
+    } finally {
+      usePrefsStore.setState({ preferredModel: null });
+    }
+
+    expect(setModel).not.toHaveBeenCalled();
+    expect(thread().model).toEqual({ provider: "anthropic", id: "claude-opus-4-8" });
   });
 
   test("apply failure: prompt not sent, error surfaced, pick reverted to session truth", async () => {

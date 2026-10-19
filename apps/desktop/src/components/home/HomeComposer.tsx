@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Composer } from "@/components/Composer";
-import { useSessionStore } from "@/state/store";
+import { useSessionStore, useDefaultModel } from "@/state/store";
 import { listProjectPaths } from "@/lib/ipc";
 import { fileToImageAttachment } from "@/lib/images";
 import {
@@ -25,7 +25,7 @@ export function HomeComposer({
   projectPath: string | null;
 }) {
   const models = useSessionStore((s) => s.models);
-  const defaultModel = useSessionStore((s) => s.defaultModel);
+  const defaultModel = useDefaultModel();
   const projects = useSessionStore((s) => s.projects);
   const startThread = useSessionStore((s) => s.startThread);
   // Skills for the "/" and "@skill:" pickers (HOY-323). No thread exists yet, so

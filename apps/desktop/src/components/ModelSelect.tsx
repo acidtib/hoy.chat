@@ -12,6 +12,8 @@ import {
 } from "@/components/ai-elements/model-selector";
 import { cn } from "@/lib/utils";
 import type { ModelInfo } from "@/lib/types";
+import { visibleModels } from "@/lib/models";
+import { usePrefsStore } from "@/state/prefs";
 
 function groupByProvider(models: ModelInfo[]): Array<[string, ModelInfo[]]> {
   const groups = new Map<string, ModelInfo[]>();
@@ -46,7 +48,12 @@ export function ModelSelect({
   onSelect: (provider: string, modelId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const groups = useMemo(() => groupByProvider(models), [models]);
+  const disabledModels = usePrefsStore((p) => p.disabledModels);
+  const shown = useMemo(
+    () => visibleModels(models, disabledModels, current),
+    [models, disabledModels, current],
+  );
+  const groups = useMemo(() => groupByProvider(shown), [shown]);
   const currentModel = useMemo(
     () =>
       current
@@ -57,7 +64,7 @@ export function ModelSelect({
     [models, current],
   );
 
-  const empty = models.length === 0;
+  const empty = shown.length === 0;
   const triggerLabel = currentModel?.name || currentModel?.id;
 
   return (

@@ -17,6 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { deleteSubagent, listSubagents, writeSubagent } from "@/lib/ipc";
 import type { SubagentDef, SubagentScope, SubagentWrite } from "@/lib/types";
 import { useSessionStore } from "@/state/store";
+import { usePrefsStore } from "@/state/prefs";
+import { visibleModels } from "@/lib/models";
 import { PanelHeader, StatusDot } from "./panels";
 import {
   emptyDraft,
@@ -151,7 +153,11 @@ export function SubagentsPanel() {
   const projects = useSessionStore((s) => s.projects);
   const setSubagentEnabled = useSessionStore((s) => s.setSubagentEnabled);
   const models = useSessionStore((s) => s.models);
-  const modelOptions = useMemo(() => models.map((m) => m.id), [models]);
+  const disabledModels = usePrefsStore((p) => p.disabledModels);
+  const modelOptions = useMemo(
+    () => visibleModels(models, disabledModels).map((m) => m.id),
+    [models, disabledModels],
+  );
   const projectPath = useMemo(() => projects.find((p) => p.id === activeProjectId)?.path ?? null, [projects, activeProjectId]);
 
   // Serve the store cache (warmed by a prior open) immediately so reopening the

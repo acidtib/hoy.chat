@@ -10,7 +10,7 @@ import { SettingsPanel } from "./panels";
 export function SettingsModal() {
   const open = useSessionStore((s) => s.settingsOpen);
   const setOpen = useSessionStore((s) => s.setSettingsOpen);
-  const [active, setActive] = useState<CategoryId>("model");
+  const [active, setActive] = useState<CategoryId>("providers");
   const requested = useSessionStore((s) => s.settingsCategory);
   useEffect(() => {
     if (open && requested && CATEGORIES.some((c) => c.id === requested)) {

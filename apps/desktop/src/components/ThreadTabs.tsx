@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ThreadModelIcon } from "@/components/ThreadModelIcon";
 import { cn } from "@/lib/utils";
 import { childThreadIdsOf, isSubagentThread } from "@/state/delivery";
-import { findThread, groupTabs, useSessionStore } from "@/state/store";
+import { findThread, groupTabs, useSessionStore, useDefaultModel } from "@/state/store";
 
 // The tab strip in the title bar: the active project's home pinned first, then
 // one tab per group of split panels. A thread tab is labeled by the active
@@ -119,7 +119,7 @@ function ThreadTab({
   const streaming = useSessionStore((s) =>
     threadIds.some((id) => s.streaming[id]),
   );
-  const defaultModel = useSessionStore((s) => s.defaultModel);
+  const defaultModel = useDefaultModel();
   const openThread = useSessionStore((s) => s.openThread);
   const requestPanelClose = useSessionStore((s) => s.requestPanelClose);
 

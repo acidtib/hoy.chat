@@ -93,6 +93,7 @@ import {
   useSessionStore,
   useTabPanelCount,
   useThreadHasRunningSubagents,
+  useDefaultModel,
 } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 import { listProjectPaths } from "@/lib/ipc";
@@ -148,7 +149,7 @@ export function ThreadView({
   const submitPrompt = useSessionStore((s) => s.submitPrompt);
   const renameThread = useSessionStore((s) => s.renameThread);
   const models = useSessionStore((s) => s.models);
-  const defaultModel = useSessionStore((s) => s.defaultModel);
+  const defaultModel = useDefaultModel();
   const selecting = useSessionStore((s) => s.modelSelecting[threadId] ?? false);
   const selectModel = useSessionStore((s) => s.selectModel);
   const selectThinkingLevel = useSessionStore((s) => s.selectThinkingLevel);

@@ -44,6 +44,7 @@ import {
   type ProjectView,
   useSessionStore,
   useThreadHasRunningSubagents,
+  useDefaultModel,
 } from "@/state/store";
 import { isSubagentThread } from "@/state/delivery";
 import { usePrefsStore } from "@/state/prefs";
@@ -473,7 +474,7 @@ function ThreadRow({
   const hasRunningSubagents = useThreadHasRunningSubagents(thread.id);
   const renameThread = useSessionStore((s) => s.renameThread);
   const requestTeardown = useSessionStore((s) => s.requestTeardown);
-  const defaultModel = useSessionStore((s) => s.defaultModel);
+  const defaultModel = useDefaultModel();
   const [editing, setEditing] = useState(false);
 
   // A thread with neither a persisted transcript nor a live sidecar has not been
