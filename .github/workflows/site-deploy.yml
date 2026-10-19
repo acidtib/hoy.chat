@@ -19,6 +19,9 @@ on:
       - ".github/workflows/site-deploy.yml"
   workflow_dispatch:
 
+# Only calls a deploy hook; needs no repository access.
+permissions: {}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

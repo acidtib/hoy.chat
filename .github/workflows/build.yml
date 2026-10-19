@@ -1,0 +1,157 @@
+name: Build
+
+# The one platform matrix, shared by release.yml (uploads into the draft
+# release) and build-check.yml (PR and weekly builds, no upload). Keeping a
+# single definition means a PR exercises exactly what a release will run.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref to build'
+        required: true
+        type: string
+      release-id:
+        description: 'Release to upload into. Empty builds without uploading or signing.'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+
+permissions: {}
+
+jobs:
+  build:
+    name: build (${{ matrix.triple }})
+    permissions:
+      contents: write # upload release assets (only when release-id is set)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest # Apple Silicon
+            triple: aarch64-apple-darwin
+            args: '--target aarch64-apple-darwin'
+            rust_targets: aarch64-apple-darwin
+            tauri_script: ''
+            smoke: true
+          - platform: macos-latest # Intel, cross-compiled on the arm64 runner
+            triple: x86_64-apple-darwin
+            args: '--target x86_64-apple-darwin'
+            rust_targets: x86_64-apple-darwin
+            tauri_script: ''
+            # Cross-compiled; the runner cannot be relied on to execute x64.
+            smoke: false
+          - platform: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+            # --verbose is a documented workaround: without it, linuxdeploy's
+            # AppImage step fails on the CI runner (tauri-apps/tauri#14796).
+            args: '--verbose'
+            rust_targets: ''
+            # Linux builds through a wrapper that shelters + repacks the bun
+            # sidecar so the AppImage's sidecar is not corrupted (HOY-217).
+            # tauri-action execs tauriScript directly with cwd apps/desktop and
+            # no shell, so the path is relative to apps/desktop.
+            tauri_script: 'bash ../../scripts/linux/build-appimage.sh'
+            smoke: true
+          - platform: ubuntu-22.04-arm
+            triple: aarch64-unknown-linux-gnu
+            args: '--verbose'
+            rust_targets: ''
+            tauri_script: 'bash ../../scripts/linux/build-appimage.sh'
+            smoke: true
+          - platform: windows-latest
+            triple: x86_64-pc-windows-msvc
+            args: ''
+            rust_targets: ''
+            tauri_script: ''
+            smoke: true
+          - platform: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+            args: ''
+            rust_targets: ''
+            tauri_script: ''
+            smoke: true
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: install system dependencies (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # xdg-utils: the AppImage bundler copies /usr/bin/xdg-open, which the
+          # arm64 runner image does not preinstall.
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: lts/*
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: ./apps/desktop/src-tauri -> target
+          key: ${{ matrix.triple }}
+
+      - name: install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # externalBin is validated when tauri build evaluates the config, so the
+      # per-triple sidecar binary must exist first. bash runs build.sh under Git
+      # Bash on Windows.
+      - name: build sidecar
+        shell: bash
+        env:
+          TRIPLE: ${{ matrix.triple }}
+        run: bash packages/sidecar/build.sh "$TRIPLE"
+
+      - name: smoke test compiled sidecar
+        if: matrix.smoke
+        shell: bash
+        env:
+          TRIPLE: ${{ matrix.triple }}
+        run: |
+          ext=""
+          case "$TRIPLE" in *windows*) ext=".exe" ;; esac
+          bun packages/sidecar/pi-src/smoke/smoke-test.ts "packages/sidecar/hoy-pi-${TRIPLE}${ext}"
+
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # AppImage bundling workarounds (Linux-only, ignored elsewhere). The
+          # Linux updater consumes the AppImage; deb/rpm are not auto-updatable.
+          # - extract-and-run: linuxdeploy is an AppImage, runner has no FUSE2.
+          # - NO_STRIP: linuxdeploy's strip rejects modern .relr.dyn sections
+          #   (tauri-apps/tauri#14755). Harmless on glibc 2.35 runners.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          NO_STRIP: 'true'
+          # Updater signing (HOY-187). Only release builds receive these.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          # With releaseId set, tauri-action uploads into that release and does
+          # not create, rename, or rewrite its body (the Release Please
+          # changelog). Empty means build only.
+          releaseId: ${{ inputs.release-id }}
+          # Non-release builds have no signing key, and Tauri refuses to bundle
+          # updater artifacts without one, so skip signing there.
+          args: ${{ matrix.args }}${{ inputs.release-id == '' && ' --no-sign' || '' }}
+          # Empty on macOS/Windows (tauri-action auto-detects the build command);
+          # Linux runs the shelter+repack wrapper (HOY-217).
+          tauriScript: ${{ matrix.tauri_script }}

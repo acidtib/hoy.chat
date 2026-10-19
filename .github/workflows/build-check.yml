@@ -1,0 +1,40 @@
+name: Build check
+
+# Full unsigned builds on every release platform (macOS arm64/x64, Linux
+# x64/arm64, Windows x64/arm64) through the same build.yml a release uses, so a
+# platform break shows up on the PR instead of on release day. Each native build
+# also runs the compiled-sidecar smoke test. Path-filtered, so not a required
+# check; weekly runs catch toolchain and runner image drift.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/desktop/src-tauri/**'
+      - 'apps/desktop/package.json'
+      - 'packages/sidecar/**'
+      - 'scripts/**'
+      - 'bun.lock'
+      - '.github/workflows/build.yml'
+      - '.github/workflows/build-check.yml'
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: build-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  build:
+    # build.yml declares contents: write for release uploads, and a caller must
+    # grant at least what it declares. With no release-id nothing is uploaded;
+    # fork PRs get a read-only token regardless.
+    permissions:
+      contents: write
+    # Workspace-relative on purpose: actionlint does not parse the newer $/ form yet.
+    uses: ./.github/workflows/build.yml # zizmor: ignore[self-repository]
+    with:
+      ref: ${{ github.sha }}
