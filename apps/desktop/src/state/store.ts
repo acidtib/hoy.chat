@@ -1216,6 +1216,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // A titled thread, so a failed first prompt never discards it as untouched.
       renamed: true,
       agent,
+      // Nobody watches a delegated thread, so it must not stall on approvals.
+      permissionMode: "autonomous",
       linearIssue: {
         id: issue.id,
         identifier: issue.identifier,

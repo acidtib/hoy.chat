@@ -3,9 +3,18 @@ import { mockIpcModule } from "./ipcMock";
 
 const createSession = mock(async () => "s-delegate");
 const linearSetIssueState = mock(async () => {});
+const calls: string[] = [];
+const setPermissionMode = mock(async (_s: string, mode: string) => {
+  calls.push(`mode:${mode}`);
+});
+const sendPrompt = mock(async () => {
+  calls.push("prompt");
+});
 mockIpcModule({
   createSession,
   linearSetIssueState,
+  setPermissionMode,
+  sendPrompt,
   readSessionTranscript: mock(async () => []),
   getMessages: mock(async () => []),
   getState: mock(async () => ({})),
@@ -127,9 +136,18 @@ describe("delegateIssue", () => {
     expect(t.agent).toBe("Explore");
     expect(t.linearIssue).toEqual(ref(i));
     expect(t.renamed).toBe(true);
+    expect(t.permissionMode).toBe("autonomous");
     expect(submitPrompt.mock.calls[0][0]).toBe(t.id);
     expect(submitPrompt.mock.calls[0][1]).toBe(issuePrompt(i));
     expect(linearSetIssueState).toHaveBeenCalledWith(i.id, "started");
+  });
+
+  test("the session is autonomous before the issue prompt is sent", async () => {
+    calls.length = 0;
+    const id = useSessionStore.getState().delegateIssue("p1", issue("5", 2), "Explore");
+    for (let i = 0; i < 20 && !calls.includes("prompt"); i++) await Bun.sleep(5);
+    expect(useSessionStore.getState().projects[0].threads[0].id).toBe(id!);
+    expect(calls).toEqual(["mode:autonomous", "prompt"]);
   });
 
   test("spawning the thread's session passes its agent type", async () => {
