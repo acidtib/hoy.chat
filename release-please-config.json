@@ -1,0 +1,44 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "bootstrap-sha": "8ce534bafb3fd5334bced5e5461a9e27586933a6",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "draft": true,
+  "force-tag-creation": true,
+  "pull-request-title-pattern": "chore: release ${version}",
+  "pull-request-header": "Merging this PR cuts the release: it tags the commit, builds every platform into a draft GitHub release, and publishes it once all builds pass.",
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "deps", "section": "Dependencies" },
+    { "type": "revert", "section": "Reverts" },
+    { "type": "docs", "section": "Documentation", "hidden": true },
+    { "type": "refactor", "section": "Refactors", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "build", "section": "Build", "hidden": true },
+    { "type": "ci", "section": "CI", "hidden": true },
+    { "type": "chore", "section": "Chores", "hidden": true },
+    { "type": "style", "section": "Style", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "package-name": "hoy",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "json", "path": "apps/desktop/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/site/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/desktop/src-tauri/tauri.conf.json", "jsonpath": "$.version" },
+        { "type": "toml", "path": "apps/desktop/src-tauri/Cargo.toml", "jsonpath": "$.package.version" },
+        {
+          "type": "toml",
+          "path": "apps/desktop/src-tauri/Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value=='hoy-desktop')].version"
+        }
+      ]
+    }
+  }
+}

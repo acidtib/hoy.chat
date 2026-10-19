@@ -35,7 +35,7 @@ Repo is a Bun-workspaces monorepo (HOY-227): `hoy.chat` at the root, the desktop
 - **Dev runs in the `hoyd` namespace so Hoy can work on Hoy (HOY-206).** Debug builds default the agent dir to `~/.hoyd` (`pi_config.rs`, `cfg!(debug_assertions)` picks `BRANDED_DIR`), and `tauri.dev.conf.json` overrides the identifier to `chat.hoy.desktop.dev` (separate window-state and webview storage) with productName `Hoyd Desktop`. A dev instance never touches production data in `~/.hoy`. The dev namespace starts empty; copy `~/.hoy/auth.json` into `~/.hoyd/` to reuse keys. Caveat: plain `tauri dev` gets the debug agent dir but the prod identifier, one more reason `bun run tauri:dev` is the only dev entry.
 
 ## Working process
-- **The MVP milestones (M0-M4) are done.** Post-MVP work flows through Linear tickets: assign, In Progress, design note, implement, test, live-verify via the tauri MCP bridge, commit to main with a `HOY-NNN:` prefix, Done with evidence.
+- **The MVP milestones (M0-M4) are done.** Post-MVP work flows through Linear tickets: assign, In Progress, design note, implement, test, live-verify via the tauri MCP bridge, open a PR with a Conventional Commits title carrying the ticket (`feat(HOY-NNN): ...`, `fix(HOY-NNN): ...`) and squash-merge it, Done with evidence. Releases are cut by Release Please from those titles (`docs/RELEASING.md`); never bump versions or push release tags by hand.
 - **Rebuild the sidecar binary (`bun run sidecar:build`) whenever `packages/sidecar/pi-src` changes**, before any live verification, then open a **new session/thread** to pick it up: a running session keeps the sidecar it already spawned, so prompt/gate edits only reach freshly-spawned sessions. A stale binary, or a still-running old session, silently runs old prompt and gate code (HOY-200).
 - **Keep frontend and backend contracts in sync.** The `AgentEvent` union and command signatures are the source of truth shared between Rust `events.rs` and TS `types.ts`. Change both together.
 
@@ -56,7 +56,7 @@ Repo is a Bun-workspaces monorepo (HOY-227): `hoy.chat` at the root, the desktop
 - No em-dashes (--). Use a comma, semicolon, or rewrite the sentence.
 - No over-summarizing. Do not recap what you just did at the end of a response. Do not add closing paragraphs restating the changes. The diff speaks for itself.
 - Code comments: facts, decisions, and the why only. No narration of what the code does. No multi-line comment blocks explaining obvious logic.
-- Git commits: no Co-Authored-By trailers. Plain commit messages only.
+- Git commits: Conventional Commits (`type(scope): subject`, lowercase subject, ticket as scope when there is one). The PR title is what lands on `main` and drives the changelog and version bump. No Co-Authored-By trailers.
 
 ## Out of scope for MVP (note as TODOs, don't build)
 Themes, keyboard shortcuts, session rename/delete polish, Windows code signing, the multi-session orchestration dashboard. The architecture must not *block* these, but they are not MVP work.

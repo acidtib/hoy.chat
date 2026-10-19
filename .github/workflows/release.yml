@@ -1,12 +1,83 @@
 name: Release
 
+# Release Please drives versioning (docs/RELEASING.md). Every push to main
+# updates the release PR; merging that PR tags the commit and creates a draft
+# GitHub release, which this workflow builds into and publishes once every
+# platform succeeds. The draft keeps latest.json (the updater endpoint) and the
+# Arch repo job (on: release published) from seeing a release without assets.
+#
+# Writes that must trigger other workflows (the release PR running CI, the
+# publish event starting arch-repo.yml and site-deploy.yml) use a GitHub App
+# token; events created with GITHUB_TOKEN never start new workflow runs.
+
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to rebuild and publish (e.g. v0.1.9)'
+        required: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
 
 jobs:
-  release:
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: googleapis/release-please-action@v5
+        id: rp
+        with:
+          token: ${{ steps.app.outputs.token }}
+
+  prepare:
+    needs: release-please
+    if: >-
+      !cancelled() &&
+      (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    # Draft releases are only listed for tokens with write access.
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      # A draft has no tag lookup in the API, so find it on the release list.
+      - name: resolve release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
+        run: |
+          id=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" \
+            --jq ".[] | select(.tag_name == \"${TAG}\") | .id" | head -n1)
+          if [ -z "$id" ]; then
+            echo "::error::no release found for tag ${TAG}"
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "id=${id}" >> "$GITHUB_OUTPUT"
+
+  # Explicit conditions: on a manual rebuild release-please is skipped, and a
+  # skipped ancestor otherwise skips every downstream job.
+  build:
+    needs: prepare
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
     permissions:
       contents: write
     strategy:
@@ -32,11 +103,8 @@ jobs:
             # Linux builds through a wrapper that shelters + repacks the bun
             # sidecar so the AppImage's sidecar is not corrupted (HOY-217).
             # tauri-action execs tauriScript directly via execa with cwd set to
-            # projectPath (apps/desktop) - no shell, so neither $GITHUB_WORKSPACE
-            # nor ${{ github.workspace }} expand there (the latter is also empty
-            # this early: matrix.include is evaluated before a runner - and thus
-            # github.workspace - exists). A path relative to apps/desktop avoids
-            # both problems.
+            # projectPath (apps/desktop), with no shell, so workspace variables
+            # do not expand there. A path relative to apps/desktop avoids that.
             tauri_script: 'bash ../../scripts/linux/build-appimage.sh'
           - platform: windows-latest
             args: ''
@@ -47,6 +115,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - name: install system dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -78,9 +148,9 @@ jobs:
         shell: bash
         run: bash packages/sidecar/build.sh ${{ matrix.triple }}
 
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           # AppImage bundling workarounds (Linux-only, ignored elsewhere). The
           # Linux updater consumes the AppImage; deb/rpm are not auto-updatable.
           # - extract-and-run: linuxdeploy is an AppImage, runner has no FUSE2.
@@ -88,20 +158,64 @@ jobs:
           #   (tauri-apps/tauri#14755). Harmless on glibc 2.35 runners.
           APPIMAGE_EXTRACT_AND_RUN: '1'
           NO_STRIP: 'true'
-          # Updater signing (HOY-187). Add these as repo secrets; without them the
-          # build still produces installers but no signed updater artifacts.
+          # Updater signing (HOY-187). Without these the build still produces
+          # installers, but the publish job refuses a release with no latest.json.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          # The Tauri app lives under apps/desktop in the monorepo layout; run
-          # tauri-action there so it finds src-tauri and the beforeBuildCommand.
           projectPath: apps/desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Hoy Desktop ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download and install this version.'
-          releaseDraft: true
-          prerelease: false
+          # Upload into the release Release Please created. With releaseId set,
+          # tauri-action does not create or rename the release or touch its
+          # body, so the generated changelog stays intact.
+          releaseId: ${{ needs.prepare.outputs.release_id }}
           args: ${{ matrix.args }}
           # Empty on macOS/Windows (tauri-action auto-detects the build command);
           # Linux runs the shelter+repack wrapper (HOY-217).
           tauriScript: ${{ matrix.tauri_script }}
+
+  publish:
+    needs: [prepare, build]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      # The in-app updater reads latest.json from the latest published release,
+      # so never publish one that is missing a platform. Drafts have no tag
+      # lookup in the API, so everything here goes by release id.
+      - name: verify updater manifest
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+        run: |
+          asset=$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            --jq '.assets[] | select(.name == "latest.json") | .id')
+          if [ -z "$asset" ]; then
+            echo "::error::release has no latest.json (are the updater signing secrets set?)"
+            exit 1
+          fi
+          gh api -H "Accept: application/octet-stream" \
+            "repos/${GITHUB_REPOSITORY}/releases/assets/${asset}" > latest.json
+          for platform in darwin-aarch64 darwin-x86_64 linux-x86_64 windows-x86_64; do
+            if ! jq -e --arg p "$platform" '.platforms[$p].signature | length > 0' latest.json >/dev/null; then
+              echo "::error::latest.json has no signed entry for ${platform}"
+              exit 1
+            fi
+          done
+
+      # Published with the App token so the release event starts arch-repo.yml.
+      - name: publish release
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+        run: |
+          endpoint="repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}"
+          if [ "$(gh api "$endpoint" --jq .draft)" = "true" ]; then
+            gh api -X PATCH "$endpoint" -F draft=false -f make_latest=true --jq '.html_url'
+          else
+            echo "release ${RELEASE_ID} is already published"
+          fi

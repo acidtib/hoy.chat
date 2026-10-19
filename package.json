@@ -2,7 +2,10 @@
   "name": "hoy.chat",
   "private": true,
   "version": "0.1.8",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "bun run --filter 'hoy-desktop' dev",
     "build": "bun run --filter 'hoy-desktop' build",
