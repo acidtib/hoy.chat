@@ -3920,8 +3920,9 @@ async function finishFleetRun(threadId: string): Promise<void> {
     const last = [...(store.turns[threadId] ?? [])]
       .reverse()
       .find((t) => t.role === "assistant");
-    // An abort also carries an error message, so it is checked first.
-    const outcome: FleetOutcome = last?.aborted
+    // An abort also carries an error message, and a killed sidecar reports
+    // its abort only as an error, so both count as stopped.
+    const outcome: FleetOutcome = last?.aborted || /aborted/i.test(last?.error ?? "")
       ? "stopped"
       : store.threadErrors[threadId] || last?.error
         ? "error"

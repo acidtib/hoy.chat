@@ -139,6 +139,12 @@ describe("fleet queue", () => {
     expect(threadFor("2")).toBeDefined();
   });
 
+  test("an abort reported only as an error still counts as stopped", async () => {
+    useSessionStore.getState().enqueueIssue("p1", issue("1"), "Explore");
+    await endRun(threadFor("1")!.id, { error: "The operation was aborted." });
+    expect(threadFor("1")!.fleetRun!.outcome).toBe("stopped");
+  });
+
   test("a failed first prompt ends the run as an error", async () => {
     useSessionStore.getState().enqueueIssue("p1", issue("1"), "Explore");
     const id = threadFor("1")!.id;

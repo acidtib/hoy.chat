@@ -29,7 +29,7 @@ export function ProjectHome() {
   if (!project) return null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-background">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b border-border px-5">
         <h1 className="truncate text-sm font-semibold">{project.name}</h1>
         <nav className="flex h-full items-stretch" aria-label="Project views">

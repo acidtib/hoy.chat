@@ -7,10 +7,14 @@ import {
   Bot,
   Check,
   ChevronDown,
+  ChevronRight,
   Clock,
   ExternalLink,
   GripVertical,
+  Inbox,
   Loader2,
+  MoreHorizontal,
+  Plus,
   RefreshCw,
   Square,
   X,
@@ -173,10 +177,11 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-3 px-4 pt-3 text-xs text-muted-foreground">
-        <span>Drag an issue onto an agent to queue it</span>
-        <div className="ml-auto flex items-center gap-3">
+        <GripVertical className="size-3.5 shrink-0 opacity-50" />
+        <span className="truncate">Drag an issue onto an agent to queue it</span>
+        <div className="ml-auto flex shrink-0 items-center gap-3">
           <span
             className="font-mono"
             title={
@@ -194,17 +199,16 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
           </Mock>
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 gap-4 p-4 pt-2">
-        <section className="flex w-80 shrink-0 flex-col border border-border bg-card/40">
-          <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
-            <h2 className="text-sm font-semibold">Unassigned</h2>
-            <span className="border border-border px-1.5 text-[11px] tabular-nums text-muted-foreground">
-              {open.length}
-            </span>
+      <div className="flex min-h-0 min-w-0 flex-1 gap-3 p-4 pt-2">
+        <Column
+          title="Backlog"
+          count={open.length}
+          className="w-72"
+          action={
             <Button
               variant="ghost"
               size="icon-sm"
-              className="ml-auto size-7 text-muted-foreground"
+              className="size-7 text-muted-foreground"
               onClick={() => void refreshIssues(project.id, teamId)}
               disabled={cache.loading}
               aria-label="Refresh issues"
@@ -214,8 +218,9 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
                 className={cn("size-3.5", cache.loading && "animate-spin")}
               />
             </Button>
-          </div>
-          <div className="scrollbar-thin flex-1 space-y-2 overflow-y-auto p-2">
+          }
+        >
+          <div className="space-y-2 p-2">
             {cache.error ? (
               <p className="p-2 text-xs text-destructive">{cache.error}</p>
             ) : cache.fetchedAt === null ? (
@@ -240,19 +245,35 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
               ))
             )}
           </div>
-        </section>
+        </Column>
 
-        <section className="flex min-w-0 flex-1 flex-col border border-border bg-card/40">
-          <div className="flex h-11 shrink-0 items-center border-b border-border px-3">
-            <h2 className="text-sm font-semibold">Agents</h2>
+        <Column
+          title="Todo"
+          count={0}
+          className="hidden w-72 xl:flex"
+          action={
+            <Mock className="text-[11px]">Preview</Mock>
+          }
+        >
+          <div className="flex h-full flex-col p-2">
+            <div
+              title="Mock: not wired yet"
+              className="mt-auto flex flex-col items-center gap-2 border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground/70"
+            >
+              <Inbox className="size-4" />
+              Drop issues here to plan them
+            </div>
           </div>
-          <div className="scrollbar-thin flex-1 divide-y divide-border overflow-y-auto">
-            {agents.length === 0 ? (
-              <p className="p-3 text-xs text-muted-foreground">
-                No enabled agents. Add or enable one in Settings, Subagents.
-              </p>
-            ) : (
-              agents.map((def) => (
+        </Column>
+
+        <Column title="Agents" count={agents.length} className="min-w-80 flex-1">
+          {agents.length === 0 ? (
+            <p className="p-3 text-xs text-muted-foreground">
+              No enabled agents. Add or enable one in Settings, Subagents.
+            </p>
+          ) : (
+            <div className="divide-y divide-border">
+              {agents.map((def) => (
                 <AgentRow
                   key={def.name}
                   def={def}
@@ -262,12 +283,44 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
                   now={now}
                   onDropIssue={(issueId) => assign(issueId, def.name)}
                 />
-              ))
-            )}
-          </div>
-        </section>
+              ))}
+            </div>
+          )}
+        </Column>
       </div>
     </div>
+  );
+}
+
+function Column({
+  title,
+  count,
+  action,
+  className,
+  children,
+}: {
+  title: string;
+  count: number;
+  action?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      className={cn(
+        "flex min-w-0 shrink-0 flex-col border border-border bg-card/40",
+        className,
+      )}
+    >
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        <span className="border border-border px-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
+          {count}
+        </span>
+        <div className="ml-auto flex items-center">{action}</div>
+      </div>
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">{children}</div>
+    </section>
   );
 }
 
@@ -350,64 +403,69 @@ function IssueCard({
       }}
       data-issue-id={issue.id}
       className={cn(
-        "group/issue cursor-grab border border-border bg-card p-2.5 active:cursor-grabbing",
+        "group/issue cursor-grab border border-border bg-card active:cursor-grabbing",
         dragging && "opacity-40",
       )}
     >
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <GripVertical className="-ml-1 size-3.5 shrink-0 opacity-50" />
-        <span className="font-mono">{issue.identifier}</span>
-        {issue.estimate !== null && (
-          <span className="font-mono">{issue.estimate} pt</span>
-        )}
-        <span
-          className={cn(
-            "ml-auto",
-            issue.priority === 1 && "text-destructive",
-            issue.priority === 2 && "text-amber-500",
-          )}
-        >
-          {issue.priority === 0 ? issue.stateName : issue.priorityLabel}
-        </span>
+      <div className="px-2.5 pt-2">
+        <div className="flex items-center gap-1.5 text-[11px]">
+          <span className="font-mono text-foreground/80">{issue.identifier}</span>
+          <span
+            className={cn(
+              "ml-auto text-muted-foreground",
+              issue.priority === 1 && "text-destructive",
+              issue.priority === 2 && "text-amber-500",
+            )}
+          >
+            {issue.priority === 0 ? null : issue.priorityLabel}
+          </span>
+        </div>
+        <p className="mt-1 line-clamp-2 pb-2 text-sm leading-snug text-foreground">
+          {issue.title}
+        </p>
       </div>
-      <p className="mt-1 text-sm leading-snug text-foreground">{issue.title}</p>
-      <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
+      <div className="flex h-8 items-center gap-1 border-t border-border px-2.5 text-[11px] text-muted-foreground">
         <span className="min-w-0 truncate">
           {issue.labels.length > 0 ? issue.labels.join(" · ") : issue.stateName}
         </span>
-        <button
-          type="button"
-          onClick={() => void openUrl(issue.url)}
-          className="ml-auto flex size-6 shrink-0 items-center justify-center opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/issue:opacity-100"
-          aria-label={`Open ${issue.identifier} in Linear`}
-          title="Open in Linear"
-        >
-          <ExternalLink className="size-3.5" />
-        </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="flex h-6 shrink-0 items-center gap-0.5 px-1.5 opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/issue:opacity-100 data-[state=open]:opacity-100"
-              aria-label={`Assign ${issue.identifier}`}
-            >
-              Assign
-              <ChevronDown className="size-3" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-44">
-            <DropdownMenuLabel>Assign to</DropdownMenuLabel>
-            {agents.map((def) => (
-              <DropdownMenuItem
-                key={def.name}
-                onSelect={() => onAssign(def.name)}
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/issue:opacity-100 has-[[data-state=open]]:opacity-100">
+          <button
+            type="button"
+            onClick={() => void openUrl(issue.url)}
+            className="flex size-6 items-center justify-center hover:text-foreground"
+            aria-label={`Open ${issue.identifier} in Linear`}
+            title="Open in Linear"
+          >
+            <ExternalLink className="size-3.5" />
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex h-6 items-center gap-0.5 px-1.5 hover:bg-accent hover:text-foreground"
+                aria-label={`Assign ${issue.identifier}`}
               >
-                <Bot className="size-4" />
-                {def.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+                Assign
+                <ChevronDown className="size-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-44">
+              <DropdownMenuLabel>Assign to</DropdownMenuLabel>
+              {agents.map((def) => (
+                <DropdownMenuItem
+                  key={def.name}
+                  onSelect={() => onAssign(def.name)}
+                >
+                  <Bot className="size-4" />
+                  {def.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        {issue.estimate !== null && (
+          <span className="shrink-0 pl-1 font-mono">{issue.estimate} pt</span>
+        )}
       </div>
     </div>
   );
@@ -438,11 +496,14 @@ function AgentRow({
   const setAgentConcurrency = useSessionStore((s) => s.setAgentConcurrency);
   const resumeAgent = useSessionStore((s) => s.resumeAgent);
   const [over, setOver] = useState(false);
+  const [showDone, setShowDone] = useState(false);
   const { open, queued, halting, concurrency, rate, history } = plan;
   const busy = open.length >= concurrency;
-  const others = agentThreads(project.threads, def.name).filter(
-    (t) => !open.includes(t),
+  const rest = agentThreads(project.threads, def.name).filter(
+    (t) => !open.includes(t) && t !== halting,
   );
+  const live = rest.filter((t) => streaming[t.id]);
+  const done = rest.filter((t) => !streaming[t.id]);
 
   const preview = useMemo(() => {
     if (!over || !dragged) return null;
@@ -460,6 +521,8 @@ function AgentRow({
     history.length === 0
       ? "No finished runs yet"
       : `From ${history.length} finished run${history.length === 1 ? "" : "s"}`;
+  const empty =
+    open.length + queued.length + live.length + done.length === 0 && !halting;
 
   return (
     <div
@@ -483,36 +546,22 @@ function AgentRow({
       }}
       data-agent={def.name}
       className={cn(
-        "p-3 outline outline-1 -outline-offset-1 outline-transparent transition-colors",
+        "px-3 py-3 outline outline-1 -outline-offset-1 outline-transparent transition-colors",
         over && "bg-brand/5 outline-brand",
       )}
     >
-      <div className="flex items-center gap-2.5">
-        <div className="flex size-7 shrink-0 items-center justify-center border border-border bg-background text-agent">
-          <Bot className="size-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-sm font-semibold">{def.name}</span>
-            <span className="truncate text-xs text-muted-foreground">
-              {def.model ?? "Default model"}
-            </span>
-            <span
-              className="font-mono text-xs text-muted-foreground/70"
-              title={`Estimate. ${basis}.`}
-            >
-              {rate == null ? "$--" : formatCost(rate)}/min
-            </span>
-          </div>
-          {def.description && (
-            <p className="truncate text-xs text-muted-foreground">
-              {def.description}
-            </p>
-          )}
-        </div>
+      <div className="flex min-w-0 items-center gap-2">
+        <Bot className="size-4 shrink-0 text-agent" />
+        <span className="truncate text-sm font-semibold">{def.name}</span>
+        <span
+          className="shrink-0 font-mono text-xs text-muted-foreground"
+          title={`Estimate. ${basis}.`}
+        >
+          {rate == null ? "$--" : formatCost(rate)}/min
+        </span>
         {preview && (
           <span
-            className="shrink-0 font-mono text-xs text-brand"
+            className="min-w-0 truncate font-mono text-xs text-brand"
             title={`Estimate. ${basis}.`}
           >
             {rate != null && `+${formatCost(preview.minutes * rate)} · `}+
@@ -520,34 +569,9 @@ function AgentRow({
             {preview.until != null && ` until ${formatClock(preview.until)}`}
           </span>
         )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="flex h-6 shrink-0 items-center gap-0.5 border border-border px-1.5 font-mono text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-              aria-label={`${def.name} runs at once`}
-              title="Runs at once"
-            >
-              x{concurrency}
-              <ChevronDown className="size-3" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Runs at once</DropdownMenuLabel>
-            {[1, 2, 3, 4].map((n) => (
-              <DropdownMenuItem
-                key={n}
-                onSelect={() => setAgentConcurrency(project.id, def.name, n)}
-              >
-                {n === concurrency ? <Check className="size-4" /> : <span className="size-4" />}
-                {n}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
         <span
           className={cn(
-            "flex shrink-0 items-center gap-1.5 text-xs",
+            "ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs",
             halting
               ? "text-amber-500"
               : busy
@@ -574,9 +598,41 @@ function AgentRow({
                 ? `${open.length}/${concurrency} running`
                 : "Free"}
         </span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex h-6 shrink-0 items-center gap-1 px-1 text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent"
+              aria-label={`${def.name} options`}
+              title="Runs at once"
+            >
+              <span className="border border-border px-1 font-mono text-[11px]">
+                x{concurrency}
+              </span>
+              <MoreHorizontal className="size-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>Runs at once</DropdownMenuLabel>
+            {[1, 2, 3, 4].map((n) => (
+              <DropdownMenuItem
+                key={n}
+                onSelect={() => setAgentConcurrency(project.id, def.name, n)}
+              >
+                {n === concurrency ? <Check className="size-4" /> : <span className="size-4" />}
+                {n}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
+      {def.description && (
+        <p className="mt-0.5 truncate pl-6 text-xs text-muted-foreground">
+          {def.description}
+        </p>
+      )}
       {halting && (
-        <div className="mt-2 flex items-center gap-2 pl-9.5 text-xs text-amber-500">
+        <div className="mt-2 ml-6 flex min-w-0 items-center gap-2 border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-500">
           <AlertTriangle className="size-3.5 shrink-0" />
           <span className="min-w-0 truncate">
             {halting.linearIssue?.identifier ?? halting.title}{" "}
@@ -586,94 +642,158 @@ function AgentRow({
           <Button
             variant="outline"
             size="sm"
-            className="h-6 px-2 text-xs"
+            className="ml-auto h-6 shrink-0 border-amber-500/40 px-2 text-xs text-amber-500 hover:text-amber-400"
             onClick={() => resumeAgent(project.id, def.name)}
           >
             Resume queue
           </Button>
         </div>
       )}
-      {open.length + queued.length + others.length > 0 && (
-        <div className="mt-2.5 flex flex-wrap gap-1.5 pl-9.5">
-          {open.map((t) => (
-            <WorkChip
+      {empty && !preview ? (
+        <p className="mt-2 pl-6 text-xs italic text-muted-foreground/70">No work yet</p>
+      ) : (
+        <div className="mt-2 ml-6 divide-y divide-border border border-border bg-background/40">
+          {open.map((t, i) => (
+            <ThreadTask
               key={t.id}
               thread={t}
               state={streaming[t.id] ? "running" : "starting"}
+              meta={`~${formatMinutes(
+                Math.max(
+                  plan.runningMinutes[i].minutes - (now - t.fleetRun!.startedAt) / 60_000,
+                  1,
+                ),
+              )} left`}
             />
           ))}
+          {live.map((t) => (
+            <ThreadTask key={t.id} thread={t} state="running" />
+          ))}
+          {halting && <ThreadTask thread={halting} state="failed" />}
           {queued.map((q, i) => (
-            <QueuedChip
+            <QueuedTask
               key={q.issue.id}
               projectId={project.id}
               item={q}
+              minutes={plan.queuedMinutes[i]}
               first={i === 0}
               last={i === queued.length - 1}
             />
           ))}
-          {others.map((t) => (
-            <WorkChip
-              key={t.id}
-              thread={t}
-              state={
-                t === halting
-                  ? "failed"
-                  : streaming[t.id]
-                    ? "running"
-                    : "finished"
-              }
-            />
-          ))}
+          {preview && dragged && (
+            <TaskShell className="border border-dashed border-brand/60 bg-brand/5 text-brand">
+              <Plus className="size-3.5 shrink-0" />
+              <span className="shrink-0 whitespace-nowrap font-mono text-[11px]">
+                {dragged.identifier}
+              </span>
+              <span className="min-w-0 truncate">Queue {dragged.title}</span>
+              <span className="ml-auto shrink-0 font-mono text-[11px]">
+                ~{formatMinutes(preview.minutes)}
+              </span>
+            </TaskShell>
+          )}
+          {done.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowDone((v) => !v)}
+                className="flex h-7 w-full items-center gap-1.5 px-2 text-left text-[11px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                aria-expanded={showDone}
+              >
+                <ChevronRight
+                  className={cn("size-3.5 transition-transform", showDone && "rotate-90")}
+                />
+                {done.length} done
+              </button>
+              {showDone &&
+                done.map((t) => <ThreadTask key={t.id} thread={t} state="finished" />)}
+            </>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-type ChipState = "running" | "starting" | "finished" | "failed";
+function TaskShell({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "group/task flex h-8 min-w-0 items-center gap-2 px-2 text-xs",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
 
-// One piece of an agent's work: a delegated issue, or a subagent another
+type TaskState = "running" | "starting" | "finished" | "failed";
+
+// One row of an agent's stack: a delegated issue, or a subagent another
 // thread spawned.
-function WorkChip({ thread, state }: { thread: Thread; state: ChipState }) {
+function ThreadTask({
+  thread,
+  state,
+  meta,
+}: {
+  thread: Thread;
+  state: TaskState;
+  meta?: string;
+}) {
   const openThread = useSessionStore((s) => s.openThread);
   const stopStreaming = useSessionStore((s) => s.stopStreaming);
   const archiveThread = useSessionStore((s) => s.archiveThread);
   const issue = thread.linearIssue;
   const live = state === "running" || state === "starting";
+  const run = thread.fleetRun;
+  const failed = state === "failed" || (run?.outcome != null && run.outcome !== "done");
   // Spawned subagents belong to their parent; only delegated work gets controls.
-  const own = !!thread.fleetRun || !!thread.linearIssue;
+  const own = !!run || !!issue;
+  const label = issue?.identifier ?? thread.title;
+  const took =
+    run?.endedAt != null ? formatMinutes((run.endedAt - run.startedAt) / 60_000) : null;
   return (
-    <div
+    <TaskShell
       className={cn(
-        "group/chip flex h-6 max-w-72 items-center border text-xs transition-colors",
-        live
-          ? "border-brand/30 bg-brand/10 text-foreground"
-          : state === "failed"
-            ? "border-amber-500/40 text-amber-500"
-            : "border-border text-muted-foreground",
+        live && "bg-brand/10",
+        state === "failed" && "text-amber-500",
+        state === "finished" && "text-muted-foreground",
       )}
     >
       <button
         type="button"
         onClick={() => openThread(thread.id)}
         title={issue ? `${issue.identifier} ${issue.title}` : thread.title}
-        className="flex h-full min-w-0 items-center gap-1.5 px-2 hover:bg-accent/60"
+        className="flex h-full min-w-0 flex-1 items-center gap-2 text-left hover:text-foreground"
       >
         {live ? (
-          <Loader2 className="size-3 shrink-0 animate-spin text-brand" />
-        ) : state === "failed" ||
-          (thread.fleetRun?.outcome && thread.fleetRun.outcome !== "done") ? (
-          <AlertTriangle className="size-3 shrink-0" />
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-brand" />
+        ) : failed ? (
+          <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
         ) : (
-          <Check className="size-3 shrink-0" />
+          <Check className="size-3.5 shrink-0" />
         )}
-        {issue && (
+        {issue ? (
           <span className="shrink-0 whitespace-nowrap font-mono text-[11px]">
             {issue.identifier}
           </span>
+        ) : (
+          <Bot className="size-3.5 shrink-0 text-agent" />
         )}
-        <span className="truncate">{issue ? issue.title : thread.title}</span>
+        <span className="min-w-0 truncate">{issue ? issue.title : thread.title}</span>
       </button>
+      {(meta ?? took) && (
+        <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+          {meta ?? took}
+        </span>
+      )}
       {own && (
         <button
           type="button"
@@ -681,29 +801,30 @@ function WorkChip({ thread, state }: { thread: Thread; state: ChipState }) {
             live ? void stopStreaming(thread.id) : archiveThread(thread.id)
           }
           disabled={state === "starting"}
-          className="flex h-full w-6 shrink-0 items-center justify-center border-l border-inherit text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-          aria-label={
-            live
-              ? `Stop ${issue?.identifier ?? thread.title}`
-              : `Archive ${issue?.identifier ?? thread.title}`
-          }
+          className={cn(
+            "flex size-6 shrink-0 items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40",
+            !live && "opacity-0 focus-visible:opacity-100 group-hover/task:opacity-100",
+          )}
+          aria-label={live ? `Stop ${label}` : `Archive ${label}`}
           title={live ? "Stop" : "Archive and release the issue"}
         >
-          {live ? <Square className="size-2.5" /> : <Archive className="size-3" />}
+          {live ? <Square className="size-3" /> : <Archive className="size-3.5" />}
         </button>
       )}
-    </div>
+    </TaskShell>
   );
 }
 
-function QueuedChip({
+function QueuedTask({
   projectId,
   item,
+  minutes,
   first,
   last,
 }: {
   projectId: string;
   item: QueuedIssue;
+  minutes: number;
   first: boolean;
   last: boolean;
 }) {
@@ -711,43 +832,52 @@ function QueuedChip({
   const unqueueIssue = useSessionStore((s) => s.unqueueIssue);
   const { issue } = item;
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          title={`Queued: ${issue.identifier} ${issue.title}`}
-          aria-label={`Queued ${issue.identifier}`}
-          className="flex h-6 max-w-72 items-center gap-1.5 border border-dashed border-border px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent"
-        >
-          <Clock className="size-3 shrink-0" />
-          <span className="shrink-0 whitespace-nowrap font-mono text-[11px]">
-            {issue.identifier}
-          </span>
-          <span className="truncate">{issue.title}</span>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        <DropdownMenuItem
-          disabled={first}
-          onSelect={() => moveQueuedIssue(projectId, issue.id, -1)}
-        >
-          <ArrowUp className="size-4" />
-          Move up
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={last}
-          onSelect={() => moveQueuedIssue(projectId, issue.id, 1)}
-        >
-          <ArrowDown className="size-4" />
-          Move down
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => unqueueIssue(projectId, issue.id)}>
-          <X className="size-4" />
-          Unassign
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <TaskShell className="text-muted-foreground">
+      <Clock className="size-3.5 shrink-0" />
+      <span className="shrink-0 whitespace-nowrap font-mono text-[11px]">
+        {issue.identifier}
+      </span>
+      <span className="min-w-0 flex-1 truncate" title={issue.title}>
+        {issue.title}
+      </span>
+      <span className="shrink-0 font-mono text-[11px]">~{formatMinutes(minutes)}</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Queued ${issue.identifier}`}
+            className="flex size-6 shrink-0 items-center justify-center hover:bg-accent hover:text-foreground data-[state=open]:bg-accent"
+          >
+            <MoreHorizontal className="size-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            disabled={first}
+            onSelect={() => moveQueuedIssue(projectId, issue.id, -1)}
+          >
+            <ArrowUp className="size-4" />
+            Move up
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={last}
+            onSelect={() => moveQueuedIssue(projectId, issue.id, 1)}
+          >
+            <ArrowDown className="size-4" />
+            Move down
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void openUrl(issue.url)}>
+            <ExternalLink className="size-4" />
+            Open in Linear
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => unqueueIssue(projectId, issue.id)}>
+            <X className="size-4" />
+            Unassign
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </TaskShell>
   );
 }
 
