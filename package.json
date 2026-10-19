@@ -25,6 +25,7 @@
     "check:rust": "bun run --filter 'hoy-desktop' check:rust",
     "clippy": "bun run --filter 'hoy-desktop' clippy",
     "check:fmt": "bun run --filter 'hoy-desktop' check:fmt",
+    "check:pr-title": "bun scripts/check-pr-title.mjs",
     "lint": "bun run --filter 'hoy-desktop' lint",
     "lint:js": "bun run --filter 'hoy-desktop' lint:js",
     "lint:rust": "bun run --filter 'hoy-desktop' lint:rust"

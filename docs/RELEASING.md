@@ -7,9 +7,10 @@ by hand. The rest of the pipeline is in [CI.md](CI.md).
 ## Flow
 
 1. PRs are squash-merged; the PR title becomes the commit on `main`. Titles must
-   be Conventional Commits (`.github/workflows/pr-title.yml` enforces it):
-   - `feat(HOY-312): limit thinking levels per model` -> "Features"
-   - `fix(HOY-333): respect autonomous mode for MCP tools` -> "Bug Fixes"
+   be Conventional Commits with an area scope (types, scopes, and rules are in
+   AGENTS.md; `bun run check:pr-title '<title>'` runs the same check as CI):
+   - `feat(ui): limit thinking levels to what the model supports` -> "Features"
+   - `fix(mcp): respect autonomous mode for mcp tools` -> "Bug Fixes"
    - `feat!: ...` or a `BREAKING CHANGE:` footer -> breaking
    - `perf`, `deps`, `revert` are listed in the changelog; `docs`, `refactor`,
      `test`, `build`, `ci`, `chore`, `style` are hidden and do not trigger a

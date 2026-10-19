@@ -6,7 +6,7 @@ All workflows live in `.github/workflows/`. Releases are covered in
 | Workflow | Runs on | What it does |
 |---|---|---|
 | `ci.yml` | every PR and push to `main` | `check`: typecheck, cargo check, clippy, fmt, oxlint, desktop tests, sidecar tests, Rust tests, and the compiled-sidecar smoke test. `site`: site lint and build. `workflows`: zizmor audit of all workflows. |
-| `pr-title.yml` | every PR | `conventional-title`: the PR title must be a Conventional Commit (it becomes the squash commit Release Please reads). |
+| `pr-title.yml` | every PR | `conventional-title`: runs `scripts/check-pr-title.mjs` on the PR title (types from `release-please-config.json`, scopes from AGENTS.md). Same as `bun run check:pr-title '<title>'`. |
 | `build-check.yml` | PRs touching `src-tauri`, `packages/sidecar`, `scripts`, `bun.lock`, or the build workflows; weekly; manual | Full unsigned builds on all six release platforms via `build.yml`, each native build running the smoke test. Not required (path-filtered). |
 | `build.yml` | called by `release.yml` and `build-check.yml` | The single platform matrix: macOS arm64/x64, Linux x64/arm64, Windows x64/arm64. Uploads into a release only when given a `release-id`. |
 | `release.yml` | push to `main`; manual (rebuild a tag) | Release Please, draft release build, provenance attestation, publish. |

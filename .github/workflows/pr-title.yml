@@ -1,45 +1,25 @@
 name: PR title
 
-# PRs are squash-merged with the PR title as the commit message, and Release
-# Please reads those commits to pick the version bump and write the changelog
-# (docs/RELEASING.md). Enforce Conventional Commits on the title, e.g.
-# "feat(HOY-312): limit thinking levels per model".
+# PRs are squash-merged and the title becomes the commit Release Please reads,
+# so it must be a Conventional Commit. Same script as `bun run check:pr-title`.
+# pull_request, not pull_request_target: no write access or secrets needed.
 
-# pull_request (not pull_request_target) so the check runs from the PR's own
-# workflow file and never gets write access or secrets; it only reads the title
-# from the event payload.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
 permissions:
-  pull-requests: read
+  contents: read
 
 jobs:
   conventional-title:
     runs-on: ubuntu-latest
     steps:
-      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Keep in sync with changelog-sections in release-please-config.json.
-          types: |
-            feat
-            fix
-            perf
-            deps
-            revert
-            docs
-            refactor
-            test
-            build
-            ci
-            chore
-            style
-          requireScope: false
-          # Release Please's own PR ("chore: release 0.1.9") already conforms.
-          subjectPattern: ^[^A-Z].*$
-          subjectPatternError: |
-            Start the subject with a lowercase letter, e.g.
-            "feat(HOY-312): limit thinking levels per model".
+          persist-credentials: false
+
+      - name: check title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/check-pr-title.mjs "$PR_TITLE"
