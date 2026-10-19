@@ -5,8 +5,11 @@ name: PR title
 # (docs/RELEASING.md). Enforce Conventional Commits on the title, e.g.
 # "feat(HOY-312): limit thinking levels per model".
 
+# pull_request (not pull_request_target) so the check runs from the PR's own
+# workflow file and never gets write access or secrets; it only reads the title
+# from the event payload.
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, synchronize, reopened]
 
 permissions:
