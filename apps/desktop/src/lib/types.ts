@@ -166,6 +166,7 @@ export interface ToolUI {
   title: string;
   command?: string;
   diff?: string;
+  script?: string;
   output: string;
   isError?: boolean;
   running: boolean;
@@ -594,6 +595,7 @@ export interface McpServerList {
   global: McpServerEntry[];
   project: McpServerEntry[];
   projectShared: McpServerEntry[];
+  codemode: boolean;
 }
 
 // Skills management (HOY-323). One discovered skill, from the sidecar's

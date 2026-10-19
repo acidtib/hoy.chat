@@ -1,12 +1,19 @@
 // loadConfig for Pi's built-in MCP extension: layering, project trust, the
-// codemode -> deferred exposure default, legacy `disabled`, and the `mcp`
+// exposure default with codemode off and on, legacy `disabled`, and the `mcp`
 // capability expansion. Run with: bun test (in sidecar/pi-src)
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { adaptServer, expandToolNames, interpolateEnv, loadHoyMcpConfig, MCP_TOOL_NAMES } from "./hoy-mcp-config";
+import {
+  adaptServer,
+  expandToolNames,
+  interpolateEnv,
+  loadHoyMcpConfig,
+  MCP_TOOL_NAMES,
+  readHoyCodemode,
+} from "./hoy-mcp-config";
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -43,6 +50,17 @@ describe("loadHoyMcpConfig", () => {
     expect(loaded.errors).toEqual([]);
     expect(loaded.autoEnableCodemode).toBe(false);
     expect(loaded.projectConfig).toBe(join(cwd, ".hoy", "mcp.json"));
+  });
+
+  test("codemode comes from the global file only and drives autoEnableCodemode", () => {
+    const { agentDir, cwd } = dirs();
+    expect(readHoyCodemode(agentDir)).toBe(false);
+    writeFileSync(join(agentDir, "mcp.json"), JSON.stringify({ codemode: true, mcpServers: { a: { command: "x" } } }));
+    expect(readHoyCodemode(agentDir)).toBe(true);
+    expect(readHoyCodemode(cwd)).toBe(false);
+    const loaded = loadHoyMcpConfig({ agentDir, cwd, projectTrusted: false, codemode: true });
+    expect(loaded.autoEnableCodemode).toBe(true);
+    expect((loaded.servers[0].config as any).exposure).toBe("codemode");
   });
 
   test("ignores project files until the project is trusted", () => {
@@ -97,6 +115,14 @@ describe("adaptServer", () => {
     const tools = (adaptServer("a", { command: "x", toolExposure: { "get_*": "codemode", del: "hidden" } }) as any)
       .toolExposure;
     expect(tools).toEqual({ "get_*": "deferred", del: "hidden" });
+  });
+
+  test("keeps codemode exposure, and defaults to it, when codemode is on", () => {
+    expect((adaptServer("a", { command: "x" }, null, true) as any).exposure).toBe("codemode");
+    expect((adaptServer("a", { command: "x", exposure: "codemode-deferred" }, null, true) as any).exposure).toBe(
+      "codemode",
+    );
+    expect((adaptServer("a", { command: "x", exposure: "deferred" }, null, true) as any).exposure).toBe("deferred");
   });
 
   test("maps legacy disabled:true to enabled:false and strips it", () => {

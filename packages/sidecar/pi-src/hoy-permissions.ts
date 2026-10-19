@@ -83,6 +83,8 @@ export function decide(
   // this, plan mode will block it as a custom tool and default mode will raise
   // an approval card before the question card ever showed.
   if (toolName === "ask_question") return "allow";
+  // codemode can only call other tools, and each nested call passes this gate.
+  if (toolName === "codemode") return "allow";
   if (mode === "autonomous") return "allow";
   if (mode === "plan") {
     // agent (HOY-213): plan mode can fan out subagents to parallelize read-only

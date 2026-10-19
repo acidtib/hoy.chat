@@ -414,6 +414,9 @@ impl PiProcess {
             // payload sets piConfig.name="hoy", so Pi derives this same name).
             .env("PI_PACKAGE_DIR", payload)
             .env("HOY_CODING_AGENT_DIR", agent_dir)
+            // Codemode's QuickJS wasm ships in the payload; the compiled binary
+            // can only resolve it through NODE_PATH.
+            .env("NODE_PATH", payload.join("node_modules"))
             .current_dir(cwd);
         // M4: open this thread's existing transcript instead of starting fresh.
         // The entry falls back to a new session if the file is missing.

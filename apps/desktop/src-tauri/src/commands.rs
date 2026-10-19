@@ -286,6 +286,16 @@ pub async fn remove_mcp_server(
 }
 
 #[tauri::command]
+pub async fn set_mcp_codemode(
+    enabled: bool,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    mcp_config::set_codemode(enabled)?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn list_subagents(
     cwd: String,
     manager: State<'_, SidecarManager>,

@@ -1,11 +1,13 @@
 // Smoke test for the COMPILED sidecar binary (bun --compile output), not the
 // sources. The bugs that only exist in the compiled binary are what this
 // catches: OAuth flow loaders (registerBunOAuthFlows), the payload's branded
-// piConfig, Pi's MCP + tool_search wiring, and a stale binary (HOY-200).
+// piConfig, Pi's MCP + tool_search wiring, codemode's sandbox worker and QuickJS
+// wasm, and a stale binary (HOY-200).
 //
 // It drives the binary the way Rust does (RPC JSONL over stdio, split on \n
-// only) against a local mock OpenAI-compatible model that scripts one turn:
-// tool_search -> mcp__echo__echo (approved through the permission gate) -> text.
+// only) against a local mock OpenAI-compatible model that scripts two turns:
+// tool_search -> mcp__echo__echo (approved through the permission gate) -> text,
+// then with codemode on, one codemode script calling mcp__echo__echo -> text.
 //
 // Usage: bun packages/sidecar/pi-src/smoke/smoke-test.ts <path-to-hoy-pi-binary>
 // PI_PACKAGE_DIR defaults to packages/sidecar/pi-payload.
@@ -30,8 +32,10 @@ const cwd = join(root, "project");
 mkdirSync(agentDir, { recursive: true });
 mkdirSync(cwd, { recursive: true });
 
-// Mock model: answers by how many tool results the request already carries.
+// Mock model: answers by how many tool results the request already carries,
+// with the first tool call picked by whether codemode is declared.
 const requests: Array<{ tools: string[]; mcpSection: boolean }> = [];
+let requestsAtTurnStart = 0;
 const server = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
@@ -43,6 +47,7 @@ const server = Bun.serve({
       mcpSection: JSON.stringify(messages).includes("MCP servers whose tools"),
     });
     const toolResults = messages.filter((m) => m.role === "tool").length;
+    const codemode = requests.at(-1)!.tools.includes("codemode");
     const chunk = (delta: unknown, finish: string | null) =>
       `data: ${JSON.stringify({
         id: "c",
@@ -59,7 +64,10 @@ const server = Bun.serve({
         null,
       ) + chunk({}, "tool_calls");
     let sse: string;
-    if (toolResults === 0) sse = toolCall("tool_search", { query: "echo" });
+    if (codemode && toolResults === 0) {
+      sse = toolCall("codemode", { code: 'text(await tools.mcp__echo__echo({ text: "script" }));' });
+    } else if (codemode) sse = chunk({ role: "assistant", content: "done" }, null) + chunk({}, "stop");
+    else if (toolResults === 0) sse = toolCall("tool_search", { query: "echo" });
     else if (toolResults === 1) sse = toolCall("mcp__echo__echo", { text: "smoke" });
     else sse = chunk({ role: "assistant", content: "done" }, null) + chunk({}, "stop");
     return new Response(`${sse}data: [DONE]\n\n`, { headers: { "Content-Type": "text/event-stream" } });
@@ -79,12 +87,15 @@ writeFileSync(
     },
   }),
 );
-writeFileSync(
-  join(agentDir, "mcp.json"),
-  JSON.stringify({
-    mcpServers: { echo: { command: process.execPath, args: [join(here, "mcp-echo-server.ts")] } },
-  }),
-);
+function writeMcpConfig(codemode: boolean) {
+  writeFileSync(
+    join(agentDir, "mcp.json"),
+    JSON.stringify({
+      ...(codemode ? { codemode: true } : {}),
+      mcpServers: { echo: { command: process.execPath, args: [join(here, "mcp-echo-server.ts")] } },
+    }),
+  );
+}
 
 // Mirror Rust's sanitized spawn env (sidecar.rs apply_sanitized_env): only what
 // the OS needs plus Hoy's own variables.
@@ -100,6 +111,7 @@ function sidecarEnv(extra: Record<string, string> = {}): Record<string, string> 
     USERPROFILE: root,
     PI_TELEMETRY: "0",
     PI_PACKAGE_DIR: payload,
+    NODE_PATH: join(payload, "node_modules"),
     HOY_CODING_AGENT_DIR: agentDir,
     ...extra,
   };
@@ -140,7 +152,9 @@ function pass(label: string) {
   console.log(`ok - ${label}`);
 }
 
-async function rpcTurn(): Promise<void> {
+// One prompt through a fresh sidecar, approving the single MCP call it makes.
+async function runTurn(): Promise<{ responses: Map<string, any>; toolEnds: any[]; approvals: number }> {
+  requestsAtTurnStart = requests.length;
   const proc = Bun.spawn([binary, "--mode", "rpc"], {
     cwd,
     env: sidecarEnv(),
@@ -177,7 +191,12 @@ async function rpcTurn(): Promise<void> {
   } finally {
     proc.kill();
   }
+  return { responses, toolEnds, approvals };
+}
 
+async function rpcTurn(): Promise<void> {
+  writeMcpConfig(false);
+  const { responses, toolEnds, approvals } = await runTurn();
   for (const id of ["state", "queue", "model", "prompt"]) {
     if (!responses.get(id)?.success) throw new Error(`no successful response for ${id}`);
   }
@@ -198,6 +217,23 @@ async function rpcTurn(): Promise<void> {
     throw new Error(`MCP call did not return the echo: ${JSON.stringify(echo)}`);
   }
   pass("MCP tool call round-trips through the stdio server");
+}
+
+// Codemode on: the MCP tool is called from a script inside the QuickJS worker,
+// and the nested call still passes the permission gate.
+async function codemodeTurn(): Promise<void> {
+  writeMcpConfig(true);
+  const { toolEnds, approvals } = await runTurn();
+  const first = requests[requestsAtTurnStart];
+  if (!first?.tools.includes("codemode")) throw new Error("codemode not declared with the setting on");
+  if (first.tools.includes("mcp__echo__echo")) throw new Error("MCP tool declared directly under codemode");
+  if (approvals !== 1) throw new Error(`expected 1 approval for the nested MCP call, got ${approvals}`);
+  const script = toolEnds.find((e) => e.toolName === "codemode");
+  const text = JSON.stringify(script?.result?.content ?? "");
+  if (!script || script.isError || !text.includes("echo: script")) {
+    throw new Error(`codemode script did not return the echo: ${JSON.stringify(script)}`);
+  }
+  pass("codemode script calls the MCP tool through the sandbox and the gate");
 }
 
 // The OAuth login mode must reach a provider flow inside the compiled binary.
@@ -224,6 +260,7 @@ async function oauthStart(): Promise<void> {
 
 try {
   await withTimeout(rpcTurn(), "RPC turn");
+  await withTimeout(codemodeTurn(), "codemode turn");
   await withTimeout(oauthStart(), "OAuth start");
   console.log(`\nsmoke test passed (${checks.length} checks)`);
 } catch (error) {

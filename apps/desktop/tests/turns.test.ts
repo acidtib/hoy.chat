@@ -205,3 +205,21 @@ describe("applyEvent queueUpdate (HOY-218)", () => {
     expect(next).toEqual(turns);
   });
 });
+
+describe("codemode tool blocks", () => {
+  test("carry the script on restore, and only for codemode", () => {
+    const turns = messagesToTurns([
+      { role: "user", content: "hi" },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "c1", name: "codemode", arguments: { code: "return 1;" } },
+          { type: "toolCall", id: "c2", name: "other", arguments: { code: "x" } },
+        ],
+      },
+    ]);
+    const a = assistantTurn(turns, 1);
+    expect(a.blocks[0]).toMatchObject({ kind: "tool", tool: { script: "return 1;" } });
+    expect(a.blocks[1]).toMatchObject({ kind: "tool", tool: { script: undefined } });
+  });
+});

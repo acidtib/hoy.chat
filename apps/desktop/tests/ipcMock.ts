@@ -37,6 +37,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     pickDirectory: mock(),
     providerStatuses: mock(),
     removeMcpServer: mock(),
+    setMcpCodemode: mock(),
     removeProviderKey: mock(),
     respondPermission: mock(),
     saveMcpServer: mock(),

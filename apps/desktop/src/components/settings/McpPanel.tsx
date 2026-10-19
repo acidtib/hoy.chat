@@ -330,6 +330,7 @@ export function McpPanel() {
   const projects = useSessionStore((s) => s.projects);
   const saveMcpServer = useSessionStore((s) => s.saveMcpServer);
   const removeMcpServer = useSessionStore((s) => s.removeMcpServer);
+  const setMcpCodemode = useSessionStore((s) => s.setMcpCodemode);
 
   const projectPath = useMemo(
     () => projects.find((p) => p.id === activeProjectId)?.path ?? null,
@@ -395,6 +396,25 @@ export function McpPanel() {
           <p className="text-sm text-destructive">{error}</p>
         </Section>
       )}
+
+      <Section>
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Codemode</p>
+            <p className="text-xs text-muted-foreground">
+              The agent calls MCP tools from short sandboxed scripts instead of loading each tool's schema into
+              the conversation, which uses fewer prompt tokens with large servers. Each tool a script calls
+              still asks for approval. Applies to new sessions.
+            </p>
+          </div>
+          <Switch
+            checked={list?.codemode ?? false}
+            disabled={!list || busy}
+            onCheckedChange={(v) => run(() => setMcpCodemode(v))}
+            aria-label="Codemode"
+          />
+        </div>
+      </Section>
 
       <div className="space-y-3">
         <div>
