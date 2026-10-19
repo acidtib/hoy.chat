@@ -44,7 +44,7 @@ export function issuePrompt(issue: LinearIssue): string {
   if (issue.description) lines.push("", issue.description);
   lines.push(
     "",
-    "When you are done, summarize what you changed and anything left open.",
+    `When you are done, post a short summary on ${issue.identifier} with linear_comment (what changed, how you verified it, anything left open), then move it with linear_set_state. File anything out of scope as a follow-up with linear_create_issue.`,
   );
   return lines.join("\n").replaceAll("\u0000", "");
 }

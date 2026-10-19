@@ -33,6 +33,11 @@ type EventSink = Arc<Mutex<Option<Channel<AgentEvent>>>>;
 // (HOY-300).
 const SPAWN_SYNC_PREFIX: &str = "@hoy/spawn-subagent-sync:";
 
+// Byte-identical to LINEAR_PREFIX in hoy-linear.ts. An `input` request with this
+// title prefix is a Linear agent action Rust answers itself with the stored
+// credential, so the token never reaches the sidecar or the renderer (HOY-346).
+const LINEAR_PREFIX: &str = "@hoy/linear:";
+
 // Outcome of awaiting a correlated response, before it is mapped to the public
 // String error in request()/request_with_dialog_grace().
 enum RequestError {
@@ -333,6 +338,11 @@ fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
     //  an allowlisted passthrough) so Hoy never sends that branding
     // regardless of the host env or a stale settings.json.
     command.env("PI_TELEMETRY", "0");
+    // Gives the session the Linear agent tools (HOY-346); the credential itself
+    // stays in Rust.
+    if crate::linear::is_connected() {
+        command.env("HOY_LINEAR", "1");
+    }
 }
 
 /// Pi hardcodes `.pi/mcp.json` in its MCP notices (1.3.0, extensions/mcp) even
@@ -733,6 +743,21 @@ fn route_message(
                     let _ = channel.send(event);
                 }
             }
+            ExtUiOutcome::Linear(payload) => {
+                let id = id.to_string();
+                let stdin = stdin.clone();
+                tauri::async_runtime::spawn(async move {
+                    let value = crate::linear::answer(&payload).await;
+                    let response =
+                        json!({ "type": "extension_ui_response", "id": id, "value": value });
+                    if let Ok(text) = serde_json::to_string(&response) {
+                        let mut stdin = stdin.lock().unwrap();
+                        let _ = stdin
+                            .write_all(format!("{text}\n").as_bytes())
+                            .and_then(|_| stdin.flush());
+                    }
+                });
+            }
             ExtUiOutcome::Ignore => {}
         }
         return;
@@ -802,6 +827,8 @@ enum ExtUiOutcome {
     Dialog(AgentEvent),
     // notify/setStatus/setWidget/setTitle/set_editor_text: no response.
     Notify(AgentEvent),
+    // A Linear agent action (HOY-346), answered by Rust, not the renderer.
+    Linear(String),
     // Unknown/unsupported method.
     Ignore,
 }
@@ -868,6 +895,9 @@ fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome 
         // subagent spawn, not a real text prompt.
         "input" => {
             let raw = str_field("title").unwrap_or_default();
+            if let Some(payload) = raw.strip_prefix(LINEAR_PREFIX) {
+                return ExtUiOutcome::Linear(payload.to_string());
+            }
             match raw
                 .strip_prefix(SPAWN_SYNC_PREFIX)
                 .and_then(|j| serde_json::from_str::<Value>(j).ok())
@@ -2236,6 +2266,21 @@ mod live_tests {
             classify_extension_ui("r", "somethingNew", &json!({ "method": "somethingNew" })),
             ExtUiOutcome::Ignore
         ));
+    }
+
+    #[test]
+    fn linear_prefix_input_is_answered_by_rust_not_shown_as_a_dialog() {
+        let payload = r#"{"action":"get","issue":"HOY-1"}"#;
+        let value = serde_json::json!({
+            "type": "extension_ui_request",
+            "id": "l1",
+            "method": "input",
+            "title": format!("{LINEAR_PREFIX}{payload}"),
+        });
+        match classify_extension_ui("l1", "input", &value) {
+            ExtUiOutcome::Linear(p) => assert_eq!(p, payload),
+            _ => panic!("expected a Linear action"),
+        }
     }
 
     #[test]

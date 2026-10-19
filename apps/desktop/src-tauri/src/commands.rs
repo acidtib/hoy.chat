@@ -230,16 +230,28 @@ pub async fn linear_status() -> Result<LinearStatus, String> {
     linear::status().await
 }
 
+// Connecting or disconnecting changes which sessions get the Linear agent
+// tools (HOY_LINEAR at spawn), so idle sessions respawn.
 #[tauri::command]
-pub async fn linear_connect(api_key: String) -> Result<LinearStatus, String> {
-    linear::connect(&api_key).await
+pub async fn linear_connect(
+    api_key: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<LinearStatus, String> {
+    let status = linear::connect(&api_key).await?;
+    respawn_idle_sessions(&manager).await;
+    Ok(status)
 }
 
 // Opens the browser for Linear's consent page and resolves once the loopback
 // callback lands and the tokens are stored.
 #[tauri::command]
-pub async fn linear_oauth_connect(app: tauri::AppHandle) -> Result<LinearStatus, String> {
-    linear::connect_oauth(&app).await
+pub async fn linear_oauth_connect(
+    app: tauri::AppHandle,
+    manager: State<'_, SidecarManager>,
+) -> Result<LinearStatus, String> {
+    let status = linear::connect_oauth(&app).await?;
+    respawn_idle_sessions(&manager).await;
+    Ok(status)
 }
 
 #[tauri::command]
@@ -248,8 +260,18 @@ pub fn linear_oauth_cancel() {
 }
 
 #[tauri::command]
-pub async fn linear_disconnect() -> Result<(), String> {
-    linear::disconnect().await
+pub async fn linear_disconnect(manager: State<'_, SidecarManager>) -> Result<(), String> {
+    linear::disconnect().await?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
+}
+
+// `state` is a workflow state name or type ("started", "done", "In Review").
+#[tauri::command]
+pub async fn linear_set_issue_state(issue: String, state: String) -> Result<(), String> {
+    linear::action(&json!({ "action": "set_state", "issue": issue, "state": state }))
+        .await
+        .map(|_| ())
 }
 
 #[tauri::command]

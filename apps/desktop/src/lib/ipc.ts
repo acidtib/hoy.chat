@@ -363,6 +363,11 @@ export function linearDisconnect(): Promise<void> {
   return invoke<void>("linear_disconnect");
 }
 
+// `state` is a workflow state name or type ("started", "done", "In Review").
+export function linearSetIssueState(issue: string, state: string): Promise<void> {
+  return invoke<void>("linear_set_issue_state", { issue, state });
+}
+
 export function linearTeams(): Promise<LinearTeam[]> {
   return invoke<LinearTeam[]>("linear_teams");
 }

@@ -27,6 +27,7 @@ import { createHoyPermissions, createPermissionState, isPermissionMode, type Per
 import { expandToolNames, loadHoyMcpConfig, readHoyCodemode } from "./hoy-mcp-config";
 import { createHoyAgents } from "./hoy-agents";
 import { createHoyAskQuestion } from "./hoy-ask-question";
+import { createHoyLinear, LINEAR_TOOLS } from "./hoy-linear";
 import { createHoyInit } from "./hoy-init";
 import { createHoyTurnBudget } from "./hoy-turn-budget";
 import { createHoyAlibaba } from "./hoy-alibaba";
@@ -85,6 +86,11 @@ const canSpawn = subagentDepth < MAX_SUBAGENT_DEPTH;
 // Rust relays the renderer pref as HOY_REQUIRE_SUBAGENT_APPROVAL=1. Default off:
 // spawns proceed without a prompt and the user watches/intervenes via FleetView.
 const requireSubagentApproval = process.env.HOY_REQUIRE_SUBAGENT_APPROVAL === "1";
+
+// HOY-346: Rust sets HOY_LINEAR=1 while Linear is connected. Top-level threads
+// (user threads and issues delegated from the Fleet) get the Linear tools on top
+// of their type's tool list; spawned children do not.
+const linearTools = process.env.HOY_LINEAR === "1" && subagentDepth === 0;
 
 // OAuth login runs as its own short-lived invocation of this binary (Rust sets
 // HOY_OAUTH_LOGIN=<providerId>). It speaks a different, one-shot JSONL protocol
@@ -185,7 +191,11 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   // exposes MCP as tool_search, resource tools, and mcp__<server>__<tool>.
   const mcpEnabled = withAgent.includes("mcp");
   const codemode = mcpEnabled && readHoyCodemode(agentDir);
-  const tools = [...expandToolNames(withAgent), ...(codemode ? ["codemode"] : [])];
+  const tools = [
+    ...expandToolNames(withAgent),
+    ...(codemode ? ["codemode"] : []),
+    ...(linearTools ? LINEAR_TOOLS : []),
+  ];
   const advertised = enabledTypes(registry).map((t) => ({ name: t.name, description: t.description }));
 
   const services = await createAgentSessionServices({
@@ -244,6 +254,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         // command (surfaced via get_commands, HOY-223), so installing it
         // unconditionally is safe: a child subagent never types /init.
         createHoyInit(),
+        ...(linearTools ? [createHoyLinear()] : []),
         ...(canSpawn ? [createHoyAgents(registry, requireSubagentApproval)] : []),
         // HOY-244: cap a budgeted subagent type's turns. Root/unbudgeted threads
         // run uncapped. childType is null for user threads, so this is child-only.

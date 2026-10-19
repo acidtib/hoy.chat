@@ -40,6 +40,7 @@ import {
   setPermissionMode as ipcSetPermissionMode,
   setSubagentEnabled as ipcSetSubagentEnabled,
   setThinkingLevel,
+  linearSetIssueState,
   verifyGoalCommand,
 } from "@/lib/ipc";
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
@@ -1233,6 +1234,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     void get().submitPrompt(thread.id, issuePrompt(issue), undefined, undefined, {
       autoPlanMode: false,
     });
+    linearSetIssueState(issue.id, "started").catch((e) =>
+      pushNotice(thread.id, `Could not move ${issue.identifier} to In Progress: ${e}`, "warning"),
+    );
     return thread.id;
   },
   refitPanelLayout: () =>

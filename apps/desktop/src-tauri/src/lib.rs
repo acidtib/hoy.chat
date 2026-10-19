@@ -185,6 +185,7 @@ pub fn run() {
             commands::linear_oauth_connect,
             commands::linear_oauth_cancel,
             commands::linear_disconnect,
+            commands::linear_set_issue_state,
             commands::linear_teams,
             commands::linear_issues,
             commands::list_mcp_servers,

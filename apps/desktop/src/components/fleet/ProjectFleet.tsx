@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   Check,
@@ -105,6 +105,17 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
   }, [subagents.length, project.path, refreshSubagents]);
 
   const agents = useMemo(() => subagents.filter((d) => d.enabled), [subagents]);
+
+  // An agent may have closed its issue or filed follow-ups: re-read the
+  // backlog whenever a delegated thread stops running.
+  const running = useSessionStore(
+    (s) => project.threads.filter((t) => t.linearIssue && s.streaming[t.id]).length,
+  );
+  const prevRunning = useRef(running);
+  useEffect(() => {
+    if (running < prevRunning.current) void refreshIssues(project.id, teamId);
+    prevRunning.current = running;
+  }, [running, project.id, teamId, refreshIssues]);
   const open = useMemo(
     () => unassignedIssues(cache.items, project.threads),
     [cache.items, project.threads],

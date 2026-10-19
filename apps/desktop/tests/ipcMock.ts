@@ -30,6 +30,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     listProjectPaths: mock(),
     listSkills: mock(() => Promise.resolve({ skills: [], diagnostics: [] })),
     listSubagents: mock(),
+    linearSetIssueState: mock(() => Promise.resolve()),
     loadWorkspace: mock(),
     readContextFile: mock(),
     readSessionTranscript: mock(),

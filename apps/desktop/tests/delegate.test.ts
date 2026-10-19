@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mockIpcModule } from "./ipcMock";
 
 const createSession = mock(async () => "s-delegate");
+const linearSetIssueState = mock(async () => {});
 mockIpcModule({
   createSession,
+  linearSetIssueState,
   readSessionTranscript: mock(async () => []),
   getMessages: mock(async () => []),
   getState: mock(async () => ({})),
@@ -94,6 +96,8 @@ test("issuePrompt carries the issue and strips NUL mention delimiters", () => {
   expect(text).toContain("Labels: Bug, Web");
   expect(text).toContain("Stepshere");
   expect(text).not.toContain("\u0000");
+  expect(text).toContain("linear_comment");
+  expect(text).toContain("linear_set_state");
 });
 
 describe("delegateIssue", () => {
@@ -125,6 +129,7 @@ describe("delegateIssue", () => {
     expect(t.renamed).toBe(true);
     expect(submitPrompt.mock.calls[0][0]).toBe(t.id);
     expect(submitPrompt.mock.calls[0][1]).toBe(issuePrompt(i));
+    expect(linearSetIssueState).toHaveBeenCalledWith(i.id, "started");
   });
 
   test("spawning the thread's session passes its agent type", async () => {

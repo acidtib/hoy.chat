@@ -449,6 +449,301 @@ pub async fn issues(team_id: &str) -> Result<Vec<LinearIssue>, String> {
     parse_issues(&data)
 }
 
+// True when credentials are stored. Read at sidecar spawn to decide whether
+// the session gets the Linear agent tools.
+pub fn is_connected() -> bool {
+    key_path()
+        .and_then(|p| read_at(&p))
+        .map(|c| method_of(&c).is_some())
+        .unwrap_or(false)
+}
+
+// Agent-facing Linear actions (HOY-346 write back). The sidecar's Linear tools
+// send these as `@hoy/linear:` input requests; Rust runs them with the stored
+// credential and answers with a JSON string the tool hands to the model.
+
+const ISSUE_DETAIL_QUERY: &str = r#"query Issue($id: String!) {
+  issue(id: $id) {
+    id identifier title url description priorityLabel
+    state { id name type }
+    assignee { name }
+    team { id key name states { nodes { id name type position } } }
+    comments(first: 20) { nodes { body createdAt user { name } } }
+  }
+}"#;
+
+#[derive(Debug, Clone, PartialEq)]
+struct WorkflowState {
+    id: String,
+    name: String,
+    kind: String,
+    position: f64,
+}
+
+fn parse_states(issue: &Value) -> Vec<WorkflowState> {
+    issue
+        .pointer("/team/states/nodes")
+        .and_then(Value::as_array)
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter_map(|n| {
+                    Some(WorkflowState {
+                        id: n.get("id")?.as_str()?.to_string(),
+                        name: n.get("name")?.as_str()?.to_string(),
+                        kind: n.get("type")?.as_str()?.to_string(),
+                        position: n.get("position").and_then(Value::as_f64).unwrap_or(0.0),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+// A state name ("In Review") wins; otherwise a workflow type or a common alias
+// picks that type's first state ("done" -> the first completed state).
+fn resolve_state<'a>(states: &'a [WorkflowState], wanted: &str) -> Option<&'a WorkflowState> {
+    let w = wanted.trim().to_lowercase();
+    if let Some(s) = states.iter().find(|s| s.name.to_lowercase() == w) {
+        return Some(s);
+    }
+    let kind = match w.as_str() {
+        "done" | "complete" | "completed" | "closed" | "close" | "finished" => "completed",
+        "in progress" | "in_progress" | "started" | "start" | "doing" => "started",
+        "todo" | "to do" | "unstarted" => "unstarted",
+        "canceled" | "cancelled" | "cancel" | "wontfix" | "won't fix" => "canceled",
+        "backlog" => "backlog",
+        "triage" => "triage",
+        _ => return None,
+    };
+    states
+        .iter()
+        .filter(|s| s.kind == kind)
+        .min_by(|a, b| a.position.total_cmp(&b.position))
+}
+
+async fn fetch_issue(auth: &str, id: &str) -> Result<Value, String> {
+    let data = graphql(auth, ISSUE_DETAIL_QUERY, json!({ "id": id })).await?;
+    data.get("issue")
+        .filter(|v| !v.is_null())
+        .cloned()
+        .ok_or_else(|| format!("Linear issue {id} not found"))
+}
+
+fn issue_summary(issue: &Value) -> Value {
+    let comments: Vec<Value> = issue
+        .pointer("/comments/nodes")
+        .and_then(Value::as_array)
+        .map(|cs| {
+            cs.iter()
+                .map(|c| {
+                    json!({
+                        "author": c.pointer("/user/name"),
+                        "createdAt": c.get("createdAt"),
+                        "body": c.get("body"),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut states = parse_states(issue);
+    states.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.position.total_cmp(&b.position)));
+    json!({
+        "identifier": issue.get("identifier"),
+        "title": issue.get("title"),
+        "url": issue.get("url"),
+        "state": issue.pointer("/state/name"),
+        "priority": issue.get("priorityLabel"),
+        "assignee": issue.pointer("/assignee/name"),
+        "team": issue.pointer("/team/key"),
+        "description": issue.get("description"),
+        "comments": comments,
+        "availableStates": states
+            .iter()
+            .map(|s| format!("{} ({})", s.name, s.kind))
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
+    args.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn required<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
+    str_arg(args, key).ok_or_else(|| format!("`{key}` is required"))
+}
+
+async fn set_state_on(auth: &str, issue: &Value, wanted: &str) -> Result<Value, String> {
+    let states = parse_states(issue);
+    let state = resolve_state(&states, wanted).ok_or_else(|| {
+        format!(
+            "No workflow state matches \"{wanted}\". Available: {}",
+            states
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })?;
+    let id = issue.get("id").and_then(Value::as_str).unwrap_or_default();
+    graphql(
+        auth,
+        "mutation SetState($id: String!, $stateId: String!) { issueUpdate(id: $id, input: { stateId: $stateId }) { success } }",
+        json!({ "id": id, "stateId": state.id }),
+    )
+    .await?;
+    Ok(json!({
+        "identifier": issue.get("identifier"),
+        "state": state.name,
+        "from": issue.pointer("/state/name"),
+    }))
+}
+
+// How a new issue relates to the source issue, read from the source's side, as
+// Linear relation input (issueId, relatedIssueId, type). Linear's "blocks"
+// means issueId blocks relatedIssueId.
+fn relation_input<'a>(
+    relation: &str,
+    source: &'a str,
+    created: &'a str,
+) -> Result<Option<(&'a str, &'a str, &'static str)>, String> {
+    match relation {
+        "" | "none" | "sub_issue" => Ok(None),
+        "follow_up" | "related" => Ok(Some((source, created, "related"))),
+        // The source blocks the new issue.
+        "blocks" => Ok(Some((source, created, "blocks"))),
+        // The source is blocked by the new issue.
+        "blocked_by" => Ok(Some((created, source, "blocks"))),
+        other => Err(format!(
+            "Unknown relation \"{other}\". Use follow_up, sub_issue, blocks, blocked_by, or none."
+        )),
+    }
+}
+
+async fn create_issue(auth: &str, args: &Value) -> Result<Value, String> {
+    let title = required(args, "title")?;
+    let relation = str_arg(args, "relation").unwrap_or("follow_up");
+    let source = match str_arg(args, "issue") {
+        Some(id) => Some(fetch_issue(auth, id).await?),
+        None => None,
+    };
+    let team_id = match (&source, str_arg(args, "team")) {
+        (_, Some(key)) => {
+            let data = graphql(
+                auth,
+                "query Team($key: String!) { teams(filter: { key: { eq: $key } }) { nodes { id } } }",
+                json!({ "key": key }),
+            )
+            .await?;
+            data.pointer("/teams/nodes/0/id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| format!("No Linear team with key {key}"))?
+        }
+        (Some(src), None) => src
+            .pointer("/team/id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        (None, None) => return Err("Pass `issue` (the source issue) or `team` (a team key)".into()),
+    };
+    let mut input = json!({ "teamId": team_id, "title": title });
+    if let Some(d) = str_arg(args, "description") {
+        input["description"] = json!(d);
+    }
+    let source_id = source
+        .as_ref()
+        .and_then(|s| s.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if relation == "sub_issue" {
+        if source_id.is_empty() {
+            return Err("A sub_issue needs `issue` (the parent)".into());
+        }
+        input["parentId"] = json!(source_id);
+    }
+    let data = graphql(
+        auth,
+        "mutation Create($input: IssueCreateInput!) { issueCreate(input: $input) { issue { id identifier title url } } }",
+        json!({ "input": input }),
+    )
+    .await?;
+    let created = data
+        .pointer("/issueCreate/issue")
+        .cloned()
+        .ok_or("Linear did not return the created issue")?;
+    let created_id = created
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !source_id.is_empty() {
+        if let Some((issue_id, related_id, kind)) =
+            relation_input(relation, &source_id, created_id)?
+        {
+            graphql(
+                auth,
+                "mutation Relate($input: IssueRelationCreateInput!) { issueRelationCreate(input: $input) { success } }",
+                json!({ "input": { "issueId": issue_id, "relatedIssueId": related_id, "type": kind } }),
+            )
+            .await?;
+        }
+    }
+    Ok(json!({
+        "identifier": created.get("identifier"),
+        "title": created.get("title"),
+        "url": created.get("url"),
+        "relation": relation,
+        "source": source.as_ref().and_then(|s| s.get("identifier")),
+    }))
+}
+
+pub async fn action(payload: &Value) -> Result<Value, String> {
+    let auth = auth_header().await?;
+    let action = required(payload, "action")?;
+    match action {
+        "get" => Ok(issue_summary(
+            &fetch_issue(&auth, required(payload, "issue")?).await?,
+        )),
+        "comment" => {
+            let issue = fetch_issue(&auth, required(payload, "issue")?).await?;
+            let body = required(payload, "body")?;
+            let data = graphql(
+                &auth,
+                "mutation Comment($input: CommentCreateInput!) { commentCreate(input: $input) { comment { url } } }",
+                json!({ "input": { "issueId": issue.get("id"), "body": body } }),
+            )
+            .await?;
+            Ok(json!({
+                "identifier": issue.get("identifier"),
+                "comment": data.pointer("/commentCreate/comment/url"),
+            }))
+        }
+        "set_state" => {
+            let issue = fetch_issue(&auth, required(payload, "issue")?).await?;
+            set_state_on(&auth, &issue, required(payload, "state")?).await
+        }
+        "create" => create_issue(&auth, payload).await,
+        other => Err(format!("Unknown Linear action \"{other}\"")),
+    }
+}
+
+// The wire answer for an `@hoy/linear:` request: always a JSON string, so the
+// sidecar tool can tell success from a Linear error.
+pub async fn answer(payload: &str) -> String {
+    let result = match serde_json::from_str::<Value>(payload) {
+        Ok(p) => action(&p).await,
+        Err(e) => Err(format!("bad Linear request: {e}")),
+    };
+    match result {
+        Ok(v) => json!({ "ok": true, "result": v }).to_string(),
+        Err(e) => json!({ "ok": false, "error": e }).to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -526,6 +821,83 @@ mod tests {
         write_at(&path, None).unwrap();
         let raw: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(raw, json!({ "github": { "token": "gh" } }));
+    }
+
+    fn states() -> Vec<WorkflowState> {
+        let st = |id: &str, name: &str, kind: &str, position: f64| WorkflowState {
+            id: id.into(),
+            name: name.into(),
+            kind: kind.into(),
+            position,
+        };
+        vec![
+            st("1", "Backlog", "backlog", 0.0),
+            st("2", "Todo", "unstarted", 1.0),
+            st("4", "In Review", "started", 3.0),
+            st("3", "In Progress", "started", 2.0),
+            st("5", "Done", "completed", 4.0),
+            st("6", "Canceled", "canceled", 5.0),
+        ]
+    }
+
+    #[test]
+    fn state_names_win_then_types_pick_the_first_state() {
+        let s = states();
+        let id = |w: &str| resolve_state(&s, w).map(|x| x.id.clone());
+        assert_eq!(id("in review").as_deref(), Some("4"));
+        assert_eq!(id("started").as_deref(), Some("3"));
+        assert_eq!(id("in progress").as_deref(), Some("3"));
+        assert_eq!(id("done").as_deref(), Some("5"));
+        assert_eq!(id("close").as_deref(), Some("5"));
+        assert_eq!(id("cancelled").as_deref(), Some("6"));
+        assert_eq!(id("todo").as_deref(), Some("2"));
+        assert_eq!(id("shipped"), None);
+    }
+
+    #[test]
+    fn parses_team_states_from_an_issue() {
+        let issue = json!({ "team": { "states": { "nodes": [
+            { "id": "a", "name": "Todo", "type": "unstarted", "position": 1 },
+            { "id": "b", "name": "Broken" }
+        ] } } });
+        let s = parse_states(&issue);
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].kind, "unstarted");
+    }
+
+    #[test]
+    fn relations_point_the_right_way() {
+        assert_eq!(
+            relation_input("follow_up", "src", "new").unwrap(),
+            Some(("src", "new", "related"))
+        );
+        // Linear: issueId blocks relatedIssueId.
+        assert_eq!(
+            relation_input("blocks", "src", "new").unwrap(),
+            Some(("src", "new", "blocks"))
+        );
+        assert_eq!(
+            relation_input("blocked_by", "src", "new").unwrap(),
+            Some(("new", "src", "blocks"))
+        );
+        assert_eq!(relation_input("sub_issue", "src", "new").unwrap(), None);
+        assert!(relation_input("duplicates", "src", "new").is_err());
+    }
+
+    #[test]
+    fn issue_summary_lists_comments_and_states() {
+        let issue = json!({
+            "identifier": "HOY-1", "title": "t", "url": "u", "description": "d",
+            "state": { "name": "Todo" },
+            "team": { "key": "HOY", "states": { "nodes": [
+                { "id": "a", "name": "Todo", "type": "unstarted", "position": 1 }
+            ] } },
+            "comments": { "nodes": [ { "body": "hi", "createdAt": "x", "user": { "name": "Ada" } } ] }
+        });
+        let s = issue_summary(&issue);
+        assert_eq!(s["state"], "Todo");
+        assert_eq!(s["comments"][0]["author"], "Ada");
+        assert_eq!(s["availableStates"][0], "Todo (unstarted)");
     }
 
     #[test]
