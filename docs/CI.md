@@ -38,9 +38,10 @@ required job means updating the ruleset in the same change, or every PR blocks.
 `packages/sidecar/pi-src/smoke/smoke-test.ts` drives the bun-compiled binary the
 way the app does: RPC JSONL over stdio against a local mock OpenAI-compatible
 model, a stdio MCP echo server, one turn through `tool_search` and an approved
-`mcp__echo__echo` call, then the start of an OAuth login. It catches what only
-breaks inside the compiled binary (OAuth flow loaders, Pi's MCP wiring, a stale
-binary). Run it locally after `bun run sidecar:build`:
+`mcp__echo__echo` call, a second turn with codemode on where a script makes
+that call, then the start of an OAuth login. It catches what only breaks inside
+the compiled binary (OAuth flow loaders, Pi's MCP wiring, codemode's worker and
+QuickJS wasm, a stale binary). Run it locally after `bun run sidecar:build`:
 
 ```
 bun packages/sidecar/pi-src/smoke/smoke-test.ts packages/sidecar/hoy-pi-<triple>

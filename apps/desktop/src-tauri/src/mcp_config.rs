@@ -61,6 +61,8 @@ pub struct McpServerList {
     // sidecar reads it so a repo's existing MCP servers work. Users edit it
     // directly (it is shared with other MCP-aware tools), not through this UI.
     pub project_shared: Vec<McpServerEntry>,
+    // Top-level `codemode: true` in the global file (hoy-mcp-config.ts).
+    pub codemode: bool,
 }
 
 fn global_path() -> Result<PathBuf, String> {
@@ -211,8 +213,32 @@ fn remove_at(path: &Path, name: &str) -> Result<(), String> {
     write_config_atomic_at(path, &config)
 }
 
+fn codemode_at(path: &Path) -> bool {
+    read_config_at(path)
+        .get("codemode")
+        .and_then(Value::as_bool)
+        == Some(true)
+}
+
+// Off removes the key rather than writing `false`, so the default stays implicit.
+fn set_codemode_at(path: &Path, enabled: bool) -> Result<(), String> {
+    let _guard = MCP_MUTATION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut config = read_config_at(path);
+    if enabled {
+        config.insert("codemode".to_string(), Value::Bool(true));
+    } else if config.remove("codemode").is_none() {
+        return Ok(());
+    }
+    write_config_atomic_at(path, &config)
+}
+
+pub fn set_codemode(enabled: bool) -> Result<(), String> {
+    set_codemode_at(&global_path()?, enabled)
+}
+
 pub fn list(project: Option<&str>) -> Result<McpServerList, String> {
-    let global = entries_at(&global_path()?, McpScope::Global);
+    let global_file = global_path()?;
+    let global = entries_at(&global_file, McpScope::Global);
     let (project_entries, project_shared) = match project {
         Some(p) if !p.trim().is_empty() => (
             entries_at(&project_path(p)?, McpScope::Project),
@@ -224,6 +250,7 @@ pub fn list(project: Option<&str>) -> Result<McpServerList, String> {
         global,
         project: project_entries,
         project_shared,
+        codemode: codemode_at(&global_file),
     })
 }
 
@@ -285,6 +312,24 @@ mod tests {
         let path = dir.join("mcp.json");
         std::fs::write(&path, "{not valid json").unwrap();
         assert!(entries_at(&path, McpScope::Global).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn codemode_toggle_keeps_servers() {
+        let dir = std::env::temp_dir().join(format!("hoy-mcp-codemode-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("mcp.json");
+        std::fs::write(&path, r#"{"mcpServers":{"keep":{"command":"a"}}}"#).unwrap();
+
+        assert!(!codemode_at(&path));
+        set_codemode_at(&path, true).unwrap();
+        assert!(codemode_at(&path));
+        assert!(servers_map(&read_config_at(&path)).contains_key("keep"));
+        set_codemode_at(&path, false).unwrap();
+        assert!(!read_config_at(&path).contains_key("codemode"));
+        assert!(servers_map(&read_config_at(&path)).contains_key("keep"));
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

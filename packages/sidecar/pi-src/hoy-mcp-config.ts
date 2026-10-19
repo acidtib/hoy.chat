@@ -2,10 +2,10 @@
 // Pi's own loader is not exported and only reads <agentDir>/mcp.json plus
 // <cwd>/.hoy/mcp.json; ours layers in the repo's shared .mcp.json and adapts
 // entries to how Hoy runs MCP:
-// - Exposure defaults to `deferred` (reached via tool_search). Pi defaults to
-//   `codemode`, which Hoy does not load (its QuickJS worker is not in the
-//   compiled sidecar), and Pi's mcp_servers prompt section would then tell the
-//   model to call tools from codemode scripts that do not exist.
+// - Exposure defaults to `deferred` (reached via tool_search). With the global
+//   `codemode: true` setting it defaults to `codemode` like Pi's; without it,
+//   `codemode` maps to `deferred`, since the codemode tool is not loaded and
+//   Pi's mcp_servers prompt section would point the model at it.
 // - Legacy `disabled: true` (pre-Pi-MCP Hoy files) maps to `enabled: false`.
 // - Project files are read only once the project is trusted, like Pi's.
 // - ${VAR} in command, args, url, and cwd is filled from the sidecar env, as
@@ -48,17 +48,34 @@ function isStringRecord(value: unknown): boolean {
   return isRecord(value) && Object.values(value).every((v) => typeof v === "string");
 }
 
-// codemode (and its codemode-deferred alias) has no reachable tool in Hoy.
-function adaptExposure(value: unknown): McpExposure | undefined {
-  if (value === undefined || value === "codemode" || value === "codemode-deferred") return "deferred";
+function adaptExposure(value: unknown, codemode: boolean): McpExposure | undefined {
+  if (value === undefined || value === "codemode" || value === "codemode-deferred") {
+    return codemode ? "codemode" : "deferred";
+  }
   return EXPOSURES.has(value as string) ? (value as McpExposure) : undefined;
+}
+
+// The settings UI's switch: top-level `codemode: true` in <agentDir>/mcp.json.
+// Global only, so a repository cannot turn on the script sandbox.
+export function readHoyCodemode(agentDir: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(join(agentDir, "mcp.json"), "utf8"));
+    return isRecord(parsed) && parsed.codemode === true;
+  } catch {
+    return false;
+  }
 }
 
 // Returns the adapted config or an error string, mirroring Pi's
 // validateMcpServerConfig for the fields Hoy's files actually use.
 // `env: null` skips interpolation, for an override merged onto a global entry
 // that was already expanded (re-expanding would undo $${VAR} escapes).
-export function adaptServer(name: string, raw: unknown, env: Env | null = process.env): McpServerConfig | string {
+export function adaptServer(
+  name: string,
+  raw: unknown,
+  env: Env | null = process.env,
+  codemode = false,
+): McpServerConfig | string {
   if (!SERVER_NAME.test(name)) return `invalid server name "${name}" (use letters, digits, "_" and "-")`;
   if (!isRecord(raw)) return `server "${name}" must be an object`;
   const { disabled, ...rest } = raw;
@@ -68,14 +85,14 @@ export function adaptServer(name: string, raw: unknown, env: Env | null = proces
   if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
     return `server "${name}": enabled must be a boolean`;
   }
-  const exposure = adaptExposure(value.exposure);
+  const exposure = adaptExposure(value.exposure, codemode);
   if (!exposure) return `server "${name}": exposure must be one of codemode, deferred, direct, hidden`;
   value.exposure = exposure;
   if (value.toolExposure !== undefined) {
     if (!isRecord(value.toolExposure)) return `server "${name}": toolExposure must map tool names to exposures`;
     const tools: Record<string, McpExposure> = {};
     for (const [tool, v] of Object.entries(value.toolExposure)) {
-      const adapted = v === undefined ? undefined : adaptExposure(v);
+      const adapted = v === undefined ? undefined : adaptExposure(v, codemode);
       if (!adapted) return `server "${name}": toolExposure "${tool}" is not a valid exposure`;
       tools[tool] = adapted;
     }
@@ -102,7 +119,14 @@ export function adaptServer(name: string, raw: unknown, env: Env | null = proces
   return `server "${name}" needs "command" or "url"`;
 }
 
-function readLayer(path: string, scope: Scope, servers: Map<string, McpServerEntry>, errors: string[], env: Env): void {
+function readLayer(
+  path: string,
+  scope: Scope,
+  servers: Map<string, McpServerEntry>,
+  errors: string[],
+  env: Env,
+  codemode: boolean,
+): void {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -125,13 +149,13 @@ function readLayer(path: string, scope: Scope, servers: Map<string, McpServerEnt
       if (!base) errors.push(`${path}: server "${name}" needs "command" or "url", or a global server to override`);
       else if (extra.length > 0) errors.push(`${path}: server "${name}": an override can only set ${OVERRIDE_KEYS.join(", ")}`);
       else {
-        const config = adaptServer(name, { ...base.config, ...raw }, null);
+        const config = adaptServer(name, { ...base.config, ...raw }, null, codemode);
         if (typeof config === "string") errors.push(`${path}: ${config}`);
         else servers.set(name, { ...base, config, override: path });
       }
       continue;
     }
-    const config = adaptServer(name, raw, env);
+    const config = adaptServer(name, raw, env, codemode);
     if (typeof config === "string") {
       errors.push(`${path}: ${config}`);
       continue;
@@ -148,26 +172,29 @@ function readLayer(path: string, scope: Scope, servers: Map<string, McpServerEnt
 // Low to high precedence: <agentDir>/mcp.json, then (trusted projects only) the
 // shared <cwd>/.mcp.json and Hoy's <cwd>/.hoy/mcp.json, which the settings UI
 // writes. `enabled: false` skips the whole load, for subagents without mcp.
+// `codemode` must match whether the codemode extension is registered.
 export function loadHoyMcpConfig(opts: {
   agentDir: string;
   cwd: string;
   projectTrusted: boolean;
   enabled?: boolean;
+  codemode?: boolean;
   env?: Env;
 }): LoadedMcpConfig {
   const env = opts.env ?? process.env;
+  const codemode = opts.codemode ?? false;
   if (opts.enabled === false) return { servers: [], errors: [], autoEnableCodemode: false };
   const servers = new Map<string, McpServerEntry>();
   const errors: string[] = [];
-  readLayer(join(opts.agentDir, "mcp.json"), "global", servers, errors, env);
+  readLayer(join(opts.agentDir, "mcp.json"), "global", servers, errors, env, codemode);
   const projectConfig = join(opts.cwd, ".hoy", "mcp.json");
   if (opts.projectTrusted) {
-    readLayer(join(opts.cwd, ".mcp.json"), "project", servers, errors, env);
-    readLayer(projectConfig, "project", servers, errors, env);
+    readLayer(join(opts.cwd, ".mcp.json"), "project", servers, errors, env, codemode);
+    readLayer(projectConfig, "project", servers, errors, env, codemode);
   }
   return {
     servers: [...servers.values()],
-    autoEnableCodemode: false,
+    autoEnableCodemode: codemode,
     errors,
     ...(opts.projectTrusted ? { projectConfig } : {}),
   };

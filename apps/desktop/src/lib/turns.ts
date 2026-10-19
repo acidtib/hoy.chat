@@ -44,6 +44,7 @@ export function applyEvent(turns: Turn[], event: AgentEvent): Turn[] {
             title: toolTitle(event.toolName, event.args),
             command: commandArg(event.args),
             diff: buildDiff(event.toolName, event.args),
+            script: scriptArg(event.toolName, event.args),
             output: "",
             running: true,
           };
@@ -204,6 +205,7 @@ export function messagesToTurns(
               // Keep the diff on restore so an approved or denied edit always
               // shows what changed, not the tool's result text (HOY-199).
               diff: buildDiff(part.name ?? "tool", part.arguments),
+              script: scriptArg(part.name ?? "tool", part.arguments),
               output: "",
               running: false,
             },
@@ -310,6 +312,12 @@ function commandArg(args: unknown): string | undefined {
   return typeof command === "string" ? command : undefined;
 }
 
+// The JavaScript a codemode call runs; its nested tool calls render as their own blocks.
+function scriptArg(name: string, args: unknown): string | undefined {
+  const code = (args as Record<string, unknown> | null | undefined)?.code;
+  return name === "codemode" && typeof code === "string" ? code : undefined;
+}
+
 // HOY-199: build a pending tool block from permission request tool data.
 // Rendered in the conversation with the "Awaiting Approval" badge while the
 // approval card waits for the user's decision.
@@ -324,6 +332,7 @@ export function buildPendingToolBlock(
     title: toolTitle(toolName, args),
     command: commandArg(args),
     diff: buildDiff(toolName, args),
+    script: scriptArg(toolName, args),
     output: "",
     running: false,
     pending: true,

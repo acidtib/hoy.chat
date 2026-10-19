@@ -31,6 +31,7 @@ import {
   removeProviderKey as ipcRemoveProviderKey,
   respondPermission as ipcRespondPermission,
   saveMcpServer as ipcSaveMcpServer,
+  setMcpCodemode as ipcSetMcpCodemode,
   saveAlibabaEndpoints as ipcSaveAlibabaEndpoints,
   saveProviderKey as ipcSaveProviderKey,
   saveWorkspace,
@@ -529,6 +530,7 @@ interface SessionStore {
     name: string,
     projectPath?: string | null,
   ) => Promise<void>;
+  setMcpCodemode: (enabled: boolean) => Promise<void>;
 
   setActiveSessionId: (id: string | null) => void;
   setModels: (models: ModelInfo[]) => void;
@@ -1217,6 +1219,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   removeMcpServer: async (scope, name, projectPath) => {
     await ipcRemoveMcpServer(scope, name, projectPath ?? null);
+    modelApplied.clear();
+    permissionModeApplied.clear();
+  },
+
+  setMcpCodemode: async (enabled) => {
+    await ipcSetMcpCodemode(enabled);
     modelApplied.clear();
     permissionModeApplied.clear();
   },

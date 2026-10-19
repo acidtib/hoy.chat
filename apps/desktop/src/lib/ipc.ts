@@ -165,6 +165,10 @@ export function removeMcpServer(
   return invoke<void>("remove_mcp_server", { scope, name, projectPath: projectPath ?? null });
 }
 
+export function setMcpCodemode(enabled: boolean): Promise<void> {
+  return invoke<void>("set_mcp_codemode", { enabled });
+}
+
 // Subagent registry (HOY-234): builtin/global/project subagent types, merged
 // with each scope's enabled/disabled overrides. `cwd` resolves the project
 // scope. An empty cwd falls back to the backend's default dir like other

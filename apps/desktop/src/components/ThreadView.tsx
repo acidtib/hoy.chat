@@ -1495,9 +1495,18 @@ const ToolCall = memo(function ToolCall({ tool }: { tool: ToolUI }) {
             </pre>
           </div>
         ) : (
-          <pre className="scrollbar-thin overflow-x-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground">
-            {tool.output}
-          </pre>
+          <>
+            {tool.script && (
+              <CodeBlock
+                code={tool.script}
+                language="javascript"
+                className="rounded-none border-0 border-b border-border/70 bg-transparent"
+              />
+            )}
+            <pre className="scrollbar-thin overflow-x-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground">
+              {tool.output}
+            </pre>
+          </>
         )}
       </ToolContent>
     </Tool>

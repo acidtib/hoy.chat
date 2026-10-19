@@ -181,6 +181,7 @@ pub fn run() {
             commands::list_mcp_servers,
             commands::save_mcp_server,
             commands::remove_mcp_server,
+            commands::set_mcp_codemode,
             commands::list_subagents,
             commands::list_skills,
             commands::set_subagent_enabled,

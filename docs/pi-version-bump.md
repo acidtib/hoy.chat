@@ -60,8 +60,20 @@ and `createMcpExtension({ loadConfig })` (SDK sessions do not load built-ins).
 `loadMcpConfig` layering plus `.mcp.json`, defaults exposure to `deferred`, and
 mirrors Pi's `validateMcpServerConfig` checks. On a bump, diff Pi's
 `extensions/mcp/config.js` and `core/mcp-servers.js` against it, and re-check
-the MCP tool names in `MCP_TOOL_NAMES` and `hoy-permissions.ts`. Codemode is not
-loaded: its QuickJS worker and wasm need an extra `bun --compile` entry point
-(Pi's own binary build passes `extensions/codemode/worker.ts`).
+the MCP tool names in `MCP_TOOL_NAMES` and `hoy-permissions.ts`.
+
+Codemode is opt-in (the MCP settings switch, top-level `codemode: true` in the
+global `mcp.json`). With it on, the sidecar adds `createCodemodeExtension()` and
+MCP exposure defaults to `codemode`. Two pieces depend on Pi internals:
+- The sandbox worker is a second `bun --compile` entry point at
+  `pi-src/src/extensions/codemode/worker.ts`, because Pi's `config.js`
+  (`resolveCodemodeWorkerSpecifier`) starts it by that relative path in a bun
+  binary.
+- The QuickJS wasm is resolved with
+  `require.resolve("quickjs-wasi/quickjs.wasm")`, which the compiled binary can
+  only satisfy through `NODE_PATH`. `build.sh` copies the package into
+  `pi-payload/node_modules` and `sidecar.rs` sets `NODE_PATH` to it.
+
+If either moves, the smoke test's codemode turn fails.
 
 RPC surface coverage per version is tracked in `docs/pi-rpc-coverage.md`.

@@ -13,6 +13,10 @@ TRIPLE="${1:-$(rustc -vV | sed -n 's/^host: //p')}"
 PKG_DIR="$SIDECAR_DIR/pi-src/node_modules/@earendil-works/pi-coding-agent"
 DIST="$PKG_DIR/dist"
 ENTRY="$SIDECAR_DIR/pi-src/hoy-sidecar.ts"   # our SDK entry (runRpcMode + branding), not Pi's CLI
+# Codemode's sandbox worker. Pi resolves it as ./src/extensions/codemode/worker.ts
+# relative to the bundle root, so it must keep that path under pi-src.
+CODEMODE_WORKER="$SIDECAR_DIR/pi-src/src/extensions/codemode/worker.ts"
+QUICKJS_DIR="$SIDECAR_DIR/pi-src/node_modules/quickjs-wasi"
 PAYLOAD="$SIDECAR_DIR/pi-payload"
 
 # Map the rust target triple to a bun --compile target so CI can cross-compile
@@ -51,9 +55,9 @@ fi
 # disk at runtime, so nothing extra ships here for them.
 echo "[2/3] bun build --compile -> $(basename "$BIN")"
 if [ -n "$BUN_TARGET" ]; then
-  bun build --compile --target="$BUN_TARGET" "$ENTRY" --outfile "$BIN"
+  bun build --compile --target="$BUN_TARGET" "$ENTRY" "$CODEMODE_WORKER" --outfile "$BIN"
 else
-  bun build --compile "$ENTRY" --outfile "$BIN"
+  bun build --compile "$ENTRY" "$CODEMODE_WORKER" --outfile "$BIN"
 fi
 chmod +x "$BIN"
 
@@ -84,6 +88,15 @@ fi
 cp -r "$DIST/modes/interactive/theme" "$PAYLOAD/theme"
 cp -r "$DIST/core/export-html" "$PAYLOAD/export-html"
 [ -d "$DIST/modes/interactive/assets" ] && cp -r "$DIST/modes/interactive/assets" "$PAYLOAD/assets"
+# Codemode loads QuickJS with require.resolve("quickjs-wasi/quickjs.wasm"),
+# which a compiled binary cannot satisfy from its bundle. sidecar.rs points
+# NODE_PATH at payload/node_modules so the lookup finds this copy.
+if [ ! -f "$QUICKJS_DIR/quickjs.wasm" ]; then
+  echo "ERROR: quickjs-wasi/quickjs.wasm not found (codemode's sandbox; Pi layout changed?)" >&2
+  exit 1
+fi
+mkdir -p "$PAYLOAD/node_modules/quickjs-wasi"
+cp "$QUICKJS_DIR/package.json" "$QUICKJS_DIR/quickjs.wasm" "$PAYLOAD/node_modules/quickjs-wasi/"
 [ -f "$PKG_DIR/README.md" ] && cp "$PKG_DIR/README.md" "$PAYLOAD/"
 [ -f "$PKG_DIR/CHANGELOG.md" ] && cp "$PKG_DIR/CHANGELOG.md" "$PAYLOAD/"
 

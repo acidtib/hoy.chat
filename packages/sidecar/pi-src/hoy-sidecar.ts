@@ -15,6 +15,7 @@ import {
   createAgentSessionFromServices,
   createAgentSessionServices,
   createAgentSessionRuntime,
+  createCodemodeExtension,
   createMcpExtension,
   createToolSearchExtension,
   runRpcMode,
@@ -23,7 +24,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { createHoyPermissions, createPermissionState, isPermissionMode, type PermissionMode } from "./hoy-permissions";
-import { expandToolNames, loadHoyMcpConfig } from "./hoy-mcp-config";
+import { expandToolNames, loadHoyMcpConfig, readHoyCodemode } from "./hoy-mcp-config";
 import { createHoyAgents } from "./hoy-agents";
 import { createHoyAskQuestion } from "./hoy-ask-question";
 import { createHoyInit } from "./hoy-init";
@@ -183,7 +184,8 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   // `mcp` is Hoy's capability name (HOY_TOOLS, subagent .md tool lists); Pi
   // exposes MCP as tool_search, resource tools, and mcp__<server>__<tool>.
   const mcpEnabled = withAgent.includes("mcp");
-  const tools = expandToolNames(withAgent);
+  const codemode = mcpEnabled && readHoyCodemode(agentDir);
+  const tools = [...expandToolNames(withAgent), ...(codemode ? ["codemode"] : [])];
   const advertised = enabledTypes(registry).map((t) => ({ name: t.name, description: t.description }));
 
   const services = await createAgentSessionServices({
@@ -217,9 +219,19 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         // not each spawn every server. Calls go through createHoyPermissions'
         // tool_call gate like any other tool.
         createToolSearchExtension(),
+        // Codemode (settings switch) routes MCP tools through one script tool so
+        // their schemas stay out of the prompt. `models: false` keeps scripts
+        // from calling models on their own.
+        ...(codemode ? [createCodemodeExtension({ models: false })] : []),
         createMcpExtension({
           loadConfig: (ctx) =>
-            loadHoyMcpConfig({ agentDir, cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted(), enabled: mcpEnabled }),
+            loadHoyMcpConfig({
+              agentDir,
+              cwd: ctx.cwd,
+              projectTrusted: ctx.isProjectTrusted(),
+              enabled: mcpEnabled,
+              codemode,
+            }),
         }),
         // HOY-253: ask_question is a user-interaction tool, not a side
         // effect. Only root/user threads get it in their tool set (HOY_TOOLS)
