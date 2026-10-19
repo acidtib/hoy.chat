@@ -2,7 +2,12 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSubagentRegistry, enabledTypes, effectiveChildPrompt } from "./hoy-agents-registry";
+import {
+  loadSubagentRegistry,
+  enabledTypes,
+  effectiveChildPrompt,
+  resolveSubagentName,
+} from "./hoy-agents-registry";
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), "hoy-agents-"));
@@ -12,24 +17,48 @@ function writeAgent(dir: string, name: string, frontmatter: string, body: string
   writeFileSync(join(dir, `${name}.md`), `---\n${frontmatter}\n---\n${body}`);
 }
 
-test("built-ins are always present with Phase-1 tool sets", () => {
+test("the shipped roster: five role agents with their tool sets (HOY-357)", () => {
   const reg = loadSubagentRegistry(tmp(), tmp());
-  expect(reg["general-purpose"].tools).toEqual(["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"]);
-  expect(reg["general-purpose"].body).toBeUndefined();
-  expect(reg["Explore"].tools).toEqual(["read", "grep", "find", "ls"]);
-  expect(reg["Explore"].body).toContain("read-only");
-  expect(reg["Explore"].promptMode).toBe("replace");
+  expect(Object.keys(reg)).toEqual(["Researcher", "Writer", "Coder", "Reviewer", "Project Manager"]);
+  expect(reg["Researcher"].tools).toEqual(["read", "grep", "find", "ls", "mcp"]);
+  expect(reg["Writer"].tools).toEqual(["read", "grep", "find", "ls", "edit", "write", "mcp"]);
+  expect(reg["Coder"].tools).toEqual(["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"]);
+  expect(reg["Reviewer"].tools).toEqual(["read", "grep", "find", "ls", "bash", "mcp"]);
+  expect(reg["Project Manager"].tools).toEqual(["read", "grep", "find", "ls", "mcp"]);
+  for (const t of Object.values(reg)) {
+    expect(t.promptMode).toBe("append");
+    expect(t.body).toContain(`## Role: ${t.name}`);
+    expect(t.enabled).toBe(true);
+  }
+});
+
+test("retired types resolve to their replacement unless a file still defines them", () => {
+  const reg = loadSubagentRegistry(tmp(), tmp());
+  expect(resolveSubagentName(reg, "general-purpose")).toBe("Coder");
+  expect(resolveSubagentName(reg, "Explore")).toBe("Researcher");
+  expect(resolveSubagentName(reg, "Plan")).toBe("Researcher");
+  expect(resolveSubagentName(reg, "Coder")).toBe("Coder");
+  expect(resolveSubagentName(reg, "nope")).toBe("nope");
+  const cwd = tmp();
+  writeAgent(join(cwd, ".hoy", "agents"), "Explore", "description: mine", "body");
+  expect(resolveSubagentName(loadSubagentRegistry(tmp(), cwd), "Explore")).toBe("Explore");
+});
+
+test("a role body appends to the base prompt", () => {
+  const reg = loadSubagentRegistry(tmp(), tmp());
+  const prompt = effectiveChildPrompt(reg["Reviewer"], "BASE");
+  expect(prompt.startsWith("BASE\n\n## Role: Reviewer")).toBe(true);
 });
 
 test("project overrides global overrides built-in by name; scope reflects the winner", () => {
   const agentDir = tmp();
   const cwd = tmp();
-  writeAgent(join(agentDir, "agents"), "Explore", "description: global explore", "global body");
-  writeAgent(join(cwd, ".hoy", "agents"), "Explore", "description: project explore", "project body");
+  writeAgent(join(agentDir, "agents"), "Coder", "description: global coder", "global body");
+  writeAgent(join(cwd, ".hoy", "agents"), "Coder", "description: project coder", "project body");
   const reg = loadSubagentRegistry(agentDir, cwd);
-  expect(reg["Explore"].scope).toBe("project");
-  expect(reg["Explore"].description).toBe("project explore");
-  expect(reg["Explore"].body).toBe("project body");
+  expect(reg["Coder"].scope).toBe("project");
+  expect(reg["Coder"].description).toBe("project coder");
+  expect(reg["Coder"].body).toBe("project body");
 });
 
 test("agent is stripped from a type's tools (depth cap) and unknown tools dropped", () => {
@@ -64,7 +93,7 @@ test("disabled names in subagents.json set enabled=false; enabledTypes filters t
   const reg = loadSubagentRegistry(tmp(), cwd);
   expect(reg["Off"].enabled).toBe(false);
   expect(enabledTypes(reg).find((t) => t.name === "Off")).toBeUndefined();
-  expect(enabledTypes(reg).find((t) => t.name === "Explore")).toBeDefined();
+  expect(enabledTypes(reg).find((t) => t.name === "Researcher")).toBeDefined();
 });
 
 test("frontmatter enabled:false ships a type disabled by default (HOY-244)", () => {
@@ -126,7 +155,7 @@ test("malformed frontmatter is skipped, others still load", () => {
   const reg = loadSubagentRegistry(tmp(), cwd);
   expect(reg["Good"]).toBeDefined();
   expect(reg["Broken"]).toBeUndefined();
-  expect(reg["general-purpose"]).toBeDefined();
+  expect(reg["Coder"]).toBeDefined();
 });
 
 test("round-trips a .md as Rust's render_agent_md writes it (HOY-254 Slice 1)", () => {

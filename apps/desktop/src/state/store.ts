@@ -48,7 +48,7 @@ import { leafChainMessageIds } from "@/lib/treeNode";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
 import { issuePrompt } from "@/lib/delegate";
-import { haltingThread, moveQueued, openRuns } from "@/lib/fleet";
+import { currentAgentName, haltingThread, moveQueued, openRuns } from "@/lib/fleet";
 import { rewriteSkillCommand } from "@/lib/skill";
 import {
   detectPlanIntent,
@@ -2317,12 +2317,29 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const drafts: Record<string, string> = {};
       const projects = (ws.projects ?? []).map((p) => ({
         ...p,
+        ...(p.fleet
+          ? {
+              fleet: {
+                queue: p.fleet.queue.map((q) => ({ ...q, agent: currentAgentName(q.agent) })),
+                concurrency: Object.fromEntries(
+                  Object.entries(p.fleet.concurrency).map(([a, n]) => [currentAgentName(a), n]),
+                ),
+              },
+            }
+          : {}),
         threads: p.threads.map((t) => {
           // Drafts live in the drafts slice, not on the in-memory thread.
           const { draft, goal, ...rest } = t;
           if (draft) drafts[rest.id] = draft;
           const restoredGoal = restoreGoal(goal);
           let withGoal = restoredGoal ? { ...rest, goal: restoredGoal } : rest;
+          if (withGoal.agent) withGoal = { ...withGoal, agent: currentAgentName(withGoal.agent) };
+          if (withGoal.spawnedBy) {
+            withGoal = {
+              ...withGoal,
+              spawnedBy: { ...withGoal.spawnedBy, type: currentAgentName(withGoal.spawnedBy.type) },
+            };
+          }
           // A run still open on disk died with the app's sidecars.
           if (withGoal.fleetRun && withGoal.fleetRun.endedAt == null) {
             withGoal = {

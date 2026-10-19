@@ -29,7 +29,7 @@ import {
 type WriteScope = Exclude<SubagentScope, "builtin">;
 
 // A `<name>-copy` slug seed for the Duplicate action: lowercase the source name
-// (built-ins like "Explore" have capitals) and strip anything not slug-safe.
+// (built-ins like "Coder" have capitals) and strip anything not slug-safe.
 function slugCopy(name: string): string {
   const base = name
     .toLowerCase()
@@ -48,8 +48,7 @@ function draftFromDef(def: SubagentDef): SubagentDraft {
     thinking: def.thinking ?? "",
     inheritContext: def.inheritContext ?? false,
     maxTurns: def.maxTurns != null ? String(def.maxTurns) : "",
-    // A built-in with no static body (general-purpose) seeds the example starter
-    // rather than a blank prompt.
+    // A type with no body seeds the example starter rather than a blank prompt.
     body: def.body ?? EXAMPLE_STARTER_PROMPT,
   };
 }

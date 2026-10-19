@@ -195,9 +195,15 @@ pub fn set_enabled(
 
 // The built-in type names (hoy-agents-registry.ts BUILTIN_SUBAGENTS), lowercased.
 // A custom.md must not reuse one of these case-insensitively: the registry keys
-// types by name, so a file named e.g. Explore.md will shadow the built-in. Rust
+// types by name, so a file named e.g. Coder.md will shadow the built-in. Rust
 // rejects the write so a built-in can never be masked by a user file.
-const BUILTIN_NAMES: [&str; 3] = ["general-purpose", "explore", "plan"];
+const BUILTIN_NAMES: [&str; 5] = [
+    "researcher",
+    "writer",
+    "coder",
+    "reviewer",
+    "project manager",
+];
 
 // The fields a custom type carries, deserialized from the write command's `def`
 // arg (camelCase from the renderer). Mirrors SubagentDef/SubagentWrite on the TS
@@ -254,8 +260,8 @@ fn agents_dir(scope: SubagentScope, project: Option<&str>) -> Result<PathBuf, St
 // A type's name becomes its `<name>.md` file AND its registry key, so it must be a
 // safe slug: letters, digits, hyphen, underscore only. This rejects path
 // separators, dots, and spaces, so a name can never traverse out of the agents
-// dir or shadow another file. "general-purpose" (a built-in) is a valid slug, so
-// the built-in check below is separate.
+// dir or shadow another file. "coder" (a built-in) is a valid slug, so the
+// built-in check below is separate.
 fn is_safe_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
@@ -436,8 +442,7 @@ pub fn write_subagent(
         }
         // The no-shadowing invariant holds on the edit path too: even though a
         // built-in-named file can only exist if hand-authored (create rejects it),
-        // the write command must never help maintain a shadow of general-purpose /
-        // explore / plan.
+        // the write command must never help maintain a shadow of a built-in.
         if is_builtin_name(name) {
             return Err(format!(
                 "{name:?} is a built-in subagent name and cannot be reused"
@@ -524,21 +529,21 @@ mod tests {
         )
         .unwrap();
 
-        set_enabled_at(&path, "Reviewer", false).unwrap();
+        set_enabled_at(&path, "Auditor", false).unwrap();
         let after: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(after["note"], "keep");
-        assert_eq!(after["disabled"], json!(["Reviewer"]));
+        assert_eq!(after["disabled"], json!(["Auditor"]));
         // An empty list is stored as an absent key, not `[]`.
         assert!(after.get("enabled").is_none());
 
-        set_enabled_at(&path, "Reviewer", true).unwrap();
+        set_enabled_at(&path, "Auditor", true).unwrap();
         let after2: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         // Enabling moves the name from disabled to enabled (two-sided override),
         // so a frontmatter-disabled type can be forced on from the settings toggle.
         assert!(after2.get("disabled").is_none());
-        assert_eq!(after2["enabled"], json!(["Reviewer"]));
+        assert_eq!(after2["enabled"], json!(["Auditor"]));
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -555,7 +560,7 @@ mod tests {
             enabled: None,
             inherit_context: Some(true),
             max_turns: Some(5),
-            body: "You are a reviewer.".to_string(),
+            body: "You are an auditor.".to_string(),
         }
     }
 
@@ -566,12 +571,12 @@ mod tests {
         write_subagent(
             SubagentScope::Project,
             Some(proj.to_str().unwrap()),
-            &sample_def("Reviewer"),
+            &sample_def("Auditor"),
             false,
         )
         .unwrap();
         let md =
-            std::fs::read_to_string(proj.join(".hoy").join("agents").join("Reviewer.md")).unwrap();
+            std::fs::read_to_string(proj.join(".hoy").join("agents").join("Auditor.md")).unwrap();
 
         // The keys the sidecar parser reads, with the values as set.
         assert!(md.contains("description: \"A red-team reviewer: finds bugs.\""));
@@ -581,7 +586,7 @@ mod tests {
         assert!(md.contains("inherit_context: true"));
         assert!(md.contains("max_turns: 5"));
         // Body follows the closing delimiter.
-        assert!(md.trim_end().ends_with("You are a reviewer."));
+        assert!(md.trim_end().ends_with("You are an auditor."));
         // Unset (None) fields must not be serialized at all.
         assert!(!md.contains("thinking:"));
         assert!(!md.contains("enabled:"));
@@ -596,17 +601,13 @@ mod tests {
         let p = proj.to_str().unwrap();
 
         // Built-in names, case-insensitively, cannot be reused (no shadowing).
+        assert!(
+            write_subagent(SubagentScope::Project, Some(p), &sample_def("coder"), false).is_err()
+        );
         assert!(write_subagent(
             SubagentScope::Project,
             Some(p),
-            &sample_def("explore"),
-            false
-        )
-        .is_err());
-        assert!(write_subagent(
-            SubagentScope::Project,
-            Some(p),
-            &sample_def("General-Purpose"),
+            &sample_def("Researcher"),
             false
         )
         .is_err());
@@ -630,26 +631,22 @@ mod tests {
         assert!(write_subagent(
             SubagentScope::Project,
             Some(p),
-            &sample_def("Reviewer"),
+            &sample_def("Auditor"),
             false
         )
         .is_ok());
         assert!(write_subagent(
             SubagentScope::Project,
             Some(p),
-            &sample_def("Reviewer"),
+            &sample_def("Auditor"),
             false
         )
         .is_err());
 
         // delete_subagent removes the file and is idempotent.
-        delete_subagent(SubagentScope::Project, Some(p), "Reviewer").unwrap();
-        assert!(!proj
-            .join(".hoy")
-            .join("agents")
-            .join("Reviewer.md")
-            .exists());
-        delete_subagent(SubagentScope::Project, Some(p), "Reviewer").unwrap();
+        delete_subagent(SubagentScope::Project, Some(p), "Auditor").unwrap();
+        assert!(!proj.join(".hoy").join("agents").join("Auditor.md").exists());
+        delete_subagent(SubagentScope::Project, Some(p), "Auditor").unwrap();
 
         std::fs::remove_dir_all(&proj).ok();
     }
@@ -659,13 +656,13 @@ mod tests {
         let proj = std::env::temp_dir().join(format!("hoy-agent-ow-{}", std::process::id()));
         std::fs::remove_dir_all(&proj).ok();
         let p = proj.to_str().unwrap();
-        let md_path = proj.join(".hoy").join("agents").join("Reviewer.md");
+        let md_path = proj.join(".hoy").join("agents").join("Auditor.md");
 
         // overwrite=true on a name with no file is rejected (edit must not create).
         assert!(write_subagent(
             SubagentScope::Project,
             Some(p),
-            &sample_def("Reviewer"),
+            &sample_def("Auditor"),
             true
         )
         .is_err());
@@ -674,11 +671,11 @@ mod tests {
         write_subagent(
             SubagentScope::Project,
             Some(p),
-            &sample_def("Reviewer"),
+            &sample_def("Auditor"),
             false,
         )
         .unwrap();
-        let mut edited = sample_def("Reviewer");
+        let mut edited = sample_def("Auditor");
         edited.body = "Edited prompt.".to_string();
         write_subagent(SubagentScope::Project, Some(p), &edited, true).unwrap();
         let md = std::fs::read_to_string(&md_path).unwrap();
@@ -697,19 +694,19 @@ mod tests {
         write_subagent(
             SubagentScope::Project,
             Some(p),
-            &sample_def("Reviewer"),
+            &sample_def("Auditor"),
             false,
         )
         .unwrap();
-        // Toggle it off, which records "Reviewer" in the disabled override.
-        set_enabled(SubagentScope::Project, Some(p), "Reviewer", false).unwrap();
+        // Toggle it off, which records "Auditor" in the disabled override.
+        set_enabled(SubagentScope::Project, Some(p), "Auditor", false).unwrap();
         let before: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&json_path).unwrap()).unwrap();
-        assert_eq!(before["disabled"], json!(["Reviewer"]));
+        assert_eq!(before["disabled"], json!(["Auditor"]));
 
         // Deleting the type must also purge its override so a future same-named
         // type does not inherit the stale off state.
-        delete_subagent(SubagentScope::Project, Some(p), "Reviewer").unwrap();
+        delete_subagent(SubagentScope::Project, Some(p), "Auditor").unwrap();
         let after: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&json_path).unwrap()).unwrap();
         assert!(after.get("disabled").is_none());
@@ -741,12 +738,12 @@ mod tests {
         // Simulate a hand-authored shadow file the create path can never make.
         let dir = proj.join(".hoy").join("agents");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("Explore.md"), "---\n---\nhand authored\n").unwrap();
+        std::fs::write(dir.join("Reviewer.md"), "---\n---\nhand authored\n").unwrap();
         // Overwrite must still refuse to rewrite a built-in-named file.
         assert!(write_subagent(
             SubagentScope::Project,
             Some(p),
-            &sample_def("Explore"),
+            &sample_def("Reviewer"),
             true
         )
         .is_err());
@@ -759,14 +756,14 @@ mod tests {
         std::fs::remove_dir_all(&proj).ok();
         let p = proj.to_str().unwrap();
         let json_path = proj.join(".hoy").join("subagents.json");
-        // The user disabled the built-in "explore" (no.md file involved).
-        set_enabled(SubagentScope::Project, Some(p), "explore", false).unwrap();
+        // The user disabled the built-in "Writer" (no.md file involved).
+        set_enabled(SubagentScope::Project, Some(p), "Writer", false).unwrap();
         // Deleting a same-named file (none here) must NOT wipe the built-in's
         // override, or it will silently re-enable a built-in the user turned off.
-        delete_subagent(SubagentScope::Project, Some(p), "explore").unwrap();
+        delete_subagent(SubagentScope::Project, Some(p), "Writer").unwrap();
         let after: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&json_path).unwrap()).unwrap();
-        assert_eq!(after["disabled"], json!(["explore"]));
+        assert_eq!(after["disabled"], json!(["Writer"]));
         std::fs::remove_dir_all(&proj).ok();
     }
 }

@@ -16,7 +16,19 @@ const workspace = {
           agent: "Explore",
           fleetRun: { startedAt: 1 },
         },
+        {
+          id: "t-child",
+          title: "child",
+          updatedAt: 0,
+          renamed: true,
+          parentThreadId: "t-old",
+          spawnedBy: { type: "general-purpose", agentId: "a1" },
+        },
       ],
+      fleet: {
+        queue: [{ agent: "Plan", issue: { id: "q1" }, queuedAt: 0 }],
+        concurrency: { Explore: 2 },
+      },
     },
   ],
 };
@@ -71,6 +83,14 @@ test("a run left open on disk loads as interrupted", () => {
     .projects[0].threads.find((t) => t.id === "t-old")!.fleetRun!;
   expect(run.outcome).toBe("interrupted");
   expect(run.endedAt).toBeGreaterThan(0);
+});
+
+test("retired agent names load as their replacements", () => {
+  const p = useSessionStore.getState().projects[0];
+  expect(p.threads.find((t) => t.id === "t-old")!.agent).toBe("Researcher");
+  expect(p.threads.find((t) => t.id === "t-child")!.spawnedBy!.type).toBe("Coder");
+  expect(p.fleet!.queue[0].agent).toBe("Researcher");
+  expect(p.fleet!.concurrency).toEqual({ Researcher: 2 });
 });
 
 describe("fleet queue", () => {

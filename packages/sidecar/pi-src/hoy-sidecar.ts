@@ -31,7 +31,12 @@ import { createHoyLinear, LINEAR_TOOLS } from "./hoy-linear";
 import { createHoyInit } from "./hoy-init";
 import { createHoyTurnBudget } from "./hoy-turn-budget";
 import { createHoyAlibaba } from "./hoy-alibaba";
-import { loadSubagentRegistry, enabledTypes, effectiveChildPrompt } from "./hoy-agents-registry";
+import {
+  loadSubagentRegistry,
+  enabledTypes,
+  effectiveChildPrompt,
+  resolveSubagentName,
+} from "./hoy-agents-registry";
 import { buildHoySystemPrompt } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
 import { runGoalEval } from "./hoy-goal-eval";
@@ -72,7 +77,7 @@ if (!agentDir) {
 
 // Set by Rust (create_session) only for spawned child sessions. Selects the
 // child's built-in type. Absent for user threads.
-const subagentType = process.env.HOY_SUBAGENT_TYPE;
+const requestedSubagentType = process.env.HOY_SUBAGENT_TYPE;
 
 // Numeric depth from Rust (0 for root/user threads). A thread can spawn iff
 // depth < MAX_SUBAGENT_DEPTH. Mirrors apps/desktop/src/state/limits.ts. Keep
@@ -112,8 +117,7 @@ if (process.env.HOY_LIST_SUBAGENTS) {
     tools: t.tools,
     promptMode: t.promptMode,
     // The system prompt body (HOY-254), so an edit form can pre-fill it. Present
-    // for global/project types and for built-ins with a static body (Explore,
-    // Plan). Null for general-purpose, which inherits the base prompt (no body).
+    // for global/project types and for the built-ins.
     body: t.body ?? null,
     model: t.model ?? null,
     thinking: t.thinking ?? null,
@@ -171,6 +175,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   sessionStartEvent,
 }) => {
   const registry = loadSubagentRegistry(agentDir, cwd);
+  const subagentType = requestedSubagentType && resolveSubagentName(registry, requestedSubagentType);
 
   // Depth cap is absolute: if this child was spawned for a type that is no
   // longer in the freshly-loaded registry (its.hoy/agents/*.md was deleted or

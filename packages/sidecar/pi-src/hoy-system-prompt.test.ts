@@ -156,11 +156,11 @@ describe("buildHoySystemPrompt", () => {
   test("advertises enabled agent types dynamically", () => {
     expect(buildHoySystemPrompt(false)).not.toContain("Subagents:");
     const enabled = buildHoySystemPrompt(true, [
-      { name: "Explore", description: "read-only" },
+      { name: "Researcher", description: "read-only" },
       { name: "Reviewer", description: "reviews diffs" },
     ]);
     expect(enabled).toContain("Subagents:");
-    expect(enabled).toContain("Explore");
+    expect(enabled).toContain("Researcher");
     expect(enabled).toContain("Reviewer");
     expect(enabled).toContain("reviews diffs");
     // HOY-300: the agent tool is synchronous, the prompt tells the model the

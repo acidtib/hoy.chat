@@ -67,10 +67,10 @@ describe("agent tool", () => {
       },
     };
     const tool = mountAgentTool(builtinRegistry, false);
-    const out = await tool.execute("id", { subagentType: "Explore", task: "look at X" }, undefined, undefined, c);
+    const out = await tool.execute("id", { subagentType: "Researcher", task: "look at X" }, undefined, undefined, c);
     expect(seenTitle.startsWith(SPAWN_SYNC_PREFIX)).toBe(true);
     const payload = JSON.parse(seenTitle.slice(SPAWN_SYNC_PREFIX.length));
-    expect(payload.subagentType).toBe("Explore");
+    expect(payload.subagentType).toBe("Researcher");
     expect(payload.task).toBe("look at X");
     expect(out.content[0].text).toBe("CHILD RESULT");
   });
@@ -81,7 +81,7 @@ describe("agent tool", () => {
     const c = ctx({ inputs });
     const res = await tool.execute(
       "c1",
-      { subagentType: "Explore", task: "read the README" },
+      { subagentType: "Researcher", task: "read the README" },
       undefined,
       undefined,
       c,
@@ -89,7 +89,7 @@ describe("agent tool", () => {
     expect(inputs).toHaveLength(1);
     expect(inputs[0].startsWith(SPAWN_SYNC_PREFIX)).toBe(true);
     const payload = JSON.parse(inputs[0].slice(SPAWN_SYNC_PREFIX.length));
-    expect(payload.subagentType).toBe("Explore");
+    expect(payload.subagentType).toBe("Researcher");
     expect(payload.task).toBe("read the README");
     expect(typeof payload.agentId).toBe("string");
     expect(res.details.agentId).toBe(payload.agentId);
@@ -109,7 +109,7 @@ describe("agent tool", () => {
     });
     const res = await tool.execute(
       "c0",
-      { subagentType: "Explore", task: "read the README" },
+      { subagentType: "Researcher", task: "read the README" },
       undefined,
       undefined,
       c,
@@ -126,7 +126,7 @@ describe("agent tool", () => {
     const inputs: string[] = [];
     const c = ctx({ select: async () => "Deny", inputs });
     await expect(
-      tool.execute("c2", { subagentType: "Explore", task: "x" }, undefined, undefined, c),
+      tool.execute("c2", { subagentType: "Researcher", task: "x" }, undefined, undefined, c),
     ).rejects.toThrow(/declined/);
     expect(inputs).toHaveLength(0);
   });
@@ -134,7 +134,7 @@ describe("agent tool", () => {
   test("cancelled/aborted child (ui.input resolves undefined) returns a stopped-note, not the raw undefined", async () => {
     const tool = mountAgentTool(builtinRegistry, false);
     const c = ctx({ inputResult: undefined });
-    const res = await tool.execute("c9", { subagentType: "Explore", task: "x" }, undefined, undefined, c);
+    const res = await tool.execute("c9", { subagentType: "Researcher", task: "x" }, undefined, undefined, c);
     expect(res.content[0].text).toMatch(/stopped before returning a result/);
   });
 
@@ -147,9 +147,16 @@ describe("agent tool", () => {
         return "Allow for this session";
       },
     });
-    await tool.execute("c3", { subagentType: "general-purpose", task: "a" }, undefined, undefined, c);
-    await tool.execute("c4", { subagentType: "general-purpose", task: "b" }, undefined, undefined, c);
+    await tool.execute("c3", { subagentType: "Coder", task: "a" }, undefined, undefined, c);
+    await tool.execute("c4", { subagentType: "Coder", task: "b" }, undefined, undefined, c);
     expect(asks).toBe(1);
+  });
+
+  test("a retired type name spawns its replacement", async () => {
+    const tool = mountAgentTool(builtinRegistry);
+    const inputs: string[] = [];
+    await tool.execute("c8", { subagentType: "Explore", task: "look" }, undefined, undefined, ctx({ inputs }));
+    expect(JSON.parse(inputs[0].slice(SPAWN_SYNC_PREFIX.length)).subagentType).toBe("Researcher");
   });
 
   test("unknown type throws", async () => {
@@ -183,7 +190,7 @@ describe("agent tool", () => {
 
   test("execute refuses a project-scoped type when the project is untrusted", async () => {
     const registry = {
-      Explore: { name: "Explore", scope: "builtin", tools: ["read"], promptMode: "replace", enabled: true },
+      Researcher: { name: "Researcher", scope: "builtin", tools: ["read"], promptMode: "replace", enabled: true },
       Proj: { name: "Proj", scope: "project", tools: ["read"], promptMode: "replace", enabled: true },
     } as any;
     const tool = mountAgentTool(registry);
@@ -192,7 +199,7 @@ describe("agent tool", () => {
       /not trusted/i,
     );
     // built-in still allowed under the same untrusted ctx
-    const res = await tool.execute("c2", { subagentType: "Explore", task: "t" }, undefined, undefined, untrusted);
+    const res = await tool.execute("c2", { subagentType: "Researcher", task: "t" }, undefined, undefined, untrusted);
     expect(res.content[0].text).toBe("CHILD RESULT");
   });
 });

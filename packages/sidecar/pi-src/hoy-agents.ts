@@ -7,7 +7,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { SubagentRegistry } from "./hoy-agents-registry";
-import { enabledTypes } from "./hoy-agents-registry";
+import { enabledTypes, resolveSubagentName } from "./hoy-agents-registry";
 
 export const SPAWN_SYNC_PREFIX = "@hoy/spawn-subagent-sync:";
 
@@ -30,7 +30,7 @@ export function createHoyAgents(registry: SubagentRegistry, requireApproval: boo
   });
 
   async function run(params: any, ctx: ExtensionContext) {
-    const name = String(params.subagentType ?? "");
+    const name = resolveSubagentName(registry, String(params.subagentType ?? ""));
     const type = registry[name];
     if (!type || !type.enabled) {
       throw new Error(`Unknown subagent type: "${name}". Available: ${types.map((t) => t.name).join(", ")}.`);

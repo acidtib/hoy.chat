@@ -726,8 +726,7 @@ export interface SubagentDef {
   // HOY-244: per-type turn budget. The run is aborted once it is spent.
   maxTurns?: number | null;
   // HOY-254: the system prompt body, emitted by the list one-shot so an edit
-  // form can pre-fill it. Present for global/project types and built-ins with a
-  // static body (Explore, Plan). Null for general-purpose (no body, inherits base).
+  // form can pre-fill it. Null for a type with no body (inherits the base prompt).
   body?: string | null;
 }
 

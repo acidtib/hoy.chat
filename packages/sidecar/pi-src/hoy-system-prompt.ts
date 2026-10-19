@@ -112,9 +112,7 @@ export function buildHoySystemPrompt(
 // extension (before_agent_start) for the two modes that change model behavior.
 // Plan blocks mutation and asks for a plan. Autonomous overrides the static
 // confirm-first Safety line because the mode itself is the pre-approval.
-// The final plan output contract, shared by inline plan mode and the Plan
-// subagent (hoy-agents-registry.ts) so both emit the same detectable block. The
-// proposed_plan wrapper is the handoff token (HOY-213): a turn-end handler scans
+// The final plan output contract for plan mode. The proposed_plan wrapper is the handoff token (HOY-213): a turn-end handler scans
 // for it to offer Implement / Keep planning / Discard.
 export const PROPOSED_PLAN_FORMAT = [
   "Output contract: end your response with exactly one plan, wrapped in a proposed_plan block, in this shape:",
@@ -183,7 +181,7 @@ export const PLAN_MODE_PROMPT = [
   "   - Read any files mentioned in the user's request first",
   "   - Find existing patterns, conventions, and similar features to use as reference",
   "   - Trace the relevant code paths end to end before proposing changes",
-  "   - Delegate to subagents when it helps: dispatch Explore subagents (the agent tool) to investigate separate areas in parallel, and dispatch the Plan subagent for a deep or self-contained sub-problem. Subagents are read-only and run in their own context, so they keep this thread focused. Synthesize their findings into your plan.",
+  "   - Delegate to subagents when it helps: dispatch Researcher subagents (the agent tool) to investigate separate areas in parallel. Researchers are read-only and run in their own context, so they keep this thread focused. Synthesize their findings into your plan.",
   "",
   "3. Agree on the approach BEFORE writing the plan (the design gate). This step is REQUIRED for any change that spans multiple files or has more than one reasonable design; do not skip it for those.",
   "   - Identify 2-3 genuinely distinct approaches that follow the codebase's existing patterns, each with its real tradeoffs.",

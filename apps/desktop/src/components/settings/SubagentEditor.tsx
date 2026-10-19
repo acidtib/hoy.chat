@@ -50,10 +50,16 @@ const MAX_TURNS_CEILING = 4294967295;
 
 // Built-in names a custom file must never take: precedence is builtin < global <
 // project, so a same-named file will silently shadow the built-in. Lower-cased.
-export const BUILTIN_SUBAGENT_NAMES = ["general-purpose", "explore", "plan"];
+export const BUILTIN_SUBAGENT_NAMES = [
+  "researcher",
+  "writer",
+  "coder",
+  "reviewer",
+  "project manager",
+];
 
-// The form is never a blank box: a fresh agent (and duplicating general-purpose,
-// which has no static body) seeds this annotated example. UI-only scaffold. It is
+// The form is never a blank box: a fresh agent (and duplicating a type with no
+// body) seeds this annotated example. UI-only scaffold. It is
 // written verbatim into the.md on save like any other body, never a schema field.
 export const EXAMPLE_STARTER_PROMPT = `You are a specialized subagent spawned to handle one focused task.
 

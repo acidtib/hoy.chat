@@ -205,7 +205,7 @@ export function setSubagentEnabled(
 // scope's agents dir (global agent dir or <project>/.hoy/agents), the single
 // writer. The sidecar registry stays the only reader, then respawns idle sidecars
 // so live sessions reload the registry. Rejects a name that is unsafe, duplicate
-// in-scope, or shadows a built-in (general-purpose/Explore/Plan). `scope` is
+// in-scope, or shadows a built-in (Researcher, Writer, Coder, Reviewer, Project Manager). `scope` is
 // "global" or "project". Project scope needs `projectPath`. Editing an existing
 // type passes overwrite=true so the existing.md is replaced in a single atomic
 // write (no delete-then-write window). A new type passes overwrite=false (create-

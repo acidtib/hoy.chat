@@ -5,6 +5,18 @@ import type { FleetRun, QueuedIssue, Thread } from "./types";
 
 export const DEFAULT_RUN_MINUTES = 15;
 
+// Mirror of hoy-agents-registry.ts RETIRED_SUBAGENTS (HOY-357): types dropped
+// from the shipped roster and their replacements.
+const RETIRED_AGENTS: Record<string, string> = {
+  "general-purpose": "Coder",
+  Explore: "Researcher",
+  Plan: "Researcher",
+};
+
+export function currentAgentName(name: string): string {
+  return RETIRED_AGENTS[name] ?? name;
+}
+
 type Run = FleetRun & { endedAt: number };
 
 // Threads delegated to an agent, live (not archived).
