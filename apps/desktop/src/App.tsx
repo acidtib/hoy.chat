@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { ThreadHistory } from "@/components/ThreadHistory";
-import { FleetBoard } from "@/components/fleet/FleetBoard";
+import { ProjectHome } from "@/components/project/ProjectHome";
 import { HomePage } from "@/components/HomePage";
 import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
 import { UsageView } from "@/components/UsageView";
@@ -278,9 +278,13 @@ keeps the top-left corner, Zed-style). Panels render below it.*/}
             {showChrome ? (
               <>
                 <TitleBar />
-                {activeTabKey && bodyView === "panels" && (
-                  <ThreadTabs activeKey={activeTabKey} />
-                )}
+                {threadTabs &&
+                  (bodyView === "project" ||
+                    (bodyView === "panels" && activeTabKey)) && (
+                    <ThreadTabs
+                      activeKey={bodyView === "project" ? null : activeTabKey}
+                    />
+                  )}
               </>
             ) : (
               <header
@@ -311,8 +315,8 @@ keeps the top-left corner, Zed-style). Panels render below it.*/}
                 <OnboardingPage />
               ) : bodyView === "usage" ? (
                 <UsageView />
-              ) : bodyView === "fleet" ? (
-                <FleetBoard />
+              ) : bodyView === "project" && projects.length > 0 ? (
+                <ProjectHome />
               ) : panels.length === 0 ? (
                 <HomePage />
               ) : threadTabs ? (

@@ -34,6 +34,27 @@ pub struct WsProject {
     pub path: Option<String>,
     #[serde(default)]
     pub threads: Vec<WsThread>,
+    // HOY-346: the Linear team whose open issues feed the Delegate board.
+    #[serde(default)]
+    pub linear: Option<WsLinearLink>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsLinearLink {
+    pub team_id: String,
+    pub team_key: String,
+    pub team_name: String,
+}
+
+// The Linear issue a delegated thread is working on (HOY-346).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsLinearIssueRef {
+    pub id: String,
+    pub identifier: String,
+    pub title: String,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +99,12 @@ pub struct WsThread {
     // is a load-time frontend concern, not a workspace.rs one.
     #[serde(default)]
     pub goal: Option<WsGoal>,
+    // HOY-346: a thread delegated from the board runs as this subagent type,
+    // working on this issue.
+    #[serde(default)]
+    pub agent: Option<String>,
+    #[serde(default)]
+    pub linear_issue: Option<WsLinearIssueRef>,
 }
 
 // A provider/model identity pair, mirroring the frontend ModelRef. Cached on the
@@ -195,6 +222,11 @@ mod tests {
                 id: "p1".into(),
                 name: "hoy".into(),
                 path: Some("/home/u/code/hoy".into()),
+                linear: Some(WsLinearLink {
+                    team_id: "team-1".into(),
+                    team_key: "HOY".into(),
+                    team_name: "Hoy".into(),
+                }),
                 threads: vec![WsThread {
                     id: "t1".into(),
                     title: "ticket HOY-28".into(),
@@ -227,9 +259,30 @@ mod tests {
                         verify_cwd: None,
                         evaluator_kind: Some("auditor".into()),
                     }),
+                    agent: Some("Explore".into()),
+                    linear_issue: Some(WsLinearIssueRef {
+                        id: "issue-1".into(),
+                        identifier: "HOY-28".into(),
+                        title: "ticket".into(),
+                        url: "https://linear.app/hoy/issue/HOY-28".into(),
+                    }),
                 }],
             }],
         }
+    }
+
+    #[test]
+    fn linear_fields_round_trip_camel_case() {
+        let json = serde_json::to_string(&sample()).unwrap();
+        assert!(json.contains(
+            "\"linear\":{\"teamId\":\"team-1\",\"teamKey\":\"HOY\",\"teamName\":\"Hoy\"}"
+        ));
+        assert!(json.contains("\"agent\":\"Explore\""));
+        assert!(json.contains("\"linearIssue\":{\"id\":\"issue-1\",\"identifier\":\"HOY-28\""));
+        let back: Workspace = serde_json::from_str(&json).unwrap();
+        let t = &back.projects[0].threads[0];
+        assert_eq!(t.linear_issue.as_ref().unwrap().identifier, "HOY-28");
+        assert_eq!(back.projects[0].linear.as_ref().unwrap().team_key, "HOY");
     }
 
     #[test]
@@ -332,6 +385,7 @@ mod tests {
             name: "jiji".into(),
             path: None,
             threads: vec![],
+            linear: None,
         });
         save_at(&path, &next).unwrap();
         let loaded = load_at(&path).unwrap();
@@ -374,6 +428,7 @@ mod tests {
                 id: "p1".into(),
                 name: "P".into(),
                 path: None,
+                linear: None,
                 threads: vec![WsThread {
                     id: "t2".into(),
                     title: "child".into(),
@@ -390,6 +445,8 @@ mod tests {
                     }),
                     model: None,
                     goal: None,
+                    agent: None,
+                    linear_issue: None,
                 }],
             }],
             active_project_id: None,

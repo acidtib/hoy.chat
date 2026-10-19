@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Plus, X } from "lucide-react";
+import { FolderKanban, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThreadModelIcon } from "@/components/ThreadModelIcon";
 import { cn } from "@/lib/utils";
 import { childThreadIdsOf, isSubagentThread } from "@/state/delivery";
 import { findThread, groupTabs, useSessionStore } from "@/state/store";
 
-// Experimental tab strip over the body: one tab per group of split panels. A
-// tab is labeled by the active thread when it holds it, else its first panel.
-export function ThreadTabs({ activeKey }: { activeKey: string }) {
+// Experimental tab strip over the body: the active project's home pinned
+// first, then one tab per group of split panels. A thread tab is labeled by
+// the active thread when it holds it, else its first panel. `activeKey` is
+// null while the project home is showing.
+export function ThreadTabs({ activeKey }: { activeKey: string | null }) {
   const panels = useSessionStore((s) => s.panels);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
   const tabs = useMemo(() => groupTabs(panels), [panels]);
@@ -24,6 +26,7 @@ export function ThreadTabs({ activeKey }: { activeKey: string }) {
 
   return (
     <div className="flex h-8 shrink-0 items-stretch border-b border-border bg-sidebar">
+      <ProjectTab />
       <div
         ref={stripRef}
         role="tablist"
@@ -60,6 +63,34 @@ export function ThreadTabs({ activeKey }: { activeKey: string }) {
       )}
       <div data-tauri-drag-region className="flex-1" />
     </div>
+  );
+}
+
+function ProjectTab() {
+  const project = useSessionStore(
+    (s) => s.projects.find((p) => p.id === s.activeProjectId) ?? null,
+  );
+  const active = useSessionStore((s) => s.bodyView === "project");
+  const projectView = useSessionStore((s) => s.projectView);
+  const openProject = useSessionStore((s) => s.openProject);
+  if (!project) return null;
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={() => openProject(project.id, projectView)}
+      title={`${project.name} home`}
+      className={cn(
+        "flex max-w-48 shrink-0 items-center gap-1.5 border-r border-t-2 border-r-border px-2.5 text-xs font-medium transition-colors",
+        active
+          ? "border-t-brand/70 bg-background text-foreground"
+          : "border-t-transparent text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
+      )}
+    >
+      <FolderKanban className="size-3.5 shrink-0" />
+      <span className="truncate">{project.name}</span>
+    </button>
   );
 }
 

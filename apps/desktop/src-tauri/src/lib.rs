@@ -2,6 +2,8 @@ mod alibaba_config;
 mod commands;
 mod events;
 mod keep_awake;
+mod linear;
+mod linear_oauth;
 mod mcp_config;
 mod oauth;
 mod pi_config;
@@ -178,6 +180,13 @@ pub fn run() {
             commands::list_alibaba_endpoints,
             commands::save_alibaba_endpoints,
             commands::reset_alibaba_endpoints,
+            commands::linear_status,
+            commands::linear_connect,
+            commands::linear_oauth_connect,
+            commands::linear_oauth_cancel,
+            commands::linear_disconnect,
+            commands::linear_teams,
+            commands::linear_issues,
             commands::list_mcp_servers,
             commands::save_mcp_server,
             commands::remove_mcp_server,

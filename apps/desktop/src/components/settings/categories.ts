@@ -5,6 +5,7 @@ import {
   Brain,
   Cable,
   Info,
+  SquareKanban,
   LayoutGrid,
   MessageSquare,
   Mic,
@@ -33,6 +34,7 @@ export type CategoryId =
   | "gateway"
   | "tools"
   | "mcp"
+  | "integrations"
   | "subagents"
   | "archived";
 
@@ -56,6 +58,7 @@ export const CATEGORIES: Category[] = [
   { id: "memory", label: "Memory & Context", icon: Brain, group: 0 },
   { id: "providers", label: "Providers", icon: Plug, group: 1 },
   { id: "mcp", label: "MCP", icon: Cable, group: 1 },
+  { id: "integrations", label: "Integrations", icon: SquareKanban, group: 1 },
   { id: "subagents", label: "Subagents", icon: Bot, group: 1 },
   { id: "skills", label: "Skills", icon: Sparkle, group: 1 },
   { id: "about", label: "About", icon: Info, group: 1 },

@@ -525,6 +525,10 @@ export interface Thread {
   // renders before a sidecar spawns. LoadWorkspace resets counters and demotes
   // "active" to "paused" on restore (see store.ts initWorkspace).
   goal?: ThreadGoal;
+  // HOY-346: a thread delegated from the board runs as this subagent type,
+  // working on this Linear issue.
+  agent?: string | null;
+  linearIssue?: LinearIssueRef | null;
 }
 
 // Mirror of workspace.rs Workspace: the persisted projects -> threads tree.
@@ -541,6 +545,55 @@ export interface Project {
   // directory picker.
   path?: string | null;
   threads: Thread[];
+  // HOY-346: the Linear team whose open issues feed the Delegate board.
+  linear?: LinearLink | null;
+}
+
+// Mirrors of linear.rs / workspace.rs (HOY-346). The API key never crosses IPC.
+export interface LinearStatus {
+  connected: boolean;
+  method: "oauth" | "apiKey" | null;
+  viewerName: string | null;
+  organization: string | null;
+  // Set when a stored credential was rejected or Linear was unreachable.
+  error: string | null;
+  // This build carries a Linear OAuth client id.
+  oauthAvailable: boolean;
+}
+
+export interface LinearTeam {
+  id: string;
+  key: string;
+  name: string;
+}
+
+export interface LinearLink {
+  teamId: string;
+  teamKey: string;
+  teamName: string;
+}
+
+export interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  description: string | null;
+  url: string;
+  // 0 none, 1 urgent, 2 high, 3 medium, 4 low.
+  priority: number;
+  priorityLabel: string;
+  estimate: number | null;
+  stateName: string;
+  stateType: string;
+  assignee: string | null;
+  labels: string[];
+}
+
+export interface LinearIssueRef {
+  id: string;
+  identifier: string;
+  title: string;
+  url: string;
 }
 
 // Mirror of pi_config::ProviderInfo. The provider picker list.

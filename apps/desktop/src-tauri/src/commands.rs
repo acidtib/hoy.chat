@@ -9,6 +9,8 @@ use crate::alibaba_config::{self, AlibabaEndpointSettings};
 use crate::events::{
     AgentEvent, CompactionResult, ImageContent, ModelInfo, PiState, SessionStats, SlashCommand,
 };
+use crate::linear::{self, LinearIssue, LinearStatus, LinearTeam};
+use crate::linear_oauth;
 use crate::mcp_config::{self, McpScope, McpServerList};
 use crate::pi_config::{self, ProviderAuth, ProviderInfo};
 use crate::session_transcript;
@@ -221,6 +223,43 @@ pub fn provider_statuses(providers: Vec<String>) -> Result<Vec<ProviderAuth>, St
 #[tauri::command]
 pub fn supported_providers() -> Vec<ProviderInfo> {
     pi_config::supported_providers()
+}
+
+#[tauri::command]
+pub async fn linear_status() -> Result<LinearStatus, String> {
+    linear::status().await
+}
+
+#[tauri::command]
+pub async fn linear_connect(api_key: String) -> Result<LinearStatus, String> {
+    linear::connect(&api_key).await
+}
+
+// Opens the browser for Linear's consent page and resolves once the loopback
+// callback lands and the tokens are stored.
+#[tauri::command]
+pub async fn linear_oauth_connect(app: tauri::AppHandle) -> Result<LinearStatus, String> {
+    linear::connect_oauth(&app).await
+}
+
+#[tauri::command]
+pub fn linear_oauth_cancel() {
+    linear_oauth::cancel();
+}
+
+#[tauri::command]
+pub async fn linear_disconnect() -> Result<(), String> {
+    linear::disconnect().await
+}
+
+#[tauri::command]
+pub async fn linear_teams() -> Result<Vec<LinearTeam>, String> {
+    linear::teams().await
+}
+
+#[tauri::command]
+pub async fn linear_issues(team_id: String) -> Result<Vec<LinearIssue>, String> {
+    linear::issues(&team_id).await
 }
 
 #[tauri::command]

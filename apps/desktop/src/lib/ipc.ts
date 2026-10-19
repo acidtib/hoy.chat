@@ -12,6 +12,9 @@ import type {
   GoalEvaluation,
   GoalVerifyResult,
   ImageContent,
+  LinearIssue,
+  LinearStatus,
+  LinearTeam,
   McpScope,
   McpServerList,
   ModelInfo,
@@ -336,6 +339,36 @@ export function deleteSessionFile(sessionFile: string): Promise<void> {
 // owner thread only holds the wake lock while a turn streams AND this is on.
 export function setKeepAwake(enabled: boolean): Promise<void> {
   return invoke<void>("set_keep_awake", { enabled });
+}
+
+export function linearStatus(): Promise<LinearStatus> {
+  return invoke<LinearStatus>("linear_status");
+}
+
+// Validates the key against Linear before Rust stores it.
+export function linearConnect(apiKey: string): Promise<LinearStatus> {
+  return invoke<LinearStatus>("linear_connect", { apiKey });
+}
+
+// Opens the browser on Linear's consent page; resolves once Rust has the tokens.
+export function linearOAuthConnect(): Promise<LinearStatus> {
+  return invoke<LinearStatus>("linear_oauth_connect");
+}
+
+export function linearOAuthCancel(): Promise<void> {
+  return invoke<void>("linear_oauth_cancel");
+}
+
+export function linearDisconnect(): Promise<void> {
+  return invoke<void>("linear_disconnect");
+}
+
+export function linearTeams(): Promise<LinearTeam[]> {
+  return invoke<LinearTeam[]>("linear_teams");
+}
+
+export function linearIssues(teamId: string): Promise<LinearIssue[]> {
+  return invoke<LinearIssue[]>("linear_issues", { teamId });
 }
 
 export function loadWorkspace(): Promise<Workspace> {

@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { BarChart3, Bot, GitBranch, Minus, Settings, Square, X } from "lucide-react";
+import {
+  BarChart3,
+  GitBranch,
+  Minus,
+  Settings,
+  Square,
+  X,
+} from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -64,10 +71,8 @@ export function TitleBar() {
         )}
       </div>
 
-      {/* Global view/app controls, left → right: Usage toggle, Fleet
-          toggle, Settings cog, then the window controls. The two body-view
-          toggles keep their footer active treatment (brand for Usage,
- text-agent for the agents/fleet view). */}
+      {/* Global view/app controls, left → right: Usage toggle, Settings cog,
+          then the window controls. Fleet lives in each project's home. */}
       <div className="flex shrink-0 items-center gap-0.5">
         <TitleBarButton
           label={bodyView === "usage" ? "Show Panels" : "Show Usage Stats"}
@@ -75,14 +80,6 @@ export function TitleBar() {
           active={bodyView === "usage"}
         >
           <BarChart3 className="size-4" />
-        </TitleBarButton>
-        <TitleBarButton
-          label={bodyView === "fleet" ? "Show Panels" : "Show Fleet"}
-          onClick={() => setBodyView(bodyView === "fleet" ? "panels" : "fleet")}
-          active={bodyView === "fleet"}
-          activeClassName="text-agent"
-        >
-          <Bot className="size-4" />
         </TitleBarButton>
         <TitleBarButton
           label="Settings"

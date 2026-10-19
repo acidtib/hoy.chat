@@ -41,6 +41,7 @@ import type { CategoryId } from "./categories";
 import { ProvidersPanel } from "./ProvidersPanel";
 import { ThemeSelector } from "./ThemeSelector";
 import { McpPanel } from "./McpPanel";
+import { IntegrationsPanel } from "./IntegrationsPanel";
 import { SubagentsPanel } from "./SubagentsPanel";
 import { SkillsPanel } from "./SkillsPanel";
 import { useSessionStore } from "@/state/store";
@@ -450,14 +451,14 @@ function WorkspacePanel() {
         <Separator />
         <ToggleRow
           label="Auto-open spawned subagent threads"
-          description="Open a panel for each subagent a thread spawns. Off by default; watch spawned agents in Fleet instead (the footer's Fleet button)."
+          description="Open a panel for each subagent a thread spawns. Off by default; watch spawned agents in each project's Fleet instead."
           checked={autoOpenSpawnedThreads}
           onChange={(v) => setPref("autoOpenSpawnedThreads", v)}
         />
         <Separator />
         <ToggleRow
           label="Require approval before spawning subagents"
-          description="Ask before a thread spawns each subagent type. Off by default; spawns proceed without a prompt and you watch or intervene in Fleet. Applies to sessions started after the change."
+          description="Ask before a thread spawns each subagent type. Off by default; spawns proceed without a prompt and you watch or intervene in the project's Fleet. Applies to sessions started after the change."
           checked={requireSubagentApproval}
           onChange={(v) => setPref("requireSubagentApproval", v)}
         />
@@ -822,6 +823,8 @@ export function SettingsPanel({ id }: { id: CategoryId }) {
       );
     case "mcp":
       return <McpPanel />;
+    case "integrations":
+      return <IntegrationsPanel />;
     case "subagents":
       return <SubagentsPanel />;
     case "skills":

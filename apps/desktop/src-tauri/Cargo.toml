@@ -45,6 +45,15 @@ tauri-plugin-single-instance = "2"
 keepawake = "0.6"
 # User's login shell from passwd (HOY-345: NixOS/Guix store paths).
 libc = "0.2"
+# Linear GraphQL client (HOY-346). Same reqwest/rustls the updater already
+# builds, so no new crates; ring is installed as the crypto provider at call time.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+# Linear OAuth PKCE (HOY-346); all already in the tree.
+base64 = "0.22"
+getrandom = "0.3"
+sha2 = "0.10"
+url = "2"
 
 [dev-dependencies]
 # test-util enables tokio's paused virtual clock (start_paused) for the

@@ -46,6 +46,7 @@ import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { leafChainMessageIds } from "@/lib/treeNode";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
+import { issuePrompt } from "@/lib/delegate";
 import { rewriteSkillCommand } from "@/lib/skill";
 import {
   detectPlanIntent,
@@ -86,6 +87,8 @@ import type {
   GoalVerifyResult,
   ImageAttachment,
   ImageContent,
+  LinearIssue,
+  LinearLink,
   McpScope,
   ModelInfo,
   ModelRef,
@@ -113,6 +116,10 @@ import {
   isThinkingLevel,
 } from "@/lib/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+
+export type BodyView = "panels" | "usage" | "project";
+// HOY-346: the sub-views of a project's home (bodyView "project").
+export type ProjectView = "fleet" | "threads" | "agents";
 
 export const SIDEBAR_MIN_WIDTH = 220;
 export const SIDEBAR_MAX_WIDTH = 480;
@@ -380,7 +387,9 @@ interface SessionStore {
   // null = all threads. Cleared whenever the sidebar view is toggled directly.
   historyProjectId: string | null;
   sidebarWidth: number;
-  bodyView: "panels" | "fleet" | "usage";
+  bodyView: BodyView;
+  // Which sub-view the active project's home shows.
+  projectView: ProjectView;
   // Global settings modal, openable from any entry point (home cog, thread menu).
   settingsOpen: boolean;
   activeSessionId: string | null;
@@ -533,11 +542,24 @@ interface SessionStore {
   setSidebarView: (view: "projects" | "history") => void;
   // Open the history view scoped to a project (null = unscoped). HOY-257.
   openThreadHistory: (projectId: string | null) => void;
-  setBodyView: (view: "panels" | "fleet" | "usage") => void;
-  setSettingsOpen: (open: boolean) => void;
+  setBodyView: (view: BodyView) => void;
+  // Make the project active and show its home on `view` (default: fleet).
+  openProject: (projectId: string, view?: ProjectView) => void;
+  // `category` (a settings CategoryId) opens the modal on that panel.
+  setSettingsOpen: (open: boolean, category?: string) => void;
+  settingsCategory: string | null;
   setSidebarWidth: (width: number) => void;
   addProject: (path: string) => void;
   addThread: (projectId: string, opts?: { split?: boolean }) => string;
+  // HOY-346: link a project to a Linear team (null unlinks).
+  setProjectLinear: (projectId: string, link: LinearLink | null) => void;
+  // Hand a Linear issue to an agent: a new thread in the project, running as
+  // that subagent type and prompted with the issue. Returns the thread id.
+  delegateIssue: (
+    projectId: string,
+    issue: LinearIssue,
+    agent: string,
+  ) => string | null;
   // Re-fit panel widths to the body (after the tabs pref flips).
   refitPanelLayout: () => void;
   // Create a child thread for a spawned subagent (HOY-231) and drive it
@@ -748,8 +770,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   sidebarView: "projects",
   historyProjectId: null,
   settingsOpen: false,
+  settingsCategory: null,
   sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   bodyView: "panels",
+  projectView: "fleet",
   activeSessionId: null,
   models: [],
   subagents: [],
@@ -810,8 +834,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // default target).
       const activeProjectId =
         findThread(s.projects, id)?.project.id ?? s.activeProjectId;
+      // A foreground open is a request to see the thread; a background open
+      // (delegating from the Fleet) leaves the current view alone.
+      const bodyView = opts?.background ? s.bodyView : "panels";
       if (isOpen)
-        return { activeThreadId: id, activeProjectId, expandedThreadId, focusRequest };
+        return {
+          activeThreadId: id,
+          activeProjectId,
+          expandedThreadId,
+          focusRequest,
+          bodyView,
+        };
       if (tabs) {
         const anchor = s.panels.find((p) => p.id === s.activeThreadId);
         if (!opts?.split || !anchor) {
@@ -821,6 +854,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             activeProjectId,
             expandedThreadId,
             focusRequest,
+            bodyView,
           };
         }
         // Insert after the tab's last panel so the tab stays contiguous.
@@ -843,6 +877,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           // Splitting out of a full screen panel exits it.
           expandedThreadId: null,
           focusRequest,
+          bodyView,
         };
       }
       const { panels, width } = placeNewPanel(s.panels, s.bodyWidth);
@@ -852,6 +887,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         activeProjectId,
         expandedThreadId,
         focusRequest,
+        bodyView,
       };
     });
     void get().hydrateThread(id);
@@ -1119,7 +1155,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   openThreadHistory: (projectId) =>
     set({ sidebarView: "history", historyProjectId: projectId }),
   setBodyView: (view) => set({ bodyView: view }),
-  setSettingsOpen: (open) => set({ settingsOpen: open }),
+  openProject: (projectId, view = "fleet") =>
+    set({ activeProjectId: projectId, bodyView: "project", projectView: view }),
+  setSettingsOpen: (open, category) =>
+    set((s) => ({
+      settingsOpen: open,
+      settingsCategory: open ? (category ?? null) : s.settingsCategory,
+    })),
   setSidebarWidth: (width) =>
     set({
       sidebarWidth: Math.min(
@@ -1152,6 +1194,46 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       };
     });
     if (openId) get().openThread(openId);
+  },
+  setProjectLinear: (projectId, link) =>
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId ? { ...p, linear: link } : p,
+      ),
+    })),
+  delegateIssue: (projectId, issue, agent) => {
+    const s = get();
+    if (!s.projects.some((p) => p.id === projectId)) return null;
+    const def = s.subagents.find((d) => d.name === agent);
+    const model = def?.model ? resolveModelRef(s, def.model) : null;
+    const thinking = isThinkingLevel(def?.thinking) ? def.thinking : null;
+    const thread: Thread = {
+      id: shortId("t"),
+      title: `${issue.identifier} ${issue.title}`,
+      updatedAt: Date.now(),
+      sessionId: null,
+      // A titled thread, so a failed first prompt never discards it as untouched.
+      renamed: true,
+      agent,
+      linearIssue: {
+        id: issue.id,
+        identifier: issue.identifier,
+        title: issue.title,
+        url: issue.url,
+      },
+      ...(model ? { model } : {}),
+      ...(thinking ? { thinkingLevel: thinking } : {}),
+    };
+    set((st) => ({
+      projects: st.projects.map((p) =>
+        p.id === projectId ? { ...p, threads: [thread, ...p.threads] } : p,
+      ),
+    }));
+    get().openThread(thread.id, { background: true });
+    void get().submitPrompt(thread.id, issuePrompt(issue), undefined, undefined, {
+      autoPlanMode: false,
+    });
+    return thread.id;
   },
   refitPanelLayout: () =>
     set((s) => ({ panels: refitPanels(s.panels, s.bodyWidth) })),
@@ -2138,7 +2220,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const activeProjectId = projects.some((p) => p.id === ws.activeProjectId)
         ? (ws.activeProjectId ?? null)
         : null;
-      set({ projects, drafts, activeProjectId });
+      // The project is the main entry: boot into the last project's home.
+      set({
+        projects,
+        drafts,
+        activeProjectId,
+        ...(activeProjectId ? { bodyView: "project" as const, projectView: "fleet" as const } : {}),
+      });
     } catch {
       // Corrupt/unreadable workspace: start empty rather than block the app.
     } finally {
@@ -3248,11 +3336,13 @@ function acquireSession(
   // threadId already carries the thread's own parentThreadId chain (this
   // reopens an existing thread's sidecar, root or subagent), so its depth is
   // computed directly rather than derived from a parent + 1.
-  const depth = threadDepth(useSessionStore.getState().projects, threadId);
+  const { projects } = useSessionStore.getState();
+  const depth = threadDepth(projects, threadId);
   const spawn = createSession(
     cwd,
     sessionFile ?? null,
-    null,
+    // A delegated thread keeps its agent type across spawns (HOY-346).
+    findThread(projects, threadId)?.thread.agent ?? null,
     null,
     depth,
     usePrefsStore.getState().requireSubagentApproval,
@@ -3601,6 +3691,7 @@ function persistProjects(
       id: p.id,
       name: p.name,
       path: p.path ?? null,
+      linear: p.linear ?? null,
       // Untouched threads never reach disk: they vanish on restart even if
       // their panel was left open, and legacy empty rows in an existing
       // workspace.json drop off on the next save.
@@ -3626,6 +3717,8 @@ function persistProjects(
           // "paused" on the way back in, so a running loop never auto-resumes
           //  from reopening the app.
           goal: t.goal,
+          agent: t.agent ?? null,
+          linearIssue: t.linearIssue ?? null,
         })),
     })),
   };

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
@@ -11,6 +11,12 @@ export function SettingsModal() {
   const open = useSessionStore((s) => s.settingsOpen);
   const setOpen = useSessionStore((s) => s.setSettingsOpen);
   const [active, setActive] = useState<CategoryId>("model");
+  const requested = useSessionStore((s) => s.settingsCategory);
+  useEffect(() => {
+    if (open && requested && CATEGORIES.some((c) => c.id === requested)) {
+      setActive(requested as CategoryId);
+    }
+  }, [open, requested]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
