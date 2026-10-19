@@ -61,7 +61,11 @@ import type {
   SlashCommand,
   ThinkingLevel,
 } from "@/lib/types";
-import { contextKey, THINKING_LEVELS } from "@/lib/types";
+import {
+  contextKey,
+  getSupportedThinkingLevels,
+  THINKING_LEVELS,
+} from "@/lib/types";
 
 // Hoy built-in slash commands (HOY-223), shown in the "/" autocomplete alongside
 // Pi's get_commands. /compact is intercepted on submit (store.submitPrompt) and
@@ -292,6 +296,22 @@ export function Composer({
   } | null>(null);
   const aboveWidgets = widgets.filter((w) => w.placement === "aboveEditor");
   const belowWidgets = widgets.filter((w) => w.placement === "belowEditor");
+
+  // During initial load with no activeModel yet, getSupportedThinkingLevels(null)
+  // would return ["off"] and flash the pill to Off-only. Fall back to the full
+  // list until models resolve so the UI stays stable.
+  const activeModel = currentModel
+    ? (models.find(
+        (m) => m.provider === currentModel.provider && m.id === currentModel.id,
+      ) ?? null)
+    : null;
+  const supportedThinkingLevels =
+    models.length === 0 || !activeModel
+      ? THINKING_LEVELS
+      : getSupportedThinkingLevels(activeModel);
+  const supportedLabels = supportedThinkingLevels.map(
+    (l) => THINKING_LABELS[l],
+  );
 
   function addImageFiles(files: FileList | File[] | null) {
     if (!files || !onAddFiles || !canAttachImages) return;
@@ -1207,10 +1227,14 @@ export function Composer({
             onSelect={onSelectModel}
           />
           <PillSelect
+            // Keep value as THINKING_LABELS[thinking] even if thinking not in
+            // supportedThinkingLevels so the pill never renders blank. The store
+            // clamp (selectThinkingLevel / applyThreadModel) corrects the stale
+            // value on next change.
             value={THINKING_LABELS[thinking]}
-            options={THINKING_LEVELS.map((l) => THINKING_LABELS[l])}
+            options={supportedLabels}
             onSelect={(label) => {
-              const level = THINKING_LEVELS.find(
+              const level = supportedThinkingLevels.find(
                 (l) => THINKING_LABELS[l] === label,
               )
               if (level) onSelectThinking(level)

@@ -3,7 +3,10 @@ import { Composer } from "@/components/Composer";
 import { useSessionStore } from "@/state/store";
 import { listProjectPaths } from "@/lib/ipc";
 import { fileToImageAttachment } from "@/lib/images";
-import { modelSupportsImages } from "@/lib/types";
+import {
+  getSupportedThinkingLevels,
+  modelSupportsImages,
+} from "@/lib/types";
 import type {
   ImageAttachment,
   ModelRef,
@@ -48,6 +51,22 @@ export function HomeComposer({
       ) ?? null
     : null;
   const canAttachImages = modelSupportsImages(activeModel);
+
+  // Auto-correct thinking when the model changes to one that does not support
+  // the current pick (e.g. "high" on a non-reasoning model that only supports
+  // "off"). Prefer "high" if supported, otherwise the first supported level.
+  useEffect(() => {
+    // While activeModel is unresolved, Composer falls back to the full list, so
+    // keep the current pick stable instead of downgrading it to "off".
+    if (!activeModel) return;
+    const supported = getSupportedThinkingLevels(activeModel);
+    const fallback = supported.includes("high")
+      ? "high"
+      : (supported[0] ?? "off");
+    if (!supported.includes(thinking)) {
+      setThinking(fallback as ThinkingLevel);
+    }
+  }, [activeModel, thinking]);
 
   const searchPaths = useCallback(
     (query: string) =>

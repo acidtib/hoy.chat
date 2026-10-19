@@ -271,6 +271,9 @@ export interface ModelInfo {
   reasoning?: boolean | null;
   // Pi's Model.input: ["text","image",...]. Gates the image attachment UI.
   input?: string[] | null;
+  // Pi's Model.thinkingLevelMap (pi-ai ThinkingLevelMap = Partial<Record<ModelThinkingLevel, string | null>>).
+  // Lowercase wire values; null means unsupported. Mirrors src-tauri/src/events.rs:ModelInfo.thinking_level_map.
+  thinkingLevelMap?: Record<string, string | null> | null;
 }
 
 // Whether a model accepts image input. Fail soft: only block attachments when we
@@ -290,6 +293,23 @@ export const THINKING_LEVELS: ThinkingLevel[] =
 // straight to ThinkingLevel (HOY-243).
 export function isThinkingLevel(value: unknown): value is ThinkingLevel {
   return typeof value === "string" && (THINKING_LEVELS as string[]).includes(value);
+}
+
+/**
+ * Mirrors `pi-ai/dist/models.js: getSupportedThinkingLevels`
+ * (`ThinkingLevelMap = Partial<Record<ModelThinkingLevel, string | null>>`).
+ * `undefined` means not mapped, `null` means explicitly unsupported.
+ * `xhigh`/`max` are hidden unless explicitly mapped, while `off`/`minimal`..`high`
+ * pass through unless `null`-mapped.
+ */
+export function getSupportedThinkingLevels(model?: ModelInfo | null): ThinkingLevel[] {
+  if (!model?.reasoning) return ["off"];
+  return (THINKING_LEVELS as ThinkingLevel[]).filter(level => {
+    const mapped = (model.thinkingLevelMap as Record<string, string | null> | undefined | null)?.[level];
+    if (mapped === null) return false;
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
+    return true;
+  });
 }
 
 // Pi's CompactionResult, returned by the compact command (HOY-229).
