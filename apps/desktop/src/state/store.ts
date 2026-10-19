@@ -1010,6 +1010,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return {
         panels,
         activeThreadId,
+        ...homeAfterLastPanel(s, panels),
         turns,
         stats,
         streaming,
@@ -1067,6 +1068,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return {
         panels,
         activeThreadId,
+        ...homeAfterLastPanel(s, panels),
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
         focusRequest: s.focusRequest?.threadId === id ? null : s.focusRequest,
       };
@@ -3969,6 +3971,20 @@ function runTeardown(
   if (action === "close") s.closePanel(threadId);
   else if (action === "archive") s.archiveThread(threadId);
   else s.deleteThread(threadId);
+}
+
+// Closing the last panel lands on the active project's home (the pinned tab)
+// instead of the new-thread page.
+function homeAfterLastPanel(
+  s: SessionStore,
+  panels: SessionStore["panels"],
+): Partial<SessionStore> {
+  return panels.length === 0 &&
+    s.bodyView === "panels" &&
+    s.activeProjectId &&
+    s.projects.some((p) => p.id === s.activeProjectId)
+    ? { bodyView: "project" }
+    : {};
 }
 
 // Locate a thread and its owning project by id. Threads live nested under

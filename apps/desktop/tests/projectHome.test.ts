@@ -59,3 +59,25 @@ test("boot restores the last project's home", async () => {
   expect(s.bodyView).toBe("project");
   expect(s.projectView).toBe("fleet");
 });
+
+test("closing the last thread tab returns to the project home it came from", () => {
+  const s = useSessionStore.getState();
+  s.openProject("p1", "fleet");
+  s.openThread("t1");
+  s.openThread("t2");
+  s.closePanel("t1");
+  expect(useSessionStore.getState().bodyView).toBe("panels");
+  useSessionStore.getState().closePanel("t2");
+  const after = useSessionStore.getState();
+  expect(after.bodyView).toBe("project");
+  expect(after.projectView).toBe("fleet");
+});
+
+test("closing the last tab returns to whichever project view was open", () => {
+  useSessionStore.getState().openProject("p1", "threads");
+  useSessionStore.getState().openThread("t1");
+  useSessionStore.getState().closePanel("t1");
+  const s = useSessionStore.getState();
+  expect(s.bodyView).toBe("project");
+  expect(s.projectView).toBe("threads");
+});
