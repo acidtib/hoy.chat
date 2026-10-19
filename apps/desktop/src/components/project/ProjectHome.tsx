@@ -30,8 +30,7 @@ export function ProjectHome() {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-      <header className="flex h-12 shrink-0 items-center gap-4 border-b border-border px-5">
-        <h1 className="truncate text-sm font-semibold">{project.name}</h1>
+      <header className="flex h-12 shrink-0 items-center gap-4 border-b border-border px-3">
         <nav className="flex h-full items-stretch" aria-label="Project views">
           {VIEWS.map((v) => (
             <button
@@ -40,7 +39,7 @@ export function ProjectHome() {
               onClick={() => openProject(project.id, v.id)}
               aria-current={view === v.id ? "page" : undefined}
               className={cn(
-                "border-b-2 px-3 text-sm transition-colors",
+                "cursor-pointer border-b-2 px-3 text-sm transition-colors",
                 view === v.id
                   ? "border-brand text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground",

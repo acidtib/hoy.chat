@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Archive,
-  Bot,
   ChevronDown,
   Loader2,
   MessageSquare,
@@ -258,9 +257,6 @@ function ProjectGroup({
   );
   const projectView = useSessionStore((s) => s.projectView);
   const streaming = useSessionStore((s) => s.streaming);
-  const agentCount = useSessionStore(
-    (s) => s.subagents.filter((d) => d.enabled).length,
-  );
 
   // Top-level threads, most-recent first. Subagent children never render as
   // rows (HOY-250); they ride along so the fleet marker still computes.
@@ -407,7 +403,6 @@ function ProjectGroup({
             <>
               {navRow("fleet", "Fleet", SquareKanban)}
               {navRow("threads", "Threads", MessageSquare, topThreads.length)}
-              {navRow("agents", "Agents", Bot, agentCount)}
               {working.length > 0 && (
                 <>
                   <p className="pb-0.5 pl-7 pt-2 text-[11px] font-medium text-muted-foreground">

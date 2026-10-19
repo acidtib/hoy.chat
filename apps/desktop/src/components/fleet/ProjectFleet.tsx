@@ -7,11 +7,9 @@ import {
   Bot,
   Check,
   ChevronDown,
-  ChevronRight,
   Clock,
   ExternalLink,
   GripVertical,
-  Inbox,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -20,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { LinearIcon } from "@/components/icons/LinearIcon";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -201,7 +200,7 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
       </div>
       <div className="flex min-h-0 min-w-0 flex-1 gap-3 p-4 pt-2">
         <Column
-          title="Backlog"
+          title="Todo"
           count={open.length}
           className="w-72"
           action={
@@ -244,25 +243,6 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
                 />
               ))
             )}
-          </div>
-        </Column>
-
-        <Column
-          title="Todo"
-          count={0}
-          className="hidden w-72 xl:flex"
-          action={
-            <Mock className="text-[11px]">Preview</Mock>
-          }
-        >
-          <div className="flex h-full flex-col p-2">
-            <div
-              title="Mock: not wired yet"
-              className="mt-auto flex flex-col items-center gap-2 border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground/70"
-            >
-              <Inbox className="size-4" />
-              Drop issues here to plan them
-            </div>
           </div>
         </Column>
 
@@ -410,6 +390,10 @@ function IssueCard({
       <div className="px-2.5 pt-2">
         <div className="flex items-center gap-1.5 text-[11px]">
           <span className="font-mono text-foreground/80">{issue.identifier}</span>
+          <span title="From Linear" className="flex text-muted-foreground">
+            <LinearIcon className="size-3" />
+            <span className="sr-only">From Linear</span>
+          </span>
           <span
             className={cn(
               "ml-auto text-muted-foreground",
@@ -420,7 +404,7 @@ function IssueCard({
             {issue.priority === 0 ? null : issue.priorityLabel}
           </span>
         </div>
-        <p className="mt-1 line-clamp-2 pb-2 text-sm leading-snug text-foreground">
+        <p className="mt-1 pb-2 text-sm leading-snug break-words text-foreground">
           {issue.title}
         </p>
       </div>
@@ -432,7 +416,7 @@ function IssueCard({
           <button
             type="button"
             onClick={() => void openUrl(issue.url)}
-            className="flex size-6 items-center justify-center hover:text-foreground"
+            className="flex size-6 cursor-pointer items-center justify-center hover:text-foreground"
             aria-label={`Open ${issue.identifier} in Linear`}
             title="Open in Linear"
           >
@@ -442,7 +426,7 @@ function IssueCard({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex h-6 items-center gap-0.5 px-1.5 hover:bg-accent hover:text-foreground"
+                className="flex cursor-pointer h-6 items-center gap-0.5 px-1.5 hover:bg-accent hover:text-foreground"
                 aria-label={`Assign ${issue.identifier}`}
               >
                 Assign
@@ -496,14 +480,27 @@ function AgentRow({
   const setAgentConcurrency = useSessionStore((s) => s.setAgentConcurrency);
   const resumeAgent = useSessionStore((s) => s.resumeAgent);
   const [over, setOver] = useState(false);
-  const [showDone, setShowDone] = useState(false);
   const { open, queued, halting, concurrency, rate, history } = plan;
   const busy = open.length >= concurrency;
   const rest = agentThreads(project.threads, def.name).filter(
     (t) => !open.includes(t) && t !== halting,
   );
   const live = rest.filter((t) => streaming[t.id]);
-  const done = rest.filter((t) => !streaming[t.id]);
+  const done = rest.filter((t) => {
+    const at = finishedAt(t);
+    return !streaming[t.id] && at != null && Date.now() - at < DONE_LINGER_MS;
+  });
+  // Re-render when the oldest finished row expires, so the stack drops it
+  // without waiting for the board's slower clock.
+  const [, expire] = useState(0);
+  const nextExpiry = done.length
+    ? Math.min(...done.map((t) => finishedAt(t)! + DONE_LINGER_MS))
+    : null;
+  useEffect(() => {
+    if (nextExpiry == null) return;
+    const id = setTimeout(() => expire((n) => n + 1), Math.max(0, nextExpiry - Date.now()));
+    return () => clearTimeout(id);
+  }, [nextExpiry]);
 
   const preview = useMemo(() => {
     if (!over || !dragged) return null;
@@ -602,7 +599,7 @@ function AgentRow({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-6 shrink-0 items-center gap-1 px-1 text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent"
+              className="flex cursor-pointer h-6 shrink-0 items-center gap-1 px-1 text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent"
               aria-label={`${def.name} options`}
               title="Runs at once"
             >
@@ -692,25 +689,44 @@ function AgentRow({
               </span>
             </TaskShell>
           )}
-          {done.length > 0 && (
-            <>
-              <button
-                type="button"
-                onClick={() => setShowDone((v) => !v)}
-                className="flex h-7 w-full items-center gap-1.5 px-2 text-left text-[11px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                aria-expanded={showDone}
-              >
-                <ChevronRight
-                  className={cn("size-3.5 transition-transform", showDone && "rotate-90")}
-                />
-                {done.length} done
-              </button>
-              {showDone &&
-                done.map((t) => <ThreadTask key={t.id} thread={t} state="finished" />)}
-            </>
-          )}
+          {done.map((t) => (
+            <DoneTask key={t.id} thread={t} at={finishedAt(t)!} />
+          ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Finished work stays in the stack this long, then fades out of it.
+const DONE_LINGER_MS = 20_000;
+const DONE_FADE_MS = 1_000;
+
+// When a thread's work ended: its Fleet run, or a spawned subagent's delivery.
+function finishedAt(t: Thread): number | null {
+  return t.fleetRun?.endedAt ?? t.completedAt ?? null;
+}
+
+function DoneTask({ thread, at }: { thread: Thread; at: number }) {
+  const [phase, setPhase] = useState<"shown" | "fading" | "gone">("shown");
+  useEffect(() => {
+    const left = at + DONE_LINGER_MS - Date.now();
+    const fade = setTimeout(() => setPhase("fading"), Math.max(0, left - DONE_FADE_MS));
+    const gone = setTimeout(() => setPhase("gone"), Math.max(0, left));
+    return () => {
+      clearTimeout(fade);
+      clearTimeout(gone);
+    };
+  }, [at]);
+  if (phase === "gone") return null;
+  return (
+    <div
+      className={cn(
+        "transition-opacity duration-1000 motion-reduce:transition-none",
+        phase === "fading" && "opacity-0",
+      )}
+    >
+      <ThreadTask thread={thread} state="finished" />
     </div>
   );
 }
@@ -771,7 +787,7 @@ function ThreadTask({
         type="button"
         onClick={() => openThread(thread.id)}
         title={issue ? `${issue.identifier} ${issue.title}` : thread.title}
-        className="flex h-full min-w-0 flex-1 items-center gap-2 text-left hover:text-foreground"
+        className="flex h-full cursor-pointer min-w-0 flex-1 items-center gap-2 text-left hover:text-foreground"
       >
         {live ? (
           <Loader2 className="size-3.5 shrink-0 animate-spin text-brand" />
@@ -802,7 +818,7 @@ function ThreadTask({
           }
           disabled={state === "starting"}
           className={cn(
-            "flex size-6 shrink-0 items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40",
+            "flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-40",
             !live && "opacity-0 focus-visible:opacity-100 group-hover/task:opacity-100",
           )}
           aria-label={live ? `Stop ${label}` : `Archive ${label}`}
@@ -846,7 +862,7 @@ function QueuedTask({
           <button
             type="button"
             aria-label={`Queued ${issue.identifier}`}
-            className="flex size-6 shrink-0 items-center justify-center hover:bg-accent hover:text-foreground data-[state=open]:bg-accent"
+            className="flex cursor-pointer size-6 shrink-0 items-center justify-center hover:bg-accent hover:text-foreground data-[state=open]:bg-accent"
           >
             <MoreHorizontal className="size-4" />
           </button>
@@ -923,7 +939,7 @@ function TeamLink({ project }: { project: Project }) {
                     teamName: t.name,
                   })
                 }
-                className="flex items-center gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent"
+                className="flex cursor-pointer items-center gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent"
               >
                 <span className="font-mono text-xs text-muted-foreground">
                   {t.key}
