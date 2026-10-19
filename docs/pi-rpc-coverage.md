@@ -1,11 +1,50 @@
 # Pi RPC coverage
 
-What Hoy uses of pi 0.84.0's RPC surface (`--mode rpc`, JSONL over stdio), against
+What Hoy uses of pi 1.3.0's RPC surface (`--mode rpc`, JSONL over stdio), against
 the full command and event set in
 `@earendil-works/pi-coding-agent/dist/modes/rpc/rpc-types.d.ts`. Snapshot from a
-docs-and-source review on 2026-08-06 (bumped 0.80.7 -> 0.84.0, verified against a
-real installed 0.84.0 copy, not release-note summaries); re-check on every pi
+docs-and-source review on 2026-10-18 (bumped 0.84.0 -> 1.3.0, verified against a
+real installed 1.3.0 copy, not release-note summaries); re-check on every pi
 version bump.
+
+## Bump review: 0.84.0 -> 1.3.0
+
+Large release span (0.84.x, 0.85-0.87, 0.99, 1.0-1.3), but the RPC wire surface
+moved only additively. Verified by diffing the installed 0.84.0 and 1.3.0
+`rpc-types.d.ts` and `agent-session.d.ts`:
+
+- **New `clear_queue` command** (0.84.4): returns the drained
+  `{steering, followUp}` arrays. Left `unused`; smoke-tested against the
+  compiled binary.
+- **`prompt`/`steer`/`follow_up` responses now carry `data.disposition`.**
+  Additive; Rust does not parse response data for these.
+- **Events gained optional fields:** `agent_settled.aborted`,
+  `tool_execution_end.durationMs`, and `parentToolCallId` on agent events.
+  Rust classifies lifecycle by `type` only, so nothing breaks; none are
+  surfaced yet.
+- **Extension UI request/response unions are unchanged.**
+- **Extension API:** `before_agent_start` is now a union on `messageType`
+  (1.2.0). `createHoyPermissions` only appends to `systemPrompt`, which is
+  correct for both user and `triggerTurn` runs, so no change.
+  `pi.sendUserMessage` must pass `deliverAs` while a run is starting (1.2.0
+  counts startup as busy); `/init` now always passes `followUp`, which Pi
+  ignores when idle.
+- **`ProviderModelConfig` is a chat/image/classifier union.** `hoy-alibaba`
+  narrows to the chat member locally (Pi does not export it).
+- **Pi ships a native `meta` provider** (0.86.1) with the full Muse catalog and
+  Meta OAuth. `createHoyMeta` was removed; it overrode the native provider and
+  hid newer models and the subscription login.
+- **`azure-openai-responses` provider renamed to `azure`** (1.0.3).
+  `pi_config.rs` lists `azure` and migrates the `auth.json` key on startup.
+- **System prompt assembly:** Pi appends the cwd as a `<cwd>` block instead of
+  a `Current working directory:` line. Tool `promptGuidelines` for
+  read/edit/write are byte-identical to 0.84.0. Docs-block tag repointed to
+  `v1.3.0`.
+- **Built-in MCP/codemode/tool_search (0.99)** load only via the CLI's
+  `main.js`; Hoy's SDK entry does not load them.
+- **OAuth:** `registerBunOAuthFlows` still resolves in the compiled binary;
+  anthropic, meta, and openai-codex flows all start. Anthropic now opens with
+  a browser/copy-code `select`, which `oauth.rs` already maps.
 
 ## Bump review: 0.80.7 -> 0.84.0
 
@@ -224,7 +263,7 @@ settlement are now dropped instead of emitting stale `tool_execution_update`
 Status key: **used** (wired end to end), **partial** (some of the surface wired),
 **planned** (Linear ticket filed), **unused** (never invoked or mapped).
 
-## Client inputs (15 of 33 used, on pinned 0.84.0)
+## Client inputs (15 of 34 used, on pinned 1.3.0)
 
 The 33 rows are the 32 `RpcCommand` variants plus the separate
 `extension_ui_response` input. `get_entries`/`get_tree` arrived in 0.80.3 and are
@@ -234,6 +273,7 @@ wired through the `/tree` navigator; `get_available_thinking_levels` arrived in
 | RPC command | What it does | Hoy status | Notes |
 |---|---|---|---|
 | `prompt` | Send a user message, start a turn | used | `commands.rs`; `images[]` sent from the composer (HOY-205); `streamingBehavior` plumbed, exercised by the steering UI (HOY-218) |
+| `clear_queue` | Drain queued steering/follow-up messages | unused | Added 0.84.4 |
 | `abort` | Stop the streaming turn | used | `commands.rs:272` |
 | `get_state` | Current model, thinking level, streaming flags | used | `commands.rs:42`; `thinking_level` read but never written |
 | `get_messages` | Full transcript as AgentMessage objects | used | `commands.rs:183`, restore on thread open |

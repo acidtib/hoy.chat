@@ -250,6 +250,10 @@ pub struct ModelInfo {
     // vision-capable when unknown (fail soft).
     #[serde(default)]
     pub input: Option<Vec<String>>,
+    // Pi's Model.thinkingLevelMap (pi-ai ThinkingLevelMap = Partial<Record<ModelThinkingLevel, string | null>>).
+    // Lowercase wire values; null means unsupported. Absent on older payloads.
+    #[serde(default, rename = "thinkingLevelMap")]
+    pub thinking_level_map: Option<std::collections::HashMap<String, Option<String>>>,
 }
 
 // Goal Mode (HOY-263): a provider/model pair, mirrors ModelRef in

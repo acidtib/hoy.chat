@@ -29,7 +29,23 @@ export function isPermissionMode(value: string): value is PermissionMode {
   return (PERMISSION_MODES as string[]).includes(value);
 }
 
-const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
+// tool_search and the MCP resource tools come from Pi's built-in MCP extension;
+// they only discover tools and read resources (Pi marks them read-only).
+const READ_ONLY_TOOLS = new Set([
+  "read",
+  "grep",
+  "find",
+  "ls",
+  "tool_search",
+  "list_mcp_resources",
+  "list_mcp_resource_templates",
+  "read_mcp_resource",
+]);
+
+// Pi registers each MCP server tool as mcp__<server>__<tool>.
+export function isMcpTool(toolName: string): boolean {
+  return toolName.startsWith("mcp__");
+}
 const MUTATING_TOOLS = new Set(["edit", "write"]);
 
 // Project-relative directory where plan mode can write and edit plan files
@@ -72,7 +88,10 @@ export function decide(
     // agent (HOY-213): plan mode can fan out subagents to parallelize read-only
     // exploration and delegate deep planning to the Plan architect. Spawned
     // children inherit plan mode, so they stay non-mutating by construction.
-    if (toolName === "mcp" || toolName === "bash" || toolName === "agent") return "allow";
+    if (toolName === "bash" || toolName === "agent") return "allow";
+    // MCP tools ask rather than block: plan research often needs them, and a
+    // server's readOnlyHint is self-declared, so it is not trusted to allow.
+    if (isMcpTool(toolName)) return "ask";
     // write/edit (HOY-213): a plan file under.hoy/plans is allowed outright so
     // the architect can author and refine it. Anywhere else asks for approval,
     // which is how a user-requested alternate plan location gets in.

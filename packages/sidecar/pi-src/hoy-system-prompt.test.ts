@@ -15,12 +15,13 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import {
+  buildHoySystemPrompt,
   HOY_SYSTEM_PROMPT,
   PLAN_MODE_PROMPT,
   PROPOSED_PLAN_FORMAT,
 } from "./hoy-system-prompt";
 
-// Pi 0.84.0 edit guidelines (core/tools/edit.js). The prompt must carry these
+// Pi 1.3.0 edit guidelines (core/tools/edit.js). The prompt must carry these
 // verbatim. Replacement strips pi's ability to inject them.
 const PI_EDIT_GUIDELINES = [
   "Use edit for precise changes (edits[].oldText must match exactly)",
@@ -66,7 +67,7 @@ describe("hoy system prompt assembly", () => {
 
     // Docs block points at the pinned GitHub tag, never at local package paths.
     expect(prompt).toContain(
-      "https://raw.githubusercontent.com/earendil-works/pi/v0.84.0/packages/coding-agent/docs/extensions.md",
+      "https://raw.githubusercontent.com/earendil-works/pi/v1.3.0/packages/coding-agent/docs/extensions.md",
     );
     expect(prompt).not.toContain("node_modules");
 
@@ -75,9 +76,9 @@ describe("hoy system prompt assembly", () => {
       expect(prompt).toContain(guideline);
     }
 
-    // Pi appends cwd, but 0.80.7 no longer appends the current date.
+    // Pi appends cwd as a <cwd> block (1.x); 0.80.7 dropped the current date.
     expect(prompt).not.toContain("Current date:");
-    expect(prompt).toContain("Current working directory:");
+    expect(prompt).toContain("<cwd>");
 
     // HOY-186: the prompt's tools list matches the registered set.
     for (const tool of HOY_TOOLS) {
@@ -148,5 +149,27 @@ describe("plan mode: two-phase design gate (HOY-276 follow-up)", () => {
     expect(PLAN_MODE_PROMPT).toContain("Only skip the gate for a genuinely trivial change");
     // ...and it must stop for the answer before emitting the plan.
     expect(PLAN_MODE_PROMPT).toContain("do NOT emit the proposed_plan block, until the user has answered");
+  });
+});
+
+describe("buildHoySystemPrompt", () => {
+  test("advertises enabled agent types dynamically", () => {
+    expect(buildHoySystemPrompt(false)).not.toContain("Subagents:");
+    const enabled = buildHoySystemPrompt(true, [
+      { name: "Explore", description: "read-only" },
+      { name: "Reviewer", description: "reviews diffs" },
+    ]);
+    expect(enabled).toContain("Subagents:");
+    expect(enabled).toContain("Explore");
+    expect(enabled).toContain("Reviewer");
+    expect(enabled).toContain("reviews diffs");
+    // HOY-300: the agent tool is synchronous, the prompt tells the model the
+    // call blocks and returns the subagent's result in-band (not "delivered back").
+    expect(enabled).toContain("BLOCKS until the subagent finishes and returns its result");
+    expect(enabled).not.toContain("Fire-and-forget");
+  });
+
+  test("carries no Hoy MCP block; Pi's mcp_servers section describes servers", () => {
+    expect(buildHoySystemPrompt(true, [])).not.toContain("MCP tools:");
   });
 });

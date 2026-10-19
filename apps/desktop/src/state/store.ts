@@ -107,7 +107,10 @@ import type {
   Turn,
   UsageReport,
 } from "@/lib/types";
-import { isThinkingLevel } from "@/lib/types";
+import {
+  getSupportedThinkingLevels,
+  isThinkingLevel,
+} from "@/lib/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export const SIDEBAR_MIN_WIDTH = 220;
@@ -1270,6 +1273,48 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           model: pick,
         })),
       }));
+      // Eager-correct thinkingLevel if the new model does not support the
+      // current pick (HOY-312). Prefer "high" if supported, else first
+      // supported level, so the pill never shows a stale value and the next
+      // set_thinking_level will not need to clamp and flash.
+      const modelInfo = get().models.find(
+        (m) => m.provider === provider && m.id === modelId,
+      );
+      if (modelInfo) {
+        const supported = getSupportedThinkingLevels(modelInfo);
+        const cur = findThread(get().projects, threadId)?.thread.thinkingLevel ?? null;
+        if (cur && !supported.includes(cur)) {
+          const fallback = (supported.includes("high" as ThinkingLevel)
+            ? "high"
+            : supported[0]) as ThinkingLevel | undefined;
+          if (fallback) {
+            set((s) => ({
+              projects: patchThread(s.projects, threadId, (th) => ({
+                ...th,
+                thinkingLevel: fallback,
+              })),
+            }));
+            if (thread.sessionId) {
+              try {
+                await setThinkingLevel(thread.sessionId, fallback);
+                const synced = await getState(thread.sessionId).catch(() => null);
+                if (synced?.thinkingLevel) {
+                  set((s) => ({
+                    projects: patchThread(s.projects, threadId, (th) => ({
+                      ...th,
+                      thinkingLevel: synced.thinkingLevel,
+                    })),
+                  }));
+                }
+              } catch {
+                // Best-effort: the existing getState clamp in selectThinkingLevel
+                // and the next applyThreadModel will correct it; do not surface
+                // a banner for this silent coalesce.
+              }
+            }
+          }
+        }
+      }
     } catch (e) {
       set((s) => ({
         threadErrors: { ...s.threadErrors, [threadId]: String(e) },
@@ -3339,11 +3384,43 @@ async function applyThreadModel(
           thinkingLevel: level,
         })),
       }));
-    if (!thinkPick || thinkPick === piState.thinkingLevel) {
+    // Eager local clamp (HOY-312): if the deferred pick is unsupported by the
+    // model the prompt will actually run on (the pick, or the session truth
+    // when there is no pick), correct it locally without sending an unsupported
+    // level that Pi will clamp and cause a flash. Fall back to the truth model's
+    // info when the pick is not in the loaded list.
+    let effectiveThinkPick: ThinkingLevel | null = thinkPick;
+    if (thinkPick) {
+      const pickInfo = pick
+        ? store
+            .getState()
+            .models.find(
+              (m) => m.provider === pick.provider && m.id === pick.id,
+            )
+        : null;
+      const truthInfo = truth
+        ? store
+            .getState()
+            .models.find(
+              (m) => m.provider === truth.provider && m.id === truth.id,
+            )
+        : null;
+      const clampInfo = pickInfo ?? truthInfo;
+      if (clampInfo) {
+        const supported = getSupportedThinkingLevels(clampInfo);
+        if (!supported.includes(thinkPick)) {
+          effectiveThinkPick = (supported.includes("high" as ThinkingLevel)
+            ? "high"
+            : supported[0]) as ThinkingLevel | null;
+          if (effectiveThinkPick) setThreadThinking(effectiveThinkPick);
+        }
+      }
+    }
+    if (!effectiveThinkPick || effectiveThinkPick === piState.thinkingLevel) {
       setThreadThinking(piState.thinkingLevel);
     } else {
       try {
-        await setThinkingLevel(sessionId, thinkPick);
+        await setThinkingLevel(sessionId, effectiveThinkPick);
         // Pi can clamp the level. Re-read to sync the effective value.
         const fresh = await getState(sessionId);
         setThreadThinking(fresh.thinkingLevel);
