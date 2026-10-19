@@ -402,6 +402,7 @@ function WorkspacePanel() {
   const requireSubagentApproval = usePrefsStore((s) => s.requireSubagentApproval);
   const maxConcurrentAgents = usePrefsStore((s) => s.maxConcurrentAgents);
   const keepAwakeWhileStreaming = usePrefsStore((s) => s.keepAwakeWhileStreaming);
+  const threadTabs = usePrefsStore((s) => s.threadTabs);
   const setPref = usePrefsStore((s) => s.setPref);
 
   async function browse() {
@@ -433,6 +434,13 @@ function WorkspacePanel() {
           </div>
         </Field>
         <Separator className="my-4" />
+        <ToggleRow
+          label="Open threads as tabs (experimental)"
+          description="Each open thread gets a tab and fills the body. Off tiles open threads as side-by-side panels."
+          checked={threadTabs}
+          onChange={(v) => setPref("threadTabs", v)}
+        />
+        <Separator />
         <ToggleRow
           label="Confirm before closing a streaming panel"
           description="Ask before closing a thread whose response is still streaming."

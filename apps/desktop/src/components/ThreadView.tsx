@@ -91,6 +91,7 @@ import { splitPlanSegments, type PlanExecution } from "@/lib/plan";
 import {
   findThread,
   useSessionStore,
+  useTabPanelCount,
   useThreadHasRunningSubagents,
 } from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
@@ -153,6 +154,8 @@ export function ThreadView({
   const selectThinkingLevel = useSessionStore((s) => s.selectThinkingLevel);
   const fullScreen = useSessionStore((s) => s.expandedThreadId === threadId);
   const toggleFullScreen = useSessionStore((s) => s.toggleFullScreen);
+  // Tabs mode: a lone panel leaves full screen and close to its tab.
+  const lonePanel = useTabPanelCount(threadId) === 1;
   const pendingPermissions = useSessionStore(
     (s) => s.pendingPermissions[threadId] ?? EMPTY_PERMISSIONS,
   );
@@ -383,26 +386,28 @@ export function ThreadView({
             </TooltipTrigger>
             <TooltipContent>New thread</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground"
-                onClick={() => toggleFullScreen(threadId)}
-                aria-label={fullScreen ? "Exit Full Screen" : "Full Screen"}
-              >
-                {fullScreen ? (
-                  <Minimize2 className="size-3.5" />
-                ) : (
-                  <Maximize2 className="size-3.5" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {fullScreen ? "Exit Full Screen" : "Full Screen"}
-            </TooltipContent>
-          </Tooltip>
+          {!lonePanel && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground"
+                  onClick={() => toggleFullScreen(threadId)}
+                  aria-label={fullScreen ? "Exit Full Screen" : "Full Screen"}
+                >
+                  {fullScreen ? (
+                    <Minimize2 className="size-3.5" />
+                  ) : (
+                    <Maximize2 className="size-3.5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {fullScreen ? "Exit Full Screen" : "Full Screen"}
+              </TooltipContent>
+            </Tooltip>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -427,22 +432,24 @@ export function ThreadView({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground"
-                onClick={onClose}
-                aria-label={isSubagent ? "Dismiss panel" : "Close panel"}
-              >
-                <Minus className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {isSubagent ? "Dismiss (keeps running)" : "Close panel"}
-            </TooltipContent>
-          </Tooltip>
+          {!lonePanel && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground"
+                  onClick={onClose}
+                  aria-label={isSubagent ? "Dismiss panel" : "Close panel"}
+                >
+                  <Minus className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isSubagent ? "Dismiss (keeps running)" : "Close panel"}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </header>
 

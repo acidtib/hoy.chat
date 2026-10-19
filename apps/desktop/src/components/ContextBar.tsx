@@ -14,7 +14,12 @@ import {
 import { cn, formatTokens } from "@/lib/utils";
 import { pickDirectory } from "@/lib/ipc";
 import { usePrefsStore } from "@/state/prefs";
-import { useSessionStore } from "@/state/store";
+import {
+  groupTabs,
+  panelTabKey,
+  tabKeyOf,
+  useSessionStore,
+} from "@/state/store";
 
 // Single full-width status bar (Zed-style): the sidebar controls live in the
 // left segment, aligned to the sidebar's width and divided by its border. The
@@ -37,9 +42,20 @@ export function ContextBar({
   const expandedThreadId = useSessionStore((s) => s.expandedThreadId);
   const rightDock = useSessionStore((s) => s.rightDock);
   const toggleRightDock = useSessionStore((s) => s.toggleRightDock);
+  const activeThreadId = useSessionStore((s) => s.activeThreadId);
+  const threadTabs = usePrefsStore((s) => s.threadTabs);
 
-  // Mirror the panel strip: one full-width slice while a panel is full screen.
-  const expandedPanel = panels.find((p) => p.id === expandedThreadId) ?? null;
+  // Mirror the panel strip: in tabs mode only the active tab's panels, and one
+  // full-width slice for a full screen panel or a lone tab.
+  const activeTabKey = threadTabs
+    ? (tabKeyOf(panels, activeThreadId) ?? groupTabs(panels).at(-1)?.key ?? null)
+    : null;
+  const shownPanels = threadTabs
+    ? panels.filter((p) => panelTabKey(p) === activeTabKey)
+    : panels;
+  const expandedPanel =
+    shownPanels.find((p) => p.id === expandedThreadId) ??
+    (threadTabs && shownPanels.length === 1 ? shownPanels[0] : null);
 
   async function handleAddProject() {
     const dir = await pickDirectory(
@@ -101,7 +117,7 @@ export function ContextBar({
             inset={collapsed}
           />
         ) : (
-          panels.map((panel, i) => (
+          shownPanels.map((panel, i) => (
             <PanelStats
               key={panel.id}
               threadId={panel.id}

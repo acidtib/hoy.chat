@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mockIpcModule } from "./ipcMock";
 
 // None of the ipc surface is exercised here. The store needs it mocked
@@ -6,6 +6,11 @@ import { mockIpcModule } from "./ipcMock";
 mockIpcModule();
 
 const { useSessionStore } = await import("@/state/store");
+const { usePrefsStore } = await import("@/state/prefs");
+
+// These cover the side-by-side strip layout, not tabs.
+beforeEach(() => usePrefsStore.getState().setPref("threadTabs", false));
+afterAll(() => usePrefsStore.getState().reset());
 
 function seed(panelWidths: number[], bodyWidth: number) {
   useSessionStore.setState({

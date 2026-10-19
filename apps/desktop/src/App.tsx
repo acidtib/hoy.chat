@@ -13,6 +13,7 @@ import { HomePage } from "@/components/HomePage";
 import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
 import { UsageView } from "@/components/UsageView";
 import { ThreadView } from "@/components/ThreadView";
+import { ThreadTabs } from "@/components/ThreadTabs";
 import { ContextBar } from "@/components/ContextBar";
 import { ForkPicker } from "@/components/tree/ForkPicker";
 import { TreeNavigator } from "@/components/tree/TreeNavigator";
@@ -25,7 +26,13 @@ import { activeSessionId, getState, setKeepAwake } from "@/lib/ipc";
 import { refreshProviderData } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
-import { useSessionStore, findThread } from "@/state/store";
+import {
+  useSessionStore,
+  findThread,
+  groupTabs,
+  tabKeyOf,
+  type Panel,
+} from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
 import type { PiState } from "@/lib/types";
@@ -51,10 +58,25 @@ function App() {
   );
   const setPref = usePrefsStore((s) => s.setPref);
   const onboardingCompleted = usePrefsStore((s) => s.onboardingCompleted);
+  const threadTabs = usePrefsStore((s) => s.threadTabs);
+  const refitPanelLayout = useSessionStore((s) => s.refitPanelLayout);
+
+  // Tabs mode: every tab stays mounted (keeping scroll and component state);
+  // only the active one is visible.
+  const tabs = threadTabs ? groupTabs(panels) : [];
+  const activeTabKey = threadTabs
+    ? (tabKeyOf(panels, activeThreadId) ?? tabs.at(-1)?.key ?? null)
+    : null;
 
   // Full screen: the one panel rendered while set, at full body width via CSS.
   // Stored widths are untouched, so exiting restores the exact layout.
-  const expandedPanel = panels.find((p) => p.id === expandedThreadId) ?? null;
+  const expandedPanel = threadTabs
+    ? null
+    : (panels.find((p) => p.id === expandedThreadId) ?? null);
+
+  useEffect(() => {
+    refitPanelLayout();
+  }, [threadTabs, refitPanelLayout]);
 
   // Restore the persisted projects -> threads tree on boot (then autosave kicks in).
   useEffect(() => {
@@ -101,7 +123,7 @@ function App() {
     const strip = stripRef.current;
     const el = footerSlicesRef.current;
     if (strip && el) el.scrollLeft = strip.scrollLeft;
-  }, [panels]);
+  }, [panels, activeTabKey]);
 
   const [debug, setDebug] = useState<PiState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +208,53 @@ function App() {
     );
   };
 
+  // `fill` takes the remaining width instead of the stored one, `accent` draws
+  // the focus line (a lone tab is marked by its tab instead), and `handle` is
+  // the panel's index in `panels` for the divider on its right edge.
+  function renderPanel(
+    panel: Panel,
+    opts: {
+      fill?: boolean;
+      hidden?: boolean;
+      accent: boolean;
+      handle: number | null;
+    },
+  ) {
+    const isActive = panel.id === activeThreadId;
+    return (
+      <Fragment key={panel.id}>
+        <div
+          style={opts.fill ? undefined : { width: panel.width }}
+          onPointerDownCapture={() => focusPanel(panel.id)}
+          className={cn(
+            "flex min-h-0 flex-col border-t-2",
+            opts.fill ? "flex-1" : "shrink-0 border-r border-r-border",
+            opts.hidden && "hidden",
+            !opts.accent
+              ? "border-t-transparent"
+              : panelIsAgent(panel.id)
+                ? isActive
+                  ? "border-t-agent/80"
+                  : "border-t-agent/40"
+                : isActive
+                  ? "border-t-brand/70"
+                  : "border-t-transparent",
+          )}
+        >
+          <ThreadView
+            threadId={panel.id}
+            onClose={() => requestPanelClose(panel.id)}
+            onDebug={handleDebug}
+            busy={busy}
+            debug={debug}
+            error={error}
+          />
+        </div>
+        {opts.handle !== null && <PanelResizeHandle index={opts.handle} />}
+      </Fragment>
+    );
+  }
+
   const showOnboarding =
     providerBootstrapped && !(providerConfigured && onboardingCompleted);
 
@@ -207,7 +276,12 @@ function App() {
 keeps the top-left corner, Zed-style). Panels render below it.*/}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {showChrome ? (
-              <TitleBar />
+              <>
+                <TitleBar />
+                {activeTabKey && bodyView === "panels" && (
+                  <ThreadTabs activeKey={activeTabKey} />
+                )}
+              </>
             ) : (
               <header
                 data-tauri-drag-region
@@ -241,6 +315,49 @@ keeps the top-left corner, Zed-style). Panels render below it.*/}
                 <FleetBoard />
               ) : panels.length === 0 ? (
                 <HomePage />
+              ) : threadTabs ? (
+                tabs.map((tab) => {
+                  const active = tab.key === activeTabKey;
+                  const expanded = tab.panels.find(
+                    (p) => p.id === expandedThreadId,
+                  );
+                  return (
+                    <div
+                      key={tab.key}
+                      ref={active ? stripRef : undefined}
+                      onScroll={
+                        active
+                          ? (e) => {
+                              const el = footerSlicesRef.current;
+                              if (el) el.scrollLeft = e.currentTarget.scrollLeft;
+                            }
+                          : undefined
+                      }
+                      aria-hidden={!active}
+                      className={cn(
+                        "absolute inset-0 flex min-h-0 overflow-x-auto",
+                        !active && "pointer-events-none invisible",
+                      )}
+                    >
+                      {tab.panels.map((panel, i) =>
+                        renderPanel(panel, {
+                          // A lone panel or the full screen one fills the tab;
+                          // the other panels stay mounted but hidden.
+                          fill: tab.panels.length === 1 || panel === expanded,
+                          hidden: !!expanded && panel !== expanded,
+                          accent: tab.panels.length > 1,
+                          handle:
+                            !expanded && i < tab.panels.length - 1
+                              ? panels.indexOf(panel)
+                              : null,
+                        }),
+                      )}
+                      {!expanded && tab.panels.length > 1 && (
+                        <div className="min-h-0 flex-1 bg-background" />
+                      )}
+                    </div>
+                  );
+                })
               ) : (
                 <div
                   ref={stripRef}
@@ -251,60 +368,19 @@ keeps the top-left corner, Zed-style). Panels render below it.*/}
                   className="flex min-h-0 flex-1 overflow-x-auto"
                 >
                   {expandedPanel ? (
-                    <div
-                      onPointerDownCapture={() => focusPanel(expandedPanel.id)}
-                      className={cn(
-                        "flex min-h-0 flex-1 flex-col border-t-2",
-                        panelIsAgent(expandedPanel.id)
-                          ? expandedPanel.id === activeThreadId
-                            ? "border-t-agent/80"
-                            : "border-t-agent/40"
-                          : expandedPanel.id === activeThreadId
-                            ? "border-t-brand/70"
-                            : "border-t-transparent",
-                      )}
-                    >
-                      <ThreadView
-                        threadId={expandedPanel.id}
-                        onClose={() => requestPanelClose(expandedPanel.id)}
-                        onDebug={handleDebug}
-                        busy={busy}
-                        debug={debug}
-                        error={error}
-                      />
-                    </div>
+                    renderPanel(expandedPanel, {
+                      fill: true,
+                      accent: true,
+                      handle: null,
+                    })
                   ) : (
                     <>
-                      {panels.map((panel, i) => (
-                        <Fragment key={panel.id}>
-                          <div
-                            style={{ width: panel.width }}
-                            onPointerDownCapture={() => focusPanel(panel.id)}
-                            className={cn(
-                              "flex min-h-0 shrink-0 flex-col border-r border-t-2 border-r-border",
-                              panelIsAgent(panel.id)
-                                ? panel.id === activeThreadId
-                                  ? "border-t-agent/80"
-                                  : "border-t-agent/40"
-                                : panel.id === activeThreadId
-                                  ? "border-t-brand/70"
-                                  : "border-t-transparent",
-                            )}
-                          >
-                            <ThreadView
-                              threadId={panel.id}
-                              onClose={() => requestPanelClose(panel.id)}
-                              onDebug={handleDebug}
-                              busy={busy}
-                              debug={debug}
-                              error={error}
-                            />
-                          </div>
-                          {i < panels.length - 1 && (
-                            <PanelResizeHandle index={i} />
-                          )}
-                        </Fragment>
-                      ))}
+                      {panels.map((panel, i) =>
+                        renderPanel(panel, {
+                          accent: true,
+                          handle: i < panels.length - 1 ? i : null,
+                        }),
+                      )}
                       {/* Unused workspace beside the panels: new panels dock here. */}
                       <div className="min-h-0 flex-1 bg-background" />
                     </>
