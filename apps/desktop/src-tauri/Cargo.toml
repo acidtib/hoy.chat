@@ -32,7 +32,7 @@ tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
 # Dev-only automation bridge for the Tauri MCP server. Registered only under
 # debug_assertions (see lib.rs); the crate stays a normal dependency so its ACL
 # permission (mcp-bridge:default) resolves for the capability in all profiles.
-tauri-plugin-mcp-bridge = "0.2"
+tauri-plugin-mcp-bridge = "0.13"
 tauri-plugin-window-state = "2.4.1"
 tauri-plugin-os = "2"
 tauri-plugin-updater = "2.10.1"
