@@ -56,7 +56,11 @@ Repo is a Bun-workspaces monorepo (HOY-227): `hoy.chat` at the root, the desktop
 - No em-dashes (--). Use a comma, semicolon, or rewrite the sentence.
 - No over-summarizing. Do not recap what you just did at the end of a response. Do not add closing paragraphs restating the changes. The diff speaks for itself.
 - Code comments: facts, decisions, and the why only. No narration of what the code does. No multi-line comment blocks explaining obvious logic.
-- Git commits: Conventional Commits (`type(scope): subject`, lowercase subject, ticket as scope when there is one). The PR title is what lands on `main` and drives the changelog and version bump. No Co-Authored-By trailers.
+- Git commits and PR titles: Conventional Commits, `type(scope): subject`, lowercase imperative subject, the Linear ticket as scope when there is one (`fix(HOY-333): respect autonomous mode for MCP tools`). PRs are squash-merged, so the PR title is the commit that lands on `main`; `.github/workflows/pr-title.yml` rejects anything else. No Co-Authored-By trailers.
+  - The type decides the release: `feat` and `fix` trigger a release and appear in the changelog (as do `perf`, `deps`, `revert`); `docs`, `refactor`, `test`, `build`, `ci`, `chore`, `style` are hidden and never release on their own. Pick by what users get, not by files touched: a Pi version bump that changes behavior is `feat`/`fix`, not `chore`.
+  - Breaking change: `feat!:` or a `BREAKING CHANGE:` footer. While on `0.x`, every release bumps the patch and a breaking change bumps the minor.
+  - Force a version with a `Release-As: X.Y.Z` footer. Never edit version fields or push `v*` tags by hand; Release Please owns them (`docs/RELEASING.md`).
+  - PR body: what changed and why, how it was verified (tests, live-verify), and anything the reviewer must check by hand. Do not restate the diff.
 
 ## Out of scope for MVP (note as TODOs, don't build)
 Themes, keyboard shortcuts, session rename/delete polish, Windows code signing, the multi-session orchestration dashboard. The architecture must not *block* these, but they are not MVP work.
