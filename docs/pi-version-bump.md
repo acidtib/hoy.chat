@@ -54,9 +54,14 @@ Pi 1.0.3 renamed the provider id `azure-openai-responses` to `azure`. Hoy
 renames the `auth.json` key on startup (`migrate_azure_provider_key`); user-owned
 `models.json`/`settings.json` references are not rewritten.
 
-Pi 0.99 ships built-in `mcp`, `codemode`, `tool-search`, and `llama.cpp`
-extensions, but only the CLI's `main.js` loads them. Hoy's SDK entry does not, so
-they do not collide with `createHoyMcp`. Re-check this if `hoy-sidecar.ts` ever
-starts passing Pi's `builtInExtensions`.
+Hoy uses Pi's built-in MCP: `hoy-sidecar.ts` adds `createToolSearchExtension()`
+and `createMcpExtension({ loadConfig })` (SDK sessions do not load built-ins).
+`hoy-mcp-config.ts` is the `loadConfig`: it re-implements Pi's unexported
+`loadMcpConfig` layering plus `.mcp.json`, defaults exposure to `deferred`, and
+mirrors Pi's `validateMcpServerConfig` checks. On a bump, diff Pi's
+`extensions/mcp/config.js` and `core/mcp-servers.js` against it, and re-check
+the MCP tool names in `MCP_TOOL_NAMES` and `hoy-permissions.ts`. Codemode is not
+loaded: its QuickJS worker and wasm need an extra `bun --compile` entry point
+(Pi's own binary build passes `extensions/codemode/worker.ts`).
 
 RPC surface coverage per version is tracked in `docs/pi-rpc-coverage.md`.

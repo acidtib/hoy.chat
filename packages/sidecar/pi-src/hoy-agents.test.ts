@@ -20,7 +20,7 @@ function mountAgentTool(registry: SubagentRegistry, requireApproval = true) {
   return tool;
 }
 
-// Fake ctx mirroring hoy-mcp.test.ts's ctx: scripted select, captured input
+// Fake ctx: scripted select, captured input
 // (the blocking spawn round-trip, HOY-300), project trust.
 function ctx(
   opts: {

@@ -15,6 +15,7 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import {
+  buildHoySystemPrompt,
   HOY_SYSTEM_PROMPT,
   PLAN_MODE_PROMPT,
   PROPOSED_PLAN_FORMAT,
@@ -148,5 +149,27 @@ describe("plan mode: two-phase design gate (HOY-276 follow-up)", () => {
     expect(PLAN_MODE_PROMPT).toContain("Only skip the gate for a genuinely trivial change");
     // ...and it must stop for the answer before emitting the plan.
     expect(PLAN_MODE_PROMPT).toContain("do NOT emit the proposed_plan block, until the user has answered");
+  });
+});
+
+describe("buildHoySystemPrompt", () => {
+  test("advertises enabled agent types dynamically", () => {
+    expect(buildHoySystemPrompt(false)).not.toContain("Subagents:");
+    const enabled = buildHoySystemPrompt(true, [
+      { name: "Explore", description: "read-only" },
+      { name: "Reviewer", description: "reviews diffs" },
+    ]);
+    expect(enabled).toContain("Subagents:");
+    expect(enabled).toContain("Explore");
+    expect(enabled).toContain("Reviewer");
+    expect(enabled).toContain("reviews diffs");
+    // HOY-300: the agent tool is synchronous, the prompt tells the model the
+    // call blocks and returns the subagent's result in-band (not "delivered back").
+    expect(enabled).toContain("BLOCKS until the subagent finishes and returns its result");
+    expect(enabled).not.toContain("Fire-and-forget");
+  });
+
+  test("carries no Hoy MCP block; Pi's mcp_servers section describes servers", () => {
+    expect(buildHoySystemPrompt(true, [])).not.toContain("MCP tools:");
   });
 });

@@ -337,7 +337,7 @@ fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
 
 /// Env var names referenced as `${VAR}` across the MCP config files Pi merges
 /// (global `<agent_dir>/mcp.json` + project `<cwd>/.mcp.json` and
-/// `<cwd>/.hoy/mcp.json`). Mirrors hoy-mcp.ts `loadMcpConfig` search paths so the
+/// `<cwd>/.hoy/mcp.json`). Mirrors hoy-mcp-config.ts `loadHoyMcpConfig` search paths so the
 /// sanitized env still carries the secrets those references resolve from.
 fn mcp_referenced_env_vars(agent_dir: &Path, cwd: &Path) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
@@ -354,10 +354,9 @@ fn mcp_referenced_env_vars(agent_dir: &Path, cwd: &Path) -> BTreeSet<String> {
     names
 }
 
-/// Collect `${VAR}` names from `text` (VAR = ASCII word chars), mirroring
-/// hoy-mcp.ts's `/\$\{(\w+)\}/`. Over-collecting a name written as an escaped
-/// `$${VAR}` is harmless: the value becomes available and interpolation
-/// still treats the escaped form as a literal.
+/// Collect `${VAR}` names from `text` (VAR = ASCII word chars), the references
+/// Pi's MCP extension interpolates in env/headers values. Over-collecting a name
+/// that appears elsewhere in the file is harmless: the value is only available.
 fn collect_env_refs(text: &str, out: &mut BTreeSet<String>) {
     let bytes = text.as_bytes();
     let mut i = 0;

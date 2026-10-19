@@ -374,8 +374,9 @@ export function McpPanel() {
   const toggle = (scope: McpScope, entry: McpServerEntry, next: boolean) =>
     run(() => {
       const spec = { ...entry.spec };
-      if (next) delete spec.disabled;
-      else spec.disabled = true;
+      delete spec.disabled;
+      if (next) delete spec.enabled;
+      else spec.enabled = false;
       return saveMcpServer(scope, entry.name, spec, projectPath);
     });
 
@@ -386,7 +387,7 @@ export function McpPanel() {
     <div className="space-y-8">
       <PanelHeader
         title="MCP"
-        description="Model Context Protocol servers expose extra tools to the agent. Adding a server lets it run a command or reach a URL, so each is started only after you approve it."
+        description="Model Context Protocol servers expose extra tools to the agent. Enabled servers start with each session; project servers load only in trusted projects. Each tool call asks for approval unless the thread is autonomous."
       />
 
       {error && (

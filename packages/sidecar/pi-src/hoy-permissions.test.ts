@@ -27,6 +27,9 @@ describe("gate policy table", () => {
     ["default", "write", "ask"],
     ["default", "bash", "ask"],
     ["default", "some_custom_tool", "ask"],
+    ["default", "mcp__github__create_issue", "ask"],
+    ["default", "tool_search", "allow"],
+    ["default", "read_mcp_resource", "allow"],
     ["acceptEdits", "edit", "allow"],
     ["acceptEdits", "write", "allow"],
     ["acceptEdits", "bash", "ask"],
@@ -37,13 +40,16 @@ describe("gate policy table", () => {
     // plan-file allow path is covered in its own block below.
     ["plan", "edit", "ask"],
     ["plan", "write", "ask"],
-    ["plan", "mcp", "allow"],
+    ["plan", "mcp__github__create_issue", "ask"],
+    ["plan", "tool_search", "allow"],
+    ["plan", "list_mcp_resources", "allow"],
     ["plan", "bash", "allow"],
     ["plan", "agent", "allow"],
     ["plan", "some_custom_tool", "block"],
     ["autonomous", "edit", "allow"],
     ["autonomous", "bash", "allow"],
     ["autonomous", "some_custom_tool", "allow"],
+    ["autonomous", "mcp__github__create_issue", "allow"],
   ];
   for (const [mode, tool, expected] of table) {
     test(`${mode} / ${tool} -> ${expected}`, () => {

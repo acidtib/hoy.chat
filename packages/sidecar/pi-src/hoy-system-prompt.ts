@@ -17,8 +17,9 @@
 //
 // The core "Available tools" list is the built-in set that every session
 // registers, passed as the tools allowlist in hoy-sidecar.ts (HOY-186). The
-// mcp and agent tools are not in that list. Each is advertised via its own
-// block, appended only when the tool is actually available in the session.
+// agent tool is not in that list; it is advertised via its own block, appended
+// only when the session can spawn. MCP servers are described by Pi's own
+// mcp_servers section (built-in MCP extension), not here.
 // The agent block (HOY-234 Phase 3) is built dynamically from the enabled
 // types in the loaded subagent registry (hoy-agents-registry.ts), not a
 // static list, so newly registered or disabled types are reflected without
@@ -85,14 +86,6 @@ Pi documentation (consult only when the user asks about pi itself, its SDK, exte
 - When working on pi topics, read the docs and examples, and follow .md cross-references before implementing
 - Always read pi .md files completely and follow links to related docs`;
 
-// Appended to the base prompt only when at least one MCP server is configured,
-// so the agent is told about the `mcp` tool exactly when it can actually use one
-// (avoids advertising a tool that will report "no servers"). The tool is always
-// registered, but the model must reach for it only when servers exist.
-export const MCP_TOOLS_PROMPT = `MCP tools:
-- The mcp tool bridges to configured Model Context Protocol servers. Discover before calling: mcp({action:"search"}) lists available tools as server/tool with descriptions; mcp({action:"describe", server, tool}) returns a tool's input schema; mcp({action:"call", server, tool, args}) invokes it.
-- Search or describe before calling an unfamiliar tool so you pass the right arguments. Starting a server and each tool call may require user approval.`;
-
 // Built from the enabled registry types so the model sees exactly what it can
 // spawn. HOY-300: the agent tool is synchronous, it blocks and returns the
 // subagent's result in-band, so the model must be told to wait, not keep working.
@@ -107,12 +100,10 @@ ${lines}
 }
 
 export function buildHoySystemPrompt(
-  mcpConfigured: boolean,
   agentEnabled = false,
   agentTypes: Array<{ name: string; description?: string }> = [],
 ): string {
   let prompt = HOY_SYSTEM_PROMPT;
-  if (mcpConfigured) prompt += `\n\n${MCP_TOOLS_PROMPT}`;
   if (agentEnabled) prompt += `\n\n${agentToolsPrompt(agentTypes)}`;
   return prompt;
 }

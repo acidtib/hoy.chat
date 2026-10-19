@@ -4,9 +4,10 @@
 // global -> <agent_dir>/mcp.json (~/.hoy/agent, ~/.hoyd/agent debug)
 // project -> <project>/.hoy/mcp.json (branded project dir, HOY-222)
 //
-// The sidecar reads and merges these itself (packages/sidecar/pi-src/hoy-mcp.ts,
-// loadMcpConfig): project wins on a name collision, ${ENV} in values is
-// interpolated there. Rust owns only the read/write for this UI plus triggering
+// The sidecar reads and merges these itself (packages/sidecar/pi-src/
+// hoy-mcp-config.ts feeding Pi's built-in MCP extension): project wins on a name
+// collision, project files load only in trusted projects, and Pi interpolates
+// ${ENV} in env/headers values. Rust owns only the read/write for this UI plus triggering
 // a respawn on change. We read-modify-write the whole file so unknown top-level
 // keys and other servers are preserved, and a malformed file never bricks the
 // read (returns empty, same tolerance as pi_config). Secrets belong in ${ENV}
@@ -21,7 +22,7 @@ use serde_json::{Map, Value};
 use crate::pi_config::agent_dir;
 
 // Branded project config dir. Not namespaced for debug the way the agent dir is:
-// the sidecar (hoy-mcp.ts) and build.sh both use ".hoy" for the project dir
+// the sidecar (hoy-mcp-config.ts) and build.sh both use ".hoy" for the project dir
 // unconditionally, so Rust must match.
 const PROJECT_CONFIG_DIR: &str = ".hoy";
 
@@ -38,7 +39,7 @@ pub enum McpScope {
 
 // One server as shown/edited in the UI. `spec` is the raw JSON object under
 // mcpServers[name] (command/args/env/cwd for stdio, url/headers for http,
-// optional disabled). `transport` is derived for convenient rendering.
+// optional enabled). `transport` is derived for convenient rendering.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerEntry {
@@ -76,7 +77,7 @@ fn project_path(project: &str) -> Result<PathBuf, String> {
 }
 
 // The standard cross-tool file at the project root. Read-only from this UI. The
-// sidecar merges it (packages/sidecar/pi-src/hoy-mcp.ts).
+// sidecar merges it (packages/sidecar/pi-src/hoy-mcp-config.ts).
 fn project_shared_path(project: &str) -> PathBuf {
     PathBuf::from(project).join(".mcp.json")
 }
@@ -118,6 +119,13 @@ fn servers_map(config: &Map<String, Value>) -> Map<String, Value> {
     }
 }
 
+// Pi's key is `enabled: false`; `disabled: true` is what Hoy wrote before it
+// moved to Pi's built-in MCP, and the sidecar still honors it.
+fn is_disabled(spec: &Value) -> bool {
+    spec.get("enabled").and_then(Value::as_bool) == Some(false)
+        || spec.get("disabled").and_then(Value::as_bool) == Some(true)
+}
+
 fn entries_at(path: &Path, scope: McpScope) -> Vec<McpServerEntry> {
     let servers = servers_map(&read_config_at(path));
     let mut out: Vec<McpServerEntry> = servers
@@ -126,10 +134,7 @@ fn entries_at(path: &Path, scope: McpScope) -> Vec<McpServerEntry> {
             name,
             scope,
             transport: transport_of(&spec),
-            disabled: spec
-                .get("disabled")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
+            disabled: is_disabled(&spec),
             spec,
         })
         .collect();
@@ -281,5 +286,13 @@ mod tests {
         std::fs::write(&path, "{not valid json").unwrap();
         assert!(entries_at(&path, McpScope::Global).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn disabled_reads_pi_enabled_and_legacy_disabled() {
+        assert!(is_disabled(&json!({"command": "x", "enabled": false})));
+        assert!(is_disabled(&json!({"command": "x", "disabled": true})));
+        assert!(!is_disabled(&json!({"command": "x", "enabled": true})));
+        assert!(!is_disabled(&json!({"command": "x"})));
     }
 }

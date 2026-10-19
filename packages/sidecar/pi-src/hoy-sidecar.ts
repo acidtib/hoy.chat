@@ -15,13 +15,15 @@ import {
   createAgentSessionFromServices,
   createAgentSessionServices,
   createAgentSessionRuntime,
+  createMcpExtension,
+  createToolSearchExtension,
   runRpcMode,
   SessionManager,
   type CreateAgentSessionRuntimeFactory,
 } from "@earendil-works/pi-coding-agent";
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { createHoyPermissions, createPermissionState, isPermissionMode, type PermissionMode } from "./hoy-permissions";
-import { createHoyMcp, loadMcpConfig } from "./hoy-mcp";
+import { expandToolNames, loadHoyMcpConfig } from "./hoy-mcp-config";
 import { createHoyAgents } from "./hoy-agents";
 import { createHoyAskQuestion } from "./hoy-ask-question";
 import { createHoyInit } from "./hoy-init";
@@ -161,10 +163,6 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   sessionManager,
   sessionStartEvent,
 }) => {
-  // MCP servers from Hoy's global + project mcp.json, merged per session
-  // (project cwd wins). createHoyMcp registers the `mcp` proxy tool. With no
-  // servers configured it reports none available (HOY-232).
-  const mcpConfig = loadMcpConfig(agentDir, cwd);
   const registry = loadSubagentRegistry(agentDir, cwd);
 
   // Depth cap is absolute: if this child was spawned for a type that is no
@@ -181,7 +179,11 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
 
   const childType = subagentType ? registry[subagentType] : null;
   const baseTools = childType ? childType.tools : HOY_TOOLS;
-  const tools = canSpawn && !baseTools.includes("agent") ? [...baseTools, "agent"] : baseTools;
+  const withAgent = canSpawn && !baseTools.includes("agent") ? [...baseTools, "agent"] : baseTools;
+  // `mcp` is Hoy's capability name (HOY_TOOLS, subagent .md tool lists); Pi
+  // exposes MCP as tool_search, resource tools, and mcp__<server>__<tool>.
+  const mcpEnabled = withAgent.includes("mcp");
+  const tools = expandToolNames(withAgent);
   const advertised = enabledTypes(registry).map((t) => ({ name: t.name, description: t.description }));
 
   const services = await createAgentSessionServices({
@@ -193,7 +195,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         // Spawn guidance (agent tool + advertised types) is on iff this thread
         // can spawn, so a spawning-capable child sees it too. A non-spawning
         // child gets guidance off. EffectiveChildPrompt still applies its body.
-        const base = buildHoySystemPrompt(mcpConfig.servers.length > 0, canSpawn, advertised);
+        const base = buildHoySystemPrompt(canSpawn, advertised);
         return childType ? effectiveChildPrompt(childType, base) : base;
       },
       // Disk discovery of <agentDir>/{extensions,skills,prompts,themes} needs no
@@ -209,12 +211,21 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       extensionFactories: [
         createHoyAlibaba(agentDir),
         createHoyPermissions(permissionState),
-        createHoyMcp(mcpConfig, permissionState),
+        // Pi's built-in MCP (HOY-232 originally shipped our own proxy tool). SDK
+        // sessions do not load built-ins, so we add it here. Servers connect at
+        // session start; a child type without `mcp` loads none, so subagents do
+        // not each spawn every server. Calls go through createHoyPermissions'
+        // tool_call gate like any other tool.
+        createToolSearchExtension(),
+        createMcpExtension({
+          loadConfig: (ctx) =>
+            loadHoyMcpConfig({ agentDir, cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted(), enabled: mcpEnabled }),
+        }),
         // HOY-253: ask_question is a user-interaction tool, not a side
         // effect. Only root/user threads get it in their tool set (HOY_TOOLS)
         // child subagents (childType set) do not, since the intent-interrogation
         // phase belongs to the thread talking to the user, not a fire-and-forget
-        // child. Registering it unconditionally is harmless (mirrors mcp): a
+        // child. Registering it unconditionally is harmless: a
         // child never has it in `tools`, so it cannot call it.
         createHoyAskQuestion(),
         // HOY-265: /init generates or refreshes AGENTS.md. A user-invoked
