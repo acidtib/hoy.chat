@@ -138,8 +138,8 @@ export interface Panel {
   // open in at most one panel.
   id: string;
   width: number;
-  // Tabs mode: panels sharing a tabId split one tab, kept contiguous in
-  // `panels`. Unset means a tab of its own.
+  // Panels sharing a tabId split one tab, kept contiguous in `panels`. Unset
+  // means a tab of its own.
   tabId?: string;
 }
 
@@ -216,9 +216,8 @@ function fitPanels(panels: Panel[], bodyWidth: number): Panel[] {
   return panels;
 }
 
-// fitPanels per tab in tabs mode, so each tab fills the body on its own.
+// fitPanels per tab, so each tab fills the body on its own.
 function refitPanels(panels: Panel[], bodyWidth: number): Panel[] {
-  if (!usePrefsStore.getState().threadTabs) return fitPanels(panels, bodyWidth);
   return groupTabs(panels).flatMap((t) => fitPanels(t.panels, bodyWidth));
 }
 
@@ -231,7 +230,7 @@ function neighborAfterClose(
 ): string | null {
   const index = before.findIndex((p) => p.id === closedId);
   const closed = before[index];
-  if (closed && usePrefsStore.getState().threadTabs) {
+  if (closed) {
     const key = panelTabKey(closed);
     const sameTab = survivors.filter((p) => panelTabKey(p) === key);
     if (sameTab.length > 0) return sameTab[0].id;
@@ -507,8 +506,8 @@ interface SessionStore {
     threadId: string;
   } | null;
 
-  // Tabs mode only: `background` adds the tab without switching to it, `split`
-  // opens the thread beside the active one in its tab.
+  // `background` adds the tab without switching to it, `split` opens the
+  // thread beside the active one in its tab.
   openThread: (
     id: string,
     opts?: { background?: boolean; split?: boolean },
@@ -572,8 +571,6 @@ interface SessionStore {
   // Acknowledge the run halting an agent's queue, so the queue moves again.
   resumeAgent: (projectId: string, agent: string) => void;
   pumpFleet: () => void;
-  // Re-fit panel widths to the body (after the tabs pref flips).
-  refitPanelLayout: () => void;
   // Create a child thread for a spawned subagent (HOY-231) and drive it
   // through create_session + the shared streaming helper, same as a
   // user-submitted thread.
@@ -826,9 +823,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   // hydrated from disk in the background.
   openThread: (id, opts) => {
     set((s) => {
-      const tabs = usePrefsStore.getState().threadTabs;
       const isOpen = s.panels.some((p) => p.id === id);
-      if (tabs && opts?.background && s.activeThreadId) {
+      if (opts?.background && s.activeThreadId) {
         if (isOpen) return s;
         return {
           panels: [...s.panels, { id, width: s.bodyWidth, tabId: shortId("tab") }],
@@ -857,47 +853,36 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           focusRequest,
           bodyView,
         };
-      if (tabs) {
-        const anchor = s.panels.find((p) => p.id === s.activeThreadId);
-        if (!opts?.split || !anchor) {
-          return {
-            panels: [...s.panels, { id, width: s.bodyWidth, tabId: shortId("tab") }],
-            activeThreadId: id,
-            activeProjectId,
-            expandedThreadId,
-            focusRequest,
-            bodyView,
-          };
-        }
-        // Insert after the tab's last panel so the tab stays contiguous.
-        const key = panelTabKey(anchor);
-        const tabPanels = s.panels.filter((p) => panelTabKey(p) === key);
-        const placed = placeNewPanel(tabPanels, s.bodyWidth);
-        const widths = new Map(placed.panels.map((p) => [p.id, p.width]));
-        const resized = s.panels.map((p) =>
-          widths.has(p.id) ? { ...p, width: widths.get(p.id)!, tabId: key } : p,
-        );
-        const last = resized.map(panelTabKey).lastIndexOf(key);
+      const anchor = s.panels.find((p) => p.id === s.activeThreadId);
+      if (!opts?.split || !anchor) {
         return {
-          panels: [
-            ...resized.slice(0, last + 1),
-            { id, width: placed.width, tabId: key },
-            ...resized.slice(last + 1),
-          ],
+          panels: [...s.panels, { id, width: s.bodyWidth, tabId: shortId("tab") }],
           activeThreadId: id,
           activeProjectId,
-          // Splitting out of a full screen panel exits it.
-          expandedThreadId: null,
+          expandedThreadId,
           focusRequest,
           bodyView,
         };
       }
-      const { panels, width } = placeNewPanel(s.panels, s.bodyWidth);
+      // Insert after the tab's last panel so the tab stays contiguous.
+      const key = panelTabKey(anchor);
+      const tabPanels = s.panels.filter((p) => panelTabKey(p) === key);
+      const placed = placeNewPanel(tabPanels, s.bodyWidth);
+      const widths = new Map(placed.panels.map((p) => [p.id, p.width]));
+      const resized = s.panels.map((p) =>
+        widths.has(p.id) ? { ...p, width: widths.get(p.id)!, tabId: key } : p,
+      );
+      const last = resized.map(panelTabKey).lastIndexOf(key);
       return {
-        panels: [...panels, { id, width }],
+        panels: [
+          ...resized.slice(0, last + 1),
+          { id, width: placed.width, tabId: key },
+          ...resized.slice(last + 1),
+        ],
         activeThreadId: id,
         activeProjectId,
-        expandedThreadId,
+        // Splitting out of a full screen panel exits it.
+        expandedThreadId: null,
         focusRequest,
         bodyView,
       };
@@ -1145,11 +1130,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const cur = panels[index];
       const next = panels[index + 1];
       if (!cur || !next) return s;
-      if (
-        usePrefsStore.getState().threadTabs &&
-        panelTabKey(cur) !== panelTabKey(next)
-      )
-        return s;
+      if (panelTabKey(cur) !== panelTabKey(next)) return s;
       const d = Math.max(deltaPx, PANEL_MIN_WIDTH - cur.width);
       cur.width += d;
       if (d < 0) {
@@ -1348,8 +1329,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       }
     }
   },
-  refitPanelLayout: () =>
-    set((s) => ({ panels: refitPanels(s.panels, s.bodyWidth) })),
   addThread: (projectId, opts) => {
     const thread: Thread = {
       id: shortId("t"),
@@ -2543,14 +2522,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 // Reactive "does this thread have a live fleet" for the model glyph's fleet color
 // (HOY-302). Selector returns a boolean, so a row only re-renders when its fleet
 // flips between running and idle, not on every streaming token.
-// Panels in `threadId`'s tab, or null outside tabs mode.
-export function useTabPanelCount(threadId: string | null): number | null {
-  const tabs = usePrefsStore((s) => s.threadTabs);
-  const count = useSessionStore((s) => {
+// Panels in `threadId`'s tab.
+export function useTabPanelCount(threadId: string | null): number {
+  return useSessionStore((s) => {
     const key = tabKeyOf(s.panels, threadId);
     return key ? s.panels.filter((p) => panelTabKey(p) === key).length : 0;
   });
-  return tabs ? count : null;
 }
 
 export function useThreadHasRunningSubagents(threadId: string): boolean {

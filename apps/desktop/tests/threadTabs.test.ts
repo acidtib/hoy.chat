@@ -28,27 +28,18 @@ function seed() {
   });
 }
 
-beforeEach(() => usePrefsStore.getState().setPref("threadTabs", true));
-
 afterEach(() => {
   usePrefsStore.getState().reset();
 });
 
 describe("openThread background", () => {
-  test("adds a tab without switching to it in tabs mode", () => {
+  test("adds a tab without switching to it", () => {
     seed();
     useSessionStore.getState().openThread("t2", { background: true });
     const s = useSessionStore.getState();
     expect(s.panels.map((p) => p.id)).toEqual(["t1", "t2"]);
     expect(s.activeThreadId).toBe("t1");
     expect(s.focusRequest).toBeNull();
-  });
-
-  test("focuses the new panel when tabs are off", () => {
-    seed();
-    usePrefsStore.getState().setPref("threadTabs", false);
-    useSessionStore.getState().openThread("t2", { background: true });
-    expect(useSessionStore.getState().activeThreadId).toBe("t2");
   });
 });
 

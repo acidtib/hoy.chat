@@ -58,25 +58,10 @@ function App() {
   );
   const setPref = usePrefsStore((s) => s.setPref);
   const onboardingCompleted = usePrefsStore((s) => s.onboardingCompleted);
-  const threadTabs = usePrefsStore((s) => s.threadTabs);
-  const refitPanelLayout = useSessionStore((s) => s.refitPanelLayout);
-
-  // Tabs mode: every tab stays mounted (keeping scroll and component state);
-  // only the active one is visible.
-  const tabs = threadTabs ? groupTabs(panels) : [];
-  const activeTabKey = threadTabs
-    ? (tabKeyOf(panels, activeThreadId) ?? tabs.at(-1)?.key ?? null)
-    : null;
-
-  // Full screen: the one panel rendered while set, at full body width via CSS.
-  // Stored widths are untouched, so exiting restores the exact layout.
-  const expandedPanel = threadTabs
-    ? null
-    : (panels.find((p) => p.id === expandedThreadId) ?? null);
-
-  useEffect(() => {
-    refitPanelLayout();
-  }, [threadTabs, refitPanelLayout]);
+  // Every tab stays mounted (keeping scroll and component state); only the
+  // active one is visible.
+  const tabs = groupTabs(panels);
+  const activeTabKey = tabKeyOf(panels, activeThreadId) ?? tabs.at(-1)?.key ?? null;
 
   // Restore the persisted projects -> threads tree on boot (then autosave kicks in).
   useEffect(() => {
@@ -277,14 +262,16 @@ keeps the top-left corner, Zed-style). Panels render below it.*/}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {showChrome ? (
               <>
-                <TitleBar />
-                {threadTabs &&
-                  (bodyView === "project" ||
-                    (bodyView === "panels" && activeTabKey)) && (
-                    <ThreadTabs
-                      activeKey={bodyView === "project" ? null : activeTabKey}
-                    />
-                  )}
+                <TitleBar
+                  tabs={
+                    (bodyView === "project" ||
+                      (bodyView === "panels" && activeTabKey)) && (
+                      <ThreadTabs
+                        activeKey={bodyView === "project" ? null : activeTabKey}
+                      />
+                    )
+                  }
+                />
               </>
             ) : (
               <header
@@ -319,7 +306,7 @@ keeps the top-left corner, Zed-style). Panels render below it.*/}
                 <ProjectHome />
               ) : panels.length === 0 ? (
                 <HomePage />
-              ) : threadTabs ? (
+              ) : (
                 tabs.map((tab) => {
                   const active = tab.key === activeTabKey;
                   const expanded = tab.panels.find(
@@ -362,34 +349,6 @@ keeps the top-left corner, Zed-style). Panels render below it.*/}
                     </div>
                   );
                 })
-              ) : (
-                <div
-                  ref={stripRef}
-                  onScroll={(e) => {
-                    const el = footerSlicesRef.current;
-                    if (el) el.scrollLeft = e.currentTarget.scrollLeft;
-                  }}
-                  className="flex min-h-0 flex-1 overflow-x-auto"
-                >
-                  {expandedPanel ? (
-                    renderPanel(expandedPanel, {
-                      fill: true,
-                      accent: true,
-                      handle: null,
-                    })
-                  ) : (
-                    <>
-                      {panels.map((panel, i) =>
-                        renderPanel(panel, {
-                          accent: true,
-                          handle: i < panels.length - 1 ? i : null,
-                        }),
-                      )}
-                      {/* Unused workspace beside the panels: new panels dock here. */}
-                      <div className="min-h-0 flex-1 bg-background" />
-                    </>
-                  )}
-                </div>
               )}
             </div>
             {rightDock === "tree" && <TreeNavigator />}

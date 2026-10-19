@@ -120,12 +120,16 @@ App shell (`App.tsx`), the Zed/Codex desktop shape:
 
 - **Sidebar** (left, collapsible): session/project tree or history view. Keeps the
   top-left corner; the title bar spans only the main column beside it.
-- **Title bar** (top of main column): model picker + settings, custom window
-  chrome (`decorations: false`).
-- **Panel strip** (center): one or more `ThreadView` panels side by side,
-  horizontally scrollable, user-resizable via a zero-width drag handle straddling
-  each seam. Active panel marked by a `border-t-brand/70` top edge. Supports a
-  full-screen expanded single panel. Empty state renders `HomePage`.
+- **Title bar** (top of main column): the tab strip (the active project's home
+  pinned first, then one tab per open thread, then `+`), usage and settings, and
+  custom window chrome (`decorations: false`). The space the tabs leave is the
+  window drag region. The active tab overlaps the bar's bottom border so it
+  reads as part of the body, marked by a `border-t-brand/70` top edge
+  (`border-t-agent` for subagent threads).
+- **Body** (center): the active tab. A tab holds one `ThreadView`, or several
+  split side by side and resizable via a zero-width drag handle straddling each
+  seam; a split panel can go full screen. With no tab open the body shows the
+  project home, or `HomePage` before any project exists.
 - **Context bar** (footer): per-panel stats slices whose horizontal scroll mirrors
   the panel strip.
 - Multi-session by design: layout never hardcodes a single session even when one

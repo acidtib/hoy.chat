@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { mockIpcModule } from "./ipcMock";
 
 // None of the ipc surface is exercised here. The store needs it mocked
@@ -6,12 +6,8 @@ import { mockIpcModule } from "./ipcMock";
 mockIpcModule();
 
 const { useSessionStore } = await import("@/state/store");
-const { usePrefsStore } = await import("@/state/prefs");
 
-// These cover the side-by-side strip layout, not tabs.
-beforeEach(() => usePrefsStore.getState().setPref("threadTabs", false));
-afterAll(() => usePrefsStore.getState().reset());
-
+// One tab split into panels of the given widths.
 function seed(panelWidths: number[], bodyWidth: number) {
   useSessionStore.setState({
     projects: [
@@ -27,7 +23,7 @@ function seed(panelWidths: number[], bodyWidth: number) {
         })),
       },
     ],
-    panels: panelWidths.map((width, i) => ({ id: `t${i + 1}`, width })),
+    panels: panelWidths.map((width, i) => ({ id: `t${i + 1}`, width, tabId: "tab1" })),
     bodyWidth,
     activeThreadId: "t1",
   });
@@ -38,8 +34,8 @@ function widths(): number[] {
 }
 
 describe("closePanel widths", () => {
-  test("closing overflowing panels re-fits survivors to the body instead of stacking widths", () => {
-    // Three panels at the minimum overflow an 800px body. The strip scrolls.
+  test("closing a split tab's overflowing panels re-fits the survivors to the body", () => {
+    // Three panels at the minimum overflow an 800px body. The tab scrolls.
     seed([460, 460, 460], 800);
 
     useSessionStore.getState().closePanel("t3");

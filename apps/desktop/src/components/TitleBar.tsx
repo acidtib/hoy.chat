@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   BarChart3,
-  GitBranch,
   Minus,
   Settings,
   Square,
@@ -10,7 +9,7 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { findThread, useSessionStore } from "@/state/store";
+import { useSessionStore } from "@/state/store";
 
 // Mirror of @tauri-apps/api window.d.ts ResizeDirection, which is not exported.
 type ResizeDirection =
@@ -24,56 +23,25 @@ type ResizeDirection =
   | "West";
 
 // Zed-style title bar over the main body (the window runs with native
-// decorations off). The bar is the drag region: data-tauri-drag-region only
-// applies to the element carrying it, so the attribute sits on the bar and the
-// non-interactive left wrapper while the buttons stay clickable. Double-click
-// to maximize comes with the drag region.
-export function TitleBar() {
-
-  const projects = useSessionStore((s) => s.projects);
-  const activeThreadId = useSessionStore((s) => s.activeThreadId);
+// decorations off), carrying the tab strip. The bar is the drag region:
+// data-tauri-drag-region only applies to the element carrying it, so the
+// attribute sits on the bar and on the empty space the strip leaves, while tabs
+// and buttons stay clickable. Double-click to maximize comes with the region.
+export function TitleBar({ tabs }: { tabs?: React.ReactNode }) {
   const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
   const bodyView = useSessionStore((s) => s.bodyView);
   const setBodyView = useSessionStore((s) => s.setBodyView);
 
-  // The focused thread's project. With no thread focused (home page) the left
-  // side stays empty.
-  const projectName = activeThreadId
-    ? (findThread(projects, activeThreadId)?.project.name ?? null)
-    : null;
-
   return (
     <header
       data-tauri-drag-region
-      className="flex h-9 shrink-0 select-none items-center justify-between border-b border-border bg-sidebar pl-3 pr-1 text-xs text-muted-foreground"
+      className="flex h-9 shrink-0 select-none items-stretch border-b border-border bg-sidebar pr-1 text-xs text-muted-foreground"
     >
-      <div data-tauri-drag-region className="flex min-w-0 items-center gap-2">
-        {projectName && (
-          <>
-            <span
-              data-tauri-drag-region
-              className="truncate font-medium text-foreground"
-            >
-              {projectName}
-            </span>
-            {/*Mocked branch chip to match the website app mock. Real git
-                status (branch/dirty/stash) is not wired yet. Tracked in
- HOY-306. */}
-            <span
-              data-tauri-drag-region
-              className="flex shrink-0 items-center gap-1"
-              title="Branch switching is not available yet"
-            >
-              <GitBranch className="size-3.5" />
-              main
-            </span>
-          </>
-        )}
-      </div>
+      {tabs || <div data-tauri-drag-region className="min-w-0 flex-1" />}
 
       {/* Global view/app controls, left → right: Usage toggle, Settings cog,
           then the window controls. Fleet lives in each project's home. */}
-      <div className="flex shrink-0 items-center gap-0.5">
+      <div className="flex shrink-0 items-center gap-0.5 pl-2">
         <TitleBarButton
           label={bodyView === "usage" ? "Show Panels" : "Show Usage Stats"}
           onClick={() => setBodyView(bodyView === "usage" ? "panels" : "usage")}

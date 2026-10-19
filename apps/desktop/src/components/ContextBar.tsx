@@ -43,19 +43,15 @@ export function ContextBar({
   const rightDock = useSessionStore((s) => s.rightDock);
   const toggleRightDock = useSessionStore((s) => s.toggleRightDock);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
-  const threadTabs = usePrefsStore((s) => s.threadTabs);
 
-  // Mirror the panel strip: in tabs mode only the active tab's panels, and one
-  // full-width slice for a full screen panel or a lone tab.
-  const activeTabKey = threadTabs
-    ? (tabKeyOf(panels, activeThreadId) ?? groupTabs(panels).at(-1)?.key ?? null)
-    : null;
-  const shownPanels = threadTabs
-    ? panels.filter((p) => panelTabKey(p) === activeTabKey)
-    : panels;
+  // Mirror the panel strip: only the active tab's panels, and one full-width
+  // slice for a full screen panel or a lone tab.
+  const activeTabKey =
+    tabKeyOf(panels, activeThreadId) ?? groupTabs(panels).at(-1)?.key ?? null;
+  const shownPanels = panels.filter((p) => panelTabKey(p) === activeTabKey);
   const expandedPanel =
     shownPanels.find((p) => p.id === expandedThreadId) ??
-    (threadTabs && shownPanels.length === 1 ? shownPanels[0] : null);
+    (shownPanels.length === 1 ? shownPanels[0] : null);
 
   async function handleAddProject() {
     const dir = await pickDirectory(

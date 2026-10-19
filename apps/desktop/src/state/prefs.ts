@@ -64,9 +64,6 @@ export interface AppPrefs {
   // naturally appears when chrome first renders. Persisted so the user's
   // manual collapse survives restarts.
   sidebarCollapsed: boolean;
-  // Experimental: open threads as tabs (one thread shown at full width)
-  // instead of tiling them as panels left to right.
-  threadTabs: boolean;
 }
 
 interface PrefsStore extends AppPrefs {
@@ -95,7 +92,6 @@ export const PREFS_DEFAULTS: AppPrefs = {
   keepAwakeWhileStreaming: true,
   autoCompaction: true,
   sidebarCollapsed: false,
-  threadTabs: true,
 };
 
 export const usePrefsStore = create<PrefsStore>()(
@@ -129,7 +125,6 @@ export const usePrefsStore = create<PrefsStore>()(
         keepAwakeWhileStreaming: s.keepAwakeWhileStreaming,
         autoCompaction: s.autoCompaction,
         sidebarCollapsed: s.sidebarCollapsed,
-        threadTabs: s.threadTabs,
       }),
     },
   ),

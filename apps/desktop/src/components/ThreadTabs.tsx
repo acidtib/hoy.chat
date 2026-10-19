@@ -6,10 +6,11 @@ import { cn } from "@/lib/utils";
 import { childThreadIdsOf, isSubagentThread } from "@/state/delivery";
 import { findThread, groupTabs, useSessionStore } from "@/state/store";
 
-// Experimental tab strip over the body: the active project's home pinned
-// first, then one tab per group of split panels. A thread tab is labeled by
-// the active thread when it holds it, else its first panel. `activeKey` is
-// null while the project home is showing.
+// The tab strip in the title bar: the active project's home pinned first, then
+// one tab per group of split panels. A thread tab is labeled by the active
+// thread when it holds it, else its first panel. `activeKey` is null while the
+// project home is showing. The active tab overlaps the bar's bottom border so
+// it reads as part of the body below.
 export function ThreadTabs({ activeKey }: { activeKey: string | null }) {
   const panels = useSessionStore((s) => s.panels);
   const activeThreadId = useSessionStore((s) => s.activeThreadId);
@@ -25,7 +26,7 @@ export function ThreadTabs({ activeKey }: { activeKey: string | null }) {
   }, [activeKey, tabs.length]);
 
   return (
-    <div className="flex h-8 shrink-0 items-stretch border-b border-border bg-sidebar">
+    <div className="-mb-px flex min-w-0 flex-1 items-stretch">
       <ProjectTab />
       <div
         ref={stripRef}
@@ -61,7 +62,7 @@ export function ThreadTabs({ activeKey }: { activeKey: string | null }) {
           <Plus className="size-4" />
         </Button>
       )}
-      <div data-tauri-drag-region className="flex-1" />
+      <div data-tauri-drag-region className="min-w-8 flex-1 border-b border-border" />
     </div>
   );
 }
@@ -82,10 +83,10 @@ function ProjectTab() {
       onClick={() => openProject(project.id, projectView)}
       title={`${project.name} home`}
       className={cn(
-        "flex max-w-48 shrink-0 items-center gap-1.5 border-r border-t-2 border-r-border px-2.5 text-xs font-medium transition-colors",
+        "flex max-w-48 shrink-0 items-center gap-1.5 border-r border-b border-t-2 border-r-border px-2.5 text-xs font-medium transition-colors",
         active
-          ? "border-t-brand/70 bg-background text-foreground"
-          : "border-t-transparent text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
+          ? "border-t-brand/70 border-b-background bg-background text-foreground"
+          : "border-t-transparent border-b-border text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
       )}
     >
       <FolderKanban className="size-3.5 shrink-0" />
@@ -151,10 +152,10 @@ function ThreadTab({
         }
       }}
       className={cn(
-        "group/tab flex w-48 min-w-28 shrink cursor-pointer items-center gap-1.5 border-r border-t-2 border-r-border pr-1 pl-2.5 text-xs transition-colors",
+        "group/tab flex w-48 min-w-28 shrink cursor-pointer items-center gap-1.5 border-r border-b border-t-2 border-r-border pr-1 pl-2.5 text-xs transition-colors",
         active
-          ? "bg-background text-foreground"
-          : "border-t-transparent text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
+          ? "border-b-background bg-background text-foreground"
+          : "border-t-transparent border-b-border text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
         active && (isAgent ? "border-t-agent/80" : "border-t-brand/70"),
       )}
     >
