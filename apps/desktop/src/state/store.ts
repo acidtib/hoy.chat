@@ -1706,7 +1706,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   refreshSubagents: async (cwd) => {
     try {
-      set({ subagents: await listSubagents(cwd) });
+      const next = await listSubagents(cwd);
+      // A nullish reply keeps the prior cache, same as a throw.
+      if (!next) return;
+      set({ subagents: next });
       get().pumpFleet();
     } catch {
       // Leave the prior cache. A stale registry beats an empty one.

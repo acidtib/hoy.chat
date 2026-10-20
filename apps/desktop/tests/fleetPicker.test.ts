@@ -107,6 +107,13 @@ describe("a project's Agents tab", () => {
     expect(setSubagentEnabled).not.toHaveBeenCalled();
   });
 
+  test("a nullish reload keeps the prior registry", async () => {
+    const cached = useSessionStore.getState().subagents;
+    listSubagents.mockImplementationOnce(async () => undefined as unknown as never[]);
+    await useSessionStore.getState().setProjectAgentEnabled("p1", "Tester", false);
+    expect(useSessionStore.getState().subagents).toBe(cached);
+  });
+
   test("reopening the picker starts from the project's current fleet", () => {
     useSessionStore.getState().setFleetPicker("p1", ["Coder"]);
     expect(useSessionStore.getState().fleetPickerInitial).toEqual(["Coder"]);

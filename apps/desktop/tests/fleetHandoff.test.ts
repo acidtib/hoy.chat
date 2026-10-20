@@ -89,10 +89,11 @@ const setAuto = (auto: boolean) =>
   }));
 
 const realSubmitPrompt = useSessionStore.getState().submitPrompt;
+const realStopStreaming = useSessionStore.getState().stopStreaming;
 beforeAll(async () => {
   await useSessionStore.getState().initWorkspace();
 });
-afterAll(() => useSessionStore.setState({ submitPrompt: realSubmitPrompt }));
+afterAll(() => useSessionStore.setState({ submitPrompt: realSubmitPrompt, stopStreaming: realStopStreaming }));
 
 beforeEach(() => {
   commentIds = 0;
