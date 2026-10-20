@@ -157,7 +157,7 @@ function AgentsView({ project }: { project: Project }) {
     <div className="flex min-h-0 flex-1 flex-col p-4">
       <div className="flex shrink-0 items-center pb-3">
         <p className="text-xs text-muted-foreground">
-          The agents issues can be handed to. Each one runs with its own model,
+          The agents tasks can be handed to. Each one runs with its own model,
           prompt, and tools.
         </p>
         <Button
