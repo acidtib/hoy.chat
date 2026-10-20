@@ -112,6 +112,19 @@ export function initialsFor(label: string): string {
   return label.replace(/[^a-z0-9]/gi, "").slice(0, 2).toUpperCase() || "?";
 }
 
+// One display status per auth entry. Only an OAuth sign-in counts as an
+// active session; disk key and env var presence are passive and get a muted
+// check instead of the green active dot.
+export function authStatus(auth: ProviderAuth): { label: string; active: boolean } {
+  if (auth.source === "environment") {
+    return { label: "Env var", active: false };
+  }
+  if (auth.kind === "oauth") {
+    return { label: "Signed In", active: true };
+  }
+  return { label: "Key saved", active: false };
+}
+
 // List partition for the panel: configured pinned on top, then the featured
 // set, then everything else alphabetically. Within each group, featured ids
 // keep FEATURED order and the rest sort by label.
