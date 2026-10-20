@@ -20,6 +20,7 @@ import { TreeNavigator } from "@/components/tree/TreeNavigator";
 import { ConfirmCloseDialog } from "@/components/ConfirmCloseDialog";
 import { TitleBar, WindowControls, WindowResizeHandles } from "@/components/TitleBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
+import { FleetPicker } from "@/components/project/FleetPicker";
 import { ThemeController } from "@/components/ThemeController";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { activeSessionId, getState, setKeepAwake } from "@/lib/ipc";
@@ -250,6 +251,7 @@ function App() {
     <TooltipProvider delayDuration={200}>
       <ThemeController />
       <SettingsModal />
+      <FleetPicker />
       <ConfirmCloseDialog />
       <WindowResizeHandles />
       <div className="flex h-screen flex-col bg-background text-foreground">

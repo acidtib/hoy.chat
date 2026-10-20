@@ -39,6 +39,9 @@ import {
   setModel,
   setPermissionMode as ipcSetPermissionMode,
   setSubagentEnabled as ipcSetSubagentEnabled,
+  setSubagentsEnabled as ipcSetSubagentsEnabled,
+  setSubagentModel as ipcSetSubagentModel,
+  projectHasFleet,
   setThinkingLevel,
   linearSetIssueState,
   verifyGoalCommand,
@@ -50,7 +53,8 @@ import { draftContexts, draftToMessage } from "@/lib/mentions";
 import { issuePrompt } from "@/lib/delegate";
 import { currentAgentName, haltingThread, moveQueued, openRuns } from "@/lib/fleet";
 import { rewriteSkillCommand } from "@/lib/skill";
-import { resolveDefaultModel } from "@/lib/models";
+import { modelKey, resolveDefaultModel } from "@/lib/models";
+import { fleetChanges } from "@/lib/fleetPresets";
 import {
   detectPlanIntent,
   extractProposedPlan,
@@ -553,6 +557,15 @@ interface SessionStore {
   settingsCategory: string | null;
   setSidebarWidth: (width: number) => void;
   addProject: (path: string) => void;
+  // HOY-368: the project whose fleet the picker is asking about, if any.
+  fleetPickerProjectId: string | null;
+  // What the picker starts with; null means the default core fleet.
+  fleetPickerInitial: string[] | null;
+  setFleetPicker: (projectId: string | null, initial?: string[] | null) => void;
+  saveFleet: (projectId: string, agents: string[]) => Promise<void>;
+  // A project's own agent overrides (its .hoy/settings.json).
+  setProjectAgentEnabled: (projectId: string, name: string, enabled: boolean) => Promise<void>;
+  setProjectAgentModel: (projectId: string, name: string, model: string | null) => Promise<void>;
   addThread: (projectId: string, opts?: { split?: boolean }) => string;
   // HOY-346: link a project to a Linear team (null unlinks).
   setProjectLinear: (projectId: string, link: LinearLink | null) => void;
@@ -587,16 +600,6 @@ interface SessionStore {
   // Pull the subagent registry into the store (HOY-234). No-op cache miss on
   // failure (leaves the prior cache), mirroring refreshSlashCommands.
   refreshSubagents: (cwd: string) => Promise<void>;
-  // Toggle a subagent type on/off in a scope. Writes through set_subagent_enabled
-  // (Rust respawns idle sidecars to reload it), so the model/permission-mode
-  // reconcile guards must clear like the other config-writing actions above.
-  setSubagentEnabled: (
-    scope: SubagentDef["scope"],
-    name: string,
-    enabled: boolean,
-    projectPath?: string | null,
-  ) => Promise<void>;
-
   // Credential changes go through the store (HOY-196): the backend respawns
   // idle sidecars under their existing sessionIds, so the per-session
   // reconcile guards must be cleared for the next prompt to re-apply each
@@ -791,6 +794,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   providerAuth: [],
   defaultModel: null,
   modelSelecting: {},
+  fleetPickerProjectId: null,
+  fleetPickerInitial: null,
   turns: {},
   streaming: {},
   stats: {},
@@ -1172,6 +1177,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // the existing project's most recent thread. openThread runs after set,
     // mirroring addThread.
     let openId: string | null = null;
+    let newProjectId: string | null = null;
     set((s) => {
       const existing = s.projects.find((p) => p.path === path);
       if (existing) {
@@ -1185,11 +1191,32 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         sessionId: null,
       };
       openId = thread.id;
+      newProjectId = shortId("p");
       return {
-        projects: [...s.projects, { id: shortId("p"), name, path, threads: [thread] }],
+        projects: [...s.projects, { id: newProjectId, name, path, threads: [thread] }],
       };
     });
     if (openId) get().openThread(openId);
+    // A repo that already carries a fleet (committed by a teammate) skips the picker.
+    if (newProjectId) {
+      const id = newProjectId;
+      void projectHasFleet(path)
+        .then((has) => {
+          if (!has) set({ fleetPickerProjectId: id });
+        })
+        .catch(() => {});
+    }
+  },
+  setFleetPicker: (fleetPickerProjectId, initial = null) =>
+    set({ fleetPickerProjectId, fleetPickerInitial: initial }),
+  saveFleet: async (projectId, agents) => {
+    const project = get().projects.find((p) => p.id === projectId);
+    if (!project?.path) return;
+    await ipcSetSubagentsEnabled("project", fleetChanges(agents), project.path);
+    modelApplied.clear();
+    permissionModeApplied.clear();
+    set({ fleetPickerProjectId: null });
+    await get().refreshSubagents(project.path);
   },
   setProjectLinear: (projectId, link) =>
     set((s) => ({
@@ -1531,10 +1558,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Leave the prior cache. A stale registry beats an empty one.
     }
   },
-  setSubagentEnabled: async (scope, name, enabled, projectPath) => {
-    await ipcSetSubagentEnabled(scope, name, enabled, projectPath ?? null);
+  setProjectAgentEnabled: async (projectId, name, enabled) => {
+    const path = get().projects.find((p) => p.id === projectId)?.path;
+    if (!path) return;
+    await ipcSetSubagentEnabled("project", name, enabled, path);
     modelApplied.clear();
     permissionModeApplied.clear();
+    await get().refreshSubagents(path);
+  },
+  setProjectAgentModel: async (projectId, name, model) => {
+    const path = get().projects.find((p) => p.id === projectId)?.path;
+    if (!path) return;
+    await ipcSetSubagentModel("project", name, model, path);
+    await get().refreshSubagents(path);
   },
 
   setActiveSessionId: (id) => set({ activeSessionId: id }),
@@ -3672,13 +3708,16 @@ async function branchIntoChildThread(
 
 // Resolve a subagent def's fuzzy `model` string (a free-text name in the
 // registry file, not a validated ModelRef) against the loaded model list
-// (HOY-234). Exact id match first, else a case-insensitive substring match on
+// (HOY-234). An exact "provider/id" (the Agents panel's pick, HOY-368) first,
+// then an exact id, else a case-insensitive substring match on
 // id or name. Null when nothing matches, so the caller falls back to the
 // parent thread's model rather than spawning on a bogus pick.
 function resolveModelRef(
   state: SessionStore,
   fuzzy: string,
 ): ModelRef | null {
+  const keyed = state.models.find((m) => modelKey(m) === fuzzy);
+  if (keyed) return { provider: keyed.provider, id: keyed.id };
   const exact = state.models.find((m) => m.id === fuzzy);
   if (exact) return { provider: exact.provider, id: exact.id };
   const needle = fuzzy.toLowerCase();

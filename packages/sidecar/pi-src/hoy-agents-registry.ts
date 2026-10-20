@@ -1,8 +1,9 @@
 // HOY-234 Phase 3: the subagent registry. Built-ins (code) + global + project
 // `.hoy/agents/*.md` are parsed with Pi's parseFrontmatter, merged by precedence
 // (builtin < global < project), tools validated and `agent` stripped (depth cap),
-// and disabled state overlaid from subagents.json. The sidecar is the single
-// parser. Rust reads this only via the one-shot list mode (hoy-sidecar.ts).
+// and on/off and model overrides overlaid from each scope's settings.json
+// (hoy.agents). The sidecar is the single parser. Rust reads this only via the
+// one-shot list mode (hoy-sidecar.ts).
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -313,7 +314,7 @@ function parseAgentFile(path: string, name: string, scope: SubagentScope): Subag
     thinking: typeof fm.thinking === "string" ? fm.thinking : undefined,
     source: path,
     // Frontmatter default (HOY-244): a type ships disabled with `enabled: false`
-    // anything else defaults on. The subagents.json overlay below can force it on
+    // anything else defaults on. The settings.json overlay below can force it on
     // (the settings toggle) or off, overriding this default.
     enabled: fm.enabled !== false,
     inheritContext: fm.inherit_context === true,
@@ -338,16 +339,37 @@ function agentFiles(dir: string): Array<{ name: string; path: string }> {
     .map((n) => ({ name: n.slice(0, -3), path: join(dir, n) }));
 }
 
-// A string-name set under `key` in a scope's subagents.json (e.g. "disabled" or
-// "enabled"). Missing/malformed -> empty set.
-function nameSet(path: string, key: "disabled" | "enabled"): Set<string> {
+// HOY-368: a scope's agent overrides, from the hoy.agents section of its
+// settings.json (shared with pi), else the legacy subagents.json beside it.
+type AgentOverrides = { enabled?: unknown; disabled?: unknown; models?: unknown };
+
+function readJson(path: string): any {
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
-    const list = parsed && Array.isArray(parsed[key]) ? parsed[key] : [];
-    return new Set(list.filter((x: unknown): x is string => typeof x === "string"));
+    return JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    return new Set();
+    return undefined;
   }
+}
+
+export function readAgentOverrides(dir: string): AgentOverrides {
+  const section = readJson(join(dir, "settings.json"))?.hoy?.agents;
+  if (section && typeof section === "object") return section;
+  const legacy = readJson(join(dir, "subagents.json"));
+  return legacy && typeof legacy === "object" ? legacy : {};
+}
+
+// A string-name set under `key` ("disabled" or "enabled"). Malformed -> empty.
+function nameSet(o: AgentOverrides, key: "disabled" | "enabled"): Set<string> {
+  const list = Array.isArray(o[key]) ? (o[key] as unknown[]) : [];
+  return new Set(list.filter((x: unknown): x is string => typeof x === "string"));
+}
+
+// Per-agent model overrides, {name: "provider/id"}.
+function modelMap(o: AgentOverrides): Record<string, string> {
+  if (!o.models || typeof o.models !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(o.models).filter((e): e is [string, string] => typeof e[1] === "string" && e[1].length > 0),
+  );
 }
 
 export function loadSubagentRegistry(agentDir: string, cwd: string): SubagentRegistry {
@@ -365,16 +387,18 @@ export function loadSubagentRegistry(agentDir: string, cwd: string): SubagentReg
       if (parsed) reg[name] = parsed;
     }
   }
-  // Overlay explicit enable/disable overrides from subagents.json, global then
-  // project so the project scope wins. `enabled` forces a type on (overriding a
-  // frontmatter `enabled: false`), `disabled` forces it off. A name in neither
-  // keeps its frontmatter default. The settings toggle writes into these lists.
-  for (const dir of [join(agentDir, "subagents.json"), join(cwd, ".hoy", "subagents.json")]) {
-    const on = nameSet(dir, "enabled");
-    const off = nameSet(dir, "disabled");
+  // Overlay explicit overrides, global then project so the project scope wins.
+  // `enabled` forces a type on (overriding a frontmatter `enabled: false`),
+  // `disabled` forces it off; a name in neither keeps its default.
+  for (const dir of [agentDir, join(cwd, ".hoy")]) {
+    const o = readAgentOverrides(dir);
+    const on = nameSet(o, "enabled");
+    const off = nameSet(o, "disabled");
+    const models = modelMap(o);
     for (const name of Object.keys(reg)) {
       if (on.has(name)) reg[name].enabled = true;
       else if (off.has(name)) reg[name].enabled = false;
+      if (models[name]) reg[name].model = models[name];
     }
   }
   return reg;

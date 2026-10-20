@@ -398,6 +398,35 @@ pub async fn set_subagent_enabled(
     Ok(())
 }
 
+// HOY-368: save a project's fleet (several agents on or off) in one write.
+#[tauri::command]
+pub async fn set_subagents_enabled(
+    scope: SubagentScope,
+    changes: Vec<(String, bool)>,
+    project_path: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    subagents_config::set_many_enabled(scope, project_path.as_deref(), &changes)?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
+}
+
+// HOY-368: pick the model an agent runs on ("provider/id"), or clear it.
+#[tauri::command]
+pub async fn set_subagent_model(
+    scope: SubagentScope,
+    name: String,
+    model: Option<String>,
+    project_path: Option<String>,
+) -> Result<(), String> {
+    subagents_config::set_model(scope, project_path.as_deref(), &name, model.as_deref())
+}
+
+#[tauri::command]
+pub fn project_has_fleet(project_path: String) -> bool {
+    subagents_config::project_has_fleet(&project_path)
+}
+
 // HOY-254 (Slice 1): author a custom subagent type. Rust serializes `def` into a
 // .md in the scope's agents dir (the single writer. The sidecar registry stays the
 // only reader). `overwrite=false` creates (rejecting an unsafe/duplicate name or

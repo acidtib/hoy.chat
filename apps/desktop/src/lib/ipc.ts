@@ -187,6 +187,29 @@ export function listSkills(cwd: string): Promise<SkillList> {
   return invoke<SkillList>("list_skills", { cwd });
 }
 
+// HOY-368: a project's fleet as one write: [name, enabled] pairs.
+export function setSubagentsEnabled(
+  scope: SubagentScope,
+  changes: Array<[string, boolean]>,
+  projectPath?: string | null,
+): Promise<void> {
+  return invoke<void>("set_subagents_enabled", { scope, changes, projectPath: projectPath ?? null });
+}
+
+// The model an agent runs on, as "provider/id"; null clears the override.
+export function setSubagentModel(
+  scope: SubagentScope,
+  name: string,
+  model: string | null,
+  projectPath?: string | null,
+): Promise<void> {
+  return invoke<void>("set_subagent_model", { scope, name, model, projectPath: projectPath ?? null });
+}
+
+export function projectHasFleet(projectPath: string): Promise<boolean> {
+  return invoke<boolean>("project_has_fleet", { projectPath });
+}
+
 export function setSubagentEnabled(
   scope: SubagentScope,
   name: string,

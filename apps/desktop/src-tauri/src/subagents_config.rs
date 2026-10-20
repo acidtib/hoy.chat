@@ -14,8 +14,15 @@ pub enum SubagentScope {
     Project,
 }
 
+// HOY-368: agent overrides live in the `hoy.agents` section of settings.json,
+// the same file pi uses for its own settings (pi re-reads it and writes back
+// only the fields it changed, so the section survives). The legacy
+// subagents.json is read as a fallback and removed on the next write.
+const SETTINGS_FILE: &str = "settings.json";
+const LEGACY_FILE: &str = "subagents.json";
+
 fn global_path() -> Result<PathBuf, String> {
-    Ok(agent_dir()?.join("subagents.json"))
+    Ok(agent_dir()?.join(SETTINGS_FILE))
 }
 
 fn project_path(project: &str) -> Result<PathBuf, String> {
@@ -24,7 +31,7 @@ fn project_path(project: &str) -> Result<PathBuf, String> {
     }
     Ok(PathBuf::from(project)
         .join(PROJECT_CONFIG_DIR)
-        .join("subagents.json"))
+        .join(SETTINGS_FILE))
 }
 
 fn path_for(scope: SubagentScope, project: Option<&str>) -> Result<PathBuf, String> {
@@ -34,14 +41,45 @@ fn path_for(scope: SubagentScope, project: Option<&str>) -> Result<PathBuf, Stri
     }
 }
 
-// read_config_at + write_config_atomic_at cloned from mcp_config.rs (verbatim,
-// only the tmp filename literal changes to "subagents.json.tmp-{pid}").
+fn legacy_path(settings: &Path) -> PathBuf {
+    settings.with_file_name(LEGACY_FILE)
+}
 
-// Missing or malformed file -> empty object. Never error the read side: a bad
-// subagents.json must not block the settings page from loading the other scope.
-fn read_config_at(path: &Path) -> Map<String, Value> {
+// The whole settings file. Missing or empty -> empty object; unparseable ->
+// Err, so a broken pi settings file is never overwritten.
+fn read_settings_at(path: &Path) -> Result<Map<String, Value>, String> {
     match std::fs::read(path) {
-        Ok(bytes) if bytes.is_empty() => Map::new(),
+        Ok(bytes) if bytes.iter().all(u8::is_ascii_whitespace) => Ok(Map::new()),
+        Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
+            Ok(Value::Object(map)) => Ok(map),
+            _ => Err(format!(
+                "{} is not a JSON object; fix it before changing agents",
+                path.display()
+            )),
+        },
+        Err(_) => Ok(Map::new()),
+    }
+}
+
+fn agents_section(settings: &Map<String, Value>) -> Option<Map<String, Value>> {
+    match settings.get("hoy").and_then(|h| h.get("agents")) {
+        Some(Value::Object(m)) => Some(m.clone()),
+        _ => None,
+    }
+}
+
+// The agent overrides at `path` (a settings.json): its hoy.agents section, else
+// the legacy subagents.json beside it. Never errors: a bad file must not block
+// the settings page from loading the other scope.
+fn read_config_at(path: &Path) -> Map<String, Value> {
+    if let Some(section) = read_settings_at(path)
+        .ok()
+        .as_ref()
+        .and_then(agents_section)
+    {
+        return section;
+    }
+    match std::fs::read(legacy_path(path)) {
         Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
             Ok(Value::Object(map)) => map,
             _ => Map::new(),
@@ -50,23 +88,88 @@ fn read_config_at(path: &Path) -> Map<String, Value> {
     }
 }
 
-// Atomic replace, preserving unknown top-level keys (the caller mutates the map).
-// Mirrors pi_config::write_auth_map_atomic_at. 0600 because an inline secret,
-// while discouraged, is possible.
-fn write_config_atomic_at(path: &Path, config: &Map<String, Value>) -> Result<(), String> {
-    let dir = path.parent().ok_or("subagents.json path has no parent")?;
-    std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+// pi guards settings.json with proper-lockfile: a `<file>.lock` directory,
+// created atomically with mkdir, treated as stale once its mtime is 10s old.
+// Taking the same lock keeps a pi write and a Hoy write from interleaving.
+const LOCK_STALE: std::time::Duration = std::time::Duration::from_secs(10);
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
+struct SettingsLock(PathBuf);
+
+impl Drop for SettingsLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir(&self.0);
     }
+}
+
+fn lock_settings(path: &Path, wait: std::time::Duration) -> Result<SettingsLock, String> {
+    let lock = PathBuf::from(format!("{}.lock", path.display()));
+    let start = std::time::Instant::now();
+    loop {
+        match std::fs::create_dir(&lock) {
+            Ok(()) => return Ok(SettingsLock(lock)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let stale = std::fs::metadata(&lock)
+                    .and_then(|m| m.modified())
+                    .map(|t| t.elapsed().unwrap_or_default() > LOCK_STALE)
+                    .unwrap_or(false);
+                if stale {
+                    let _ = std::fs::remove_dir(&lock);
+                    continue;
+                }
+                if start.elapsed() > wait {
+                    return Err(format!(
+                        "{} is locked by another writer; try again",
+                        path.display()
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Err(e) => return Err(format!("lock {}: {e}", lock.display())),
+        }
+    }
+}
+
+// Store `agents` as hoy.agents in the settings file, keeping every other key,
+// then drop the legacy subagents.json whose contents the caller migrated.
+fn write_config_atomic_at(path: &Path, agents: &Map<String, Value>) -> Result<(), String> {
+    write_config_locked_at(path, agents, LOCK_WAIT)
+}
+
+fn write_config_locked_at(
+    path: &Path,
+    agents: &Map<String, Value>,
+    wait: std::time::Duration,
+) -> Result<(), String> {
+    let dir = path.parent().ok_or("settings.json path has no parent")?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    let _lock = lock_settings(path, wait)?;
+    let mut settings = read_settings_at(path)?;
+    let mut hoy = match settings.remove("hoy") {
+        Some(Value::Object(m)) => m,
+        _ => Map::new(),
+    };
+    if agents.is_empty() {
+        hoy.remove("agents");
+    } else {
+        hoy.insert("agents".to_string(), Value::Object(agents.clone()));
+    }
+    if !hoy.is_empty() {
+        settings.insert("hoy".to_string(), Value::Object(hoy));
+    }
+    write_file_atomic_at(path, &settings)?;
+    let _ = std::fs::remove_file(legacy_path(path));
+    Ok(())
+}
+
+fn write_file_atomic_at(path: &Path, config: &Map<String, Value>) -> Result<(), String> {
+    let dir = path.parent().ok_or("settings.json path has no parent")?;
 
     let mut body = serde_json::to_vec_pretty(&Value::Object(config.clone()))
-        .map_err(|e| format!("serialize subagents.json: {e}"))?;
+        .map_err(|e| format!("serialize settings.json: {e}"))?;
     body.push(b'\n');
 
-    let tmp = dir.join(format!("subagents.json.tmp-{}", std::process::id()));
+    let tmp = dir.join(format!("settings.json.tmp-hoy-{}", std::process::id()));
     {
         use std::io::Write;
         let mut f = std::fs::OpenOptions::new()
@@ -75,20 +178,14 @@ fn write_config_atomic_at(path: &Path, config: &Map<String, Value>) -> Result<()
             .truncate(true)
             .open(&tmp)
             .map_err(|e| format!("open {}: {e}", tmp.display()))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
-        }
         f.write_all(&body)
             .and_then(|_| f.flush())
             .and_then(|_| f.sync_all())
             .map_err(|e| format!("write {}: {e}", tmp.display()))?;
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    // Keep the existing file's mode (pi's settings.json is not a secret file).
+    if let Ok(meta) = std::fs::metadata(path) {
+        let _ = std::fs::set_permissions(&tmp, meta.permissions());
     }
     std::fs::rename(&tmp, path).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
@@ -106,7 +203,7 @@ fn name_vec(config: &Map<String, Value>, key: &str) -> Vec<String> {
     }
 }
 
-// Store an empty list as an absent key so subagents.json stays minimal.
+// Store an empty list as an absent key so the agents section stays minimal.
 fn put_list(config: &mut Map<String, Value>, key: &str, list: Vec<String>) {
     if list.is_empty() {
         config.remove(key);
@@ -187,6 +284,90 @@ pub fn set_enabled(
     set_enabled_at(&path_for(scope, project)?, name.trim(), enabled)
 }
 
+// HOY-368: set several agents on or off in one write, so choosing a project's
+// fleet is one file change and one respawn.
+fn set_many_enabled_at(path: &Path, changes: &[(String, bool)]) -> Result<(), String> {
+    let _guard = SUBAGENTS_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    mutate_override_locked(path, |enabled_list, disabled_list| {
+        let mut changed = false;
+        for (name, on) in changes {
+            let (add, remove) = if *on {
+                (&mut *enabled_list, &mut *disabled_list)
+            } else {
+                (&mut *disabled_list, &mut *enabled_list)
+            };
+            changed |= ensure_present(add, name);
+            changed |= ensure_absent(remove, name);
+        }
+        changed
+    })
+}
+
+pub fn set_many_enabled(
+    scope: SubagentScope,
+    project: Option<&str>,
+    changes: &[(String, bool)],
+) -> Result<(), String> {
+    if changes.iter().any(|(n, _)| n.trim().is_empty()) {
+        return Err("subagent name is required".to_string());
+    }
+    set_many_enabled_at(&path_for(scope, project)?, changes)
+}
+
+// A per-agent model override under `models` ({name: "provider/id"}). None
+// clears it so the agent falls back to its own default.
+fn set_model_at(path: &Path, name: &str, model: Option<&str>) -> Result<(), String> {
+    let _guard = SUBAGENTS_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut config = read_config_at(path);
+    let mut models = match config.remove("models") {
+        Some(Value::Object(m)) => m,
+        _ => Map::new(),
+    };
+    match model.map(str::trim).filter(|m| !m.is_empty()) {
+        Some(m) => {
+            models.insert(name.to_string(), Value::String(m.to_string()));
+        }
+        None => {
+            models.remove(name);
+        }
+    }
+    if !models.is_empty() {
+        config.insert("models".to_string(), Value::Object(models));
+    }
+    write_config_atomic_at(path, &config)
+}
+
+pub fn set_model(
+    scope: SubagentScope,
+    project: Option<&str>,
+    name: &str,
+    model: Option<&str>,
+) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("subagent name is required".to_string());
+    }
+    set_model_at(&path_for(scope, project)?, name.trim(), model)
+}
+
+// Whether the project already carries a fleet choice, for example one
+// committed by a teammate.
+pub fn project_has_fleet(project: &str) -> bool {
+    project_path(project)
+        .map(|p| {
+            read_settings_at(&p)
+                .ok()
+                .as_ref()
+                .and_then(agents_section)
+                .is_some()
+                || legacy_path(&p).exists()
+        })
+        .unwrap_or(false)
+}
+
 // HOY-254 (Slice 1): the write path for custom subagent types. Rust serializes a
 // type into a `<scope>/agents/<name>.md` (global agent dir or <project>/.hoy/
 // agents). The sidecar's hoy-agents-registry.ts is the single READER. This is the
@@ -213,7 +394,7 @@ const BUILTIN_NAMES: [&str; 10] = [
 // The fields a custom type carries, deserialized from the write command's `def`
 // arg (camelCase from the renderer). Mirrors SubagentDef/SubagentWrite on the TS
 // side. `enabled` is absent by design: a new type is enabled by default and the
-// on/off state is owned by the two-sided override in subagents.json (set_enabled),
+// on/off state is owned by the two-sided override in settings.json hoy.agents (set_enabled),
 // not the.md. The Option is kept so a caller CAN ship a type disabled, but the
 // renderer does not.
 #[derive(Debug, Clone, Deserialize)]
@@ -519,6 +700,98 @@ pub fn delete_subagent(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn set_many_enabled_writes_both_lists_in_one_pass() {
+        let dir = std::env::temp_dir().join(format!("hoy-fleet-many-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("settings.json");
+        set_enabled_at(&path, "Coder", false).unwrap();
+        set_many_enabled_at(
+            &path,
+            &[
+                ("Coder".into(), true),
+                ("Tester".into(), false),
+                ("DevOps".into(), true),
+            ],
+        )
+        .unwrap();
+        let config = read_config_at(&path);
+        assert_eq!(name_vec(&config, "enabled"), vec!["Coder", "DevOps"]);
+        assert_eq!(name_vec(&config, "disabled"), vec!["Tester"]);
+    }
+
+    #[test]
+    fn legacy_subagents_json_migrates_into_settings_on_write() {
+        let dir = std::env::temp_dir().join(format!("hoy-fleet-legacy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        std::fs::write(dir.join("subagents.json"), br#"{"disabled":["Coder"]}"#).unwrap();
+        assert_eq!(name_vec(&read_config_at(&path), "disabled"), vec!["Coder"]);
+        set_enabled_at(&path, "Tester", false).unwrap();
+        assert_eq!(
+            name_vec(&read_config_at(&path), "disabled"),
+            vec!["Coder", "Tester"]
+        );
+        assert!(!dir.join("subagents.json").exists());
+    }
+
+    #[test]
+    fn a_held_settings_lock_blocks_the_write_and_a_stale_one_is_cleared() {
+        let dir = std::env::temp_dir().join(format!("hoy-fleet-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        let lock = dir.join("settings.json.lock");
+        let mut agents = Map::new();
+        agents.insert("disabled".into(), json!(["Coder"]));
+
+        // A live lock (fresh mtime) held by pi: the write waits, then gives up untouched.
+        std::fs::create_dir(&lock).unwrap();
+        let err = write_config_locked_at(&path, &agents, std::time::Duration::from_millis(100))
+            .unwrap_err();
+        assert!(err.contains("locked"));
+        assert!(!path.exists());
+
+        // The same lock left behind by a crashed writer: stale after 10s, so cleared.
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        std::fs::File::open(&lock)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        write_config_locked_at(&path, &agents, std::time::Duration::from_millis(100)).unwrap();
+        assert_eq!(name_vec(&read_config_at(&path), "disabled"), vec!["Coder"]);
+        assert!(!lock.exists());
+    }
+
+    #[test]
+    fn a_broken_settings_file_is_never_overwritten() {
+        let dir = std::env::temp_dir().join(format!("hoy-fleet-broken-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        std::fs::write(&path, b"{ not json").unwrap();
+        assert!(set_enabled_at(&path, "Coder", false).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"{ not json");
+    }
+
+    #[test]
+    fn set_model_adds_and_clears_without_touching_other_keys() {
+        let dir = std::env::temp_dir().join(format!("hoy-fleet-model-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("settings.json");
+        set_enabled_at(&path, "Coder", false).unwrap();
+        set_model_at(&path, "Researcher", Some("anthropic/claude-haiku")).unwrap();
+        let config = read_config_at(&path);
+        assert_eq!(config["models"]["Researcher"], "anthropic/claude-haiku");
+        assert_eq!(name_vec(&config, "disabled"), vec!["Coder"]);
+        set_model_at(&path, "Researcher", None).unwrap();
+        let config = read_config_at(&path);
+        assert!(config.get("models").is_none());
+        assert_eq!(name_vec(&config, "disabled"), vec!["Coder"]);
+    }
+
     use super::*;
     use serde_json::json;
 
@@ -526,29 +799,31 @@ mod tests {
     fn disable_then_enable_round_trips_and_preserves_unknown_keys() {
         let dir = std::env::temp_dir().join(format!("hoy-sub-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("subagents.json");
-        // Seed an unknown top-level key to prove read-modify-write preserves it.
+        let path = dir.join("settings.json");
+        // pi's own keys and an unknown hoy key must survive the read-modify-write.
         std::fs::write(
             &path,
-            serde_json::to_vec(&json!({ "note": "keep", "disabled": [] })).unwrap(),
+            serde_json::to_vec(&json!({ "defaultModel": "m", "hoy": { "note": "keep", "agents": { "disabled": [] } } }))
+                .unwrap(),
         )
         .unwrap();
 
         set_enabled_at(&path, "Auditor", false).unwrap();
         let after: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(after["note"], "keep");
-        assert_eq!(after["disabled"], json!(["Auditor"]));
+        assert_eq!(after["defaultModel"], "m");
+        assert_eq!(after["hoy"]["note"], "keep");
+        assert_eq!(after["hoy"]["agents"]["disabled"], json!(["Auditor"]));
         // An empty list is stored as an absent key, not `[]`.
-        assert!(after.get("enabled").is_none());
+        assert!(after["hoy"]["agents"].get("enabled").is_none());
 
         set_enabled_at(&path, "Auditor", true).unwrap();
         let after2: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         // Enabling moves the name from disabled to enabled (two-sided override),
         // so a frontmatter-disabled type can be forced on from the settings toggle.
-        assert!(after2.get("disabled").is_none());
-        assert_eq!(after2["enabled"], json!(["Auditor"]));
+        assert!(after2["hoy"]["agents"].get("disabled").is_none());
+        assert_eq!(after2["hoy"]["agents"]["enabled"], json!(["Auditor"]));
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -694,7 +969,7 @@ mod tests {
         let proj = std::env::temp_dir().join(format!("hoy-agent-clr-{}", std::process::id()));
         std::fs::remove_dir_all(&proj).ok();
         let p = proj.to_str().unwrap();
-        let json_path = proj.join(".hoy").join("subagents.json");
+        let json_path = proj.join(".hoy").join("settings.json");
 
         write_subagent(
             SubagentScope::Project,
@@ -707,7 +982,7 @@ mod tests {
         set_enabled(SubagentScope::Project, Some(p), "Auditor", false).unwrap();
         let before: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&json_path).unwrap()).unwrap();
-        assert_eq!(before["disabled"], json!(["Auditor"]));
+        assert_eq!(before["hoy"]["agents"]["disabled"], json!(["Auditor"]));
 
         // Deleting the type must also purge its override so a future same-named
         // type does not inherit the stale off state.
@@ -760,7 +1035,7 @@ mod tests {
         let proj = std::env::temp_dir().join(format!("hoy-agent-bi-{}", std::process::id()));
         std::fs::remove_dir_all(&proj).ok();
         let p = proj.to_str().unwrap();
-        let json_path = proj.join(".hoy").join("subagents.json");
+        let json_path = proj.join(".hoy").join("settings.json");
         // The user disabled the built-in "Writer" (no.md file involved).
         set_enabled(SubagentScope::Project, Some(p), "Writer", false).unwrap();
         // Deleting a same-named file (none here) must NOT wipe the built-in's
@@ -768,7 +1043,7 @@ mod tests {
         delete_subagent(SubagentScope::Project, Some(p), "Writer").unwrap();
         let after: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&json_path).unwrap()).unwrap();
-        assert_eq!(after["disabled"], json!(["Writer"]));
+        assert_eq!(after["hoy"]["agents"]["disabled"], json!(["Writer"]));
         std::fs::remove_dir_all(&proj).ok();
     }
 }

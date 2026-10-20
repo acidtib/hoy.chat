@@ -229,3 +229,28 @@ test("effectiveChildPrompt: replace uses the body, append concatenates, none use
   expect(effectiveChildPrompt({ name: "b", scope: "builtin", tools: [], promptMode: "append", body: "BODY", enabled: true }, base)).toBe("BASE\n\nBODY");
   expect(effectiveChildPrompt({ name: "c", scope: "builtin", tools: [], promptMode: "replace", enabled: true }, base)).toBe("BASE");
 });
+
+test("settings.json hoy.agents models override an agent's model, project over global (HOY-368)", () => {
+  const agentDir = tmp();
+  const cwd = tmp();
+  writeFileSync(
+    join(agentDir, "settings.json"),
+    JSON.stringify({ defaultModel: "x", hoy: { agents: { models: { Researcher: "a/global", Coder: "a/coder" } } } }),
+  );
+  mkdirSync(join(cwd, ".hoy"), { recursive: true });
+  writeFileSync(join(cwd, ".hoy", "settings.json"), JSON.stringify({ hoy: { agents: { models: { Researcher: "b/project" } } } }));
+  const reg = loadSubagentRegistry(agentDir, cwd);
+  expect(reg["Researcher"].model).toBe("b/project");
+  expect(reg["Coder"].model).toBe("a/coder");
+  expect(reg["Tester"].model).toBeUndefined();
+});
+
+test("settings.json hoy.agents wins over a leftover subagents.json", () => {
+  const cwd = tmp();
+  mkdirSync(join(cwd, ".hoy"), { recursive: true });
+  writeFileSync(join(cwd, ".hoy", "subagents.json"), JSON.stringify({ disabled: ["Coder"] }));
+  writeFileSync(join(cwd, ".hoy", "settings.json"), JSON.stringify({ hoy: { agents: { disabled: ["Tester"] } } }));
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  expect(reg["Coder"].enabled).toBe(true);
+  expect(reg["Tester"].enabled).toBe(false);
+});

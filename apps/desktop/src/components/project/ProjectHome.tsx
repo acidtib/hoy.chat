@@ -3,7 +3,11 @@ import { Bot, Loader2, Plus, Search, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProjectFleet, TeamMenu } from "@/components/fleet/ProjectFleet";
 import { ThreadModelIcon } from "@/components/ThreadModelIcon";
-import type { Project, SubagentDef, Thread } from "@/lib/types";
+import type { ModelInfo, Project, SubagentDef, Thread } from "@/lib/types";
+import { Switch } from "@/components/ui/switch";
+import { AgentModelSelect } from "@/components/AgentModelSelect";
+import { visibleModels } from "@/lib/models";
+import { usePrefsStore } from "@/state/prefs";
 import { agentThreads } from "@/lib/delegate";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { isSubagentThread } from "@/state/delivery";
@@ -144,76 +148,148 @@ function ThreadsView({ project }: { project: Project }) {
   );
 }
 
+// HOY-368: the project's fleet. On/off and each agent's model are saved to the
+// project's .hoy/settings.json; the definitions live in Settings, Agents.
 function AgentsView({ project }: { project: Project }) {
   const subagents = useSessionStore((s) => s.subagents);
   const refreshSubagents = useSessionStore((s) => s.refreshSubagents);
   const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
+  const setFleetPicker = useSessionStore((s) => s.setFleetPicker);
+  const setAgentEnabled = useSessionStore((s) => s.setProjectAgentEnabled);
+  const setAgentModel = useSessionStore((s) => s.setProjectAgentModel);
+  const models = useSessionStore((s) => s.models);
+  const disabledModels = usePrefsStore((p) => p.disabledModels);
+  const pickable = useMemo(() => visibleModels(models, disabledModels), [models, disabledModels]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (subagents.length === 0) void refreshSubagents(project.path ?? "");
-  }, [subagents.length, project.path, refreshSubagents]);
+    void refreshSubagents(project.path ?? "");
+  }, [project.path, refreshSubagents]);
+
+  const run = (fn: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    fn()
+      .catch((e) => setError(String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  const builtin = subagents.filter((d) => d.scope === "builtin");
+  const custom = subagents.filter((d) => d.scope !== "builtin");
+  const onCount = subagents.filter((d) => d.enabled).length;
+  const group = (title: string, defs: SubagentDef[]) =>
+    defs.length > 0 && (
+      <section key={title}>
+        <h3 className="pb-1.5 text-xs font-medium text-muted-foreground">{title}</h3>
+        <ul className="divide-y divide-border border border-border bg-card/40">
+          {defs.map((def) => (
+            <AgentItem
+              key={def.name}
+              def={def}
+              project={project}
+              models={pickable}
+              busy={busy}
+              onToggle={(on) => run(() => setAgentEnabled(project.id, def.name, on))}
+              onModel={(m) => run(() => setAgentModel(project.id, def.name, m))}
+            />
+          ))}
+        </ul>
+      </section>
+    );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col p-4">
-      <div className="flex shrink-0 items-center pb-3">
-        <p className="text-xs text-muted-foreground">
-          The agents tasks can be handed to. Each one runs with its own model,
-          prompt, and tools.
+      <div className="flex shrink-0 items-center gap-2 pb-3">
+        <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+          {subagents.length > 0
+            ? `${onCount} of ${subagents.length} agents on in this project. Saved in .hoy/settings.json.`
+            : "The agents tasks can be handed to in this project."}
         </p>
         <Button
           variant="outline"
           size="sm"
-          className="ml-auto"
+          className="cursor-pointer"
+          onClick={() =>
+            setFleetPicker(
+              project.id,
+              builtin.filter((d) => d.enabled).map((d) => d.name),
+            )
+          }
+        >
+          Choose preset
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="cursor-pointer"
           onClick={() => setSettingsOpen(true, "subagents")}
         >
           <Settings2 className="size-4" />
-          Manage agents
+          Agent library
         </Button>
       </div>
-      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto border border-border bg-card/40">
+      {error && <p className="pb-2 text-xs text-destructive">{error}</p>}
+      <div className="scrollbar-thin min-h-0 flex-1 space-y-4 overflow-y-auto">
         {subagents.length === 0 ? (
           <p className="p-4 text-xs text-muted-foreground">Loading agents...</p>
         ) : (
-          <ul className="divide-y divide-border">
-            {subagents.map((def) => (
-              <AgentItem key={def.name} def={def} project={project} />
-            ))}
-          </ul>
+          <>
+            {group("Built-in", builtin)}
+            {group("Your agents", custom)}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-function AgentItem({ def, project }: { def: SubagentDef; project: Project }) {
+function AgentItem({
+  def,
+  project,
+  models,
+  busy,
+  onToggle,
+  onModel,
+}: {
+  def: SubagentDef;
+  project: Project;
+  models: ModelInfo[];
+  busy: boolean;
+  onToggle: (on: boolean) => void;
+  onModel: (model: string | null) => void;
+}) {
   const streaming = useSessionStore((s) => s.streaming);
   const threads = agentThreads(project.threads, def.name);
   const working = threads.filter((t) => streaming[t.id]).length;
   return (
-    <li className={cn("flex items-center gap-3 px-3 py-2.5", !def.enabled && "opacity-50")}>
-      <div className="flex size-7 shrink-0 items-center justify-center border border-border bg-background text-agent">
+    <li className="flex items-center gap-3 px-3 py-2.5">
+      <div
+        className={cn(
+          "flex size-7 shrink-0 items-center justify-center border border-border bg-background text-agent",
+          !def.enabled && "opacity-50",
+        )}
+      >
         <Bot className="size-4" />
       </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
+      <div className={cn("min-w-0 flex-1", !def.enabled && "opacity-50")}>
+        <div className="flex items-baseline gap-2">
           <span className="text-sm font-semibold">{def.name}</span>
-          <span className="truncate text-xs text-muted-foreground">
-            {def.model ?? "Default model"}
-          </span>
+          {def.enabled && (working > 0 || threads.length > 0) && (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {working > 0 ? `${working} working` : `${threads.length} ${threads.length === 1 ? "task" : "tasks"}`}
+            </span>
+          )}
         </div>
-        {def.description && (
-          <p className="truncate text-xs text-muted-foreground">{def.description}</p>
-        )}
+        {def.description && <p className="truncate text-xs text-muted-foreground">{def.description}</p>}
       </div>
-      <span className="shrink-0 text-xs text-muted-foreground">
-        {!def.enabled
-          ? "Disabled"
-          : working > 0
-            ? `${working} working`
-            : threads.length > 0
-              ? `${threads.length} ${threads.length === 1 ? "task" : "tasks"}`
-              : "Free"}
-      </span>
+      <AgentModelSelect value={def.model ?? null} models={models} disabled={busy || !def.enabled} onChange={onModel} />
+      <Switch
+        checked={def.enabled}
+        disabled={busy}
+        onCheckedChange={onToggle}
+        aria-label={`Use ${def.name} in this project`}
+      />
     </li>
   );
 }
