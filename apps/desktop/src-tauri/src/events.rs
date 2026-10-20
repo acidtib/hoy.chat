@@ -299,6 +299,19 @@ pub struct GoalAudit {
     pub reason: String,
 }
 
+// HOY-353: the Dispatcher's verdict. `agent` is null unless it named a listed agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DispatchDecision {
+    pub ready: bool,
+    pub agent: Option<String>,
+    pub confidence: f64,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<f64>,
+}
+
 // Mirror of Pi's ImageContent (pi-ai). Sent on the prompt command's images[].
 // `data` is raw base64 with NO data: URI prefix. The renderer strips it before
 // invoke.

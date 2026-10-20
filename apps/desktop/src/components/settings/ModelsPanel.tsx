@@ -78,6 +78,7 @@ export function ModelsPanel() {
   const piDefault = useSessionStore((s) => s.defaultModel);
   const providers = useSessionStore((s) => s.supportedProviders);
   const preferred = usePrefsStore((s) => s.preferredModel);
+  const decisionModel = usePrefsStore((s) => s.decisionModel);
   const disabled = usePrefsStore((s) => s.disabledModels);
   const setPref = usePrefsStore((s) => s.setPref);
 
@@ -90,6 +91,10 @@ export function ModelsPanel() {
   const pickable = useMemo(
     () => groupByProvider(visibleModels(models, disabled, preferred)),
     [models, disabled, preferred],
+  );
+  const decisionPickable = useMemo(
+    () => groupByProvider(visibleModels(models, disabled, decisionModel)),
+    [models, disabled, decisionModel],
   );
   const groups = useMemo(() => groupByProvider(models), [models]);
 
@@ -131,14 +136,38 @@ export function ModelsPanel() {
             <DefaultModelPicker
               models={pickable}
               labelOf={labelOf}
-              preferred={preferred}
               current={preferred ?? piDefault}
               currentInfo={models.find((m) => sameModel(m, preferred ?? piDefault))}
-              lastUsed={lastUsed}
+              checked={preferred}
+              noneLabel="Last used"
+              activeSuffix={!preferred ? `(${lastUsed ?? "last used"})` : undefined}
               onPick={(ref) => {
                 setPref("preferredModel", ref);
                 if (ref) setPref("disabledModels", setModelsEnabled(disabled, [modelKey(ref)], true));
               }}
+            />
+          )}
+        </div>
+      </Section>
+
+      <Section
+        title="Decision model"
+        description="The model the Fleet Dispatcher uses to route tasks in Auto mode. By default it uses the cheapest enabled model across your providers."
+      >
+        <div className="mt-4">
+          {models.length === 0 ? (
+            <p className="border border-border bg-muted/20 px-3 py-2.5 text-sm text-muted-foreground">
+              Connect a provider in the Providers section to choose a model.
+            </p>
+          ) : (
+            <DefaultModelPicker
+              models={decisionPickable}
+              labelOf={labelOf}
+              current={decisionModel}
+              currentInfo={models.find((m) => sameModel(m, decisionModel))}
+              checked={decisionModel}
+              noneLabel="Cheapest available"
+              onPick={(ref) => setPref("decisionModel", ref)}
             />
           )}
         </div>
@@ -218,18 +247,20 @@ export function ModelsPanel() {
 function DefaultModelPicker({
   models,
   labelOf,
-  preferred,
   current,
   currentInfo,
-  lastUsed,
+  checked,
+  noneLabel,
+  activeSuffix,
   onPick,
 }: {
   models: [string, ModelInfo[]][];
   labelOf: (provider: string) => string;
-  preferred: ModelRef | null;
   current: ModelRef | null;
   currentInfo?: ModelInfo;
-  lastUsed: string | null;
+  checked: ModelRef | null;
+  noneLabel: string;
+  activeSuffix?: string;
   onPick: (ref: ModelRef | null) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -249,7 +280,8 @@ function DefaultModelPicker({
             model={current}
             info={currentInfo}
             providerLabel={labelOf(current?.provider ?? "")}
-            lastUsed={!preferred}
+            noneLabel={noneLabel}
+            activeSuffix={activeSuffix}
           />
           <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
         </button>
@@ -260,8 +292,8 @@ function DefaultModelPicker({
           <CommandList className="scrollbar-thin max-h-[50vh]">
             <CommandEmpty>No models found.</CommandEmpty>
             <CommandGroup>
-              <CommandItem value="last used" data-checked={!preferred} onSelect={() => pick(null)}>
-                Last used{lastUsed ? ` (${lastUsed})` : ""}
+              <CommandItem value="none" data-checked={!checked} onSelect={() => pick(null)}>
+                {noneLabel}
               </CommandItem>
             </CommandGroup>
             {models.map(([provider, list]) => (
@@ -270,7 +302,7 @@ function DefaultModelPicker({
                   <CommandItem
                     key={modelKey(m)}
                     value={`${m.name || m.id} ${m.id} ${labelOf(provider)}`}
-                    data-checked={sameModel(m, preferred)}
+                    data-checked={sameModel(m, checked)}
                     onSelect={() => pick({ provider: m.provider, id: m.id })}
                   >
                     <ProviderIcon provider={m.provider} label={labelOf(m.provider)} />
@@ -290,14 +322,16 @@ function DefaultModelValue({
   model,
   info,
   providerLabel,
-  lastUsed,
+  noneLabel,
+  activeSuffix,
 }: {
   model: ModelRef | null;
   info?: ModelInfo;
   providerLabel: string;
-  lastUsed: boolean;
+  noneLabel: string;
+  activeSuffix?: string;
 }) {
-  if (!model) return <span className="text-muted-foreground">Last used</span>;
+  if (!model) return <span className="text-muted-foreground">{noneLabel}</span>;
   const name = info?.name || model.id;
   return (
     <span className="flex min-w-0 items-center gap-3 text-left">
@@ -307,7 +341,7 @@ function DefaultModelValue({
       <span className="min-w-0">
         <span className="block truncate text-sm text-foreground">
           {name}
-          {lastUsed && <span className="text-muted-foreground"> (last used)</span>}
+          {activeSuffix && <span className="text-muted-foreground"> {activeSuffix}</span>}
         </span>
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>{providerLabel}</span>

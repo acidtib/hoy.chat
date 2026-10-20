@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   Plus,
   RefreshCw,
+  Sparkles,
   Square,
   X,
 } from "lucide-react";
@@ -32,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { agentThreads, unassignedIssues } from "@/lib/delegate";
+import { decisionCosts } from "@/lib/dispatch";
 import { ghStatus, projectIsGitRepo, type GhStatus } from "@/lib/ipc";
 import {
   costPerMinute,
@@ -47,6 +49,7 @@ import {
   type AgentForecast,
 } from "@/lib/fleet";
 import type {
+  DispatchDecision,
   LinearIssue,
   Project,
   QueuedIssue,
@@ -90,6 +93,8 @@ function Board({ project, teamId }: { project: Project; teamId: string | null })
   const subagents = useSessionStore((s) => s.subagents);
   const refreshSubagents = useSessionStore((s) => s.refreshSubagents);
   const enqueueIssue = useSessionStore((s) => s.enqueueIssue);
+  const triageAuto = useSessionStore((s) => s.triageAuto);
+  const decideIssue = useSessionStore((s) => s.decideIssue);
   const projects = useSessionStore((s) => s.projects);
   const [dragged, setDragged] = useState<LinearIssue | null>(null);
   const now = useNow(30_000);
@@ -148,6 +153,16 @@ function Board({ project, teamId }: { project: Project; teamId: string | null })
     [cache.items, project.threads, queue],
   );
 
+  // HOY-353: triageAuto is idempotent, so re-running on every change is cheap.
+  const auto = !!project.fleet?.auto;
+  useEffect(() => {
+    if (!auto || !teamId) return;
+    void triageAuto(project.id);
+  }, [auto, teamId, cache.items, open.length, subagents.length, project.id, triageAuto]);
+
+  const decisions = project.fleet?.decisions;
+  const decisionTotal = decisionCosts(decisions);
+
   // History spans every project: an agent's pace is not project specific.
   const allThreads = useMemo(() => projects.flatMap((p) => p.threads), [projects]);
   const plans = useMemo(
@@ -173,6 +188,11 @@ function Board({ project, teamId }: { project: Project; teamId: string | null })
     if (issue) enqueueIssue(project.id, issue, agent);
   };
 
+  const decisionOf = (issue: LinearIssue): DispatchDecision | null => {
+    const cached = decisions?.[issue.id];
+    return cached && cached.at === (issue.updatedAt ?? null) ? cached.decision : null;
+  };
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-3 px-4 pt-3 text-xs text-muted-foreground">
@@ -188,20 +208,27 @@ function Board({ project, teamId }: { project: Project; teamId: string | null })
         <div className="ml-auto flex shrink-0 items-center gap-3">
           <span
             className="font-mono"
-            title={
+            title={[
+              decisionTotal > 0
+                ? `${formatCost(decisionTotal)} spent on Dispatcher decisions.`
+                : null,
               unpriced
-                ? "Estimate. Agents with no finished runs yet are not counted."
-                : "Estimate from each agent's finished runs."
-            }
+                ? "Queue estimate. Agents with no finished runs yet are not counted."
+                : "Queue estimate from each agent's finished runs.",
+            ]
+              .filter(Boolean)
+              .join(" ")}
           >
+            {decisionTotal > 0 && (
+              <span className="text-muted-foreground">
+                {formatCost(decisionTotal)} decisions ·{" "}
+              </span>
+            )}
             {total > 0 ? `~${formatCost(total)}${unpriced ? "+" : ""}` : unpriced ? "$--" : "$0"}{" "}
             in queues
           </span>
           <PullRequestToggle project={project} />
-          <Mock className="flex items-center gap-1.5 border-l border-border pl-3">
-            Auto
-            <Switch disabled aria-label="Auto assign (mock)" />
-          </Mock>
+          <AutoToggle project={project} />
         </div>
       </div>
       <div className="flex min-h-0 min-w-0 flex-1 gap-3 p-4 pt-2">
@@ -248,6 +275,8 @@ function Board({ project, teamId }: { project: Project; teamId: string | null })
                   key={issue.id}
                   issue={issue}
                   agents={agents}
+                  decision={decisionOf(issue)}
+                  onDecide={() => decideIssue(project.id, issue)}
                   onAssign={(agent) => assign(issue.id, agent)}
                   onDrag={(d) => setDragged(d ? issue : null)}
                 />
@@ -371,15 +400,20 @@ function useNow(intervalMs: number): number {
 function IssueCard({
   issue,
   agents,
+  decision,
+  onDecide,
   onAssign,
   onDrag,
 }: {
   issue: LinearIssue;
   agents: SubagentDef[];
+  decision: DispatchDecision | null;
+  onDecide: () => Promise<void>;
   onAssign: (agent: string) => void;
   onDrag: (dragging: boolean) => void;
 }) {
   const [dragging, setDragging] = useState(false);
+  const [deciding, setDeciding] = useState(false);
   return (
     <div
       draggable
@@ -419,6 +453,36 @@ function IssueCard({
         <p className="mt-1 pb-2 text-sm leading-snug break-words text-foreground">
           {issue.title}
         </p>
+        {decision && (
+          <div className="flex items-center gap-1.5 px-2.5 pb-2 text-[11px]">
+            <Bot
+              className={cn(
+                "size-3 shrink-0",
+                decision.ready && decision.agent
+                  ? "text-agent"
+                  : decision.ready
+                    ? "text-muted-foreground"
+                    : "text-amber-500",
+              )}
+            />
+            <span className="shrink-0 font-medium">
+              {decision.agent ?? (decision.ready ? "Held" : "Not ready")}
+            </span>
+            {decision.agent && (
+              <span className="shrink-0 font-mono text-muted-foreground">
+                {Math.round(decision.confidence * 100)}%
+              </span>
+            )}
+            <span
+              className="min-w-0 truncate text-muted-foreground"
+              title={[decision.reason, decision.missing]
+                .filter(Boolean)
+                .join("\n")}
+            >
+              {decision.missing ?? decision.reason}
+            </span>
+          </div>
+        )}
       </div>
       <div className="flex h-8 items-center gap-1 border-t border-border px-2.5 text-[11px] text-muted-foreground">
         <span className="min-w-0 truncate">
@@ -433,6 +497,23 @@ function IssueCard({
             title="Open in Linear"
           >
             <ExternalLink className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDeciding(true);
+              void onDecide().finally(() => setDeciding(false));
+            }}
+            disabled={deciding}
+            className="flex size-6 cursor-pointer items-center justify-center hover:text-foreground disabled:cursor-default disabled:opacity-40"
+            aria-label={`Ask the Dispatcher about ${issue.identifier}`}
+            title="Run the Dispatcher decision for this task. It never assigns."
+          >
+            {deciding ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="size-3.5" />
+            )}
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1038,21 +1119,21 @@ export function TeamMenu({ project }: { project: Project }) {
   );
 }
 
-// Placeholder for a board control that is not wired yet (Auto, HOY-353).
-function Mock({
-  className,
-  children,
-}: {
-  className?: string;
-  children: React.ReactNode;
-}) {
+function AutoToggle({ project }: { project: Project }) {
+  const setFleetAuto = useSessionStore((s) => s.setFleetAuto);
+  const on = !!project.fleet?.auto;
   return (
-    <span
-      title="Mock: not wired yet"
-      className={cn("text-muted-foreground/70", className)}
+    <label
+      className="flex cursor-pointer items-center gap-1.5 border-l border-border pl-3"
+      title="The Dispatcher decides which agent takes each unassigned task. Tasks it judges not ready stay in Todo with a note on the card."
     >
-      {children}
-    </span>
+      Auto
+      <Switch
+        checked={on}
+        onCheckedChange={(v) => setFleetAuto(project.id, v)}
+        aria-label="Auto assign tasks"
+      />
+    </label>
   );
 }
 

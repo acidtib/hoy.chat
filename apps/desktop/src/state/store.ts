@@ -48,14 +48,23 @@ import {
   projectHasFleet,
   setThinkingLevel,
   linearSetIssueState,
+  linearComment,
   verifyGoalCommand,
+  dispatchDecision,
 } from "@/lib/ipc";
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { leafChainMessageIds } from "@/lib/treeNode";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
-import { findPullRequestUrl, issueBranch, issuePrompt } from "@/lib/delegate";
+import { findPullRequestUrl, issueBranch, issuePrompt, unassignedIssues } from "@/lib/delegate";
 import { currentAgentName, haltingThread, moveQueued, openRuns } from "@/lib/fleet";
+import {
+  agentLabel,
+  applyDecision,
+  dispatchInput,
+  nagComment,
+  needsDecision,
+} from "@/lib/dispatch";
 import { rewriteSkillCommand } from "@/lib/skill";
 import { modelKey, resolveDefaultModel } from "@/lib/models";
 import { fleetChanges } from "@/lib/fleetPresets";
@@ -68,6 +77,7 @@ import {
 } from "@/lib/plan";
 import { formatElapsed, shortId } from "@/lib/utils";
 import { usePrefsStore } from "@/state/prefs";
+import { useLinearStore } from "@/state/linear";
 import {
   childThreadIdsOf,
   extractResultText,
@@ -122,6 +132,7 @@ import type {
   Thread,
   Turn,
   UsageReport,
+  DispatchDecision,
 } from "@/lib/types";
 import {
   getSupportedThinkingLevels,
@@ -579,16 +590,27 @@ interface SessionStore {
     projectId: string,
     issue: LinearIssue,
     agent: string,
+    decision?: DispatchDecision | null,
   ) => string | null;
   // HOY-350: per-agent Fleet queues. A queued issue starts through
   // delegateIssue once its agent has a free slot and is not halted.
-  enqueueIssue: (projectId: string, issue: LinearIssue, agent: string) => void;
+  enqueueIssue: (
+    projectId: string,
+    issue: LinearIssue,
+    agent: string,
+    decision?: DispatchDecision | null,
+  ) => void;
   unqueueIssue: (projectId: string, issueId: string) => void;
   moveQueuedIssue: (projectId: string, issueId: string, delta: -1 | 1) => void;
   setAgentConcurrency: (projectId: string, agent: string, n: number) => void;
   // Acknowledge the run halting an agent's queue, so the queue moves again.
   resumeAgent: (projectId: string, agent: string) => void;
   pumpFleet: () => void;
+  setFleetAuto: (projectId: string, on: boolean) => void;
+  // HOY-353: one decision per issue revision, in priority order. Serial per project.
+  triageAuto: (projectId: string) => Promise<void>;
+  // Records a verdict only; an Auto pass queues it if ready.
+  decideIssue: (projectId: string, issue: LinearIssue) => Promise<void>;
   // HOY-358: projects known not to be git repositories. Their Fleet runs share
   // the project folder, so they start one at a time.
   nonGitProjects: Record<string, true>;
@@ -1236,7 +1258,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         p.id === projectId ? { ...p, linear: link } : p,
       ),
     })),
-  delegateIssue: (projectId, issue, agent) => {
+  delegateIssue: (projectId, issue, agent, decision = null) => {
     const s = get();
     if (!s.projects.some((p) => p.id === projectId)) return null;
     const def = s.subagents.find((d) => d.name === agent);
@@ -1269,13 +1291,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }));
     // The Fleet is the watch surface; a tab opens only when the user asks for one.
     if (usePrefsStore.getState().autoOpenSpawnedThreads) get().openThread(thread.id, { background: true });
-    void startDelegatedRun(projectId, thread.id, issue, agent);
+    void startDelegatedRun(projectId, thread.id, issue, agent, decision);
     linearSetIssueState(issue.id, "started").catch((e) =>
       pushNotice(thread.id, `Could not move ${issue.identifier} to In Progress: ${e}`, "warning"),
     );
     return thread.id;
   },
-  enqueueIssue: (projectId, issue, agent) => {
+  enqueueIssue: (projectId, issue, agent, decision = null) => {
     set((s) => ({
       projects: s.projects.map((p) => {
         if (p.id !== projectId) return p;
@@ -1285,7 +1307,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           ...p,
           fleet: {
             ...fleet,
-            queue: [...fleet.queue, { agent, issue, queuedAt: Date.now() }],
+            queue: [
+              ...fleet.queue,
+              { agent, issue, queuedAt: Date.now(), ...(decision ? { decision } : {}) },
+            ],
           },
         };
       }),
@@ -1367,11 +1392,80 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         for (const item of queue.filter((q) => q.agent === agent)) {
           if (free <= 0) break;
           get().unqueueIssue(p.id, item.issue.id);
-          get().delegateIssue(p.id, item.issue, agent);
+          get().delegateIssue(p.id, item.issue, agent, item.decision ?? null);
           free--;
         }
       }
     }
+  },
+  triageAuto: async (projectId) => {
+    // Queueing changes the open list, which re-fires the Board's effect mid-pass.
+    if (triaging.has(projectId)) return;
+    triaging.add(projectId);
+    try {
+      // Re-read the store each step: a queue action changes what is unassigned.
+      // nagTried keeps a failed note from retrying until the next pass.
+      const nagTried = new Set<string>();
+      for (;;) {
+        const s = get();
+        const project = s.projects.find((p) => p.id === projectId);
+        if (!project?.fleet?.auto || !project.linear) return;
+        if (s.subagents.length === 0) return; // registry not loaded yet
+        const available = availableAgents(s.subagents, project.threads);
+        const issues = useLinearStore.getState().issues[projectId]?.items ?? [];
+        const decisions = project.fleet.decisions ?? {};
+        const open = unassignedIssues(issues, project.threads, project.fleet.queue ?? []);
+        const pending = open.filter((i) => {
+          if (nagTried.has(i.id)) return false;
+          if (needsDecision(i, decisions)) return true;
+          const c = decisions[i.id]!;
+          const kind = applyDecision(c.decision, available).kind;
+          if (kind === "queue") return c.queuedAt !== (i.updatedAt ?? null);
+          return kind === "comment" && c.naggedAt !== (i.updatedAt ?? null);
+        });
+        const issue = pending[0];
+        if (!issue) return;
+
+        const at = issue.updatedAt ?? null;
+        const cached = decisions[issue.id];
+        const fresh = cached && cached.at === at;
+        const decision = fresh
+          ? cached.decision
+          : (labelDecision(issue, available) ??
+            (await askDispatcher(issue, available, project.threads)));
+        const action = applyDecision(decision, available);
+        // queuedAt: queued once per revision, so unqueueing it sticks.
+        if (!fresh || action.kind === "queue") {
+          recordFleetDecision(projectId, issue, decision, {
+            naggedAt: fresh ? cached.naggedAt : null,
+            queuedAt: action.kind === "queue" ? at : null,
+          });
+        }
+        if (action.kind === "queue") {
+          get().enqueueIssue(projectId, issue, action.agent, decision);
+        } else if (action.kind === "comment") {
+          nagTried.add(issue.id);
+          void linearComment(issue.identifier, nagComment(issue, decision))
+            .then(() => markNaggedDecision(projectId, issue.id, at))
+            .catch(() => {});
+        }
+      }
+    } finally {
+      triaging.delete(projectId);
+    }
+  },
+  decideIssue: async (projectId, issue) => {
+    const s = get();
+    const project = s.projects.find((p) => p.id === projectId);
+    if (!project) return;
+    const available = availableAgents(s.subagents, project.threads);
+    const decision =
+      labelDecision(issue, available) ??
+      (available.length === 0
+        ? { ready: true, agent: null, confidence: 0, reason: "No enabled agents to route to." }
+        : await askDispatcher(issue, available, project.threads));
+    // naggedAt: a verdict the user asked for never posts the not-ready note.
+    recordFleetDecision(projectId, issue, decision, { naggedAt: issue.updatedAt ?? null });
   },
   addThread: (projectId, opts) => {
     const thread: Thread = {
@@ -1962,7 +2056,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       usePrefsStore.getState().autoTitles
     ) {
       const placeholder = truncateTitle(text);
-      void generateTitle(text, thread.model ?? appDefaultModel(get()))
+      const prefs = usePrefsStore.getState();
+      void generateTitle(text, thread.model ?? appDefaultModel(get()), prefs.disabledModels)
         .then((title) => {
           if (!title) return;
           set((s) => ({
@@ -2540,6 +2635,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           : p,
       ),
     })),
+  setFleetAuto: (projectId, on) => {
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId
+          ? { ...p, fleet: { queue: [], concurrency: {}, ...p.fleet, auto: on } }
+          : p,
+      ),
+    }));
+    if (on) void get().triageAuto(projectId);
+  },
   archiveDelegated: async (threadId, force = false) => {
     const found = findThread(get().projects, threadId);
     if (!found) return;
@@ -4008,6 +4113,87 @@ useSessionStore.subscribe((state, prev) => {
 // or fails before it ever streams, then let its agent's queue move.
 const fleetStreamed = new Set<string>();
 const fleetFinishing = new Set<string>();
+
+// HOY-353: projects with an Auto triage pass currently running.
+const triaging = new Set<string>();
+
+// Halted agents are not offered: their queue would not move.
+function availableAgents(subagents: SubagentDef[], threads: Thread[]): SubagentDef[] {
+  return subagents.filter((d) => d.enabled && !haltingThread(threads, d.name));
+}
+
+// The agent:<Name> label's verdict, or null when the issue has no such label.
+function labelDecision(issue: LinearIssue, available: SubagentDef[]): DispatchDecision | null {
+  const label = agentLabel(issue.labels);
+  if (!label) return null;
+  const def = available.find((d) => d.name.toLowerCase() === label.toLowerCase());
+  // ready with no agent holds it: the author has nothing to add, so no note.
+  return def
+    ? { ready: true, agent: def.name, confidence: 1, reason: `Label agent:${def.name} overrides the Dispatcher.` }
+    : { ready: true, agent: null, confidence: 0, reason: `Label agent:${label} names an agent that is disabled, halted, or unknown.` };
+}
+
+async function askDispatcher(
+  issue: LinearIssue,
+  available: SubagentDef[],
+  threads: Thread[],
+): Promise<DispatchDecision> {
+  try {
+    const { decisionModel, disabledModels } = usePrefsStore.getState();
+    return await dispatchDecision(dispatchInput(issue, available, threads), decisionModel, disabledModels);
+  } catch (e) {
+    return {
+      ready: false,
+      agent: null,
+      confidence: 0,
+      reason: `dispatcher error: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+}
+
+// Pruned to issues still in the backlog so finished work does not accumulate.
+function recordFleetDecision(
+  projectId: string,
+  issue: LinearIssue,
+  decision: DispatchDecision,
+  opts: { naggedAt?: string | null; queuedAt?: string | null } = {},
+) {
+  const items = useLinearStore.getState().issues[projectId]?.items ?? [];
+  const keep = new Set(items.map((i) => i.id));
+  useSessionStore.setState((st) => ({
+    projects: st.projects.map((p) => {
+      if (p.id !== projectId) return p;
+      const fleet = p.fleet ?? { queue: [], concurrency: {} };
+      const decisions = Object.fromEntries(
+        Object.entries(fleet.decisions ?? {}).filter(([id]) => keep.has(id)),
+      );
+      decisions[issue.id] = {
+        at: issue.updatedAt ?? null,
+        decision,
+        naggedAt: opts.naggedAt ?? null,
+        ...(opts.queuedAt ? { queuedAt: opts.queuedAt } : {}),
+      };
+      return { ...p, fleet: { ...fleet, decisions } };
+    }),
+  }));
+}
+
+// HOY-353: mark a cached not-ready decision as commented for its revision.
+function markNaggedDecision(projectId: string, issueId: string, at: string | null) {
+  useSessionStore.setState((st) => ({
+    projects: st.projects.map((p) => {
+      const entry = p.id === projectId ? p.fleet?.decisions?.[issueId] : undefined;
+      if (!entry) return p;
+      return {
+        ...p,
+        fleet: {
+          ...p.fleet!,
+          decisions: { ...p.fleet!.decisions, [issueId]: { ...entry, naggedAt: at } },
+        },
+      };
+    }),
+  }));
+}
 useSessionStore.subscribe((state, prev) => {
   if (state.streaming === prev.streaming && state.threadErrors === prev.threadErrors)
     return;
@@ -4047,6 +4233,7 @@ async function startDelegatedRun(
   threadId: string,
   issue: LinearIssue,
   agent: string,
+  decision?: DispatchDecision | null,
 ): Promise<void> {
   const store = useSessionStore;
   const project = store.getState().projects.find((p) => p.id === projectId);
@@ -4083,7 +4270,7 @@ async function startDelegatedRun(
     }));
   }
   const openPullRequests = !!project?.fleet?.openPullRequests;
-  await store.getState().submitPrompt(threadId, issuePrompt(issue, agent, worktree, { openPullRequests }), undefined, undefined, {
+  await store.getState().submitPrompt(threadId, issuePrompt(issue, agent, worktree, { openPullRequests, decision }), undefined, undefined, {
     autoPlanMode: false,
   });
 }

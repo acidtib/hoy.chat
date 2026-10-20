@@ -556,12 +556,38 @@ export interface QueuedIssue {
   agent: string;
   issue: LinearIssue;
   queuedAt: number;
+  // HOY-353: the Auto decision that queued it, echoed into the first prompt.
+  decision?: DispatchDecision | null;
 }
 export interface FleetState {
   queue: QueuedIssue[];
   concurrency: Record<string, number>;
   // HOY-359: agents push their branch and open a pull request with gh.
   openPullRequests?: boolean;
+  // HOY-353: Auto triages unassigned issues through the Dispatcher.
+  auto?: boolean;
+  // HOY-353: the Dispatcher's cached verdicts, keyed by Linear issue id.
+  decisions?: Record<string, CachedDecision>;
+}
+
+// HOY-353: mirrors events.rs DispatchDecision. Errors fail closed to ready=false.
+export interface DispatchDecision {
+  ready: boolean;
+  agent: string | null;
+  confidence: number;
+  reason: string;
+  missing?: string;
+  cost?: number;
+}
+
+// `at` is the issue's updatedAt the decision was made for.
+export interface CachedDecision {
+  at: string | null;
+  decision: DispatchDecision;
+  // The revision the not-ready comment was posted for.
+  naggedAt?: string | null;
+  // The revision Auto queued it for.
+  queuedAt?: string | null;
 }
 
 // Mirror of workspace.rs Workspace: the persisted projects -> threads tree.
@@ -638,6 +664,8 @@ export interface LinearIssue {
   labels: string[];
   // Linear's suggested git branch name.
   branchName?: string | null;
+  // HOY-353: the revision key for Dispatcher decisions.
+  updatedAt?: string | null;
 }
 
 export interface LinearIssueRef {

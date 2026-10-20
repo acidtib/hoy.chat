@@ -72,6 +72,8 @@ export interface AppPrefs {
   preferredModel: ModelRef | null;
   // Models hidden from the pickers, as modelKey() strings. New models start on.
   disabledModels: string[];
+  // HOY-353: the Fleet Dispatcher's model. Null picks the cheapest enabled one.
+  decisionModel: ModelRef | null;
 }
 
 interface PrefsStore extends AppPrefs {
@@ -103,6 +105,7 @@ export const PREFS_DEFAULTS: AppPrefs = {
   autoTitles: true,
   preferredModel: null,
   disabledModels: [],
+  decisionModel: null,
 };
 
 // v1 split expandReasoning / expandToolDetails into the timeline part prefs.
@@ -153,6 +156,7 @@ export const usePrefsStore = create<PrefsStore>()(
         autoTitles: s.autoTitles,
         preferredModel: s.preferredModel,
         disabledModels: s.disabledModels,
+        decisionModel: s.decisionModel,
       }),
     },
   ),

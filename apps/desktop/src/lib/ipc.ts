@@ -40,7 +40,9 @@ import type {
   ThinkingLevel,
   UsageReport,
   Workspace,
+  DispatchDecision,
 } from "./types";
+import type { DispatchInput } from "./dispatch";
 
 // Native directory picker for adding a project. Returns the chosen absolute path,
 // or null if the user cancels.
@@ -426,6 +428,10 @@ export function linearSetIssueState(issue: string, state: string): Promise<void>
   return invoke<void>("linear_set_issue_state", { issue, state });
 }
 
+export function linearComment(issue: string, body: string): Promise<void> {
+  return invoke<void>("linear_comment", { issue, body });
+}
+
 export function linearTeams(): Promise<LinearTeam[]> {
   return invoke<LinearTeam[]>("linear_teams");
 }
@@ -510,8 +516,26 @@ export function getUsageStats(): Promise<UsageReport> {
 // the evaluator fails open to met:false on any error, so Task 5's loop keeps
 // working on uncertainty rather than falsely stopping.
 // HOY-370: a short thread title from its first message, or null.
-export function generateTitle(text: string, model: ModelRef | null): Promise<string | null> {
-  return invoke<string | null>("generate_title", { text, model });
+// `disabled`: modelKey()s the helper must never run on.
+export function generateTitle(
+  text: string,
+  model: ModelRef | null,
+  disabled: string[],
+): Promise<string | null> {
+  return invoke<string | null>("generate_title", { text, model, disabled });
+}
+
+// HOY-353: a null `model` runs on the cheapest enabled model.
+export function dispatchDecision(
+  input: DispatchInput,
+  model: ModelRef | null,
+  disabled: string[],
+): Promise<DispatchDecision> {
+  return invoke<DispatchDecision>("dispatch_decision", {
+    input: JSON.stringify(input),
+    model,
+    disabled,
+  });
 }
 
 export function evaluateGoal(

@@ -54,6 +54,37 @@ pub struct WsFleet {
     // HOY-359: agents push their branch and open a pull request with gh.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_pull_requests: bool,
+    // HOY-353: Auto triages unassigned issues through the Dispatcher.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto: bool,
+    // HOY-353: the Dispatcher's cached verdicts, keyed by Linear issue id.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub decisions: std::collections::BTreeMap<String, WsCachedDecision>,
+}
+
+// `at` is the issue's updatedAt the decision was made for.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsCachedDecision {
+    pub at: Option<String>,
+    pub decision: WsDispatchDecision,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nagged_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queued_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsDispatchDecision {
+    pub ready: bool,
+    pub agent: Option<String>,
+    pub confidence: f64,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +93,9 @@ pub struct WsQueuedIssue {
     pub agent: String,
     pub issue: LinearIssue,
     pub queued_at: u64,
+    // HOY-353: the Auto decision that queued it, echoed into the first prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision: Option<WsDispatchDecision>,
 }
 
 // One run of a delegated thread, from dispatch to its first stop (HOY-350).

@@ -1427,6 +1427,7 @@ impl SidecarManager {
         &self,
         text: &str,
         model: Option<&ModelRef>,
+        disabled: &[String],
     ) -> Result<std::process::Command, String> {
         if !self.bin.exists() {
             return Err(format!(
@@ -1441,10 +1442,42 @@ impl SidecarManager {
             .env("HOY_CODING_AGENT_DIR", &self.agent_dir)
             .env("HOY_TITLE", "1")
             .env("HOY_TITLE_TEXT", text)
+            .env("HOY_DISABLED_MODELS", disabled.join("\n"))
             .current_dir(&self.cwd);
         if let Some(model) = model {
             command.env(
                 "HOY_TITLE_MODEL",
+                format!("{}/{}", model.provider, model.id),
+            );
+        }
+        Ok(command)
+    }
+
+    // HOY-353: the one-shot Dispatcher. Run it off the async runtime.
+    pub fn dispatch_command(
+        &self,
+        input: &str,
+        model: Option<&ModelRef>,
+        disabled: &[String],
+    ) -> Result<std::process::Command, String> {
+        if !self.bin.exists() {
+            return Err(format!(
+                "sidecar binary not found at {}. Run sidecar/build.sh.",
+                self.bin.display()
+            ));
+        }
+        let mut command = std::process::Command::new(&self.bin);
+        apply_sanitized_env(&mut command, &self.agent_dir, &self.cwd);
+        command
+            .env("PI_PACKAGE_DIR", &self.payload)
+            .env("HOY_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_DISPATCH", "1")
+            .env("HOY_DISPATCH_INPUT", input)
+            .env("HOY_DISABLED_MODELS", disabled.join("\n"))
+            .current_dir(&self.cwd);
+        if let Some(model) = model {
+            command.env(
+                "HOY_DISPATCH_MODEL",
                 format!("{}/{}", model.provider, model.id),
             );
         }

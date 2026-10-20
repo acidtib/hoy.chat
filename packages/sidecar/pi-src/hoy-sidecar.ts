@@ -43,6 +43,7 @@ import { buildHoySystemPrompt, type RunContext } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
 import { runGoalEval } from "./hoy-goal-eval";
 import { runTitle } from "./hoy-title";
+import { runDispatch } from "./hoy-dispatch";
 import { runVerifyCommand } from "./hoy-verify-command";
 import { runGoalAudit } from "./hoy-goal-audit";
 import { runListSkills } from "./hoy-list-skills";
@@ -148,6 +149,11 @@ if (process.env.HOY_LIST_SKILLS) {
 // HOY-370: one-shot thread title (hoy-title.ts). Writes {title} JSON and exits.
 if (process.env.HOY_TITLE) {
   await runTitle(agentDir, process.cwd());
+}
+
+// HOY-353: one-shot Auto mode decision (hoy-dispatch.ts). Writes a Decision and exits.
+if (process.env.HOY_DISPATCH) {
+  await runDispatch(agentDir, process.cwd());
 }
 
 if (process.env.HOY_GOAL_EVAL) {

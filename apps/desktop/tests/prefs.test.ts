@@ -29,6 +29,7 @@ describe("usePrefsStore", () => {
       autoTitles: true,
       preferredModel: null,
       disabledModels: [],
+      decisionModel: null,
     });
   });
 

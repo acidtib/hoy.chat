@@ -2,15 +2,7 @@
 // the goal evaluator) that names a thread from its first message on a cheap
 // model. Prints {"title": string | null} and exits; any failure yields null so
 // the thread keeps its first-line title.
-import {
-  DefaultResourceLoader,
-  ModelRegistry,
-  ModelRuntime,
-  SessionManager,
-  createAgentSession,
-} from "@earendil-works/pi-coding-agent";
-import { join } from "node:path";
-import { pickModel } from "./hoy-goal-eval";
+import { runOneShot } from "./hoy-oneshot";
 
 const MAX_INPUT_CHARS = 2000;
 const MAX_TITLE_CHARS = 60;
@@ -59,44 +51,15 @@ export async function runTitle(agentDir: string, cwd: string): Promise<never> {
   try {
     const text = process.env.HOY_TITLE_TEXT?.trim().slice(0, MAX_INPUT_CHARS);
     if (!text) emit(null);
-    const pinned = process.env.HOY_TITLE_MODEL?.trim();
-    const slash = pinned ? pinned.indexOf("/") : -1;
-    const threadModel = pinned && slash > 0 ? { provider: pinned.slice(0, slash), modelId: pinned.slice(slash + 1) } : null;
-
-    const modelRuntime = await ModelRuntime.create({
-      authPath: join(agentDir, "auth.json"),
-      modelsPath: join(agentDir, "models.json"),
-    });
-    const registry = new ModelRegistry(modelRuntime);
-    // The thread's model only seeds the provider choice: a cheap model from the
-    // same provider wins, so a title never runs on an expensive model by default.
-    const model = pickModel(registry, registry.getAvailable(), threadModel, "HOY_TITLE_PINNED_MODEL");
-    if (!model) emit(null);
-    console.error(`hoy-title: model=${model!.provider}/${model!.id}`);
-
-    const loader = new DefaultResourceLoader({
-      cwd,
+    const out = await runOneShot({
       agentDir,
-      noContextFiles: true,
-      systemPromptOverride: () => TITLE_PROMPT,
-      appendSystemPromptOverride: () => [],
+      cwd,
+      systemPrompt: TITLE_PROMPT,
+      prompt: `<message>\n${text}\n</message>`,
+      seed: process.env.HOY_TITLE_MODEL,
+      tag: "hoy-title",
     });
-    await loader.reload();
-    const { session } = await createAgentSession({
-      model: model!,
-      thinkingLevel: "off",
-      modelRuntime,
-      tools: [],
-      resourceLoader: loader,
-      sessionManager: SessionManager.inMemory(cwd),
-    });
-    try {
-      session.setAutoCompactionEnabled(false);
-      await session.prompt(`<message>\n${text}\n</message>`);
-      emit(cleanTitle(session.getLastAssistantText() ?? ""));
-    } finally {
-      session.dispose();
-    }
+    emit(out ? cleanTitle(out.text) : null);
   } catch (e) {
     console.error(`hoy-title: ${e instanceof Error ? e.message : String(e)}`);
     emit(null);

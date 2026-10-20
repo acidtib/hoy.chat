@@ -89,6 +89,9 @@ pub struct LinearIssue {
     // Linear's suggested git branch for the issue (HOY-358).
     #[serde(default)]
     pub branch_name: Option<String>,
+    // HOY-353: the revision key for Dispatcher decisions.
+    #[serde(default)]
+    pub updated_at: Option<String>,
 }
 
 pub fn now_ms() -> u64 {
@@ -598,7 +601,7 @@ const ISSUES_QUERY: &str = r#"query TeamIssues($teamId: ID!) {
     filter: { team: { id: { eq: $teamId } }, state: { type: { in: ["backlog", "unstarted"] } } }
   ) {
     nodes {
-      id identifier title description url priority priorityLabel estimate branchName
+      id identifier title description url priority priorityLabel estimate branchName updatedAt
       state { name type }
       assignee { name }
       labels { nodes { name } }
@@ -639,6 +642,7 @@ fn parse_issues(data: &Value) -> Result<Vec<LinearIssue>, String> {
             state_type: str_at(n, "/state/type").unwrap_or_default(),
             assignee: str_at(n, "/assignee/name"),
             branch_name: str_at(n, "/branchName").filter(|b| !b.trim().is_empty()),
+            updated_at: str_at(n, "/updatedAt"),
             labels: n
                 .pointer("/labels/nodes")
                 .and_then(Value::as_array)

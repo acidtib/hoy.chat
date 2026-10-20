@@ -1,6 +1,6 @@
 // Pure helpers for the Delegate board (HOY-346).
 
-import type { LinearIssue, QueuedIssue, Thread, Turn } from "./types";
+import type { DispatchDecision, LinearIssue, QueuedIssue, Thread, Turn } from "./types";
 
 // Issues not yet handed to an agent in this project, running or queued. An
 // archived delegated thread releases its issue back to the column.
@@ -91,12 +91,18 @@ export function issuePrompt(
   issue: LinearIssue,
   agent?: string,
   worktree?: { path: string; branch: string; base: string } | null,
-  opts: { openPullRequests?: boolean } = {},
+  opts: { openPullRequests?: boolean; decision?: DispatchDecision | null } = {},
 ): string {
   const lines = [
     `Linear issue ${issue.identifier}: ${issue.title}`,
     issue.url,
   ];
+  // HOY-353: the Dispatcher's Auto verdict, so the run knows why it was chosen.
+  if (opts.decision) {
+    lines.push(
+      `Auto-assigned by the Dispatcher: ${opts.decision.reason} (confidence ${opts.decision.confidence.toFixed(2)}).`,
+    );
+  }
   if (issue.labels.length > 0) lines.push(`Labels: ${issue.labels.join(", ")}`);
   if (issue.description) lines.push("", issue.description);
   lines.push(

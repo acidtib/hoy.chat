@@ -278,6 +278,13 @@ pub async fn linear_set_issue_state(issue: String, state: String) -> Result<(), 
 }
 
 #[tauri::command]
+pub async fn linear_comment(issue: String, body: String) -> Result<(), String> {
+    linear::action(&json!({ "action": "comment", "issue": issue, "body": body }))
+        .await
+        .map(|_| ())
+}
+
+#[tauri::command]
 pub async fn linear_teams() -> Result<Vec<LinearTeam>, String> {
     linear::teams().await
 }
@@ -838,9 +845,10 @@ pub fn project_is_git_repo(project_path: String) -> bool {
 pub async fn generate_title(
     text: String,
     model: Option<crate::events::ModelRef>,
+    disabled: Vec<String>,
     manager: State<'_, SidecarManager>,
 ) -> Result<Option<String>, String> {
-    let mut command = manager.title_command(&text, model.as_ref())?;
+    let mut command = manager.title_command(&text, model.as_ref(), &disabled)?;
     let out = tauri::async_runtime::spawn_blocking(move || command.output())
         .await
         .map_err(|e| format!("generate_title: {e}"))?
@@ -848,6 +856,22 @@ pub async fn generate_title(
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout)
         .map_err(|e| format!("parse generate_title output: {e}"))?;
     Ok(parsed["title"].as_str().map(str::to_string))
+}
+
+// HOY-353: the sidecar fails closed and exits 0, so an Err is a spawn failure.
+#[tauri::command]
+pub async fn dispatch_decision(
+    input: String,
+    model: Option<crate::events::ModelRef>,
+    disabled: Vec<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<crate::events::DispatchDecision, String> {
+    let mut command = manager.dispatch_command(&input, model.as_ref(), &disabled)?;
+    let out = tauri::async_runtime::spawn_blocking(move || command.output())
+        .await
+        .map_err(|e| format!("dispatch_decision: {e}"))?
+        .map_err(|e| format!("spawn sidecar for dispatch_decision: {e}"))?;
+    serde_json::from_slice(&out.stdout).map_err(|e| format!("parse dispatch_decision output: {e}"))
 }
 
 // Goal Mode v2 (HOY-298): run a goal's deterministic verify command via a
