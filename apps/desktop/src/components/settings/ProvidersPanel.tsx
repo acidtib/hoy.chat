@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight, KeyRound, Search } from "lucide-react";
+import { Check, ChevronRight, KeyRound, Search } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,18 +27,13 @@ import { PanelHeader, Section } from "./panels";
 import {
   SUBSCRIPTION_PROVIDERS,
   type SubscriptionProvider,
+  authStatus,
   initialsFor,
   metaFor,
   partitionProviders,
 } from "./providerMeta";
 import { ProviderGlyph, glyphSlugFor } from "./providerIcons";
 import { OAuthLoginDialog } from "./OAuthLoginDialog";
-
-function statusLabel(auth: ProviderAuth): string {
-  if (auth.source === "environment") return "Env var";
-  if (auth.kind === "oauth") return "Signed In";
-  return "Key saved";
-}
 
 // Square mark tile: the provider's brand glyph in currentColor, or a two-letter
 // monogram fallback for providers without a vendored mark. Neutral by default,
@@ -77,13 +72,18 @@ function ProviderMark({
 }
 
 function StatusPill({ auth }: { auth: ProviderAuth }) {
+  const status = authStatus(auth);
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-      <span
-        className="size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_3px] shadow-emerald-500/15"
-        aria-hidden
-      />
-      {statusLabel(auth)}
+      {status.active ? (
+        <span
+          className="size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_3px] shadow-emerald-500/15"
+          aria-hidden
+        />
+      ) : (
+        <Check className="size-3" aria-hidden />
+      )}
+      {status.label}
     </span>
   );
 }
