@@ -133,11 +133,12 @@ describe("delegateIssue", () => {
     });
   });
 
-  test("creates a titled thread running as the agent and prompts it with the issue", () => {
+  test("creates a titled thread running as the agent and prompts it with the issue", async () => {
     const submitPrompt = mock(async () => {});
     useSessionStore.setState({ submitPrompt });
     const i = issue("9", 2);
     const id = useSessionStore.getState().delegateIssue("p1", i, "Explore");
+    for (let n = 0; n < 20 && submitPrompt.mock.calls.length === 0; n++) await Bun.sleep(5);
 
     const t = useSessionStore.getState().projects[0].threads[0];
     expect(t.id).toBe(id!);

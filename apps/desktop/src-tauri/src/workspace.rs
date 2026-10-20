@@ -152,6 +152,17 @@ pub struct WsThread {
     pub linear_issue: Option<WsLinearIssueRef>,
     #[serde(default)]
     pub fleet_run: Option<WsFleetRun>,
+    // HOY-358: the git worktree a delegated issue runs in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<WsWorktree>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsWorktree {
+    pub path: String,
+    pub branch: String,
+    pub base: String,
 }
 
 // A provider/model identity pair, mirroring the frontend ModelRef. Cached on the
@@ -292,6 +303,7 @@ mod tests {
                             state_type: "unstarted".into(),
                             assignee: None,
                             labels: vec!["Bug".into()],
+                            branch_name: None,
                         },
                         queued_at: 1_717_000_000_500,
                     }],
@@ -343,6 +355,11 @@ mod tests {
                         estimate: Some(2.0),
                         cost: Some(0.42),
                         acknowledged: false,
+                    }),
+                    worktree: Some(WsWorktree {
+                        path: "/w/hoy-28".into(),
+                        branch: "hoy/hoy-28-ticket".into(),
+                        base: "main".into(),
                     }),
                 }],
             }],
@@ -545,6 +562,7 @@ mod tests {
                     agent: None,
                     linear_issue: None,
                     fleet_run: None,
+                    worktree: None,
                 }],
             }],
             active_project_id: None,

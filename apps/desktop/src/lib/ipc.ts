@@ -206,6 +206,29 @@ export function setSubagentModel(
   return invoke<void>("set_subagent_model", { scope, name, model, projectPath: projectPath ?? null });
 }
 
+// HOY-358: one git worktree per delegated issue.
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  base: string;
+}
+
+export function createIssueWorktree(projectPath: string, branch: string): Promise<WorktreeInfo> {
+  return invoke<WorktreeInfo>("create_issue_worktree", { projectPath, branch });
+}
+
+export function removeIssueWorktree(
+  projectPath: string,
+  path: string,
+  force: boolean,
+): Promise<{ removed: boolean; dirty: boolean }> {
+  return invoke("remove_issue_worktree", { projectPath, path, force });
+}
+
+export function projectIsGitRepo(projectPath: string): Promise<boolean> {
+  return invoke<boolean>("project_is_git_repo", { projectPath });
+}
+
 export function projectHasFleet(projectPath: string): Promise<boolean> {
   return invoke<boolean>("project_has_fleet", { projectPath });
 }

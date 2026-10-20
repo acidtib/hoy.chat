@@ -31,6 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { agentThreads, unassignedIssues } from "@/lib/delegate";
+import { projectIsGitRepo } from "@/lib/ipc";
 import {
   costPerMinute,
   estimateMinutes,
@@ -91,6 +92,25 @@ function Board({ project, teamId }: { project: Project; teamId: string | null })
   const projects = useSessionStore((s) => s.projects);
   const [dragged, setDragged] = useState<LinearIssue | null>(null);
   const now = useNow(30_000);
+  const nonGit = useSessionStore((s) => !!s.nonGitProjects[project.id]);
+  useEffect(() => {
+    if (!project.path) return;
+    let cancelled = false;
+    void projectIsGitRepo(project.path)
+      .then((isGit) => {
+        if (cancelled) return;
+        useSessionStore.setState((s) => {
+          const nonGitProjects = { ...s.nonGitProjects };
+          if (isGit) delete nonGitProjects[project.id];
+          else nonGitProjects[project.id] = true;
+          return { nonGitProjects };
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id, project.path]);
 
   useEffect(() => {
     if (teamId && cache.fetchedAt === null && !cache.loading && !cache.error) {
@@ -159,6 +179,11 @@ function Board({ project, teamId }: { project: Project; teamId: string | null })
         <span className="truncate">
           {teamId ? "Drag a task onto an agent to queue it" : "Link a task source to fill the Todo column"}
         </span>
+        {nonGit && (
+          <span className="shrink-0 text-amber-500" title="Without git there are no worktrees, so agents would overwrite each other.">
+            Not a git repository: tasks run one at a time in the project folder
+          </span>
+        )}
         <div className="ml-auto flex shrink-0 items-center gap-3">
           <span
             className="font-mono"
@@ -471,9 +496,11 @@ function AgentRow({
     (t) => !open.includes(t) && t !== halting,
   );
   const live = rest.filter((t) => streaming[t.id]);
+  // Archiving could not take the worktree down; the run stays until resolved.
+  const stuck = rest.filter((t) => !streaming[t.id] && t.worktreeIssue);
   const done = rest.filter((t) => {
     const at = finishedAt(t);
-    return !streaming[t.id] && at != null && Date.now() - at < DONE_LINGER_MS;
+    return !streaming[t.id] && !t.worktreeIssue && at != null && Date.now() - at < DONE_LINGER_MS;
   });
   // Re-render when the oldest finished row expires, so the stack drops it
   // without waiting for the board's slower clock.
@@ -504,7 +531,7 @@ function AgentRow({
       ? "No finished runs yet"
       : `From ${history.length} finished run${history.length === 1 ? "" : "s"}`;
   const empty =
-    open.length + queued.length + live.length + done.length === 0 && !halting;
+    open.length + queued.length + live.length + stuck.length + done.length === 0 && !halting;
 
   return (
     <div
@@ -674,6 +701,9 @@ function AgentRow({
               </span>
             </TaskShell>
           )}
+          {stuck.map((t) => (
+            <WorktreeTask key={t.id} thread={t} />
+          ))}
           {done.map((t) => (
             <DoneTask key={t.id} thread={t} at={finishedAt(t)!} />
           ))}
@@ -771,7 +801,12 @@ function ThreadTask({
       <button
         type="button"
         onClick={() => openThread(thread.id)}
-        title={issue ? `${issue.identifier} ${issue.title}` : thread.title}
+        title={[
+          issue ? `${issue.identifier} ${issue.title}` : thread.title,
+          thread.worktree && `Branch ${thread.worktree.branch}`,
+        ]
+          .filter(Boolean)
+          .join("\n")}
         className="flex h-full cursor-pointer min-w-0 flex-1 items-center gap-2 text-left hover:text-foreground"
       >
         {live ? (
@@ -813,6 +848,45 @@ function ThreadTask({
         </button>
       )}
     </TaskShell>
+  );
+}
+
+// HOY-358: a finished run whose worktree archiving could not remove.
+function WorktreeTask({ thread }: { thread: Thread }) {
+  const openThread = useSessionStore((s) => s.openThread);
+  const archiveDelegated = useSessionStore((s) => s.archiveDelegated);
+  const [busy, setBusy] = useState(false);
+  const issue = thread.linearIssue;
+  return (
+    <div className="bg-amber-500/10 px-2 py-1.5 text-xs">
+      <div className="flex min-w-0 items-center gap-2">
+        <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
+        <button
+          type="button"
+          onClick={() => openThread(thread.id)}
+          className="min-w-0 flex-1 cursor-pointer truncate text-left hover:text-foreground"
+        >
+          {issue && <span className="mr-2 font-mono text-[11px]">{issue.identifier}</span>}
+          {thread.worktreeIssue}
+        </button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 shrink-0 cursor-pointer px-2 text-xs"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void archiveDelegated(thread.id, true).finally(() => setBusy(false));
+          }}
+          title="Discard the worktree's changes and archive. The branch is kept."
+        >
+          Remove anyway
+        </Button>
+      </div>
+      {thread.worktree && (
+        <p className="truncate pl-5.5 font-mono text-[11px] text-muted-foreground">{thread.worktree.path}</p>
+      )}
+    </div>
   );
 }
 

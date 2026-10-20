@@ -13,6 +13,7 @@ mod sidecar;
 mod subagents_config;
 mod usage_stats;
 mod workspace;
+mod worktree;
 
 use sidecar::SidecarManager;
 
@@ -199,6 +200,9 @@ pub fn run() {
             commands::set_subagent_model,
             commands::project_has_fleet,
             commands::generate_title,
+            commands::create_issue_worktree,
+            commands::remove_issue_worktree,
+            commands::project_is_git_repo,
             commands::write_subagent,
             commands::delete_subagent,
             oauth::oauth_login_start,

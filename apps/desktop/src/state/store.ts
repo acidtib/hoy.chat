@@ -41,6 +41,9 @@ import {
   setSubagentEnabled as ipcSetSubagentEnabled,
   setSubagentsEnabled as ipcSetSubagentsEnabled,
   setSubagentModel as ipcSetSubagentModel,
+  createIssueWorktree,
+  removeIssueWorktree,
+  projectIsGitRepo,
   generateTitle,
   projectHasFleet,
   setThinkingLevel,
@@ -51,7 +54,7 @@ import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { leafChainMessageIds } from "@/lib/treeNode";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
-import { issuePrompt } from "@/lib/delegate";
+import { issueBranch, issuePrompt } from "@/lib/delegate";
 import { currentAgentName, haltingThread, moveQueued, openRuns } from "@/lib/fleet";
 import { rewriteSkillCommand } from "@/lib/skill";
 import { modelKey, resolveDefaultModel } from "@/lib/models";
@@ -586,6 +589,13 @@ interface SessionStore {
   // Acknowledge the run halting an agent's queue, so the queue moves again.
   resumeAgent: (projectId: string, agent: string) => void;
   pumpFleet: () => void;
+  // HOY-358: projects known not to be git repositories. Their Fleet runs share
+  // the project folder, so they start one at a time.
+  nonGitProjects: Record<string, true>;
+  // Archive a delegated thread, removing its worktree first. A worktree with
+  // uncommitted changes, or one that fails to remove, keeps the thread on its
+  // agent's row with the reason, unless `force`.
+  archiveDelegated: (threadId: string, force?: boolean) => Promise<void>;
   // Create a child thread for a spawned subagent (HOY-231) and drive it
   // through create_session + the shared streaming helper, same as a
   // user-submitted thread.
@@ -797,6 +807,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   modelSelecting: {},
   fleetPickerProjectId: null,
   fleetPickerInitial: null,
+  nonGitProjects: {},
   turns: {},
   streaming: {},
   stats: {},
@@ -1256,9 +1267,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }));
     // The Fleet is the watch surface; a tab opens only when the user asks for one.
     if (usePrefsStore.getState().autoOpenSpawnedThreads) get().openThread(thread.id, { background: true });
-    void get().submitPrompt(thread.id, issuePrompt(issue, agent), undefined, undefined, {
-      autoPlanMode: false,
-    });
+    void startDelegatedRun(projectId, thread.id, issue, agent);
     linearSetIssueState(issue.id, "started").catch((e) =>
       pushNotice(thread.id, `Could not move ${issue.identifier} to In Progress: ${e}`, "warning"),
     );
@@ -1348,6 +1357,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         if (haltingThread(project.threads, agent)) continue;
         const cap = Math.max(1, project.fleet?.concurrency[agent] ?? 1);
         let free = cap - openRuns(project.threads, agent).length;
+        // Without git there are no worktrees: every run shares the folder.
+        if (get().nonGitProjects[p.id]) {
+          const running = project.threads.filter((t) => !t.archived && t.fleetRun && t.fleetRun.endedAt == null).length;
+          free = Math.min(free, 1 - running);
+        }
         for (const item of queue.filter((q) => q.agent === agent)) {
           if (free <= 0) break;
           get().unqueueIssue(p.id, item.issue.id);
@@ -1965,7 +1979,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         // sidecar was killed on panel close). Else start a fresh session.
         // acquireSession dedups with a concurrent hydrateThread so the two never
         // spawn two sidecars for the same thread.
-        sessionId = await acquireSession(threadId, project.path ?? "", thread.sessionFile);
+        sessionId = await acquireSession(threadId, threadCwd(get().projects, threadId), thread.sessionFile);
         get().setThreadSessionIdInternal(threadId, sessionId);
         // Populate the composer "/" autocomplete now the session exists (HOY-223).
         void get().refreshSlashCommands(threadId);
@@ -2420,7 +2434,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   hydrateThread: async (threadId) => {
     const found = findThread(get().projects, threadId);
     if (!found) return;
-    const { thread, project } = found;
+    const { thread } = found;
     if (!thread.sessionFile || thread.sessionId) return;
     if ((get().turns[threadId]?.length ?? 0) > 0) return;
 
@@ -2453,7 +2467,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     try {
       const sessionId = await acquireSession(
         threadId,
-        project.path ?? "",
+        threadCwd(get().projects, threadId),
         thread.sessionFile,
       );
       get().setThreadSessionIdInternal(threadId, sessionId);
@@ -2515,7 +2529,37 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }));
   },
 
+  archiveDelegated: async (threadId, force = false) => {
+    const found = findThread(get().projects, threadId);
+    if (!found) return;
+    const { thread, project } = found;
+    const wt = thread.worktree;
+    if (wt && !wt.removed && project.path) {
+      let issue: string | null = null;
+      try {
+        const out = await removeIssueWorktree(project.path, wt.path, force);
+        if (!out.removed) issue = "The worktree has uncommitted changes.";
+      } catch (e) {
+        issue = `Could not remove the worktree: ${e}`;
+      }
+      set((s) => ({
+        projects: patchThread(s.projects, threadId, (th) => ({
+          ...th,
+          worktreeIssue: issue,
+          worktree: th.worktree && !issue ? { ...th.worktree, removed: true } : th.worktree,
+        })),
+      }));
+      if (issue) return;
+    }
+    get().archiveThread(threadId);
+  },
   archiveThread: (threadId) => {
+    // A delegated thread removes its worktree first (HOY-358).
+    const own = findThread(get().projects, threadId)?.thread;
+    if (own?.worktree && !own.worktree.removed) {
+      void get().archiveDelegated(threadId);
+      return;
+    }
     // Cascade first so a child is never left rootless when its parent is
     // filtered out of the tree. ArchiveThread on each child reuses the same
     // untouched-delete + closePanel teardown. HOY-238.
@@ -2687,7 +2731,7 @@ async function startChildRun(
     releaseAgentSlot(childId);
     return;
   }
-  const { project, thread: child } = found;
+  const { thread: child } = found;
   const parent = child.parentThreadId
     ? findThread(useSessionStore.getState().projects, child.parentThreadId)?.thread
     : undefined;
@@ -2705,7 +2749,7 @@ async function startChildRun(
     streaming: { ...s.streaming, [childId]: true },
   }));
   try {
-    const cwd = project.path ?? "";
+    const cwd = threadCwd(useSessionStore.getState().projects, childId);
     // HOY-244: if the child's type opts into inherit_context, fork it from the
     // parent's transcript. Only when the parent has an established session file
     // a child spawned before the parent has one has no meaningful context to
@@ -3649,7 +3693,7 @@ async function branchIntoChildThread(
     return;
   }
 
-  const cwd = project.path ?? "";
+  const cwd = threadCwd(store.getState().projects, threadId);
   const depth = threadDepth(store.getState().projects, threadId);
   // Open a fresh sidecar on the SOURCE file, then fork/clone it: pi writes a new
   // branch file and rebinds THIS sidecar to it, leaving the source untouched.
@@ -3966,6 +4010,69 @@ useSessionStore.subscribe((state, prev) => {
     }
   }
 });
+
+// HOY-358: where a thread's session runs. A delegated thread runs in its issue
+// worktree and its subagents inherit it; everything else uses the project.
+export function threadCwd(projects: Project[], threadId: string): string {
+  let id: string | undefined = threadId;
+  for (let hops = 0; id && hops < 16; hops++) {
+    const found = findThread(projects, id);
+    if (!found) return "";
+    const wt = found.thread.worktree;
+    if (wt && !wt.removed) return wt.path;
+    id = found.thread.parentThreadId ?? undefined;
+    if (!id) return found.project.path ?? "";
+  }
+  return "";
+}
+
+// Create the issue's worktree (when the project is a git repository), then send
+// the brief. A worktree that cannot be created ends the run instead of letting
+// it fall back onto the shared checkout.
+async function startDelegatedRun(
+  projectId: string,
+  threadId: string,
+  issue: LinearIssue,
+  agent: string,
+): Promise<void> {
+  const store = useSessionStore;
+  const project = store.getState().projects.find((p) => p.id === projectId);
+  const path = project?.path ?? "";
+  let worktree: Thread["worktree"] = null;
+  let isGit = false;
+  try {
+    isGit = path ? await projectIsGitRepo(path) : false;
+  } catch {
+    isGit = false;
+  }
+  store.setState((s) => {
+    const nonGitProjects = { ...s.nonGitProjects };
+    if (isGit) delete nonGitProjects[projectId];
+    else nonGitProjects[projectId] = true;
+    return { nonGitProjects };
+  });
+  if (isGit) {
+    try {
+      worktree = await createIssueWorktree(path, issueBranch(issue));
+    } catch (e) {
+      const message = `Could not create a worktree for ${issue.identifier}: ${e}`;
+      store.setState((s) => ({
+        threadErrors: { ...s.threadErrors, [threadId]: message },
+        projects: patchThread(s.projects, threadId, (th) => ({
+          ...th,
+          fleetRun: th.fleetRun ? { ...th.fleetRun, endedAt: Date.now(), outcome: "error" } : th.fleetRun,
+        })),
+      }));
+      return;
+    }
+    store.setState((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({ ...th, worktree })),
+    }));
+  }
+  await store.getState().submitPrompt(threadId, issuePrompt(issue, agent, worktree), undefined, undefined, {
+    autoPlanMode: false,
+  });
+}
 
 async function finishFleetRun(threadId: string): Promise<void> {
   if (fleetFinishing.has(threadId)) return;

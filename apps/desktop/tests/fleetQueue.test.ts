@@ -35,6 +35,7 @@ const workspace = {
 mockIpcModule({
   loadWorkspace: mock(async () => workspace),
   listSubagents: mock(async () => []),
+  projectIsGitRepo: mock(async () => true),
 });
 
 const { useSessionStore } = await import("@/state/store");
@@ -103,6 +104,7 @@ describe("fleet queue", () => {
       projects: [{ id: "p1", name: "hoy", path: "/tmp/hoy", threads: [] }],
       subagents: [explore],
       submitPrompt,
+      nonGitProjects: {},
       panels: [],
       turns: {},
       streaming: {},
@@ -110,10 +112,11 @@ describe("fleet queue", () => {
     });
   });
 
-  test("starts the first issue and queues the rest behind it", () => {
+  test("starts the first issue and queues the rest behind it", async () => {
     const s = useSessionStore.getState();
     s.enqueueIssue("p1", issue("1"), "Explore");
     s.enqueueIssue("p1", issue("2"), "Explore");
+    await Bun.sleep(5);
     expect(threadFor("1")?.fleetRun?.endedAt).toBeUndefined();
     expect(threadFor("2")).toBeUndefined();
     expect(project().fleet!.queue.map((q) => q.issue.id)).toEqual(["2"]);

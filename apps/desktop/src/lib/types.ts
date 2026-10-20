@@ -531,6 +531,11 @@ export interface Thread {
   linearIssue?: LinearIssueRef | null;
   // HOY-350: the Fleet run that started this thread. Open until endedAt is set.
   fleetRun?: FleetRun | null;
+  // HOY-358: the git worktree a delegated issue runs in. `removed` once
+  // archiving took it down (the branch stays).
+  worktree?: { path: string; branch: string; base: string; removed?: boolean } | null;
+  // Why archiving could not remove the worktree, shown on the agent's row.
+  worktreeIssue?: string | null;
 }
 
 // Mirrors of workspace.rs WsFleetRun / WsFleet / WsQueuedIssue (HOY-350).
@@ -627,6 +632,8 @@ export interface LinearIssue {
   stateType: string;
   assignee: string | null;
   labels: string[];
+  // Linear's suggested git branch name.
+  branchName?: string | null;
 }
 
 export interface LinearIssueRef {

@@ -32,6 +32,7 @@ import { createHoyInit } from "./hoy-init";
 import { createHoyTurnBudget } from "./hoy-turn-budget";
 import { createHoyAlibaba } from "./hoy-alibaba";
 import { createHoyWeb } from "./hoy-web";
+import { inheritTrust, mainCheckout } from "./hoy-worktree";
 import {
   loadSubagentRegistry,
   effectiveChildPrompt,
@@ -181,7 +182,9 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   sessionManager,
   sessionStartEvent,
 }) => {
-  const registry = loadSubagentRegistry(agentDir, cwd);
+  // A worktree reads Hoy's project config from its main checkout (HOY-358).
+  const projectRoot = mainCheckout(cwd);
+  const registry = loadSubagentRegistry(agentDir, projectRoot);
   const subagentType = requestedSubagentType && resolveSubagentName(registry, requestedSubagentType);
 
   // Depth cap is absolute: if this child was spawned for a type that is no
@@ -254,7 +257,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
           loadConfig: (ctx) =>
             loadHoyMcpConfig({
               agentDir,
-              cwd: ctx.cwd,
+              cwd: mainCheckout(ctx.cwd),
               projectTrusted: ctx.isProjectTrusted(),
               enabled: mcpEnabled,
               codemode,
@@ -316,6 +319,9 @@ try {
   console.error(`hoy-sidecar: could not open/fork session, starting fresh: ${e}`);
   sessionManager = SessionManager.create(process.cwd());
 }
+
+// Before the runtime resolves trust for this folder.
+inheritTrust(agentDir, process.cwd(), mainCheckout(process.cwd()));
 
 const runtime = await createAgentSessionRuntime(factory, {
   cwd: process.cwd(),

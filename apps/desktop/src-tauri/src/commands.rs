@@ -792,6 +792,35 @@ pub async fn evaluate_goal(
     manager.evaluate_goal(&session_file, &condition, evaluator_model.as_ref())
 }
 
+// HOY-358: a worktree and branch for a delegated issue.
+#[tauri::command]
+pub async fn create_issue_worktree(
+    project_path: String,
+    branch: String,
+) -> Result<crate::worktree::WorktreeInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::worktree::create(&project_path, &branch))
+        .await
+        .map_err(|e| format!("create_issue_worktree: {e}"))?
+}
+
+#[tauri::command]
+pub async fn remove_issue_worktree(
+    project_path: String,
+    path: String,
+    force: bool,
+) -> Result<crate::worktree::RemoveOutcome, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::worktree::remove(&project_path, &path, force)
+    })
+    .await
+    .map_err(|e| format!("remove_issue_worktree: {e}"))?
+}
+
+#[tauri::command]
+pub fn project_is_git_repo(project_path: String) -> bool {
+    crate::worktree::is_git_repo(&project_path)
+}
+
 // HOY-370: name a thread from its first message on a cheap model. None when
 // the helper could not produce a title; the thread keeps its first-line title.
 #[tauri::command]

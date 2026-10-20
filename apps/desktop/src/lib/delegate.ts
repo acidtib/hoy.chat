@@ -54,7 +54,26 @@ const ISSUE_ASK: Record<string, string> = {
 
 // The first prompt a delegated thread receives. NUL is stripped because the
 // composer draft format uses it to delimit mention markers.
-export function issuePrompt(issue: LinearIssue, agent?: string): string {
+// The branch a delegated issue works on: Linear's suggestion, else one built
+// from the identifier and title.
+export function issueBranch(issue: LinearIssue): string {
+  if (issue.branchName?.trim()) return issue.branchName.trim();
+  const words = issue.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .split("-")
+    .filter(Boolean)
+    .slice(0, 6)
+    .join("-");
+  return `hoy/${issue.identifier.toLowerCase()}${words ? `-${words}` : ""}`;
+}
+
+export function issuePrompt(
+  issue: LinearIssue,
+  agent?: string,
+  worktree?: { path: string; branch: string; base: string } | null,
+): string {
   const lines = [
     `Linear issue ${issue.identifier}: ${issue.title}`,
     issue.url,
@@ -64,6 +83,12 @@ export function issuePrompt(issue: LinearIssue, agent?: string): string {
   lines.push(
     "",
     (agent && ISSUE_ASK[agent]) ?? "Work on this issue.",
+    ...(worktree
+      ? [
+          "",
+          `You are working in a dedicated git worktree at ${worktree.path}, on branch ${worktree.branch} created from ${worktree.base}. Other agents work in their own worktrees, so keep every change here. Dependencies may not be installed in this worktree; install them with the project's package manager if its checks need them.`,
+        ]
+      : []),
     "",
     `When you are done, post your report on ${issue.identifier} with linear_comment, then move it with linear_set_state. File anything out of scope as a follow-up with linear_create_issue.`,
   );
