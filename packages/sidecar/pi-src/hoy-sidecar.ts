@@ -62,12 +62,12 @@ import { runListSkills } from "./hoy-list-skills";
 // credential hit the same lazy loader, not just the explicit login flow.
 registerBunOAuthFlows();
 
-// Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
+// Permission gate (HOY-186): initial mode from Rust, manual mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
 // with grep/find/ls while bash is blocked. The prompt's tools list matches.
 const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "web", "agent", "ask_question"];
-const envMode = process.env.HOY_PERMISSION_MODE ?? "default";
-const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "default";
+const envMode = process.env.HOY_PERMISSION_MODE ?? "manual";
+const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "manual";
 const permissionState = createPermissionState(initialMode);
 
 // Hoy's agent dir, set by Rust (pi_config::agent_dir, default ~/.hoy).

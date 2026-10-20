@@ -41,7 +41,7 @@ export function HomeComposer({
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [model, setModel] = useState<ModelRef | null>(null);
-  const [mode, setMode] = useState<PermissionMode>("default");
+  const [mode, setMode] = useState<PermissionMode>("manual");
   const [thinking, setThinking] = useState<ThinkingLevel>("high");
 
   const currentModel = model ?? defaultModel;

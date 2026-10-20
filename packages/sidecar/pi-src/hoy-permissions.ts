@@ -13,7 +13,7 @@ import { isAbsolute, join, relative } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AUTONOMOUS_MODE_PROMPT, PLAN_MODE_PROMPT } from "./hoy-system-prompt";
 
-export type PermissionMode = "default" | "acceptEdits" | "plan" | "autonomous";
+export type PermissionMode = "manual" | "acceptEdits" | "plan" | "autonomous";
 
 export interface PermissionState {
   mode: PermissionMode;
@@ -23,7 +23,7 @@ export function createPermissionState(mode: PermissionMode): PermissionState {
   return { mode };
 }
 
-export const PERMISSION_MODES: PermissionMode[] = ["default", "acceptEdits", "plan", "autonomous"];
+export const PERMISSION_MODES: PermissionMode[] = ["manual", "acceptEdits", "plan", "autonomous"];
 
 export function isPermissionMode(value: string): value is PermissionMode {
   return (PERMISSION_MODES as string[]).includes(value);
@@ -83,7 +83,7 @@ export function decide(
   if (READ_ONLY_TOOLS.has(toolName)) return "allow";
   // ask_question (HOY-253) is a user interaction, not a side effect: it renders a
   // questionnaire and waits for the answer. Never gate it, in any mode. Without
-  // this, plan mode will block it as a custom tool and default mode will raise
+  // this, plan mode will block it as a custom tool and manual mode will raise
   // an approval card before the question card ever showed.
   if (toolName === "ask_question") return "allow";
   // codemode can only call other tools, and each nested call passes this gate.
@@ -107,7 +107,7 @@ export function decide(
   }
   if (toolName === "agent") return "allow"; // consent lives in the agent tool (names type + task)
   if (MUTATING_TOOLS.has(toolName)) return mode === "acceptEdits" ? "allow" : "ask";
-  return "ask"; // bash and unknown/custom tools in default and acceptEdits
+  return "ask"; // bash and unknown/custom tools in manual and acceptEdits
 }
 
 const ALLOW = "Allow";
@@ -190,7 +190,7 @@ export function createHoyPermissions(state: PermissionState) {
     const sessionAllowed = new Set<string>();
 
     pi.registerCommand("hoy_mode", {
-      description: "Set the Hoy permission mode (default | acceptEdits | plan | autonomous)",
+      description: "Set the Hoy permission mode (manual | acceptEdits | plan | autonomous)",
       handler: async (args, ctx) => {
         const next = args.trim();
         if (!isPermissionMode(next)) {

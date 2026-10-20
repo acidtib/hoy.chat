@@ -1845,7 +1845,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setPermissionMode: async (threadId, mode) => {
     const thread = findThread(get().projects, threadId)?.thread;
     if (!thread) return;
-    const previous = thread.permissionMode ?? "default";
+    const previous = thread.permissionMode ?? "manual";
     if (previous === mode) return;
     // Optimistic: the selector reflects the pick immediately. A live-session
     // failure reverts it. No session: the pick is applied on spawn.
@@ -2051,7 +2051,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // fires from a non-plan mode so it never fights a user already in plan mode.
     if (
       opts?.autoPlanMode !== false &&
-      (thread.permissionMode ?? "default") !== "plan" &&
+      (thread.permissionMode ?? "manual") !== "plan" &&
       detectPlanIntent(text)
     ) {
       await get().setPermissionMode(threadId, "plan");
@@ -2543,6 +2543,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
               ...withGoal,
               fleetRun: { ...withGoal.fleetRun, endedAt: Date.now(), outcome: "interrupted" },
             };
+          }
+          // Backfill (HOY-386): workspaces saved before the rename carry
+          // permission_mode "default", which the Rust allowlist now rejects.
+          if ((withGoal.permissionMode as string | null | undefined) === "default") {
+            withGoal = { ...withGoal, permissionMode: "manual" };
           }
           return !withGoal.renamed && !withGoal.sessionFile && withGoal.title !== "New thread"
             ? { ...withGoal, renamed: true }
@@ -3821,8 +3826,8 @@ async function applyThreadPermissionMode(
   permissionModeApplied.add(sessionId);
   const mode =
     findThread(useSessionStore.getState().projects, threadId)?.thread
-      .permissionMode ?? "default";
-  if (mode === "default") return;
+      .permissionMode ?? "manual";
+  if (mode === "manual") return;
   try {
     await ipcSetPermissionMode(sessionId, mode);
   } catch (e) {

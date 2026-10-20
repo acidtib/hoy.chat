@@ -198,7 +198,7 @@ pub struct WsThread {
     // Unsent composer text, restored into the editor on reopen.
     #[serde(default)]
     pub draft: Option<String>,
-    // Permission mode (HOY-186). Absent means default. The renderer re-applies
+    // Permission mode (HOY-186). Absent means manual. The renderer re-applies
     // it to the thread's sidecar after spawn.
     #[serde(default)]
     pub permission_mode: Option<String>,

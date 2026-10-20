@@ -103,7 +103,7 @@ export interface PermissionRequest {
 
 // The four thread permission modes (HOY-186). Wire values. The composer maps
 // them to display labels.
-export type PermissionMode = "default" | "acceptEdits" | "plan" | "autonomous";
+export type PermissionMode = "manual" | "acceptEdits" | "plan" | "autonomous";
 
 // Mirror of events.rs SessionStats. Powers the bottom context bar. contextUsage
 // (and its tokens/percent) is null/absent right after compaction until the next
@@ -506,7 +506,7 @@ export interface Thread {
   // the thread's provider glyph on load without spawning (HOY-267), reconciled
   // against get_state when the thread is opened.
   model?: ModelRef | null;
-  // Permission mode (HOY-186). Persisted with the thread. Absent means default.
+  // Permission mode (HOY-186). Persisted with the thread. Absent means manual.
   // Applied to the live sidecar via /hoy_mode, re-applied after spawn/restore.
   permissionMode?: PermissionMode | null;
   // Set on a spawned child thread (HOY-231). Null/absent on user threads. Kept

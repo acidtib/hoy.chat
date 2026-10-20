@@ -118,8 +118,8 @@ const THINKING_LABELS: Record<ThinkingLevel, string> = {
 
 // Thread permission modes (HOY-186), in selector order. Labels are display
 // only. The wire values are the PermissionMode union.
-const MODE_LABELS: Array<{ value: PermissionMode; label: string }> = [
-  { value: "default", label: "Default" },
+export const MODE_LABELS: Array<{ value: PermissionMode; label: string }> = [
+  { value: "manual", label: "Manual" },
   { value: "acceptEdits", label: "Accept Edits" },
   { value: "plan", label: "Plan Mode" },
   { value: "autonomous", label: "Autonomous" },
@@ -198,7 +198,7 @@ export function Composer({
   currentModel,
   selecting,
   onSelectModel,
-  mode = "default",
+  mode = "manual",
   onSelectMode,
   thinking,
   onSelectThinking,
@@ -1207,7 +1207,7 @@ export function Composer({
         <div className="flex items-center gap-0.5">
           <PillSelect
             value={
-              MODE_LABELS.find((m) => m.value === mode)?.label ?? "Default"
+              MODE_LABELS.find((m) => m.value === mode)?.label ?? "Manual"
             }
             options={MODE_LABELS.map((m) => m.label)}
             onSelect={(label) => {

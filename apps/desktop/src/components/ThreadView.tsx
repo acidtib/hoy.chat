@@ -198,7 +198,7 @@ export function ThreadView({
       projectId: found?.project.id ?? null,
       projectPath: found?.project.path ?? null,
       threadModel: found?.thread.model ?? null,
-      permissionMode: found?.thread.permissionMode ?? ("default" as const),
+      permissionMode: found?.thread.permissionMode ?? ("manual" as const),
       thinkingLevel: found?.thread.thinkingLevel ?? ("high" as const),
       sessionId: found?.thread.sessionId ?? null,
       goal: found?.thread.goal,
@@ -1210,7 +1210,7 @@ function ProposedPlanCard({
                 <DropdownMenuContent align="end" className="min-w-56">
                   <DropdownMenuItem
                     className="flex-col items-start gap-0.5"
-                    onSelect={() => onImplement("default", "inline")}
+                    onSelect={() => onImplement("manual", "inline")}
                   >
                     <span>Review each edit</span>
                     <span className="text-xs text-muted-foreground">
