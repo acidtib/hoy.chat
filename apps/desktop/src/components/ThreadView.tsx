@@ -84,6 +84,7 @@ import {
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Composer } from "@/components/Composer";
 import { GoalCard } from "@/components/GoalCard";
+import { TailPreview } from "@/components/TailPreview";
 import { InlineRename } from "@/components/InlineRename";
 import { cn } from "@/lib/utils";
 import { threadIconColorClass } from "@/lib/threadColor";
@@ -167,7 +168,7 @@ export function ThreadView({
   const dismissPlanReady = useSessionStore((s) => s.dismissPlanReady);
   const notices = useSessionStore((s) => s.notices[threadId] ?? EMPTY_NOTICES);
   const dismissNotice = useSessionStore((s) => s.dismissNotice);
-  const expandReasoning = usePrefsStore((s) => s.expandReasoning);
+  const showReasoning = usePrefsStore((s) => s.showReasoning);
   const threadWidgets = useSessionStore((s) => s.widgets[threadId]);
   const stopStreaming = useSessionStore((s) => s.stopStreaming);
   const focusSignal = useSessionStore((s) =>
@@ -492,7 +493,7 @@ export function ThreadView({
                   <AssistantTurn
                     key={i}
                     turn={turn}
-                    expandReasoning={expandReasoning}
+                    showReasoning={showReasoning}
                     planReady={planReady}
                     awaitingApproval={awaitingApproval}
                     onImplement={handleImplement}
@@ -643,14 +644,14 @@ function SkillInvocation({
 // its growing tail block.
 const AssistantTurn = memo(function AssistantTurn({
   turn,
-  expandReasoning,
+  showReasoning,
   planReady,
   awaitingApproval,
   onImplement,
   onDismiss,
 }: {
   turn: AssistantTurnData;
-  expandReasoning: boolean;
+  showReasoning: boolean;
   planReady: string | undefined;
   awaitingApproval: boolean;
   onImplement: (mode: PermissionMode, execution: PlanExecution) => void;
@@ -690,16 +691,13 @@ const AssistantTurn = memo(function AssistantTurn({
     content.splice(
       blockIndex,
       0,
-      <Reasoning
+      <ReasoningPart
         key="reasoning"
-        defaultOpen={expandReasoning}
-        autoCloseOnStreamEnd={!expandReasoning}
-        isStreaming={turn.reasoning.active ?? false}
-        duration={turn.reasoning.seconds}
-      >
-        <ReasoningTrigger />
-        <ReasoningContent>{turn.reasoning.text}</ReasoningContent>
-      </Reasoning>,
+        text={turn.reasoning.text}
+        streaming={turn.reasoning.active ?? false}
+        seconds={turn.reasoning.seconds}
+        showReasoning={showReasoning}
+      />,
     );
   }
 
@@ -730,6 +728,43 @@ const AssistantTurn = memo(function AssistantTurn({
     </Message>
   );
 });
+
+// Open in full when the pref is on, else a live preview of the last lines. A
+// click overrides the pref for this block either way.
+function ReasoningPart({
+  text,
+  streaming,
+  seconds,
+  showReasoning,
+}: {
+  text: string;
+  streaming: boolean;
+  seconds?: number;
+  showReasoning: boolean;
+}) {
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const open = userOpen ?? showReasoning;
+  return (
+    <Reasoning
+      open={open}
+      onOpenChange={setUserOpen}
+      autoCloseOnStreamEnd={false}
+      isStreaming={streaming}
+      duration={seconds}
+    >
+      <ReasoningTrigger className="cursor-pointer" />
+      {!open && (
+        <TailPreview
+          text={text}
+          label="Show full reasoning"
+          onExpand={() => setUserOpen(true)}
+          className="mt-2"
+        />
+      )}
+      <ReasoningContent>{text}</ReasoningContent>
+    </Reasoning>
+  );
+}
 
 // Inline approval/dialog card for a blocked extension UI request (HOY-186).
 // confirm -> Yes/No. Select -> option buttons. Input/editor -> a text field with
@@ -1381,9 +1416,11 @@ function NoticeRow({
 
 type ToolKind = "read" | "edit" | "terminal" | "other";
 
+// Edit and shell match whole names: they carry their own expand prefs, so an
+// MCP tool like linear_create_issue must not pass for an edit.
 function toolKind(name: string): ToolKind {
-  if (/edit|write|create|patch/.test(name)) return "edit";
-  if (/terminal|exec|run|command|bash|shell|build/.test(name)) return "terminal";
+  if (/^(edit|multi_?edit|write|patch|apply_?patch)$/.test(name)) return "edit";
+  if (/^(bash|shell|exec|terminal)$/.test(name)) return "terminal";
   if (/read|search|grep|find|list|cat|glob/.test(name)) return "read";
   return "other";
 }
@@ -1448,24 +1485,26 @@ function TurnStatus({
 // touches), so settled tool cards skip re-render while the turn's tail streams.
 const ToolCall = memo(function ToolCall({ tool }: { tool: ToolUI }) {
   const kind = toolKind(tool.name);
-  const expandToolDetails = usePrefsStore((s) => s.expandToolDetails);
-  // Terminal tools (Bash/exec) are never collapsed: the command it is running is
-  // the point, so the card stays open with no accordion affordance (HOY-288).
-  const collapsible = kind !== "terminal";
-  // Each tool renders as a bordered card. Collapsed by default (HOY-251) to a
-  // header row. The user clicks it to reveal the body (diff, command + output,
-  // or result). Expanded when the pref is on, or when the tool needs attention:
-  // an approval-pending tool shows a diff the user must see to approve, and an
-  // errored tool surfaces its failure without a hunt.
-  const defaultOpen =
-    !collapsible || expandToolDetails || tool.pending || tool.isError;
+  const expandEditTools = usePrefsStore((s) => s.expandEditTools);
+  const expandShellTools = usePrefsStore((s) => s.expandShellTools);
+  // Edit and shell parts follow their pref and collapse to a live preview of
+  // their last lines. Other tools (read, search, MCP) collapse to the header.
+  // A tool awaiting approval or showing an error stays open regardless, and a
+  // click overrides all of it for this block.
+  const pref =
+    kind === "edit" ? expandEditTools : kind === "terminal" ? expandShellTools : false;
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const open = userOpen ?? (pref || !!tool.pending || !!tool.isError);
+  const previewText =
+    kind === "edit" ? (tool.diff || tool.output || "") : kind === "terminal" ? tool.output || (tool.command ? `$ ${tool.command}` : "") : "";
   // The terminal body already shows the command ($...), so the header stays a
   // generic tool label (lowercase, like the other tools) instead of repeating it.
   const headerTitle = kind === "terminal" ? tool.name : tool.title;
 
   return (
     <Tool
-      defaultOpen={defaultOpen}
+      open={open}
+      onOpenChange={setUserOpen}
       className="group my-0.5 overflow-hidden rounded-md border border-border/70"
     >
       <ToolHeader
@@ -1481,9 +1520,18 @@ const ToolCall = memo(function ToolCall({ tool }: { tool: ToolUI }) {
                 : "output-available"
         }
         icon={toolIcon(kind)}
-        collapsible={collapsible}
         className="bg-muted/25 px-2 py-1.5 text-foreground"
       />
+      {!open && previewText && (
+        <TailPreview
+          text={previewText}
+          label={`Show full ${tool.name} output`}
+          onExpand={() => setUserOpen(true)}
+          mono
+          diff={kind === "edit"}
+          className="border-t border-border/70 px-3 py-1.5"
+        />
+      )}
       <ToolContent className="border-t border-border/70">
         {kind === "edit" && tool.diff ? (
           <CodeBlock

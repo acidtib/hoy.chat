@@ -26,13 +26,15 @@ export interface AppPrefs {
   // Composer: Enter sends. When false, Enter inserts a newline and Cmd/Ctrl+Enter
   // sends. (Shift+Enter mid-turn still queues a follow-up regardless.)
   sendOnEnter: boolean;
-  // Reasoning blocks in the transcript start expanded instead of collapsed.
-  expandReasoning: boolean;
-  // Tool-use blocks in the transcript start expanded instead of collapsed.
-  // Off by default (HOY-251): a tool renders as a compact header row and the
-  // user clicks to reveal its body. Approval-pending and errored tools stay
-  // open regardless, so a diff to approve or a failure is never hidden.
-  expandToolDetails: boolean;
+  // Reasoning shows in full in the timeline. When off it collapses to a live
+  // preview of its last lines that the user can click open.
+  showReasoning: boolean;
+  // Edit, write and patch tool parts start expanded. When off they collapse to
+  // a preview of the diff's last lines.
+  expandEditTools: boolean;
+  // Shell tool parts start expanded. When off they collapse to a preview of the
+  // output's last lines. Approval-pending and errored tools stay open regardless.
+  expandShellTools: boolean;
   // Confirm before closing a panel whose response is still streaming.
   confirmCloseStreaming: boolean;
   // Starting directory for the "Open project" picker. Empty = OS default.
@@ -87,8 +89,9 @@ export const PREFS_DEFAULTS: AppPrefs = {
   theme: "system",
   onboardingCompleted: false,
   sendOnEnter: true,
-  expandReasoning: false,
-  expandToolDetails: false,
+  showReasoning: false,
+  expandEditTools: false,
+  expandShellTools: true,
   confirmCloseStreaming: true,
   defaultProjectDir: "",
   autoOpenSpawnedThreads: false,
@@ -101,6 +104,18 @@ export const PREFS_DEFAULTS: AppPrefs = {
   disabledModels: [],
 };
 
+// v1 split expandReasoning / expandToolDetails into the timeline part prefs.
+export function migratePrefs(persisted: unknown, version: number): Partial<AppPrefs> {
+  const p = { ...(persisted as Record<string, unknown>) };
+  if (version < 1) {
+    if (typeof p.expandReasoning === "boolean") p.showReasoning = p.expandReasoning;
+    if (typeof p.expandToolDetails === "boolean") p.expandEditTools = p.expandToolDetails;
+    delete p.expandReasoning;
+    delete p.expandToolDetails;
+  }
+  return p as Partial<AppPrefs>;
+}
+
 export const usePrefsStore = create<PrefsStore>()(
   persist(
     (set) => ({
@@ -110,6 +125,8 @@ export const usePrefsStore = create<PrefsStore>()(
     }),
     {
       name: "hoy.prefs",
+      version: 1,
+      migrate: (persisted, version) => migratePrefs(persisted, version) as PrefsStore,
       // Falls back to an in-memory no-op when localStorage is absent (test/SSR),
       // so persistence works in the webview without warning noise elsewhere.
       storage: createJSONStorage(() =>
@@ -122,8 +139,9 @@ export const usePrefsStore = create<PrefsStore>()(
         theme: s.theme,
         onboardingCompleted: s.onboardingCompleted,
         sendOnEnter: s.sendOnEnter,
-        expandReasoning: s.expandReasoning,
-        expandToolDetails: s.expandToolDetails,
+        showReasoning: s.showReasoning,
+        expandEditTools: s.expandEditTools,
+        expandShellTools: s.expandShellTools,
         confirmCloseStreaming: s.confirmCloseStreaming,
         defaultProjectDir: s.defaultProjectDir,
         autoOpenSpawnedThreads: s.autoOpenSpawnedThreads,

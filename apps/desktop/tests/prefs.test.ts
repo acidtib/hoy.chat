@@ -3,7 +3,7 @@ import { mockIpcModule } from "./ipcMock";
 
 mockIpcModule();
 
-const { usePrefsStore, PREFS_DEFAULTS } = await import("@/state/prefs");
+const { usePrefsStore, PREFS_DEFAULTS, migratePrefs } = await import("@/state/prefs");
 const { useSessionStore } = await import("@/state/store");
 
 afterEach(() => {
@@ -16,8 +16,9 @@ describe("usePrefsStore", () => {
       theme: "system",
       onboardingCompleted: false,
       sendOnEnter: true,
-      expandReasoning: false,
-      expandToolDetails: false,
+      showReasoning: false,
+      expandEditTools: false,
+      expandShellTools: true,
       confirmCloseStreaming: true,
       defaultProjectDir: "",
       autoOpenSpawnedThreads: false,
@@ -39,13 +40,27 @@ describe("usePrefsStore", () => {
     usePrefsStore.getState().setPref("theme", "system");
     expect(usePrefsStore.getState().theme).toBe("system");
     // Unrelated fields are untouched.
-    expect(usePrefsStore.getState().expandReasoning).toBe(false);
+    expect(usePrefsStore.getState().showReasoning).toBe(false);
   });
 
   test("reset restores defaults", () => {
     usePrefsStore.getState().setPref("confirmCloseStreaming", false);
     usePrefsStore.getState().reset();
     expect(usePrefsStore.getState().confirmCloseStreaming).toBe(true);
+  });
+});
+
+describe("migratePrefs", () => {
+  test("v0 carries the old expand prefs onto the timeline part prefs", () => {
+    expect(migratePrefs({ expandReasoning: true, expandToolDetails: true, theme: "dark" }, 0)).toEqual({
+      showReasoning: true,
+      expandEditTools: true,
+      theme: "dark",
+    });
+  });
+
+  test("v1 state passes through", () => {
+    expect(migratePrefs({ showReasoning: true }, 1)).toEqual({ showReasoning: true });
   });
 });
 

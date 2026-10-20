@@ -200,8 +200,9 @@ function Placeholder({
 
 function ChatPanel() {
   const sendOnEnter = usePrefsStore((s) => s.sendOnEnter);
-  const expandReasoning = usePrefsStore((s) => s.expandReasoning);
-  const expandToolDetails = usePrefsStore((s) => s.expandToolDetails);
+  const showReasoning = usePrefsStore((s) => s.showReasoning);
+  const expandEditTools = usePrefsStore((s) => s.expandEditTools);
+  const expandShellTools = usePrefsStore((s) => s.expandShellTools);
   const setPref = usePrefsStore((s) => s.setPref);
 
   return (
@@ -219,17 +220,24 @@ function ChatPanel() {
         />
         <Separator />
         <ToggleRow
-          label="Expand reasoning"
-          description="Show model thinking blocks expanded instead of collapsed."
-          checked={expandReasoning}
-          onChange={(v) => setPref("expandReasoning", v)}
+          label="Show reasoning"
+          description="Display model reasoning in the timeline"
+          checked={showReasoning}
+          onChange={(v) => setPref("showReasoning", v)}
         />
         <Separator />
         <ToggleRow
-          label="Expand tool details"
-          description="Show tool-use blocks expanded instead of collapsed. When off, each tool is a compact row you click to reveal; tools awaiting approval or showing an error stay open."
-          checked={expandToolDetails}
-          onChange={(v) => setPref("expandToolDetails", v)}
+          label="Expand edit tool parts"
+          description="Show edit, write, and patch tool parts expanded by default in the timeline"
+          checked={expandEditTools}
+          onChange={(v) => setPref("expandEditTools", v)}
+        />
+        <Separator />
+        <ToggleRow
+          label="Expand shell tool parts"
+          description="Show shell tool parts expanded by default in the timeline"
+          checked={expandShellTools}
+          onChange={(v) => setPref("expandShellTools", v)}
         />
       </Section>
     </div>
