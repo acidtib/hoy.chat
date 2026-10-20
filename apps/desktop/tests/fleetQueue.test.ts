@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mockIpcModule } from "./ipcMock";
 
 const workspace = {
@@ -94,6 +94,9 @@ test("retired agent names load as their replacements", () => {
 });
 
 describe("fleet queue", () => {
+  // Restored so later test files in the same run get the real action.
+  const realSubmitPrompt = useSessionStore.getState().submitPrompt;
+  afterAll(() => useSessionStore.setState({ submitPrompt: realSubmitPrompt }));
   beforeEach(() => {
     submitPrompt.mockClear();
     useSessionStore.setState({
