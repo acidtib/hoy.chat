@@ -179,7 +179,7 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-3 px-4 pt-3 text-xs text-muted-foreground">
         <GripVertical className="size-3.5 shrink-0 opacity-50" />
-        <span className="truncate">Drag an issue onto an agent to queue it</span>
+        <span className="truncate">Drag a task onto an agent to queue it</span>
         <div className="ml-auto flex shrink-0 items-center gap-3">
           <span
             className="font-mono"
