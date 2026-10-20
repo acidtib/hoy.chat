@@ -89,7 +89,7 @@ test("retired agent names load as their replacements", () => {
   const p = useSessionStore.getState().projects[0];
   expect(p.threads.find((t) => t.id === "t-old")!.agent).toBe("Researcher");
   expect(p.threads.find((t) => t.id === "t-child")!.spawnedBy!.type).toBe("Coder");
-  expect(p.fleet!.queue[0].agent).toBe("Researcher");
+  expect(p.fleet!.queue[0].agent).toBe("Architect");
   expect(p.fleet!.concurrency).toEqual({ Researcher: 2 });
 });
 

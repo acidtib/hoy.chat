@@ -100,13 +100,22 @@ test("issuePrompt carries the issue and strips NUL mention delimiters", () => {
   const text = issuePrompt(
     issue("7", 2, { description: "Steps\u0000here", labels: ["Bug", "Web"] }),
   );
-  expect(text).toContain("Work on Linear issue HOY-7: Issue 7");
+  expect(text).toContain("Linear issue HOY-7: Issue 7");
+  expect(text).toContain("Work on this issue.");
   expect(text).toContain("https://linear.app/hoy/issue/HOY-7");
   expect(text).toContain("Labels: Bug, Web");
   expect(text).toContain("Stepshere");
   expect(text).not.toContain("\u0000");
   expect(text).toContain("linear_comment");
   expect(text).toContain("linear_set_state");
+});
+
+test("issuePrompt tells each role what to do with the issue", () => {
+  const i = issue("8", 2);
+  expect(issuePrompt(i, "Reviewer")).toContain("Do not change the code.");
+  expect(issuePrompt(i, "Architect")).toContain("Do not implement it.");
+  expect(issuePrompt(i, "Project Manager")).toContain("file sub-issues");
+  expect(issuePrompt(i, "My Agent")).toContain("Work on this issue.");
 });
 
 describe("delegateIssue", () => {
@@ -138,7 +147,7 @@ describe("delegateIssue", () => {
     expect(t.renamed).toBe(true);
     expect(t.permissionMode).toBe("autonomous");
     expect(submitPrompt.mock.calls[0][0]).toBe(t.id);
-    expect(submitPrompt.mock.calls[0][1]).toBe(issuePrompt(i));
+    expect(submitPrompt.mock.calls[0][1]).toBe(issuePrompt(i, "Explore"));
     expect(linearSetIssueState).toHaveBeenCalledWith(i.id, "started");
   });
 

@@ -153,23 +153,53 @@ describe("plan mode: two-phase design gate (HOY-276 follow-up)", () => {
 });
 
 describe("buildHoySystemPrompt", () => {
-  test("advertises enabled agent types dynamically", () => {
-    expect(buildHoySystemPrompt(false)).not.toContain("Subagents:");
-    const enabled = buildHoySystemPrompt(true, [
-      { name: "Researcher", description: "read-only" },
-      { name: "Reviewer", description: "reviews diffs" },
-    ]);
+  test("advertises the spawnable agent types dynamically", () => {
+    expect(buildHoySystemPrompt()).not.toContain("Subagents:");
+    const enabled = buildHoySystemPrompt({
+      agentTypes: [
+        { name: "Researcher", description: "read-only" },
+        { name: "Reviewer", description: "reviews diffs" },
+      ],
+    });
     expect(enabled).toContain("Subagents:");
     expect(enabled).toContain("Researcher");
-    expect(enabled).toContain("Reviewer");
     expect(enabled).toContain("reviews diffs");
     // HOY-300: the agent tool is synchronous, the prompt tells the model the
     // call blocks and returns the subagent's result in-band (not "delivered back").
     expect(enabled).toContain("BLOCKS until the subagent finishes and returns its result");
+    expect(enabled).toContain("has not seen this conversation");
     expect(enabled).not.toContain("Fire-and-forget");
   });
 
+  test("lists only the session's tools and their guidelines (HOY-366)", () => {
+    const readOnly = buildHoySystemPrompt({ tools: ["read", "grep", "find", "ls", "mcp"] });
+    expect(readOnly).toContain("- read:");
+    expect(readOnly).not.toContain("- bash:");
+    expect(readOnly).not.toContain("- edit:");
+    expect(readOnly).not.toContain("edits[].oldText");
+    expect(readOnly).not.toContain("over their bash equivalents");
+    const full = buildHoySystemPrompt({ tools: ["read", "bash", "edit", "write"] });
+    expect(full).toContain("edits[].oldText");
+    expect(full).toContain("over their bash equivalents");
+  });
+
+  test("states the run context: interactive, Fleet, or subagent (HOY-366)", () => {
+    expect(buildHoySystemPrompt()).toContain("You are working with the user directly");
+    expect(buildHoySystemPrompt({ run: "fleet" })).toContain("assigned this task from the Fleet");
+    const sub = buildHoySystemPrompt({ run: "subagent" });
+    expect(sub).toContain("You are a subagent");
+    expect(sub).toContain("only thing it receives");
+  });
+
   test("carries no Hoy MCP block; Pi's mcp_servers section describes servers", () => {
-    expect(buildHoySystemPrompt(true, [])).not.toContain("MCP tools:");
+    expect(buildHoySystemPrompt({ agentTypes: [] })).not.toContain("MCP tools:");
+  });
+
+  test("the no-em-dash rule covers text posted outside the app", () => {
+    expect(buildHoySystemPrompt()).toContain("comments you post to Linear or GitHub");
+  });
+
+  test("uses no em dashes", () => {
+    expect(buildHoySystemPrompt({ run: "subagent", agentTypes: [{ name: "X" }] })).not.toContain("\u2014");
   });
 });

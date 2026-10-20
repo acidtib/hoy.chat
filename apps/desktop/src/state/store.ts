@@ -1229,7 +1229,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       ),
     }));
     get().openThread(thread.id, { background: true });
-    void get().submitPrompt(thread.id, issuePrompt(issue), undefined, undefined, {
+    void get().submitPrompt(thread.id, issuePrompt(issue, agent), undefined, undefined, {
       autoPlanMode: false,
     });
     linearSetIssueState(issue.id, "started").catch((e) =>

@@ -7,6 +7,8 @@ import {
   enabledTypes,
   effectiveChildPrompt,
   resolveSubagentName,
+  spawnableTypes,
+  OPTIONAL_SUBAGENTS,
 } from "./hoy-agents-registry";
 
 function tmp(): string {
@@ -17,10 +19,14 @@ function writeAgent(dir: string, name: string, frontmatter: string, body: string
   writeFileSync(join(dir, `${name}.md`), `---\n${frontmatter}\n---\n${body}`);
 }
 
-test("the shipped roster: five role agents with their tool sets (HOY-357)", () => {
+test("the shipped roster: core roles on, the optional catalog off (HOY-367)", () => {
   const reg = loadSubagentRegistry(tmp(), tmp());
-  expect(Object.keys(reg)).toEqual(["Researcher", "Writer", "Coder", "Reviewer", "Project Manager"]);
+  expect(Object.keys(reg)).toEqual([
+    "Researcher", "Architect", "Coder", "Tester", "Reviewer", "Writer", "Project Manager",
+    "Security Reviewer", "DevOps", "Frontend",
+  ]);
   expect(reg["Researcher"].tools).toEqual(["read", "grep", "find", "ls", "mcp"]);
+  expect(reg["Architect"].tools).toEqual(["read", "grep", "find", "ls", "bash", "mcp"]);
   expect(reg["Writer"].tools).toEqual(["read", "grep", "find", "ls", "edit", "write", "mcp"]);
   expect(reg["Coder"].tools).toEqual(["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"]);
   expect(reg["Reviewer"].tools).toEqual(["read", "grep", "find", "ls", "bash", "mcp"]);
@@ -28,15 +34,37 @@ test("the shipped roster: five role agents with their tool sets (HOY-357)", () =
   for (const t of Object.values(reg)) {
     expect(t.promptMode).toBe("append");
     expect(t.body).toContain(`## Role: ${t.name}`);
-    expect(t.enabled).toBe(true);
+    expect(t.body).toContain("Report:");
+    expect(t.enabled).toBe(!OPTIONAL_SUBAGENTS.includes(t.name));
   }
+  // The Architect's report is the plan mode plan, so the Implement card applies.
+  expect(reg["Architect"].body).toContain("<proposed_plan>");
+});
+
+test("a role spawns only the types it allows; a user thread spawns any enabled type", () => {
+  const reg = loadSubagentRegistry(tmp(), tmp());
+  const names = (self: string | null) => spawnableTypes(reg, self ? reg[self] : null).map((t) => t.name);
+  expect(names("Coder")).toEqual(["Researcher", "Tester"]);
+  expect(names("Reviewer")).toEqual(["Researcher"]);
+  expect(names("Researcher")).toEqual([]);
+  expect(names(null)).toEqual(enabledTypes(reg).map((t) => t.name));
+  expect(names(null)).not.toContain("DevOps");
+});
+
+test("spawns frontmatter limits a custom agent; omitted allows every enabled type", () => {
+  const cwd = tmp();
+  writeAgent(join(cwd, ".hoy", "agents"), "Lead", "spawns: [Coder, Explore]", "lead");
+  writeAgent(join(cwd, ".hoy", "agents"), "Free", "description: any", "free");
+  const reg = loadSubagentRegistry(tmp(), cwd);
+  expect(spawnableTypes(reg, reg["Lead"]).map((t) => t.name)).toEqual(["Researcher", "Coder"]);
+  expect(spawnableTypes(reg, reg["Free"]).length).toBe(enabledTypes(reg).length - 1);
 });
 
 test("retired types resolve to their replacement unless a file still defines them", () => {
   const reg = loadSubagentRegistry(tmp(), tmp());
   expect(resolveSubagentName(reg, "general-purpose")).toBe("Coder");
   expect(resolveSubagentName(reg, "Explore")).toBe("Researcher");
-  expect(resolveSubagentName(reg, "Plan")).toBe("Researcher");
+  expect(resolveSubagentName(reg, "Plan")).toBe("Architect");
   expect(resolveSubagentName(reg, "Coder")).toBe("Coder");
   expect(resolveSubagentName(reg, "nope")).toBe("nope");
   const cwd = tmp();

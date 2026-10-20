@@ -197,12 +197,17 @@ pub fn set_enabled(
 // A custom.md must not reuse one of these case-insensitively: the registry keys
 // types by name, so a file named e.g. Coder.md will shadow the built-in. Rust
 // rejects the write so a built-in can never be masked by a user file.
-const BUILTIN_NAMES: [&str; 5] = [
+const BUILTIN_NAMES: [&str; 10] = [
     "researcher",
-    "writer",
+    "architect",
     "coder",
+    "tester",
     "reviewer",
+    "writer",
     "project manager",
+    "security reviewer",
+    "devops",
+    "frontend",
 ];
 
 // The fields a custom type carries, deserialized from the write command's `def`

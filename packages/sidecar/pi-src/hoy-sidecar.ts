@@ -33,11 +33,11 @@ import { createHoyTurnBudget } from "./hoy-turn-budget";
 import { createHoyAlibaba } from "./hoy-alibaba";
 import {
   loadSubagentRegistry,
-  enabledTypes,
   effectiveChildPrompt,
+  spawnableTypes,
   resolveSubagentName,
 } from "./hoy-agents-registry";
-import { buildHoySystemPrompt } from "./hoy-system-prompt";
+import { buildHoySystemPrompt, type RunContext } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
 import { runGoalEval } from "./hoy-goal-eval";
 import { runVerifyCommand } from "./hoy-verify-command";
@@ -191,7 +191,13 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
 
   const childType = subagentType ? registry[subagentType] : null;
   const baseTools = childType ? childType.tools : HOY_TOOLS;
-  const withAgent = canSpawn && !baseTools.includes("agent") ? [...baseTools, "agent"] : baseTools;
+  // HOY-367: a role spawns only the types it allows; with none it gets no agent
+  // tool. A typed thread at depth 0 is a Fleet run, deeper is a subagent.
+  const spawnable = canSpawn ? spawnableTypes(registry, childType) : [];
+  const delegates = spawnable.length > 0;
+  const advertised = spawnable.map((t) => ({ name: t.name, description: t.description }));
+  const run: RunContext = !childType ? "interactive" : subagentDepth === 0 ? "fleet" : "subagent";
+  const withAgent = delegates && !baseTools.includes("agent") ? [...baseTools, "agent"] : baseTools;
   // `mcp` is Hoy's capability name (HOY_TOOLS, subagent .md tool lists); Pi
   // exposes MCP as tool_search, resource tools, and mcp__<server>__<tool>.
   const mcpEnabled = withAgent.includes("mcp");
@@ -201,7 +207,6 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
     ...(codemode ? ["codemode"] : []),
     ...(linearTools ? LINEAR_TOOLS : []),
   ];
-  const advertised = enabledTypes(registry).map((t) => ({ name: t.name, description: t.description }));
 
   const services = await createAgentSessionServices({
     cwd,
@@ -212,7 +217,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         // Spawn guidance (agent tool + advertised types) is on iff this thread
         // can spawn, so a spawning-capable child sees it too. A non-spawning
         // child gets guidance off. EffectiveChildPrompt still applies its body.
-        const base = buildHoySystemPrompt(canSpawn, advertised);
+        const base = buildHoySystemPrompt({ tools, run, agentTypes: advertised });
         return childType ? effectiveChildPrompt(childType, base) : base;
       },
       // Disk discovery of <agentDir>/{extensions,skills,prompts,themes} needs no
@@ -260,7 +265,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         // unconditionally is safe: a child subagent never types /init.
         createHoyInit(),
         ...(linearTools ? [createHoyLinear()] : []),
-        ...(canSpawn ? [createHoyAgents(registry, requireSubagentApproval)] : []),
+        ...(delegates ? [createHoyAgents(registry, requireSubagentApproval, spawnable)] : []),
         // HOY-244: cap a budgeted subagent type's turns. Root/unbudgeted threads
         // run uncapped. childType is null for user threads, so this is child-only.
         ...(childType?.maxTurns ? [createHoyTurnBudget(childType.maxTurns)] : []),

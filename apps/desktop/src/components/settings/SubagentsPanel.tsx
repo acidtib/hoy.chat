@@ -139,11 +139,7 @@ function AgentRow({
           </Button>
         )}
       </div>
-      {isBuiltin ? (
-        <span className="self-center text-xs text-muted-foreground">built-in</span>
-      ) : (
-        <Switch checked={def.enabled} disabled={busy} onCheckedChange={(v) => onToggle?.(v)} aria-label={`Enable ${def.name}`} />
-      )}
+      <Switch checked={def.enabled} disabled={busy} onCheckedChange={(v) => onToggle?.(v)} aria-label={`Enable ${def.name}`} />
     </div>
   );
 }
@@ -192,7 +188,9 @@ export function SubagentsPanel() {
     setBusy(true);
     void (async () => {
       try {
-        await setSubagentEnabled(def.scope, def.name, next, projectPath);
+        // A built-in's on/off is part of the project's team when a project is open.
+        const scope = def.scope === "builtin" ? (projectPath ? "project" : "global") : def.scope;
+        await setSubagentEnabled(scope, def.name, next, projectPath);
         await refresh();
       } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
       finally { setBusy(false); }
@@ -271,7 +269,7 @@ export function SubagentsPanel() {
 
   return (
     <div className="space-y-6">
-      <PanelHeader title="Subagents" description="Specialized agent types the model can spawn. Author them here or as .hoy/agents/*.md. Built-ins are always available." />
+      <PanelHeader title="Agents" description="The agents Hoy can delegate work to, in the Fleet or as subagents. Author them here or as .hoy/agents/*.md. Built-ins are always available." />
       {error && <div className="border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>}
       {shown === null && !error && <p className="text-xs text-muted-foreground">Loading agents...</p>}
       {shown !== null && (["builtin", "global", "project"] as SubagentScope[]).map((scope) => {

@@ -10,7 +10,7 @@ export const DEFAULT_RUN_MINUTES = 15;
 const RETIRED_AGENTS: Record<string, string> = {
   "general-purpose": "Coder",
   Explore: "Researcher",
-  Plan: "Researcher",
+  Plan: "Architect",
 };
 
 export function currentAgentName(name: string): string {

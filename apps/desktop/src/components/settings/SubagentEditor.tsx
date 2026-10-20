@@ -52,10 +52,15 @@ const MAX_TURNS_CEILING = 4294967295;
 // project, so a same-named file will silently shadow the built-in. Lower-cased.
 export const BUILTIN_SUBAGENT_NAMES = [
   "researcher",
-  "writer",
+  "architect",
   "coder",
+  "tester",
   "reviewer",
+  "writer",
   "project manager",
+  "security reviewer",
+  "devops",
+  "frontend",
 ];
 
 // The form is never a blank box: a fresh agent (and duplicating a type with no

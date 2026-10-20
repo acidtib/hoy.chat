@@ -59,7 +59,7 @@ export const CATEGORIES: Category[] = [
   { id: "memory", label: "Memory & Context", icon: Brain, group: 0 },
   { id: "mcp", label: "MCP", icon: Cable, group: 1 },
   { id: "integrations", label: "Integrations", icon: SquareKanban, group: 1 },
-  { id: "subagents", label: "Subagents", icon: Bot, group: 1 },
+  { id: "subagents", label: "Agents", icon: Bot, group: 1 },
   { id: "skills", label: "Skills", icon: Sparkle, group: 1 },
   { id: "about", label: "About", icon: Info, group: 1 },
   { id: "safety", label: "Safety", icon: ShieldCheck, group: 2, placeholder: true },

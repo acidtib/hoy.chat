@@ -6,7 +6,7 @@
 // (the only place with ctx). See docs/plans/HOY-234-*.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { SubagentRegistry } from "./hoy-agents-registry";
+import type { SubagentRegistry, SubagentType } from "./hoy-agents-registry";
 import { enabledTypes, resolveSubagentName } from "./hoy-agents-registry";
 
 export const SPAWN_SYNC_PREFIX = "@hoy/spawn-subagent-sync:";
@@ -19,9 +19,16 @@ const DENY = "Deny";
 // relayed via HOY_REQUIRE_SUBAGENT_APPROVAL. Off by default: a spawn proceeds
 // without a consent prompt. On restores the per-type Allow / Allow-for-session /
 // Deny gate.
-export function createHoyAgents(registry: SubagentRegistry, requireApproval: boolean) {
+// `allowed` is the set this session may spawn (spawnableTypes); it defaults to
+// every enabled type.
+export function createHoyAgents(
+  registry: SubagentRegistry,
+  requireApproval: boolean,
+  allowed: SubagentType[] = enabledTypes(registry),
+) {
   const sessionAllowed = new Set<string>();
-  const types = enabledTypes(registry);
+  const types = allowed;
+  const allowedNames = new Set(allowed.map((t) => t.name));
   const agentParams = Type.Object({
     subagentType: Type.String({
       description: `One of the available subagent types: ${types.map((t) => t.name).join(", ")}.`,
@@ -32,7 +39,7 @@ export function createHoyAgents(registry: SubagentRegistry, requireApproval: boo
   async function run(params: any, ctx: ExtensionContext) {
     const name = resolveSubagentName(registry, String(params.subagentType ?? ""));
     const type = registry[name];
-    if (!type || !type.enabled) {
+    if (!type || !type.enabled || !allowedNames.has(type.name)) {
       throw new Error(`Unknown subagent type: "${name}". Available: ${types.map((t) => t.name).join(", ")}.`);
     }
     if (type.scope === "project" && !ctx.isProjectTrusted()) {
