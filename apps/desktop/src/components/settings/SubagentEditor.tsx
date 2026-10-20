@@ -36,13 +36,14 @@ export const SUBAGENT_TOOLS = [
   "edit",
   "write",
   "mcp",
+  "web",
 ] as const;
 
 // A sensible default allowlist for a fresh agent: the full working set minus mcp
 // (which most custom agents will not need). The user edits from here. Exported so
 // the panel can write this explicit set when the user selects no tools, an empty
 // tools list in a.md is read as FULL access (incl mcp), the opposite of intent.
-export const DEFAULT_TOOLS: string[] = ["read", "grep", "find", "ls", "bash", "edit", "write"];
+export const DEFAULT_TOOLS: string[] = ["read", "grep", "find", "ls", "bash", "edit", "write", "web"];
 
 // The largest value the Rust `max_turns: Option<u32>` field can hold. A larger
 // number fails serde deserialization at the write command, so reject it in the form.

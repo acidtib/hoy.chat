@@ -14,6 +14,7 @@ import {
   File as FileIcon,
   FilePen,
   Folder,
+  Globe,
   Info,
   Maximize2,
   MessageSquare,
@@ -1414,13 +1415,14 @@ function NoticeRow({
   );
 }
 
-type ToolKind = "read" | "edit" | "terminal" | "other";
+type ToolKind = "read" | "edit" | "terminal" | "web" | "other";
 
 // Edit and shell match whole names: they carry their own expand prefs, so an
 // MCP tool like linear_create_issue must not pass for an edit.
 function toolKind(name: string): ToolKind {
   if (/^(edit|multi_?edit|write|patch|apply_?patch)$/.test(name)) return "edit";
   if (/^(bash|shell|exec|terminal)$/.test(name)) return "terminal";
+  if (/^web_(fetch|search)$/.test(name)) return "web";
   if (/read|search|grep|find|list|cat|glob/.test(name)) return "read";
   return "other";
 }
@@ -1429,6 +1431,7 @@ function toolIcon(kind: ToolKind): ReactNode {
   if (kind === "read") return <Search />;
   if (kind === "edit") return <FilePen />;
   if (kind === "terminal") return <Terminal />;
+  if (kind === "web") return <Globe />;
   return undefined;
 }
 

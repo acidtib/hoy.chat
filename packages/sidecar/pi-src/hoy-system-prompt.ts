@@ -26,6 +26,9 @@
 // editing this file. Pi appends skills and cwd after a custom prompt, so they
 // are not restated here.
 
+import { ASK_QUESTION_GUIDELINES } from "./hoy-ask-question";
+import { LINEAR_GUIDELINES } from "./hoy-linear";
+
 const TOOL_LINES: Record<string, string> = {
   read: "read: Read file contents",
   grep: "grep: Search file contents for patterns (respects .gitignore)",
@@ -34,6 +37,8 @@ const TOOL_LINES: Record<string, string> = {
   bash: "bash: Execute bash commands (git, builds, tests, project scripts)",
   edit: "edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
   write: "write: Create or overwrite files",
+  web_search: "web_search: Search the web for pages, docs, and error messages",
+  web_fetch: "web_fetch: Read a web page or raw file as markdown",
 };
 
 export const ALL_BASE_TOOLS = Object.keys(TOOL_LINES);
@@ -61,9 +66,18 @@ function toolGuidelines(tools: Set<string>): string[] {
     );
   }
   if (has("write")) lines.push("- Use write only for new files or complete rewrites.");
+  if (has("web_fetch")) {
+    lines.push(
+      "- Use web_search and web_fetch for what is not in the project: current docs, changelogs, upstream issues, error messages. Prefer the installed source when it answers the question, and prefer official docs and source repositories over blog posts. Cite the URLs you relied on.",
+    );
+  }
   if (has("edit") || has("write")) {
     lines.push("- After a successful edit or write, do not read the file back to verify it; the tool call fails if it did not apply.");
   }
+  // Pi drops each tool's promptGuidelines when the prompt is replaced, so the
+  // ones Hoy's own tools carry are restated here.
+  if (has("ask_question")) lines.push(...ASK_QUESTION_GUIDELINES.map((g) => `- ${g}`));
+  if (has("linear_issue")) lines.push(...LINEAR_GUIDELINES.map((g) => `- ${g}`));
   return lines;
 }
 

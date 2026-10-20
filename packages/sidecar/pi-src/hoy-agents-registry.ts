@@ -36,10 +36,11 @@ export type SubagentRegistry = Record<string, SubagentType>;
 
 // The real registered built-in tool set (hoy-sidecar.ts HOY_TOOLS) minus `agent`
 // (a child never spawns). `mcp` is included. Unknown names in a.md are dropped.
-export const KNOWN_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"];
-const GENERAL_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"];
+// `web` is web_fetch + web_search (HOY-369).
+export const KNOWN_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "web"];
+const GENERAL_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "web"];
 const READ_TOOLS = ["read", "grep", "find", "ls"];
-const INSPECT_TOOLS = [...READ_TOOLS, "bash", "mcp"];
+const INSPECT_TOOLS = [...READ_TOOLS, "bash", "mcp", "web"];
 
 // HOY-366/367: role bodies append to the base Hoy prompt, which already carries
 // the tools, run context, safety and git rules, so a role states only its job,
@@ -49,7 +50,7 @@ You answer a question about the code, its dependencies, or their documentation, 
 
 Always:
 - Read the files the brief names first, then trace the relevant code end to end. Run independent searches in parallel.
-- For a library, read its installed source and docs (node_modules, vendored code, the lockfile's version) before relying on memory, and say which version you read.
+- For a library, read its installed source and docs (node_modules, vendored code, the lockfile's version) before relying on memory, and say which version you read. For what is not installed, use web_search and web_fetch, preferring official docs, changelogs, and source repositories.
 - Match the thoroughness the brief asks for (quick, medium, or very thorough); default to medium.
 
 Never:
@@ -59,7 +60,7 @@ Never:
 
 Report:
 - Answer: the direct answer in one to three sentences.
-- Evidence: one bullet per point, with path:line and a short quote where it matters. Mark what you inferred rather than read.
+- Evidence: one bullet per point, with path:line or the URL, and a short quote where it matters. Mark what you inferred rather than read.
 - Unknowns: what you could not confirm, and where you would look next.`;
 
 const ARCHITECT_PROMPT = `## Role: Architect
@@ -234,7 +235,7 @@ export const OPTIONAL_SUBAGENTS = ["Security Reviewer", "DevOps", "Frontend"];
 const RESEARCH_ONLY = ["Researcher"];
 
 export const BUILTIN_SUBAGENTS: SubagentType[] = [
-  { name: "Researcher", scope: "builtin", tools: [...READ_TOOLS, "mcp"], promptMode: "append", body: RESEARCHER_PROMPT, enabled: true, spawns: [],
+  { name: "Researcher", scope: "builtin", tools: [...READ_TOOLS, "mcp", "web"], promptMode: "append", body: RESEARCHER_PROMPT, enabled: true, spawns: [],
     description: "Read-only investigation of the codebase, its dependencies, and their docs. Use to answer a focused question with file:line evidence, or to explore several areas in parallel. Say how thorough to be: quick, medium, or very thorough." },
   { name: "Architect", scope: "builtin", tools: INSPECT_TOOLS, promptMode: "append", body: ARCHITECT_PROMPT, enabled: true, spawns: RESEARCH_ONLY,
     description: "Designs an implementation plan before any code is written. Read-only. Use when a task spans several files or has more than one reasonable design." },
@@ -244,9 +245,9 @@ export const BUILTIN_SUBAGENTS: SubagentType[] = [
     description: "Reproduces bugs as failing tests, adds regression and edge-case tests, and runs the suite. Use to prove a fix or cover a change. Does not change production code." },
   { name: "Reviewer", scope: "builtin", tools: INSPECT_TOOLS, promptMode: "append", body: REVIEWER_PROMPT, enabled: true, spawns: RESEARCH_ONLY,
     description: "Independent review of a diff, branch, or pull request for correctness and regressions. Does not edit. Use after a change is made and before it ships." },
-  { name: "Writer", scope: "builtin", tools: [...READ_TOOLS, "edit", "write", "mcp"], promptMode: "append", body: WRITER_PROMPT, enabled: true, spawns: [],
+  { name: "Writer", scope: "builtin", tools: [...READ_TOOLS, "edit", "write", "mcp", "web"], promptMode: "append", body: WRITER_PROMPT, enabled: true, spawns: [],
     description: "Writes requirements, specs, docs, release notes, and pull request descriptions grounded in the code. Use when the deliverable is a document. Does not change code." },
-  { name: "Project Manager", scope: "builtin", tools: [...READ_TOOLS, "mcp"], promptMode: "append", body: PROJECT_MANAGER_PROMPT, enabled: true, spawns: [],
+  { name: "Project Manager", scope: "builtin", tools: [...READ_TOOLS, "mcp", "web"], promptMode: "append", body: PROJECT_MANAGER_PROMPT, enabled: true, spawns: [],
     description: "Owns the backlog: breaks requirements into issues, sets dependencies and priorities, and triages incoming work. Does not implement." },
   { name: "Security Reviewer", scope: "builtin", tools: INSPECT_TOOLS, promptMode: "append", body: SECURITY_REVIEWER_PROMPT, enabled: false, spawns: RESEARCH_ONLY,
     description: "Security review of code or a change: injection, auth, secrets, unsafe input handling, and vulnerable dependencies. Does not edit." },

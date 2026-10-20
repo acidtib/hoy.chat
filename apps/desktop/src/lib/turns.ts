@@ -296,12 +296,13 @@ function contentImages(
 }
 
 // A readable one-line title from the tool's name and arguments. Bash shows its
-// command. File tools show the path. Search tools show the pattern.
+// command. File tools show the path, web_fetch its URL, search tools the pattern.
 function toolTitle(name: string, args: unknown): string {
   const a = (args ?? {}) as Record<string, unknown>;
   if (typeof a.command === "string") return a.command;
   const path = a.path ?? a.file ?? a.file_path ?? a.filename;
   if (typeof path === "string") return `${name} ${path}`;
+  if (typeof a.url === "string") return `${name} ${a.url}`;
   const pattern = a.pattern ?? a.query;
   if (typeof pattern === "string") return `${name} ${pattern}`;
   return name;

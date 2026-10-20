@@ -183,6 +183,15 @@ describe("buildHoySystemPrompt", () => {
     expect(full).toContain("over their bash equivalents");
   });
 
+  test("restates the guidelines of Hoy's own tools, which pi drops on replacement", () => {
+    const withTools = buildHoySystemPrompt({ tools: ["read", "ask_question", "linear_issue", "linear_comment"] });
+    expect(withTools).toContain("read it with linear_issue first");
+    expect(withTools).toContain("Group all of your clarifying questions into a single ask_question call");
+    const without = buildHoySystemPrompt({ tools: ["read"] });
+    expect(without).not.toContain("linear_issue");
+    expect(without).not.toContain("ask_question call");
+  });
+
   test("states the run context: interactive, Fleet, or subagent (HOY-366)", () => {
     expect(buildHoySystemPrompt()).toContain("You are working with the user directly");
     expect(buildHoySystemPrompt({ run: "fleet" })).toContain("assigned this task from the Fleet");

@@ -25,12 +25,12 @@ test("the shipped roster: core roles on, the optional catalog off (HOY-367)", ()
     "Researcher", "Architect", "Coder", "Tester", "Reviewer", "Writer", "Project Manager",
     "Security Reviewer", "DevOps", "Frontend",
   ]);
-  expect(reg["Researcher"].tools).toEqual(["read", "grep", "find", "ls", "mcp"]);
-  expect(reg["Architect"].tools).toEqual(["read", "grep", "find", "ls", "bash", "mcp"]);
-  expect(reg["Writer"].tools).toEqual(["read", "grep", "find", "ls", "edit", "write", "mcp"]);
-  expect(reg["Coder"].tools).toEqual(["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"]);
-  expect(reg["Reviewer"].tools).toEqual(["read", "grep", "find", "ls", "bash", "mcp"]);
-  expect(reg["Project Manager"].tools).toEqual(["read", "grep", "find", "ls", "mcp"]);
+  expect(reg["Researcher"].tools).toEqual(["read", "grep", "find", "ls", "mcp", "web"]);
+  expect(reg["Architect"].tools).toEqual(["read", "grep", "find", "ls", "bash", "mcp", "web"]);
+  expect(reg["Writer"].tools).toEqual(["read", "grep", "find", "ls", "edit", "write", "mcp", "web"]);
+  expect(reg["Coder"].tools).toEqual(["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "web"]);
+  expect(reg["Reviewer"].tools).toEqual(["read", "grep", "find", "ls", "bash", "mcp", "web"]);
+  expect(reg["Project Manager"].tools).toEqual(["read", "grep", "find", "ls", "mcp", "web"]);
   for (const t of Object.values(reg)) {
     expect(t.promptMode).toBe("append");
     expect(t.body).toContain(`## Role: ${t.name}`);
@@ -111,7 +111,7 @@ test("model and thinking are parsed; tools omitted defaults to the general set",
   const reg = loadSubagentRegistry(tmp(), cwd);
   expect(reg["M"].model).toBe("sonnet");
   expect(reg["M"].thinking).toBe("high");
-  expect(reg["M"].tools).toEqual(["read", "grep", "find", "ls", "bash", "edit", "write", "mcp"]);
+  expect(reg["M"].tools).toEqual(["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "web"]);
 });
 
 test("disabled names in subagents.json set enabled=false; enabledTypes filters them", () => {

@@ -31,6 +31,7 @@ import { createHoyLinear, LINEAR_TOOLS } from "./hoy-linear";
 import { createHoyInit } from "./hoy-init";
 import { createHoyTurnBudget } from "./hoy-turn-budget";
 import { createHoyAlibaba } from "./hoy-alibaba";
+import { createHoyWeb } from "./hoy-web";
 import {
   loadSubagentRegistry,
   effectiveChildPrompt,
@@ -60,7 +61,7 @@ registerBunOAuthFlows();
 // Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
 // with grep/find/ls while bash is blocked. The prompt's tools list matches.
-const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "agent", "ask_question"];
+const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "web", "agent", "ask_question"];
 const envMode = process.env.HOY_PERMISSION_MODE ?? "default";
 const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "default";
 const permissionState = createPermissionState(initialMode);
@@ -260,6 +261,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         // child. Registering it unconditionally is harmless: a
         // child never has it in `tools`, so it cannot call it.
         createHoyAskQuestion(),
+        ...(withAgent.includes("web") ? [createHoyWeb()] : []),
         // HOY-265: /init generates or refreshes AGENTS.md. A user-invoked
         // command (surfaced via get_commands, HOY-223), so installing it
         // unconditionally is safe: a child subagent never types /init.

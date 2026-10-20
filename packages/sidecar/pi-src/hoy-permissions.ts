@@ -30,7 +30,8 @@ export function isPermissionMode(value: string): value is PermissionMode {
 }
 
 // tool_search and the MCP resource tools come from Pi's built-in MCP extension;
-// they only discover tools and read resources (Pi marks them read-only).
+// they only discover tools and read resources (Pi marks them read-only). The web
+// tools only read public pages (HOY-369).
 const READ_ONLY_TOOLS = new Set([
   "read",
   "grep",
@@ -40,6 +41,8 @@ const READ_ONLY_TOOLS = new Set([
   "list_mcp_resources",
   "list_mcp_resource_templates",
   "read_mcp_resource",
+  "web_fetch",
+  "web_search",
 ]);
 
 // Pi registers each MCP server tool as mcp__<server>__<tool>.

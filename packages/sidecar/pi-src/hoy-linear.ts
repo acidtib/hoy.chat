@@ -18,7 +18,7 @@ const issueParam = Type.String({
   description: "Issue identifier like HOY-123 (or its id).",
 });
 
-const GUIDELINES = [
+export const LINEAR_GUIDELINES = [
   "When you were handed a Linear issue, read it with linear_issue first: its comments can change the task.",
   "When you finish, post a short summary with linear_comment (what changed, how it was verified, anything left open), then move the issue with linear_set_state: done when the work is complete, or a review state if the team has one and a human should look.",
   "File work you discover but should not do now as a follow-up with linear_create_issue instead of expanding the task. Use relation sub_issue for a piece of this issue, blocked_by when this issue cannot finish without it.",
@@ -51,7 +51,7 @@ export function createHoyLinear() {
       description:
         "Read a Linear issue: title, state, description, recent comments, and the team's workflow states.",
       promptSnippet: "linear_issue (read a Linear issue and its comments)",
-      promptGuidelines: GUIDELINES,
+      promptGuidelines: LINEAR_GUIDELINES,
       parameters: Type.Object({ issue: issueParam }),
       execute: async (_id, params, _signal, _onUpdate, ctx) =>
         call(ctx, { action: "get", issue: params.issue }),
