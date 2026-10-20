@@ -41,6 +41,7 @@ import {
 import { buildHoySystemPrompt, type RunContext } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
 import { runGoalEval } from "./hoy-goal-eval";
+import { runTitle } from "./hoy-title";
 import { runVerifyCommand } from "./hoy-verify-command";
 import { runGoalAudit } from "./hoy-goal-audit";
 import { runListSkills } from "./hoy-list-skills";
@@ -143,6 +144,11 @@ if (process.env.HOY_LIST_SKILLS) {
 // env, captures the {met, reason} JSON on stdout, and exits us. Runs before the
 // runtime is built so it never touches runRpcMode. Fail-open lives inside
 // runGoalEval, which always writes JSON and exits.
+// HOY-370: one-shot thread title (hoy-title.ts). Writes {title} JSON and exits.
+if (process.env.HOY_TITLE) {
+  await runTitle(agentDir, process.cwd());
+}
+
 if (process.env.HOY_GOAL_EVAL) {
   await runGoalEval(agentDir, process.cwd());
   // runGoalEval writes JSON to stdout and exits. This line is never reached.

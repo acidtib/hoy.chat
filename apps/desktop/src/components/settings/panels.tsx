@@ -200,6 +200,7 @@ function Placeholder({
 
 function ChatPanel() {
   const sendOnEnter = usePrefsStore((s) => s.sendOnEnter);
+  const autoTitles = usePrefsStore((s) => s.autoTitles);
   const showReasoning = usePrefsStore((s) => s.showReasoning);
   const expandEditTools = usePrefsStore((s) => s.expandEditTools);
   const expandShellTools = usePrefsStore((s) => s.expandShellTools);
@@ -217,6 +218,13 @@ function ChatPanel() {
           description="Enter sends; Shift+Enter inserts a newline. When off, Enter adds a newline and Cmd/Ctrl+Enter sends."
           checked={sendOnEnter}
           onChange={(v) => setPref("sendOnEnter", v)}
+        />
+        <Separator />
+        <ToggleRow
+          label="Name threads automatically"
+          description="Title new threads from their first message using a small, fast model"
+          checked={autoTitles}
+          onChange={(v) => setPref("autoTitles", v)}
         />
         <Separator />
         <ToggleRow

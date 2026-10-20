@@ -198,6 +198,7 @@ pub fn run() {
             commands::set_subagents_enabled,
             commands::set_subagent_model,
             commands::project_has_fleet,
+            commands::generate_title,
             commands::write_subagent,
             commands::delete_subagent,
             oauth::oauth_login_start,

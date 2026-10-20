@@ -53,6 +53,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     setSubagentsEnabled: mock(async () => {}),
     setSubagentModel: mock(async () => {}),
     projectHasFleet: mock(async () => true),
+    generateTitle: mock(async () => null),
     setThinkingLevel: mock(),
     verifyGoalCommand: mock(),
     supportedProviders: mock(),

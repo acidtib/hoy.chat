@@ -1421,6 +1421,36 @@ impl SidecarManager {
     // (else the sidecar picks a cheap available one). Fail-open lives in the
     // sidecar, which writes {met:false, reason:"evaluator error: ..."} and exits 0
     // on any failure, so a clean parse here still means "keep working".
+    // HOY-370: the one-shot Title helper (HOY_TITLE). Returns the command ready
+    // to run so the caller can run it off the async runtime.
+    pub fn title_command(
+        &self,
+        text: &str,
+        model: Option<&ModelRef>,
+    ) -> Result<std::process::Command, String> {
+        if !self.bin.exists() {
+            return Err(format!(
+                "sidecar binary not found at {}. Run sidecar/build.sh.",
+                self.bin.display()
+            ));
+        }
+        let mut command = std::process::Command::new(&self.bin);
+        apply_sanitized_env(&mut command, &self.agent_dir, &self.cwd);
+        command
+            .env("PI_PACKAGE_DIR", &self.payload)
+            .env("HOY_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_TITLE", "1")
+            .env("HOY_TITLE_TEXT", text)
+            .current_dir(&self.cwd);
+        if let Some(model) = model {
+            command.env(
+                "HOY_TITLE_MODEL",
+                format!("{}/{}", model.provider, model.id),
+            );
+        }
+        Ok(command)
+    }
+
     pub fn evaluate_goal(
         &self,
         session_file: &str,

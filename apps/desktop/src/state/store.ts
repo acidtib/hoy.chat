@@ -41,6 +41,7 @@ import {
   setSubagentEnabled as ipcSetSubagentEnabled,
   setSubagentsEnabled as ipcSetSubagentsEnabled,
   setSubagentModel as ipcSetSubagentModel,
+  generateTitle,
   projectHasFleet,
   setThinkingLevel,
   linearSetIssueState,
@@ -1934,6 +1935,29 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     const stopStreaming = () =>
       set((s) => ({ streaming: { ...s.streaming, [threadId]: false } }));
+
+    // A user thread's first message gets a proper title in the background; the
+    // first-line title stands until it lands, and a rename in between wins.
+    if (
+      thread.title === "New thread" &&
+      !thread.renamed &&
+      !thread.agent &&
+      !thread.spawnedBy &&
+      text.trim() &&
+      usePrefsStore.getState().autoTitles
+    ) {
+      const placeholder = truncateTitle(text);
+      void generateTitle(text, thread.model ?? appDefaultModel(get()))
+        .then((title) => {
+          if (!title) return;
+          set((s) => ({
+            projects: patchThread(s.projects, threadId, (th) =>
+              th.renamed || th.title !== placeholder ? th : { ...th, title },
+            ),
+          }));
+        })
+        .catch(() => {});
+    }
 
     try {
       let sessionId = thread.sessionId ?? null;

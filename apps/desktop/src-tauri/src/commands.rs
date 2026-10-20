@@ -786,6 +786,24 @@ pub async fn evaluate_goal(
     manager.evaluate_goal(&session_file, &condition, evaluator_model.as_ref())
 }
 
+// HOY-370: name a thread from its first message on a cheap model. None when
+// the helper could not produce a title; the thread keeps its first-line title.
+#[tauri::command]
+pub async fn generate_title(
+    text: String,
+    model: Option<crate::events::ModelRef>,
+    manager: State<'_, SidecarManager>,
+) -> Result<Option<String>, String> {
+    let mut command = manager.title_command(&text, model.as_ref())?;
+    let out = tauri::async_runtime::spawn_blocking(move || command.output())
+        .await
+        .map_err(|e| format!("generate_title: {e}"))?
+        .map_err(|e| format!("spawn sidecar for generate_title: {e}"))?;
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .map_err(|e| format!("parse generate_title output: {e}"))?;
+    Ok(parsed["title"].as_str().map(str::to_string))
+}
+
 // Goal Mode v2 (HOY-298): run a goal's deterministic verify command via a
 // one-shot sidecar and return {code, stdout, stderr, killed}. Task A plumbing
 // only. Task B calls this from the loop after the transcript evaluator says met,

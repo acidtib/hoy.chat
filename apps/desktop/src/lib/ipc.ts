@@ -474,6 +474,11 @@ export function getUsageStats(): Promise<UsageReport> {
 // the sidecar pick a cheap available one. Always resolves to { met, reason }:
 // the evaluator fails open to met:false on any error, so Task 5's loop keeps
 // working on uncertainty rather than falsely stopping.
+// HOY-370: a short thread title from its first message, or null.
+export function generateTitle(text: string, model: ModelRef | null): Promise<string | null> {
+  return invoke<string | null>("generate_title", { text, model });
+}
+
 export function evaluateGoal(
   sessionId: string,
   condition: string,
