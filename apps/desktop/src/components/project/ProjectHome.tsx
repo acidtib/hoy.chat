@@ -97,7 +97,7 @@ function ThreadsView({ project }: { project: Project }) {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search threads..."
+            placeholder="Search this project's threads..."
             className="h-8 w-full border border-border bg-transparent pl-8 pr-2 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none"
           />
         </div>

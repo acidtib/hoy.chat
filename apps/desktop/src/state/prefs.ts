@@ -35,12 +35,10 @@ export interface AppPrefs {
   // Shell tool parts start expanded. When off they collapse to a preview of the
   // output's last lines. Approval-pending and errored tools stay open regardless.
   expandShellTools: boolean;
-  // Confirm before closing a panel whose response is still streaming.
-  confirmCloseStreaming: boolean;
   // Starting directory for the "Open project" picker. Empty = OS default.
   defaultProjectDir: string;
-  // Open a panel for each subagent a thread spawns. Off by default. Fleet
-  // is the intended way to watch spawned agents instead.
+  // Open a tab when an agent starts work: a Fleet task or a spawned subagent.
+  // Off by default; the Fleet is where agent work is watched (HOY-372).
   autoOpenSpawnedThreads: boolean;
   // Prompt for consent before a thread spawns each subagent type. Off by
   // default (HOY-248): spawns proceed without a gate and the user watches or
@@ -95,7 +93,6 @@ export const PREFS_DEFAULTS: AppPrefs = {
   showReasoning: false,
   expandEditTools: false,
   expandShellTools: true,
-  confirmCloseStreaming: true,
   defaultProjectDir: "",
   autoOpenSpawnedThreads: false,
   requireSubagentApproval: false,
@@ -146,7 +143,6 @@ export const usePrefsStore = create<PrefsStore>()(
         showReasoning: s.showReasoning,
         expandEditTools: s.expandEditTools,
         expandShellTools: s.expandShellTools,
-        confirmCloseStreaming: s.confirmCloseStreaming,
         defaultProjectDir: s.defaultProjectDir,
         autoOpenSpawnedThreads: s.autoOpenSpawnedThreads,
         requireSubagentApproval: s.requireSubagentApproval,

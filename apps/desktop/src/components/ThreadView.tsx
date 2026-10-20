@@ -467,6 +467,22 @@ export function ThreadView({
         <>
           <Conversation>
             <ConversationContent className="w-full gap-4 px-3 py-3">
+
+              {turns.map((turn, i) =>
+                turn.role === "user" ? (
+                  <UserTurn key={i} turn={turn} />
+                ) : (
+                  <AssistantTurn
+                    key={i}
+                    turn={turn}
+                    showReasoning={showReasoning}
+                    planReady={planReady}
+                    awaitingApproval={awaitingApproval}
+                    onImplement={handleImplement}
+                    onDismiss={handleDismissPlan}
+                  />
+                ),
+              )}
               {debug && (
                 <div className="rounded-xl border border-border bg-card/60">
                   <div className="flex items-center justify-between gap-2 px-4 py-3 text-xs font-medium text-muted-foreground">
@@ -485,22 +501,6 @@ export function ThreadView({
                     {JSON.stringify(debug, null, 2)}
                   </pre>
                 </div>
-              )}
-
-              {turns.map((turn, i) =>
-                turn.role === "user" ? (
-                  <UserTurn key={i} turn={turn} />
-                ) : (
-                  <AssistantTurn
-                    key={i}
-                    turn={turn}
-                    showReasoning={showReasoning}
-                    planReady={planReady}
-                    awaitingApproval={awaitingApproval}
-                    onImplement={handleImplement}
-                    onDismiss={handleDismissPlan}
-                  />
-                ),
               )}
             </ConversationContent>
             <ConversationScrollButton />

@@ -908,10 +908,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setActiveProject: (id) => set({ activeProjectId: id }),
 
   requestTeardown: (action, threadId) => {
-    // The confirm dialog only guards a live stream. When the user has turned that
-    // guard off, or nothing is streaming, tear down immediately.
-    const confirmStreaming = usePrefsStore.getState().confirmCloseStreaming;
-    if (!get().streaming[threadId] || !confirmStreaming) {
+    // Archiving or deleting a thread that is still streaming stops it, so that
+    // asks first. Closing a tab never reaches here for a live thread.
+    if (!get().streaming[threadId]) {
       runTeardown(get(), action, threadId);
       return;
     }
@@ -1030,16 +1029,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   requestPanelClose: (threadId) => {
-    // Closing a subagent's panel must never stop its work: dismiss the view and
-    // leave the sidecar running (reopenable from Fleet). Only a root thread's
-    // panel is torn down on close, keeping the existing kill-on-close + streaming
-    // confirm (HOY-301).
+    // Closing a tab never stops work (HOY-372): a subagent or a thread that is
+    // still streaming is dismissed and keeps running, reopenable from the
+    // sidebar or the Fleet. Only an idle root thread's sidecar is shut down.
     const thread = findThread(get().projects, threadId)?.thread;
-    if (thread && isSubagentThread(thread)) {
+    if (thread && (isSubagentThread(thread) || get().streaming[threadId])) {
       get().dismissPanel(threadId);
       return;
     }
-    get().requestTeardown("close", threadId);
+    get().closePanel(threadId);
   },
 
   dismissPanel: (id) =>
@@ -1256,7 +1254,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         p.id === projectId ? { ...p, threads: [thread, ...p.threads] } : p,
       ),
     }));
-    get().openThread(thread.id, { background: true });
+    // The Fleet is the watch surface; a tab opens only when the user asks for one.
+    if (usePrefsStore.getState().autoOpenSpawnedThreads) get().openThread(thread.id, { background: true });
     void get().submitPrompt(thread.id, issuePrompt(issue, agent), undefined, undefined, {
       autoPlanMode: false,
     });

@@ -19,7 +19,6 @@ describe("usePrefsStore", () => {
       showReasoning: false,
       expandEditTools: false,
       expandShellTools: true,
-      confirmCloseStreaming: true,
       defaultProjectDir: "",
       autoOpenSpawnedThreads: false,
       requireSubagentApproval: false,
@@ -45,9 +44,9 @@ describe("usePrefsStore", () => {
   });
 
   test("reset restores defaults", () => {
-    usePrefsStore.getState().setPref("confirmCloseStreaming", false);
+    usePrefsStore.getState().setPref("sendOnEnter", false);
     usePrefsStore.getState().reset();
-    expect(usePrefsStore.getState().confirmCloseStreaming).toBe(true);
+    expect(usePrefsStore.getState().sendOnEnter).toBe(true);
   });
 });
 
@@ -65,7 +64,7 @@ describe("migratePrefs", () => {
   });
 });
 
-describe("confirmCloseStreaming gates the teardown dialog", () => {
+describe("closing a tab never stops work (HOY-372)", () => {
   function seed(streaming: Record<string, boolean>) {
     useSessionStore.setState({
       projects: [
@@ -109,20 +108,25 @@ describe("confirmCloseStreaming gates the teardown dialog", () => {
     });
   }
 
-  test("off: a streaming thread closes immediately, no dialog", () => {
-    usePrefsStore.getState().setPref("confirmCloseStreaming", false);
+  test("a streaming thread's tab is dismissed and the thread keeps running", () => {
     seed({ t1: true });
-    useSessionStore.getState().requestTeardown("close", "t1");
+    useSessionStore.getState().requestPanelClose("t1");
+    const st = useSessionStore.getState();
+    expect(st.panels.map((p) => p.id)).toEqual(["t2"]);
+    expect(st.streaming.t1).toBe(true);
+    expect(st.pendingTeardown).toBeNull();
+  });
+
+  test("an idle thread's tab closes with no dialog", () => {
+    seed({});
+    useSessionStore.getState().requestPanelClose("t1");
     expect(useSessionStore.getState().panels.map((p) => p.id)).toEqual(["t2"]);
     expect(useSessionStore.getState().pendingTeardown).toBeNull();
   });
 
-  test("on (default): a streaming thread parks a pending teardown", () => {
+  test("archiving a streaming thread still asks first", () => {
     seed({ t1: true });
-    useSessionStore.getState().requestTeardown("close", "t1");
-    expect(useSessionStore.getState().pendingTeardown).toEqual({
-      action: "close",
-      threadId: "t1",
-    });
+    useSessionStore.getState().requestTeardown("archive", "t1");
+    expect(useSessionStore.getState().pendingTeardown).toEqual({ action: "archive", threadId: "t1" });
   });
 });

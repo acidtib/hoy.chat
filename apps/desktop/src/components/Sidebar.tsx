@@ -113,7 +113,7 @@ export function Sidebar() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search threads..."
+                placeholder="Search all threads..."
                 className="h-8 w-full rounded-md border border-transparent bg-transparent pl-8 pr-2 text-sm text-sidebar-foreground placeholder:text-muted-foreground focus:border-border focus:bg-background/40 focus:outline-none"
               />
             </div>

@@ -254,7 +254,6 @@ function ChatPanel() {
 
 function WorkspacePanel() {
   const defaultProjectDir = usePrefsStore((s) => s.defaultProjectDir);
-  const confirmCloseStreaming = usePrefsStore((s) => s.confirmCloseStreaming);
   const autoOpenSpawnedThreads = usePrefsStore((s) => s.autoOpenSpawnedThreads);
   const requireSubagentApproval = usePrefsStore((s) => s.requireSubagentApproval);
   const maxConcurrentAgents = usePrefsStore((s) => s.maxConcurrentAgents);
@@ -270,7 +269,7 @@ function WorkspacePanel() {
     <div className="space-y-8">
       <PanelHeader
         title="Workspace"
-        description="Defaults for opening projects and closing panels."
+        description="Defaults for opening projects and how agent work runs."
       />
       <Section>
         <Field
@@ -291,15 +290,8 @@ function WorkspacePanel() {
         </Field>
         <Separator className="my-4" />
         <ToggleRow
-          label="Confirm before closing a streaming panel"
-          description="Ask before closing a thread whose response is still streaming."
-          checked={confirmCloseStreaming}
-          onChange={(v) => setPref("confirmCloseStreaming", v)}
-        />
-        <Separator />
-        <ToggleRow
-          label="Auto-open spawned subagent threads"
-          description="Open a panel for each subagent a thread spawns. Off by default; watch spawned agents in each project's Fleet instead."
+          label="Open agent work in tabs"
+          description="Open a tab when an agent starts a Fleet task or a thread spawns a subagent. Off by default; watch agent work in each project's Fleet instead. Closing a tab never stops the work."
           checked={autoOpenSpawnedThreads}
           onChange={(v) => setPref("autoOpenSpawnedThreads", v)}
         />
@@ -312,8 +304,8 @@ function WorkspacePanel() {
         />
         <Separator />
         <Field
-          label="Max concurrent subagents"
-          hint="How many spawned subagents stream at once; the rest queue and start as slots free. Minimum 1."
+          label="Max helper subagents at once"
+          hint="How many subagents spawned by threads and Fleet agents can run at the same time, across all projects; the rest wait for a free slot. Each Fleet agent's own runs-at-once is set on the Fleet board. Minimum 1."
         >
           <Input
             type="number"
