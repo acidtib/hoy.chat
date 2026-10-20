@@ -285,11 +285,11 @@ export function ThreadView({
     });
   }, [focusSignal]);
 
-  function handleSubmit(intent: "enter" | "shiftEnter") {
+  function handleSubmit(intent: "enter" | "queue") {
     const message = draft;
     const images = attachments.map((a) => a.content);
     // Behavior only applies mid-turn. SubmitPrompt ignores it when idle.
-    const behavior = intent === "shiftEnter" ? "followUp" : "steer";
+    const behavior = intent === "queue" ? "followUp" : "steer";
     setDraft(threadId, "");
     void submitPrompt(
       threadId,

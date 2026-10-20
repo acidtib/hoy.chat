@@ -24,7 +24,7 @@ export interface AppPrefs {
   // this only records that the local UI flow has been completed.
   onboardingCompleted: boolean;
   // Composer: Enter sends. When false, Enter inserts a newline and Cmd/Ctrl+Enter
-  // sends. (Shift+Enter mid-turn still queues a follow-up regardless.)
+  // sends. (Ctrl/Cmd+Enter mid-turn still queues a follow-up regardless.)
   sendOnEnter: boolean;
   // Reasoning shows in full in the timeline. When off it collapses to a live
   // preview of its last lines that the user can click open.
