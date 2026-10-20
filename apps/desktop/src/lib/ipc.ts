@@ -382,8 +382,9 @@ export function linearOAuthCancel(): Promise<void> {
   return invoke<void>("linear_oauth_cancel");
 }
 
-export function linearDisconnect(): Promise<void> {
-  return invoke<void>("linear_disconnect");
+// One workspace, or every one when `workspaceId` is omitted.
+export function linearDisconnect(workspaceId?: string): Promise<void> {
+  return invoke<void>("linear_disconnect", { workspaceId: workspaceId ?? null });
 }
 
 // `state` is a workflow state name or type ("started", "done", "In Review").
@@ -395,8 +396,8 @@ export function linearTeams(): Promise<LinearTeam[]> {
   return invoke<LinearTeam[]>("linear_teams");
 }
 
-export function linearIssues(teamId: string): Promise<LinearIssue[]> {
-  return invoke<LinearIssue[]>("linear_issues", { teamId });
+export function linearIssues(teamId: string, workspaceId?: string | null): Promise<LinearIssue[]> {
+  return invoke<LinearIssue[]>("linear_issues", { teamId, workspaceId: workspaceId ?? null });
 }
 
 export function loadWorkspace(): Promise<Workspace> {

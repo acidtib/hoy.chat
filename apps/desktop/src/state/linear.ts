@@ -28,8 +28,8 @@ interface LinearStore {
   connect: (apiKey: string) => Promise<void>;
   connectOAuth: () => Promise<void>;
   cancelOAuth: () => Promise<void>;
-  disconnect: () => Promise<void>;
-  refreshIssues: (projectId: string, teamId: string) => Promise<void>;
+  disconnect: (workspaceId?: string) => Promise<void>;
+  refreshIssues: (projectId: string, teamId: string, workspaceId?: string | null) => Promise<void>;
 }
 
 export const EMPTY_ISSUES: IssueCache = {
@@ -55,6 +55,7 @@ export const useLinearStore = create<LinearStore>((set, get) => ({
           organization: null,
           error: String(e),
           oauthAvailable: false,
+          workspaces: [],
         },
       });
     }
@@ -72,8 +73,13 @@ export const useLinearStore = create<LinearStore>((set, get) => ({
 
   cancelOAuth: () => linearOAuthCancel(),
 
-  disconnect: async () => {
-    await linearDisconnect();
+  disconnect: async (workspaceId) => {
+    await linearDisconnect(workspaceId);
+    if (workspaceId) {
+      await get().refreshStatus();
+      set({ issues: {} });
+      return;
+    }
     set((s) => ({
       status: {
         connected: false,
@@ -82,18 +88,19 @@ export const useLinearStore = create<LinearStore>((set, get) => ({
         organization: null,
         error: null,
         oauthAvailable: s.status?.oauthAvailable ?? false,
+        workspaces: [],
       },
       issues: {},
     }));
   },
 
-  refreshIssues: async (projectId, teamId) => {
+  refreshIssues: async (projectId, teamId, workspaceId) => {
     const prev = get().issues[projectId] ?? EMPTY_ISSUES;
     set((s) => ({
       issues: { ...s.issues, [projectId]: { ...prev, loading: true, error: null } },
     }));
     try {
-      const items = await linearIssues(teamId);
+      const items = await linearIssues(teamId, workspaceId);
       set((s) => ({
         issues: {
           ...s.issues,

@@ -84,6 +84,12 @@ pub struct WsLinearLink {
     pub team_id: String,
     pub team_key: String,
     pub team_name: String,
+    // HOY-374: the Linear workspace (organization) the team lives in. Absent on
+    // links saved before multi-workspace support; resolved from the team then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_name: Option<String>,
 }
 
 // The Linear issue a delegated thread is working on (HOY-346).
@@ -264,6 +270,8 @@ mod tests {
                 name: "hoy".into(),
                 path: Some("/home/u/code/hoy".into()),
                 linear: Some(WsLinearLink {
+                    workspace_id: None,
+                    workspace_name: None,
                     team_id: "team-1".into(),
                     team_key: "HOY".into(),
                     team_name: "Hoy".into(),

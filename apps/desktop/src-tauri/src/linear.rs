@@ -3,6 +3,7 @@
 // "linear" in integrations.json in the agent dir (0600, atomic write) and never
 // reach the renderer; only LinearStatus does.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -53,6 +54,8 @@ pub struct LinearStatus {
     pub error: Option<String>,
     // This build carries a Linear OAuth client id.
     pub oauth_available: bool,
+    // Every connected workspace (HOY-374); the fields above describe the first.
+    pub workspaces: Vec<LinearWorkspace>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -61,6 +64,10 @@ pub struct LinearTeam {
     pub id: String,
     pub key: String,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -91,6 +98,20 @@ pub fn now_ms() -> u64 {
 // One file for every integration's credentials, keyed by integration name.
 const SECTION: &str = "linear";
 
+// HOY-374: one entry per connected Linear workspace (organization). `id` is the
+// organization id; it is empty for a credential stored before multi-workspace
+// support, until the next status check identifies it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct Workspace {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(flatten)]
+    creds: Credentials,
+}
+
 fn key_path() -> Result<PathBuf, String> {
     Ok(agent_dir()?.join("integrations.json"))
 }
@@ -108,30 +129,46 @@ fn read_file_at(path: &Path) -> Result<Map<String, Value>, String> {
     }
 }
 
-fn read_at(path: &Path) -> Result<Credentials, String> {
+fn has_credential(c: &Credentials) -> bool {
+    c.oauth.is_some() || c.api_key.is_some()
+}
+
+// The connected workspaces. A legacy single credential ({apiKey} or {oauth} at
+// the top of the section) reads as one unidentified workspace.
+fn read_workspaces_at(path: &Path) -> Result<Vec<Workspace>, String> {
     let Some(section) = read_file_at(path)?.remove(SECTION) else {
-        return Ok(Credentials::default());
+        return Ok(Vec::new());
     };
-    let mut creds: Credentials = serde_json::from_value(section)
-        .map_err(|e| format!("parse integrations.json {SECTION}: {e}"))?;
-    creds.api_key = creds.api_key.filter(|k| !k.trim().is_empty());
-    Ok(creds)
+    let mut list: Vec<Workspace> = match section.get("workspaces") {
+        Some(ws) => serde_json::from_value(ws.clone())
+            .map_err(|e| format!("parse integrations.json {SECTION}: {e}"))?,
+        None => {
+            let creds: Credentials = serde_json::from_value(section)
+                .map_err(|e| format!("parse integrations.json {SECTION}: {e}"))?;
+            vec![Workspace {
+                creds,
+                ..Workspace::default()
+            }]
+        }
+    };
+    for w in &mut list {
+        w.creds.api_key = w.creds.api_key.take().filter(|k| !k.trim().is_empty());
+    }
+    list.retain(|w| has_credential(&w.creds));
+    Ok(list)
 }
 
 // Read-modify-write of the Linear section only; other integrations are kept.
-// None removes the section.
-fn write_at(path: &Path, creds: Option<&Credentials>) -> Result<(), String> {
+// An empty list removes the section.
+fn write_workspaces_at(path: &Path, workspaces: &[Workspace]) -> Result<(), String> {
     let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut map = read_file_at(path)?;
-    match creds {
-        Some(c) => {
-            let value =
-                serde_json::to_value(c).map_err(|e| format!("serialize integrations.json: {e}"))?;
-            map.insert(SECTION.to_string(), value);
-        }
-        None => {
-            map.remove(SECTION);
-        }
+    if workspaces.is_empty() {
+        map.remove(SECTION);
+    } else {
+        let value = serde_json::to_value(workspaces)
+            .map_err(|e| format!("serialize integrations.json: {e}"))?;
+        map.insert(SECTION.to_string(), json!({ "workspaces": value }));
     }
 
     let dir = path
@@ -167,23 +204,34 @@ fn write_at(path: &Path, creds: Option<&Credentials>) -> Result<(), String> {
     })
 }
 
+// Insert a workspace, replacing the credential of one already stored under the
+// same organization id.
+fn upsert(list: &mut Vec<Workspace>, ws: Workspace) {
+    match list.iter_mut().find(|w| !ws.id.is_empty() && w.id == ws.id) {
+        Some(existing) => *existing = ws,
+        None => list.push(ws),
+    }
+}
+
 fn fresh(tokens: &OAuthTokens) -> bool {
     tokens.expires_at > now_ms() + REFRESH_MARGIN_MS
 }
 
-// The Authorization header value for the stored credential, refreshing an
-// expiring OAuth token first. OAuth wins when both are stored.
-async fn auth_header() -> Result<String, String> {
+// The Authorization header for workspace `index`, refreshing an expiring OAuth
+// token first. OAuth wins when both are stored.
+async fn auth_header_at(index: usize) -> Result<String, String> {
     let path = key_path()?;
-    let creds = read_at(&path)?;
-    if let Some(tokens) = &creds.oauth {
+    let list = read_workspaces_at(&path)?;
+    let ws = list.get(index).ok_or("Linear is not connected")?;
+    if let Some(tokens) = &ws.creds.oauth {
         if fresh(tokens) {
             return Ok(format!("Bearer {}", tokens.access_token));
         }
         let _guard = REFRESH_LOCK.lock().await;
         // Another call may have refreshed while this one waited.
-        let creds = read_at(&path)?;
-        let tokens = creds.oauth.clone().ok_or("Linear is not connected")?;
+        let mut list = read_workspaces_at(&path)?;
+        let ws = list.get_mut(index).ok_or("Linear is not connected")?;
+        let tokens = ws.creds.oauth.clone().ok_or("Linear is not connected")?;
         if fresh(&tokens) {
             return Ok(format!("Bearer {}", tokens.access_token));
         }
@@ -192,19 +240,24 @@ async fn auth_header() -> Result<String, String> {
             .ok_or("Your Linear session expired. Sign in again.")?;
         let renewed = linear_oauth::refresh(&refresh).await?;
         let header = format!("Bearer {}", renewed.access_token);
-        write_at(
-            &path,
-            Some(&Credentials {
-                oauth: Some(renewed),
-                ..creds
-            }),
-        )?;
+        ws.creds.oauth = Some(renewed);
+        write_workspaces_at(&path, &list)?;
         return Ok(header);
     }
     // Personal API keys go in the header as-is, without a Bearer prefix.
-    creds
+    ws.creds
         .api_key
+        .clone()
         .ok_or_else(|| "Linear is not connected".to_string())
+}
+
+async fn auth_for(workspace_id: &str) -> Result<String, String> {
+    let list = read_workspaces_at(&key_path()?)?;
+    let index = list
+        .iter()
+        .position(|w| w.id == workspace_id)
+        .ok_or_else(|| format!("Linear workspace {workspace_id} is not connected"))?;
+    auth_header_at(index).await
 }
 
 pub fn http_client() -> Result<reqwest::Client, String> {
@@ -252,7 +305,18 @@ fn data_of(body: Value) -> Result<Value, String> {
         .ok_or_else(|| "Linear response missing data".to_string())
 }
 
-const VIEWER_QUERY: &str = "query { viewer { name } organization { name } }";
+const VIEWER_QUERY: &str = "query { viewer { name } organization { id name } }";
+
+// One connected workspace as the settings panel shows it.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearWorkspace {
+    pub id: String,
+    pub name: String,
+    pub method: Option<String>,
+    pub viewer_name: Option<String>,
+    pub error: Option<String>,
+}
 
 fn disconnected() -> LinearStatus {
     LinearStatus {
@@ -262,6 +326,7 @@ fn disconnected() -> LinearStatus {
         organization: None,
         error: None,
         oauth_available: linear_oauth::available(),
+        workspaces: Vec::new(),
     }
 }
 
@@ -275,41 +340,95 @@ fn method_of(creds: &Credentials) -> Option<String> {
     }
 }
 
-fn parse_status(data: &Value, method: Option<String>) -> LinearStatus {
-    LinearStatus {
-        connected: true,
+fn org_of(data: &Value) -> (String, String) {
+    let at = |p: &str| {
+        data.pointer(p)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    (at("/organization/id"), at("/organization/name"))
+}
+
+fn parse_workspace(data: &Value, method: Option<String>) -> LinearWorkspace {
+    let (id, name) = org_of(data);
+    LinearWorkspace {
+        id,
+        name,
         method,
         viewer_name: data
             .pointer("/viewer/name")
             .and_then(Value::as_str)
             .map(str::to_string),
-        organization: data
-            .pointer("/organization/name")
-            .and_then(Value::as_str)
-            .map(str::to_string),
         error: None,
+    }
+}
+
+// The combined status. The top-level fields describe the first workspace, so
+// a single-workspace caller reads it as before.
+fn combine(workspaces: Vec<LinearWorkspace>) -> LinearStatus {
+    let Some(first) = workspaces.first().cloned() else {
+        return disconnected();
+    };
+    LinearStatus {
+        connected: true,
+        method: first.method,
+        viewer_name: first.viewer_name,
+        organization: (!first.name.is_empty()).then_some(first.name),
+        error: first.error,
         oauth_available: linear_oauth::available(),
+        workspaces,
     }
 }
 
 pub async fn status() -> Result<LinearStatus, String> {
-    let creds = read_at(&key_path()?)?;
-    let Some(method) = method_of(&creds) else {
-        return Ok(disconnected());
-    };
-    let result = match auth_header().await {
-        Ok(auth) => graphql(&auth, VIEWER_QUERY, json!({})).await,
-        Err(e) => Err(e),
-    };
-    Ok(match result {
-        Ok(data) => parse_status(&data, Some(method)),
-        Err(e) => LinearStatus {
-            connected: true,
-            method: Some(method),
-            error: Some(e),
-            ..disconnected()
-        },
-    })
+    let path = key_path()?;
+    let list = read_workspaces_at(&path)?;
+    let mut out = Vec::with_capacity(list.len());
+    let mut identified = false;
+    for (i, ws) in list.iter().enumerate() {
+        let method = method_of(&ws.creds);
+        let result = match auth_header_at(i).await {
+            Ok(auth) => graphql(&auth, VIEWER_QUERY, json!({})).await,
+            Err(e) => Err(e),
+        };
+        out.push(match result {
+            Ok(data) => {
+                let w = parse_workspace(&data, method);
+                identified |= ws.id.is_empty() && !w.id.is_empty();
+                w
+            }
+            Err(e) => LinearWorkspace {
+                id: ws.id.clone(),
+                name: ws.name.clone(),
+                method,
+                viewer_name: None,
+                error: Some(e),
+            },
+        });
+    }
+    // Record the organization of a credential stored before workspaces existed.
+    if identified {
+        let mut list = read_workspaces_at(&path)?;
+        for (ws, seen) in list.iter_mut().zip(&out) {
+            if ws.id.is_empty() && !seen.id.is_empty() {
+                ws.id = seen.id.clone();
+                ws.name = seen.name.clone();
+            }
+        }
+        write_workspaces_at(&path, &list)?;
+    }
+    Ok(combine(out))
+}
+
+async fn add_workspace(creds: Credentials, auth: &str) -> Result<LinearStatus, String> {
+    let data = graphql(auth, VIEWER_QUERY, json!({})).await?;
+    let (id, name) = org_of(&data);
+    let path = key_path()?;
+    let mut list = read_workspaces_at(&path)?;
+    upsert(&mut list, Workspace { id, name, creds });
+    write_workspaces_at(&path, &list)?;
+    status().await
 }
 
 pub async fn connect(api_key: &str) -> Result<LinearStatus, String> {
@@ -317,46 +436,44 @@ pub async fn connect(api_key: &str) -> Result<LinearStatus, String> {
     if key.is_empty() {
         return Err("API key is empty".to_string());
     }
-    let data = graphql(key, VIEWER_QUERY, json!({})).await?;
-    write_at(
-        &key_path()?,
-        Some(&Credentials {
+    add_workspace(
+        Credentials {
             api_key: Some(key.to_string()),
             oauth: None,
-        }),
-    )?;
-    Ok(parse_status(&data, Some("apiKey".into())))
+        },
+        key,
+    )
+    .await
 }
 
 pub async fn connect_oauth(app: &tauri::AppHandle) -> Result<LinearStatus, String> {
     let tokens = linear_oauth::login(app).await?;
-    let data = graphql(
-        &format!("Bearer {}", tokens.access_token),
-        VIEWER_QUERY,
-        json!({}),
-    )
-    .await?;
-    write_at(
-        &key_path()?,
-        Some(&Credentials {
+    let auth = format!("Bearer {}", tokens.access_token);
+    add_workspace(
+        Credentials {
             api_key: None,
             oauth: Some(tokens),
-        }),
-    )?;
-    Ok(parse_status(&data, Some("oauth".into())))
+        },
+        &auth,
+    )
+    .await
 }
 
-pub async fn disconnect() -> Result<(), String> {
+// Drop one workspace, or all of them when `workspace_id` is None.
+pub async fn disconnect(workspace_id: Option<&str>) -> Result<(), String> {
     let path = key_path()?;
-    if let Ok(Credentials {
-        oauth: Some(tokens),
-        ..
-    }) = read_at(&path)
-    {
-        // Best effort: the local token is dropped either way.
-        let _ = linear_oauth::revoke(&tokens.access_token).await;
+    let list = read_workspaces_at(&path)?;
+    let (gone, kept): (Vec<_>, Vec<_>) = list
+        .into_iter()
+        .partition(|w| workspace_id.is_none_or(|id| w.id == id));
+    for ws in &gone {
+        if let Some(tokens) = &ws.creds.oauth {
+            // Best effort: the local token is dropped either way.
+            let _ = linear_oauth::revoke(&tokens.access_token).await;
+        }
     }
-    write_at(&path, None)
+    *team_cache().lock().unwrap_or_else(|e| e.into_inner()) = TeamIndex::default();
+    write_workspaces_at(&path, &kept)
 }
 
 const TEAMS_QUERY: &str = "query { teams(first: 100) { nodes { id key name } } }";
@@ -372,9 +489,102 @@ fn parse_teams(data: &Value) -> Result<Vec<LinearTeam>, String> {
     Ok(teams)
 }
 
+// Which workspace owns a team, by team id and by team key, filled by teams().
+#[derive(Default)]
+struct TeamIndex {
+    by_id: HashMap<String, String>,
+    by_key: HashMap<String, String>,
+}
+
+fn team_cache() -> &'static Mutex<TeamIndex> {
+    static CACHE: std::sync::OnceLock<Mutex<TeamIndex>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(TeamIndex::default()))
+}
+
+// Every connected workspace's teams, tagged with their workspace. A workspace
+// that fails is skipped so the others still list.
 pub async fn teams() -> Result<Vec<LinearTeam>, String> {
-    let data = graphql(&auth_header().await?, TEAMS_QUERY, json!({})).await?;
-    parse_teams(&data)
+    let list = read_workspaces_at(&key_path()?)?;
+    if list.is_empty() {
+        return Err("Linear is not connected".to_string());
+    }
+    let mut all = Vec::new();
+    let mut last_err = None;
+    for (i, ws) in list.iter().enumerate() {
+        let result = match auth_header_at(i).await {
+            Ok(auth) => graphql(&auth, TEAMS_QUERY, json!({})).await,
+            Err(e) => Err(e),
+        };
+        match result.and_then(|d| parse_teams(&d)) {
+            Ok(teams) => {
+                let mut cache = team_cache().lock().unwrap_or_else(|e| e.into_inner());
+                for mut t in teams {
+                    cache.by_id.insert(t.id.clone(), ws.id.clone());
+                    cache.by_key.insert(t.key.to_uppercase(), ws.id.clone());
+                    t.workspace_id = Some(ws.id.clone());
+                    t.workspace_name = Some(ws.name.clone());
+                    all.push(t);
+                }
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    if all.is_empty() {
+        if let Some(e) = last_err {
+            return Err(e);
+        }
+    }
+    Ok(all)
+}
+
+// A workspace id from the team index, refreshing it once on a miss.
+async fn lookup_workspace(find: impl Fn(&TeamIndex) -> Option<String>) -> Option<String> {
+    let hit = |f: &dyn Fn(&TeamIndex) -> Option<String>| {
+        f(&team_cache().lock().unwrap_or_else(|e| e.into_inner()))
+    };
+    if let Some(ws) = hit(&find) {
+        return Some(ws);
+    }
+    let _ = teams().await;
+    hit(&find)
+}
+
+async fn first_workspace() -> Result<String, String> {
+    read_workspaces_at(&key_path()?)?
+        .first()
+        .map(|w| w.id.clone())
+        .ok_or_else(|| "Linear is not connected".to_string())
+}
+
+// The workspace for a team: the one given, else whichever workspace lists it,
+// else the first.
+async fn workspace_for_team(team_id: &str, workspace_id: Option<&str>) -> Result<String, String> {
+    if let Some(id) = workspace_id.filter(|id| !id.is_empty()) {
+        return Ok(id.to_string());
+    }
+    match lookup_workspace(|c| c.by_id.get(team_id).cloned()).await {
+        Some(ws) => Ok(ws),
+        None => first_workspace().await,
+    }
+}
+
+// The workspace an agent request belongs to, from its `team` key or the team
+// key prefix of its `issue` identifier (HOY-123 -> HOY).
+async fn workspace_for_request(payload: &Value) -> Result<String, String> {
+    let key = str_arg(payload, "team")
+        .map(str::to_string)
+        .or_else(|| {
+            str_arg(payload, "issue")
+                .and_then(|i| i.split_once('-'))
+                .map(|(k, _)| k.to_string())
+        })
+        .map(|k| k.to_uppercase());
+    if let Some(key) = key {
+        if let Some(ws) = lookup_workspace(|c| c.by_key.get(&key).cloned()).await {
+            return Ok(ws);
+        }
+    }
+    first_workspace().await
 }
 
 // Open work only: backlog and unstarted (Todo) states.
@@ -439,9 +649,10 @@ fn parse_issues(data: &Value) -> Result<Vec<LinearIssue>, String> {
     Ok(issues)
 }
 
-pub async fn issues(team_id: &str) -> Result<Vec<LinearIssue>, String> {
+pub async fn issues(team_id: &str, workspace_id: Option<&str>) -> Result<Vec<LinearIssue>, String> {
+    let ws = workspace_for_team(team_id, workspace_id).await?;
     let data = graphql(
-        &auth_header().await?,
+        &auth_for(&ws).await?,
         ISSUES_QUERY,
         json!({ "teamId": team_id }),
     )
@@ -449,12 +660,12 @@ pub async fn issues(team_id: &str) -> Result<Vec<LinearIssue>, String> {
     parse_issues(&data)
 }
 
-// True when credentials are stored. Read at sidecar spawn to decide whether
+// True when any workspace is connected. Read at sidecar spawn to decide whether
 // the session gets the Linear agent tools.
 pub fn is_connected() -> bool {
     key_path()
-        .and_then(|p| read_at(&p))
-        .map(|c| method_of(&c).is_some())
+        .and_then(|p| read_workspaces_at(&p))
+        .map(|l| !l.is_empty())
         .unwrap_or(false)
 }
 
@@ -702,7 +913,7 @@ async fn create_issue(auth: &str, args: &Value) -> Result<Value, String> {
 }
 
 pub async fn action(payload: &Value) -> Result<Value, String> {
-    let auth = auth_header().await?;
+    let auth = auth_for(&workspace_for_request(payload).await?).await?;
     let action = required(payload, "action")?;
     match action {
         "get" => Ok(issue_summary(
@@ -763,15 +974,18 @@ mod tests {
         }
     }
 
-    #[test]
-    fn credentials_round_trip_and_missing_reads_empty() {
-        let path = temp_path("roundtrip");
-        assert_eq!(read_at(&path).unwrap(), Credentials::default());
-        write_at(&path, Some(&api_key("lin_api_abc"))).unwrap();
-        assert_eq!(read_at(&path).unwrap(), api_key("lin_api_abc"));
-        let raw: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(raw, json!({ "linear": { "apiKey": "lin_api_abc" } }));
+    fn ws(id: &str, creds: Credentials) -> Workspace {
+        Workspace {
+            id: id.into(),
+            name: format!("Org {id}"),
+            creds,
+        }
+    }
 
+    #[test]
+    fn workspaces_round_trip_and_missing_reads_empty() {
+        let path = temp_path("roundtrip");
+        assert!(read_workspaces_at(&path).unwrap().is_empty());
         let oauth = Credentials {
             api_key: None,
             oauth: Some(OAuthTokens {
@@ -780,16 +994,41 @@ mod tests {
                 expires_at: 42,
             }),
         };
-        write_at(&path, Some(&oauth)).unwrap();
+        let list = vec![ws("o1", api_key("lin_api_abc")), ws("o2", oauth)];
+        write_workspaces_at(&path, &list).unwrap();
+        assert_eq!(read_workspaces_at(&path).unwrap(), list);
         let raw: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(
             raw,
-            json!({ "linear": { "oauth": { "accessToken": "at", "refreshToken": "rt", "expiresAt": 42 } } })
+            json!({ "linear": { "workspaces": [
+                { "id": "o1", "name": "Org o1", "apiKey": "lin_api_abc" },
+                { "id": "o2", "name": "Org o2", "oauth": { "accessToken": "at", "refreshToken": "rt", "expiresAt": 42 } }
+            ] } })
         );
+    }
+
+    #[test]
+    fn a_legacy_single_credential_reads_as_one_unidentified_workspace() {
+        let path = temp_path("legacy");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{ "linear": { "apiKey": "lin_api_old" } }"#).unwrap();
+        let list = read_workspaces_at(&path).unwrap();
         assert_eq!(
-            method_of(&read_at(&path).unwrap()).as_deref(),
-            Some("oauth")
+            list,
+            vec![Workspace {
+                creds: api_key("lin_api_old"),
+                ..Workspace::default()
+            }]
         );
+    }
+
+    #[test]
+    fn upsert_replaces_the_same_org_and_adds_a_new_one() {
+        let mut list = vec![ws("o1", api_key("old"))];
+        upsert(&mut list, ws("o1", api_key("new")));
+        upsert(&mut list, ws("o2", api_key("other")));
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].creds.api_key.as_deref(), Some("new"));
     }
 
     #[cfg(unix)]
@@ -797,30 +1036,45 @@ mod tests {
     fn credentials_file_is_owner_only() {
         use std::os::unix::fs::PermissionsExt;
         let path = temp_path("mode");
-        write_at(&path, Some(&api_key("lin_api_abc"))).unwrap();
+        write_workspaces_at(&path, &[ws("o1", api_key("lin_api_abc"))]).unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
     }
 
     #[test]
-    fn blank_key_reads_as_disconnected() {
+    fn a_blank_key_is_not_a_workspace() {
         let path = temp_path("blank");
-        write_at(&path, Some(&api_key("  "))).unwrap();
-        assert_eq!(method_of(&read_at(&path).unwrap()), None);
+        write_workspaces_at(&path, &[ws("o1", api_key("  "))]).unwrap();
+        assert!(read_workspaces_at(&path).unwrap().is_empty());
     }
 
     #[test]
-    fn writes_keep_other_integrations_and_disconnect_drops_only_linear() {
+    fn writes_keep_other_integrations_and_an_empty_list_drops_only_linear() {
         let path = temp_path("shared");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, r#"{ "github": { "token": "gh" } }"#).unwrap();
-        write_at(&path, Some(&api_key("lin_api_abc"))).unwrap();
+        write_workspaces_at(&path, &[ws("o1", api_key("lin_api_abc"))]).unwrap();
         let raw: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(raw["github"], json!({ "token": "gh" }));
-        assert_eq!(raw["linear"], json!({ "apiKey": "lin_api_abc" }));
-        write_at(&path, None).unwrap();
+        write_workspaces_at(&path, &[]).unwrap();
         let raw: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(raw, json!({ "github": { "token": "gh" } }));
+    }
+
+    #[test]
+    fn combined_status_describes_the_first_workspace_and_lists_all() {
+        let w = |id: &str, name: &str| LinearWorkspace {
+            id: id.into(),
+            name: name.into(),
+            method: Some("oauth".into()),
+            viewer_name: Some("Ada".into()),
+            error: None,
+        };
+        let status = combine(vec![w("o1", "Hoy"), w("o2", "Side")]);
+        assert!(status.connected);
+        assert_eq!(status.organization.as_deref(), Some("Hoy"));
+        assert_eq!(status.workspaces.len(), 2);
+        assert!(!combine(Vec::new()).connected);
     }
 
     fn states() -> Vec<WorkflowState> {
@@ -927,11 +1181,12 @@ mod tests {
 
     #[test]
     fn parses_viewer_and_org() {
-        let data = json!({ "viewer": { "name": "Ada" }, "organization": { "name": "Hoy" } });
-        let status = parse_status(&data, Some("apiKey".into()));
-        assert!(status.connected);
-        assert_eq!(status.viewer_name.as_deref(), Some("Ada"));
-        assert_eq!(status.organization.as_deref(), Some("Hoy"));
+        let data =
+            json!({ "viewer": { "name": "Ada" }, "organization": { "id": "o1", "name": "Hoy" } });
+        let w = parse_workspace(&data, Some("apiKey".into()));
+        assert_eq!(w.id, "o1");
+        assert_eq!(w.name, "Hoy");
+        assert_eq!(w.viewer_name.as_deref(), Some("Ada"));
     }
 
     #[test]

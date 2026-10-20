@@ -260,8 +260,11 @@ pub fn linear_oauth_cancel() {
 }
 
 #[tauri::command]
-pub async fn linear_disconnect(manager: State<'_, SidecarManager>) -> Result<(), String> {
-    linear::disconnect().await?;
+pub async fn linear_disconnect(
+    workspace_id: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    linear::disconnect(workspace_id.as_deref()).await?;
     respawn_idle_sessions(&manager).await;
     Ok(())
 }
@@ -280,8 +283,11 @@ pub async fn linear_teams() -> Result<Vec<LinearTeam>, String> {
 }
 
 #[tauri::command]
-pub async fn linear_issues(team_id: String) -> Result<Vec<LinearIssue>, String> {
-    linear::issues(&team_id).await
+pub async fn linear_issues(
+    team_id: String,
+    workspace_id: Option<String>,
+) -> Result<Vec<LinearIssue>, String> {
+    linear::issues(&team_id, workspace_id.as_deref()).await
 }
 
 #[tauri::command]

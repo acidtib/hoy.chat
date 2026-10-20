@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { LinearIcon } from "@/components/icons/LinearIcon";
+import { SourceForm } from "@/components/fleet/SourcePicker";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -29,7 +30,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { linearTeams } from "@/lib/ipc";
 import { agentThreads, unassignedIssues } from "@/lib/delegate";
 import {
   costPerMinute,
@@ -46,7 +46,6 @@ import {
 } from "@/lib/fleet";
 import type {
   LinearIssue,
-  LinearTeam,
   Project,
   QueuedIssue,
   SubagentDef,
@@ -75,37 +74,15 @@ export function ProjectFleet({ project }: { project: Project }) {
 
 function BoardBody({ project }: { project: Project }) {
   const status = useLinearStore((s) => s.status);
-  const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
-
   if (!status) {
     return <Notice title="Checking Linear..." />;
   }
-  if (!status.connected || status.error) {
-    return (
-      <Notice
-        title={status.error ? "Linear needs attention" : "Connect Linear"}
-        body={
-          status.error ??
-          "Connect a Linear workspace to pull issues into the board."
-        }
-        action={
-          <Button
-            size="sm"
-            onClick={() => setSettingsOpen(true, "integrations")}
-          >
-            Open Integrations
-          </Button>
-        }
-      />
-    );
-  }
-  if (!project.linear) {
-    return <TeamLink project={project} />;
-  }
-  return <Board project={project} teamId={project.linear.teamId} />;
+  // Until a source is linked, the Todo column holds the link form.
+  const linked = project.linear && (status.workspaces ?? []).length > 0;
+  return <Board project={project} teamId={linked ? project.linear!.teamId : null} />;
 }
 
-function Board({ project, teamId }: { project: Project; teamId: string }) {
+function Board({ project, teamId }: { project: Project; teamId: string | null }) {
   const cache = useLinearStore((s) => s.issues[project.id] ?? EMPTY_ISSUES);
   const refreshIssues = useLinearStore((s) => s.refreshIssues);
   const subagents = useSessionStore((s) => s.subagents);
@@ -116,8 +93,8 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
   const now = useNow(30_000);
 
   useEffect(() => {
-    if (cache.fetchedAt === null && !cache.loading && !cache.error) {
-      void refreshIssues(project.id, teamId);
+    if (teamId && cache.fetchedAt === null && !cache.loading && !cache.error) {
+      void refreshIssues(project.id, teamId, project.linear?.workspaceId);
     }
   }, [
     cache.fetchedAt,
@@ -142,7 +119,7 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
   );
   const prevRunning = useRef(running);
   useEffect(() => {
-    if (running < prevRunning.current) void refreshIssues(project.id, teamId);
+    if (teamId && running < prevRunning.current) void refreshIssues(project.id, teamId, project.linear?.workspaceId);
     prevRunning.current = running;
   }, [running, project.id, teamId, refreshIssues]);
   const open = useMemo(
@@ -179,7 +156,9 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-3 px-4 pt-3 text-xs text-muted-foreground">
         <GripVertical className="size-3.5 shrink-0 opacity-50" />
-        <span className="truncate">Drag a task onto an agent to queue it</span>
+        <span className="truncate">
+          {teamId ? "Drag a task onto an agent to queue it" : "Link a task source to fill the Todo column"}
+        </span>
         <div className="ml-auto flex shrink-0 items-center gap-3">
           <span
             className="font-mono"
@@ -201,14 +180,14 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
       <div className="flex min-h-0 min-w-0 flex-1 gap-3 p-4 pt-2">
         <Column
           title="Todo"
-          count={open.length}
+          count={teamId ? open.length : undefined}
           className="w-72"
           action={
-            <Button
+            teamId && <Button
               variant="ghost"
               size="icon-sm"
               className="size-7 text-muted-foreground"
-              onClick={() => void refreshIssues(project.id, teamId)}
+              onClick={() => void refreshIssues(project.id, teamId, project.linear?.workspaceId)}
               disabled={cache.loading}
               aria-label="Refresh issues"
               title="Refresh issues"
@@ -220,7 +199,11 @@ function Board({ project, teamId }: { project: Project; teamId: string }) {
           }
         >
           <div className="space-y-2 p-2">
-            {cache.error ? (
+            {!teamId ? (
+              <div className="p-1">
+                <SourceForm project={project} />
+              </div>
+            ) : cache.error ? (
               <p className="p-2 text-xs text-destructive">{cache.error}</p>
             ) : cache.fetchedAt === null ? (
               <p className="p-2 text-xs text-muted-foreground">
@@ -280,7 +263,7 @@ function Column({
   children,
 }: {
   title: string;
-  count: number;
+  count?: number;
   action?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
@@ -294,9 +277,11 @@ function Column({
     >
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
         <h2 className="text-sm font-semibold">{title}</h2>
-        <span className="border border-border px-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
-          {count}
-        </span>
+        {count !== undefined && (
+          <span className="border border-border px-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
+            {count}
+          </span>
+        )}
         <div className="ml-auto flex items-center">{action}</div>
       </div>
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">{children}</div>
@@ -897,63 +882,6 @@ function QueuedTask({
   );
 }
 
-function TeamLink({ project }: { project: Project }) {
-  const setProjectLinear = useSessionStore((s) => s.setProjectLinear);
-  const [teams, setTeams] = useState<LinearTeam[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    linearTeams().then(
-      (t) => !cancelled && setTeams(t),
-      (e) => !cancelled && setError(String(e)),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return (
-    <Notice
-      title={`Link ${project.name} to a Linear team`}
-      body="Its backlog and Todo issues become the Unassigned column."
-      action={
-        error ? (
-          <p className="text-xs text-destructive">{error}</p>
-        ) : !teams ? (
-          <p className="text-xs text-muted-foreground">Loading teams...</p>
-        ) : teams.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No teams in this workspace.
-          </p>
-        ) : (
-          <div className="flex w-full max-w-sm flex-col border border-border">
-            {teams.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() =>
-                  setProjectLinear(project.id, {
-                    teamId: t.id,
-                    teamKey: t.key,
-                    teamName: t.name,
-                  })
-                }
-                className="flex cursor-pointer items-center gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent"
-              >
-                <span className="font-mono text-xs text-muted-foreground">
-                  {t.key}
-                </span>
-                {t.name}
-              </button>
-            ))}
-          </div>
-        )
-      }
-    />
-  );
-}
-
 export function TeamMenu({ project }: { project: Project }) {
   const setProjectLinear = useSessionStore((s) => s.setProjectLinear);
   const link = project.linear!;
@@ -965,6 +893,9 @@ export function TeamMenu({ project }: { project: Project }) {
             {link.teamKey}
           </span>
           {link.teamName}
+          {link.workspaceName && (
+            <span className="text-muted-foreground">· {link.workspaceName}</span>
+          )}
           <ChevronDown className="size-3" />
         </Button>
       </DropdownMenuTrigger>

@@ -584,18 +584,33 @@ export interface LinearStatus {
   error: string | null;
   // This build carries a Linear OAuth client id.
   oauthAvailable: boolean;
+  // Every connected workspace (HOY-374); the fields above describe the first.
+  workspaces: LinearWorkspace[];
+}
+
+export interface LinearWorkspace {
+  id: string;
+  name: string;
+  method: "oauth" | "apiKey" | null;
+  viewerName: string | null;
+  error: string | null;
 }
 
 export interface LinearTeam {
   id: string;
   key: string;
   name: string;
+  workspaceId?: string | null;
+  workspaceName?: string | null;
 }
 
 export interface LinearLink {
   teamId: string;
   teamKey: string;
   teamName: string;
+  // HOY-374: absent on links saved before multi-workspace support.
+  workspaceId?: string | null;
+  workspaceName?: string | null;
 }
 
 export interface LinearIssue {
