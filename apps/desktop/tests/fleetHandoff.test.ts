@@ -10,6 +10,7 @@ const createIssueWorktree = mock(async (_path: string, branch: string) => ({
   base: "main",
 }));
 const removeIssueWorktree = mock(async () => ({ removed: true, dirty: false }));
+const openPullRequest = mock(async (..._args: unknown[]) => "https://github.com/o/r/pull/9");
 const dispatchDecision = mock(async (..._args: unknown[]) => ({
   ready: true,
   agent: "Researcher",
@@ -26,6 +27,7 @@ mockIpcModule({
   createIssueWorktree,
   removeIssueWorktree,
   dispatchDecision,
+  openPullRequest,
 });
 
 const { useSessionStore } = await import("@/state/store");
@@ -250,4 +252,16 @@ test("moving a queued issue keeps its handoff and starts it on the new agent", a
   expect(moved.linearIssue?.identifier).toBe("HOY-2");
   expect(moved.handoff).toMatchObject({ fromAgent: "Coder" });
   expect(project().fleet!.queue).toHaveLength(0);
+});
+
+test("Ship with pull requests off leaves the branch for the user to open a pull request", async () => {
+  const coder = await start("Coder");
+  await endRun(coder, [movedTo("In Review")]);
+  const reviewer = runsOf("Reviewer")[0];
+  await endRun(reviewer, [text("Verdict: Ship")]);
+  expect(runsOf("Reviewer")[0].chainStop).toMatchObject({ needsUser: false });
+
+  await useSessionStore.getState().openRunPullRequest(reviewer.id);
+  expect(openPullRequest.mock.calls[0]).toEqual(["/w/hoy-1-add-a-toggle", "hoy-1-add-a-toggle", "main"]);
+  expect(runsOf("Reviewer")[0].pullRequest).toBe("https://github.com/o/r/pull/9");
 });

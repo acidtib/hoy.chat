@@ -143,7 +143,9 @@ export function issuePrompt(
     "",
     ...(worktree ? ["", ...finishSteps(issue.identifier, worktree, !!opts.openPullRequests)] : []),
     "",
-    agent && KEEPS_STATE.has(agent)
+    agent === "Architect"
+      ? `When you are done, post the full plan on ${issue.identifier} with linear_comment, not a summary: whoever implements it reads it there. Leave the issue's state as it is; the Fleet routes it to the next step.`
+      : agent && KEEPS_STATE.has(agent)
       ? `When you are done, post your report on ${issue.identifier} with linear_comment. Leave the issue's state as it is; the Fleet routes it to the next step.`
       : worktree
       ? `Then post your report on ${issue.identifier} with linear_comment and move it with linear_set_state: to a review state (In Review) if you committed changes, or Done if the task needed none. File anything out of scope as a follow-up with linear_create_issue.`

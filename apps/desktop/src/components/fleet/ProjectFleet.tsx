@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { agentThreads, unassignedIssues } from "@/lib/delegate";
 import { decisionCosts } from "@/lib/dispatch";
-import { ghStatus, projectIsGitRepo, type GhStatus } from "@/lib/ipc";
+import { branchStatus, ghStatus, projectIsGitRepo, type GhStatus } from "@/lib/ipc";
 import {
   costPerMinute,
   estimateMinutes,
@@ -590,12 +590,31 @@ function AgentRow({
   const inReview = rest.filter(
     (t) => !streaming[t.id] && !t.worktreeIssue && !waiting.includes(t) && t.pullRequest,
   );
+  // The last run of an issue whose branch has work and no pull request: it
+  // stays until the user opens one or archives it.
+  const unshipped = rest.filter(
+    (t) =>
+      !streaming[t.id] &&
+      !t.worktreeIssue &&
+      !waiting.includes(t) &&
+      !t.pullRequest &&
+      !t.handedTo &&
+      t.fleetRun?.outcome === "done" &&
+      t.worktree &&
+      !t.worktree.removed,
+  );
+  const branches = useBranchStatuses(unshipped);
+  const ready = unshipped.filter((t) => {
+    const b = branches[t.id];
+    return !b || b.ahead > 0 || b.dirty;
+  });
   const done = rest.filter((t) => {
     const at = finishedAt(t);
     return (
       !streaming[t.id] &&
       !t.worktreeIssue &&
       !waiting.includes(t) &&
+      !ready.includes(t) &&
       !t.pullRequest &&
       at != null &&
       Date.now() - at < DONE_LINGER_MS
@@ -630,7 +649,7 @@ function AgentRow({
       ? "No finished runs yet"
       : `From ${history.length} finished run${history.length === 1 ? "" : "s"}`;
   const empty =
-    open.length + queued.length + live.length + stuck.length + waiting.length + inReview.length + done.length === 0 &&
+    open.length + queued.length + live.length + stuck.length + waiting.length + ready.length + inReview.length + done.length === 0 &&
     !halting;
 
   return (
@@ -806,6 +825,9 @@ function AgentRow({
           ))}
           {waiting.map((t) => (
             <ChainTask key={t.id} thread={t} />
+          ))}
+          {ready.map((t) => (
+            <ReadyTask key={t.id} thread={t} status={branches[t.id] ?? null} />
           ))}
           {inReview.map((t) => (
             <ThreadTask key={t.id} thread={t} state="finished" />
@@ -1101,6 +1123,89 @@ function ChainTask({ thread }: { thread: Thread }) {
           <X className="size-3.5" />
         </button>
       </div>
+    </div>
+  );
+}
+
+type BranchState = { ahead: number; dirty: boolean };
+
+// What each finished run left on its branch, checked once per run.
+function useBranchStatuses(threads: Thread[]): Record<string, BranchState> {
+  const [statuses, setStatuses] = useState<Record<string, BranchState>>({});
+  const key = threads.map((t) => t.id).join(",");
+  useEffect(() => {
+    let cancelled = false;
+    for (const t of threads) {
+      if (statuses[t.id] || !t.worktree) continue;
+      void branchStatus(t.worktree.path, t.worktree.base)
+        .then((s) => !cancelled && setStatuses((m) => ({ ...m, [t.id]: s })))
+        .catch(() => {});
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+  return statuses;
+}
+
+// HOY-379: a finished issue's branch with work and no pull request yet.
+function ReadyTask({ thread, status }: { thread: Thread; status: BranchState | null }) {
+  const openThread = useSessionStore((s) => s.openThread);
+  const archiveThread = useSessionStore((s) => s.archiveThread);
+  const openRunPullRequest = useSessionStore((s) => s.openRunPullRequest);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const wt = thread.worktree!;
+  const issue = thread.linearIssue;
+  const label = issue?.identifier ?? thread.title;
+  const summary =
+    status && status.ahead > 0
+      ? `${status.ahead} commit${status.ahead === 1 ? "" : "s"} on ${wt.branch}`
+      : `on ${wt.branch}`;
+  return (
+    <div className="group/task bg-emerald-500/5 px-2 py-1.5 text-xs">
+      <div className="flex min-w-0 items-center gap-2">
+        <Check className="size-3.5 shrink-0 text-emerald-500" />
+        <button
+          type="button"
+          onClick={() => openThread(thread.id)}
+          className="min-w-0 flex-1 cursor-pointer truncate text-left hover:text-foreground"
+          title={[thread.chainStop?.reason, wt.path].filter(Boolean).join("\n")}
+        >
+          {issue && <span className="mr-2 font-mono text-[11px]">{issue.identifier}</span>}
+          Ready: {summary}
+          {status?.dirty && <span className="text-amber-500">, uncommitted changes</span>}
+        </button>
+        {(status?.ahead ?? 1) > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 shrink-0 cursor-pointer px-2 text-xs"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              setError(null);
+              void openRunPullRequest(thread.id)
+                .catch((e) => setError(String(e)))
+                .finally(() => setBusy(false));
+            }}
+            title={`Push ${wt.branch} and open a pull request against ${wt.base}`}
+          >
+            {busy ? <Loader2 className="size-3 animate-spin" /> : <GitPullRequest className="size-3" />}
+            Open pull request
+          </Button>
+        )}
+        <button
+          type="button"
+          onClick={() => archiveThread(thread.id)}
+          className="flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground"
+          aria-label={`Archive ${label}`}
+          title="Archive and remove the worktree. The branch is kept."
+        >
+          <Archive className="size-3.5" />
+        </button>
+      </div>
+      {error && <p className="truncate pl-5.5 text-amber-500" title={error}>{error}</p>}
     </div>
   );
 }

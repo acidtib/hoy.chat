@@ -187,6 +187,58 @@ pub fn gh_status() -> GhStatus {
     }
 }
 
+// HOY-379: what a finished run left on its branch.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchStatus {
+    // Commits on the branch that its base does not have.
+    pub ahead: u32,
+    pub dirty: bool,
+}
+
+pub fn branch_status(path: &str, base: &str) -> Result<BranchStatus, String> {
+    let dir = Path::new(path);
+    let ahead = git(dir, &["rev-list", "--count", &format!("{base}..HEAD")])?
+        .parse()
+        .unwrap_or(0);
+    let dirty = !git(dir, &["status", "--porcelain"])?.is_empty();
+    Ok(BranchStatus { ahead, dirty })
+}
+
+fn pr_url(text: &str) -> Option<String> {
+    text.split_whitespace()
+        .rev()
+        .find(|w| w.starts_with("https://") && w.contains("/pull/"))
+        .map(str::to_string)
+}
+
+// Push the branch and open a pull request filled from its commits. Returns
+// its URL, or the URL of the one already open for the branch.
+pub fn open_pull_request(path: &str, branch: &str, base: &str) -> Result<String, String> {
+    let dir = Path::new(path);
+    git(dir, &["push", "-u", "origin", branch])?;
+    let mut args = vec!["pr", "create", "--fill", "--head", branch];
+    // A detached base is a commit, which gh cannot target.
+    let detached = base.len() == 40 && base.chars().all(|c| c.is_ascii_hexdigit());
+    if !detached {
+        args.extend(["--base", base]);
+    }
+    let out = Command::new("gh")
+        .current_dir(dir)
+        .args(&args)
+        .output()
+        .map_err(|e| format!("run gh: {e}"))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if out.status.success() {
+        return pr_url(&stdout)
+            .ok_or_else(|| format!("gh did not print a pull request URL: {stdout}"));
+    }
+    pr_url(&stderr)
+        .filter(|_| stderr.contains("already exists"))
+        .ok_or_else(|| stderr.trim().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,6 +290,44 @@ mod tests {
         // The branch still exists, so a new worktree checks it out again.
         let again = create_under(&root, p, "hoy/hoy-1-fix").unwrap();
         assert!(Path::new(&again.path).exists());
+    }
+
+    #[test]
+    fn branch_status_counts_commits_ahead_and_changes() {
+        let (root, repo) = repo("status");
+        let wt = create_under(&root, repo.to_str().unwrap(), "hoy/hoy-2").unwrap();
+        let dir = Path::new(&wt.path);
+        assert_eq!(
+            branch_status(&wt.path, &wt.base).unwrap(),
+            BranchStatus {
+                ahead: 0,
+                dirty: false
+            }
+        );
+        std::fs::write(dir.join("b.txt"), "b").unwrap();
+        assert!(branch_status(&wt.path, &wt.base).unwrap().dirty);
+        git(dir, &["add", "."]).unwrap();
+        git(dir, &["commit", "-q", "-m", "b"]).unwrap();
+        assert_eq!(
+            branch_status(&wt.path, &wt.base).unwrap(),
+            BranchStatus {
+                ahead: 1,
+                dirty: false
+            }
+        );
+    }
+
+    #[test]
+    fn finds_the_pull_request_url_gh_prints() {
+        assert_eq!(
+            pr_url("Creating pull request\nhttps://github.com/o/r/pull/12\n").as_deref(),
+            Some("https://github.com/o/r/pull/12")
+        );
+        assert_eq!(
+            pr_url("a pull request for branch \"x\" into branch \"main\" already exists:\nhttps://github.com/o/r/pull/7").as_deref(),
+            Some("https://github.com/o/r/pull/7")
+        );
+        assert_eq!(pr_url("no remote"), None);
     }
 
     #[test]

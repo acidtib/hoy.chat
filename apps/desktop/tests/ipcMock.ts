@@ -71,6 +71,8 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     ghStatus: mock(async () => ({ installed: true, authenticated: true, problem: null })),
     createIssueWorktree: mock(async () => ({ path: "/w", branch: "b", base: "main" })),
     removeIssueWorktree: mock(async () => ({ removed: true, dirty: false })),
+    branchStatus: mock(async () => ({ ahead: 0, dirty: false })),
+    openPullRequest: mock(async () => "https://github.com/o/r/pull/1"),
     generateTitle: mock(async () => null),
     setThinkingLevel: mock(),
     verifyGoalCommand: mock(),

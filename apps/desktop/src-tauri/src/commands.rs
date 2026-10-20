@@ -831,6 +831,29 @@ pub async fn remove_issue_worktree(
 }
 
 #[tauri::command]
+pub async fn branch_status(
+    path: String,
+    base: String,
+) -> Result<crate::worktree::BranchStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::worktree::branch_status(&path, &base))
+        .await
+        .map_err(|e| format!("branch_status: {e}"))?
+}
+
+#[tauri::command]
+pub async fn open_pull_request(
+    path: String,
+    branch: String,
+    base: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::worktree::open_pull_request(&path, &branch, &base)
+    })
+    .await
+    .map_err(|e| format!("open_pull_request: {e}"))?
+}
+
+#[tauri::command]
 pub async fn gh_status() -> crate::worktree::GhStatus {
     tauri::async_runtime::spawn_blocking(crate::worktree::gh_status)
         .await

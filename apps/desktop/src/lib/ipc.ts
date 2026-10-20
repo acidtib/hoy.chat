@@ -227,6 +227,19 @@ export function removeIssueWorktree(
   return invoke("remove_issue_worktree", { projectPath, path, force });
 }
 
+// HOY-379: commits a finished run left on its branch, and uncommitted changes.
+export function branchStatus(
+  path: string,
+  base: string,
+): Promise<{ ahead: number; dirty: boolean }> {
+  return invoke("branch_status", { path, base });
+}
+
+// Push the branch and open a pull request filled from its commits; resolves to its URL.
+export function openPullRequest(path: string, branch: string, base: string): Promise<string> {
+  return invoke<string>("open_pull_request", { path, branch, base });
+}
+
 // HOY-359: whether agents can open pull requests.
 export interface GhStatus {
   installed: boolean;

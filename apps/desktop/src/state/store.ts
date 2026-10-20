@@ -49,6 +49,7 @@ import {
   setThinkingLevel,
   linearSetIssueState,
   linearComment,
+  openPullRequest,
   verifyGoalCommand,
   dispatchDecision,
 } from "@/lib/ipc";
@@ -619,6 +620,8 @@ interface SessionStore {
   handOffThread: (threadId: string, agent: string) => Promise<void>;
   // Hand off as the finished run suggested (Auto off).
   acceptNextStep: (threadId: string) => void;
+  // HOY-379: push a finished run's branch and open its pull request.
+  openRunPullRequest: (threadId: string) => Promise<void>;
   // Clear a run's stopped-chain flag or suggested next step.
   dismissChainNote: (threadId: string) => void;
   moveQueuedTo: (projectId: string, issueId: string, agent: string) => void;
@@ -2700,6 +2703,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (!next) return;
     const { report } = runSignals(get().turns[threadId] ?? []);
     handOff(threadId, { kind: "agent", ...next }, report);
+  },
+  openRunPullRequest: async (threadId) => {
+    const wt = findThread(get().projects, threadId)?.thread.worktree;
+    if (!wt || wt.removed) return;
+    const url = await openPullRequest(wt.path, wt.branch, wt.base);
+    patchThreadNow(threadId, { pullRequest: url });
   },
   dismissChainNote: (threadId) => patchThreadNow(threadId, { chainStop: null, nextStep: null }),
   setFleetAuto: (projectId, on) => {

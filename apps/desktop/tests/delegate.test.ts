@@ -118,6 +118,13 @@ test("issuePrompt tells each role what to do with the issue", () => {
   expect(issuePrompt(i, "My Agent")).toContain("Work on this issue.");
 });
 
+test("Architect posts the full plan and leaves the state for the Fleet", () => {
+  const p = issuePrompt(issue("8", 2), "Architect");
+  expect(p).toContain("post the full plan on HOY-8 with linear_comment, not a summary");
+  expect(p).toContain("Leave the issue's state as it is");
+  expect(p).not.toContain("linear_set_state");
+});
+
 describe("delegateIssue", () => {
   const realSubmitPrompt = useSessionStore.getState().submitPrompt;
   afterEach(() => useSessionStore.setState({ submitPrompt: realSubmitPrompt }));

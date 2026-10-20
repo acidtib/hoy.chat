@@ -204,6 +204,8 @@ pub fn run() {
             commands::dispatch_decision,
             commands::create_issue_worktree,
             commands::remove_issue_worktree,
+            commands::branch_status,
+            commands::open_pull_request,
             commands::project_is_git_repo,
             commands::gh_status,
             commands::write_subagent,
