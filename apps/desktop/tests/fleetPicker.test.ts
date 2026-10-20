@@ -9,8 +9,10 @@ import {
 
 const projectHasFleet = mock(async (_path: string) => false);
 const setSubagentsEnabled = mock(async () => {});
+const setSubagentEnabled = mock(async () => {});
+const setSubagentModel = mock(async () => {});
 const listSubagents = mock(async () => []);
-mockIpcModule({ projectHasFleet, setSubagentsEnabled, listSubagents });
+mockIpcModule({ projectHasFleet, setSubagentsEnabled, setSubagentEnabled, setSubagentModel, listSubagents });
 
 const { useSessionStore } = await import("@/state/store");
 
@@ -70,5 +72,45 @@ describe("the fleet picker after adding a project", () => {
     await useSessionStore.getState().saveFleet(id, ["Coder"]);
     expect(setSubagentsEnabled).toHaveBeenCalledWith("project", fleetChanges(["Coder"]), "/tmp/fleet-save");
     expect(useSessionStore.getState().fleetPickerProjectId).toBeNull();
+  });
+});
+
+describe("a project's Agents tab", () => {
+  beforeEach(() => {
+    useSessionStore.setState({
+      projects: [{ id: "p1", name: "proj", path: "/tmp/proj", threads: [] }],
+      fleetPickerProjectId: null,
+      fleetPickerInitial: null,
+    });
+    setSubagentEnabled.mockClear();
+    setSubagentModel.mockClear();
+    listSubagents.mockClear();
+  });
+
+  test("switching an agent writes the project scope and reloads that project's agents", async () => {
+    await useSessionStore.getState().setProjectAgentEnabled("p1", "Tester", false);
+    expect(setSubagentEnabled).toHaveBeenCalledWith("project", "Tester", false, "/tmp/proj");
+    expect(listSubagents).toHaveBeenCalledWith("/tmp/proj");
+  });
+
+  test("picking a model writes the project scope; null clears it", async () => {
+    await useSessionStore.getState().setProjectAgentModel("p1", "Researcher", "anthropic/haiku");
+    await useSessionStore.getState().setProjectAgentModel("p1", "Researcher", null);
+    expect(setSubagentModel.mock.calls).toEqual([
+      ["project", "Researcher", "anthropic/haiku", "/tmp/proj"],
+      ["project", "Researcher", null, "/tmp/proj"],
+    ]);
+  });
+
+  test("an unknown project writes nothing", async () => {
+    await useSessionStore.getState().setProjectAgentEnabled("nope", "Coder", false);
+    expect(setSubagentEnabled).not.toHaveBeenCalled();
+  });
+
+  test("reopening the picker starts from the project's current fleet", () => {
+    useSessionStore.getState().setFleetPicker("p1", ["Coder"]);
+    expect(useSessionStore.getState().fleetPickerInitial).toEqual(["Coder"]);
+    useSessionStore.getState().setFleetPicker(null);
+    expect(useSessionStore.getState().fleetPickerInitial).toBeNull();
   });
 });
