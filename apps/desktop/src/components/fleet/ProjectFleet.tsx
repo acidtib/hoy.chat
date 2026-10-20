@@ -10,6 +10,7 @@ import {
   Clock,
   ExternalLink,
   GripVertical,
+  GitPullRequest,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -31,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { agentThreads, unassignedIssues } from "@/lib/delegate";
-import { projectIsGitRepo } from "@/lib/ipc";
+import { ghStatus, projectIsGitRepo, type GhStatus } from "@/lib/ipc";
 import {
   costPerMinute,
   estimateMinutes,
@@ -196,6 +197,7 @@ function Board({ project, teamId }: { project: Project; teamId: string | null })
             {total > 0 ? `~${formatCost(total)}${unpriced ? "+" : ""}` : unpriced ? "$--" : "$0"}{" "}
             in queues
           </span>
+          <PullRequestToggle project={project} />
           <Mock className="flex items-center gap-1.5 border-l border-border pl-3">
             Auto
             <Switch disabled aria-label="Auto assign (mock)" />
@@ -498,9 +500,13 @@ function AgentRow({
   const live = rest.filter((t) => streaming[t.id]);
   // Archiving could not take the worktree down; the run stays until resolved.
   const stuck = rest.filter((t) => !streaming[t.id] && t.worktreeIssue);
+  // A run that opened a pull request waits on review, so it stays until archived.
+  const inReview = rest.filter((t) => !streaming[t.id] && !t.worktreeIssue && t.pullRequest);
   const done = rest.filter((t) => {
     const at = finishedAt(t);
-    return !streaming[t.id] && !t.worktreeIssue && at != null && Date.now() - at < DONE_LINGER_MS;
+    return (
+      !streaming[t.id] && !t.worktreeIssue && !t.pullRequest && at != null && Date.now() - at < DONE_LINGER_MS
+    );
   });
   // Re-render when the oldest finished row expires, so the stack drops it
   // without waiting for the board's slower clock.
@@ -531,7 +537,8 @@ function AgentRow({
       ? "No finished runs yet"
       : `From ${history.length} finished run${history.length === 1 ? "" : "s"}`;
   const empty =
-    open.length + queued.length + live.length + stuck.length + done.length === 0 && !halting;
+    open.length + queued.length + live.length + stuck.length + inReview.length + done.length === 0 &&
+    !halting;
 
   return (
     <div
@@ -704,6 +711,9 @@ function AgentRow({
           {stuck.map((t) => (
             <WorktreeTask key={t.id} thread={t} />
           ))}
+          {inReview.map((t) => (
+            <ThreadTask key={t.id} thread={t} state="finished" />
+          ))}
           {done.map((t) => (
             <DoneTask key={t.id} thread={t} at={finishedAt(t)!} />
           ))}
@@ -830,6 +840,17 @@ function ThreadTask({
           {meta ?? took}
         </span>
       )}
+      {thread.pullRequest && (
+        <button
+          type="button"
+          onClick={() => void openUrl(thread.pullRequest!)}
+          className="flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground"
+          aria-label={`Open the pull request for ${label}`}
+          title={thread.pullRequest}
+        >
+          <GitPullRequest className="size-3.5" />
+        </button>
+      )}
       {own && (
         <button
           type="button"
@@ -848,6 +869,39 @@ function ThreadTask({
         </button>
       )}
     </TaskShell>
+  );
+}
+
+// HOY-359: let this project's agents push their branch and open a pull request.
+// Needs the GitHub CLI installed and signed in, checked when the board opens.
+function PullRequestToggle({ project }: { project: Project }) {
+  const setOpenPullRequests = useSessionStore((s) => s.setOpenPullRequests);
+  const [gh, setGh] = useState<GhStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void ghStatus().then((g) => !cancelled && setGh(g)).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const on = !!project.fleet?.openPullRequests;
+  const ready = !!gh && !gh.problem;
+  return (
+    <label
+      className="flex cursor-pointer items-center gap-1.5 border-l border-border pl-3"
+      title={
+        gh?.problem ??
+        "Agents push their issue branch and open a pull request with gh when they finish. Off: they commit on the branch only."
+      }
+    >
+      Pull requests
+      <Switch
+        checked={on && ready}
+        disabled={!ready && !on}
+        onCheckedChange={(v) => setOpenPullRequests(project.id, v)}
+        aria-label="Agents open pull requests"
+      />
+    </label>
   );
 }
 

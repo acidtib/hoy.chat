@@ -51,6 +51,9 @@ pub struct WsFleet {
     pub queue: Vec<WsQueuedIssue>,
     #[serde(default)]
     pub concurrency: std::collections::BTreeMap<String, u32>,
+    // HOY-359: agents push their branch and open a pull request with gh.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub open_pull_requests: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +155,9 @@ pub struct WsThread {
     pub linear_issue: Option<WsLinearIssueRef>,
     #[serde(default)]
     pub fleet_run: Option<WsFleetRun>,
+    // HOY-359: the pull request a delegated run opened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_request: Option<String>,
     // HOY-358: the git worktree a delegated issue runs in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<WsWorktree>,
@@ -163,6 +169,9 @@ pub struct WsWorktree {
     pub path: String,
     pub branch: String,
     pub base: String,
+    // Archiving took the worktree down; the branch stays.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub removed: bool,
 }
 
 // A provider/model identity pair, mirroring the frontend ModelRef. Cached on the
@@ -308,6 +317,7 @@ mod tests {
                         queued_at: 1_717_000_000_500,
                     }],
                     concurrency: [("Explore".to_string(), 2)].into_iter().collect(),
+                    open_pull_requests: true,
                 }),
                 threads: vec![WsThread {
                     id: "t1".into(),
@@ -356,10 +366,12 @@ mod tests {
                         cost: Some(0.42),
                         acknowledged: false,
                     }),
+                    pull_request: None,
                     worktree: Some(WsWorktree {
                         path: "/w/hoy-28".into(),
                         branch: "hoy/hoy-28-ticket".into(),
                         base: "main".into(),
+                        removed: false,
                     }),
                 }],
             }],
@@ -562,6 +574,7 @@ mod tests {
                     agent: None,
                     linear_issue: None,
                     fleet_run: None,
+                    pull_request: None,
                     worktree: None,
                 }],
             }],

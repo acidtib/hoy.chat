@@ -144,3 +144,54 @@ describe("archiving a delegated thread", () => {
     expect(thread().worktreeIssue).toBeNull();
   });
 });
+
+describe("how delegated work ends (HOY-359)", () => {
+  const wt = { path: "/wt/hoy-7", branch: "hoy/hoy-7-x", base: "main" };
+
+  test("a worktree run commits on its branch, references the issue, and does not push by default", () => {
+    const brief = issuePrompt(issue("7"), "Coder", wt);
+    expect(brief).toContain("commit on hoy/hoy-7-x with a Conventional Commit message that references HOY-7");
+    expect(brief).toContain("Do not push the branch or open a pull request");
+    expect(brief).toContain("In Review");
+  });
+
+  test("with pull requests on, it pushes and opens one against the base", () => {
+    const brief = issuePrompt(issue("7"), "Coder", wt, { openPullRequests: true });
+    expect(brief).toContain("git push -u origin hoy/hoy-7-x");
+    expect(brief).toContain("gh pr create");
+    expect(brief).toContain("against main");
+    expect(brief).not.toContain("Do not push");
+  });
+
+  test("without a worktree the brief has no commit step", () => {
+    expect(issuePrompt(issue("7"), "Coder")).not.toContain("commit on");
+  });
+
+  test("the pull request URL is found in replies or tool output, last one wins", async () => {
+    const { findPullRequestUrl } = await import("@/lib/delegate");
+    const tool = (output: string) => ({
+      kind: "tool" as const,
+      tool: { id: "x", name: "bash", title: "bash", running: false, output } as never,
+    });
+    expect(
+      findPullRequestUrl([
+        { role: "user", text: "https://github.com/a/b/pull/1" },
+        { role: "assistant", blocks: [tool("https://github.com/acme/app/pull/12\n")] },
+        { role: "assistant", blocks: [{ kind: "text", content: "Opened https://github.com/acme/app/pull/13." }] },
+      ] as never),
+    ).toBe("https://github.com/acme/app/pull/13");
+    expect(findPullRequestUrl([{ role: "assistant", blocks: [{ kind: "text", content: "no link" }] }] as never)).toBeNull();
+  });
+
+  test("the setting is per project and keeps the rest of the fleet", () => {
+    useSessionStore.setState({
+      projects: [{ id: "p1", name: "hoy", path: "/repo", threads: [], fleet: { queue: [], concurrency: { Coder: 2 } } }],
+    });
+    useSessionStore.getState().setOpenPullRequests("p1", true);
+    expect(useSessionStore.getState().projects[0].fleet).toEqual({
+      queue: [],
+      concurrency: { Coder: 2 },
+      openPullRequests: true,
+    });
+  });
+});

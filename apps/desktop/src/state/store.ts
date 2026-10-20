@@ -54,7 +54,7 @@ import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { leafChainMessageIds } from "@/lib/treeNode";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
-import { issueBranch, issuePrompt } from "@/lib/delegate";
+import { findPullRequestUrl, issueBranch, issuePrompt } from "@/lib/delegate";
 import { currentAgentName, haltingThread, moveQueued, openRuns } from "@/lib/fleet";
 import { rewriteSkillCommand } from "@/lib/skill";
 import { modelKey, resolveDefaultModel } from "@/lib/models";
@@ -596,6 +596,8 @@ interface SessionStore {
   // uncommitted changes, or one that fails to remove, keeps the thread on its
   // agent's row with the reason, unless `force`.
   archiveDelegated: (threadId: string, force?: boolean) => Promise<void>;
+  // HOY-359: agents in this project push their branch and open a pull request.
+  setOpenPullRequests: (projectId: string, on: boolean) => void;
   // Create a child thread for a spawned subagent (HOY-231) and drive it
   // through create_session + the shared streaming helper, same as a
   // user-submitted thread.
@@ -2375,6 +2377,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         ...(p.fleet
           ? {
               fleet: {
+                ...p.fleet,
                 queue: p.fleet.queue.map((q) => ({ ...q, agent: currentAgentName(q.agent) })),
                 concurrency: Object.fromEntries(
                   Object.entries(p.fleet.concurrency).map(([a, n]) => [currentAgentName(a), n]),
@@ -2529,6 +2532,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }));
   },
 
+  setOpenPullRequests: (projectId, on) =>
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId
+          ? { ...p, fleet: { queue: [], concurrency: {}, ...p.fleet, openPullRequests: on } }
+          : p,
+      ),
+    })),
   archiveDelegated: async (threadId, force = false) => {
     const found = findThread(get().projects, threadId);
     if (!found) return;
@@ -3959,6 +3970,8 @@ function persistProjects(
           agent: t.agent ?? null,
           linearIssue: t.linearIssue ?? null,
           fleetRun: t.fleetRun ?? null,
+          worktree: t.worktree ?? null,
+          pullRequest: t.pullRequest ?? null,
         })),
     })),
   };
@@ -4069,7 +4082,8 @@ async function startDelegatedRun(
       projects: patchThread(s.projects, threadId, (th) => ({ ...th, worktree })),
     }));
   }
-  await store.getState().submitPrompt(threadId, issuePrompt(issue, agent, worktree), undefined, undefined, {
+  const openPullRequests = !!project?.fleet?.openPullRequests;
+  await store.getState().submitPrompt(threadId, issuePrompt(issue, agent, worktree, { openPullRequests }), undefined, undefined, {
     autoPlanMode: false,
   });
 }
@@ -4092,10 +4106,15 @@ async function finishFleetRun(threadId: string): Promise<void> {
         : "done";
     await store.refreshStats(threadId).catch(() => {});
     const cost = useSessionStore.getState().stats[threadId]?.cost ?? null;
+    const pullRequest = findPullRequestUrl(useSessionStore.getState().turns[threadId] ?? []);
     useSessionStore.setState((s) => ({
       projects: patchThread(s.projects, threadId, (th) =>
         th.fleetRun && th.fleetRun.endedAt == null
-          ? { ...th, fleetRun: { ...th.fleetRun, endedAt, outcome, cost } }
+          ? {
+              ...th,
+              fleetRun: { ...th.fleetRun, endedAt, outcome, cost },
+              ...(pullRequest ? { pullRequest } : {}),
+            }
           : th,
       ),
     }));

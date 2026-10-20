@@ -225,6 +225,17 @@ export function removeIssueWorktree(
   return invoke("remove_issue_worktree", { projectPath, path, force });
 }
 
+// HOY-359: whether agents can open pull requests.
+export interface GhStatus {
+  installed: boolean;
+  authenticated: boolean;
+  problem: string | null;
+}
+
+export function ghStatus(): Promise<GhStatus> {
+  return invoke<GhStatus>("gh_status");
+}
+
 export function projectIsGitRepo(projectPath: string): Promise<boolean> {
   return invoke<boolean>("project_is_git_repo", { projectPath });
 }

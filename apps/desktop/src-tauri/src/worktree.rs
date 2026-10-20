@@ -157,6 +157,36 @@ pub fn remove(project: &str, path: &str, force: bool) -> Result<RemoveOutcome, S
     })
 }
 
+// HOY-359: whether agents can open pull requests: gh installed and signed in.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GhStatus {
+    pub installed: bool,
+    pub authenticated: bool,
+    // What to fix, in a sentence, when not ready.
+    pub problem: Option<String>,
+}
+
+pub fn gh_status() -> GhStatus {
+    match Command::new("gh").args(["auth", "status"]).output() {
+        Err(_) => GhStatus {
+            installed: false,
+            authenticated: false,
+            problem: Some("Install the GitHub CLI (gh) to let agents open pull requests.".into()),
+        },
+        Ok(out) if out.status.success() => GhStatus {
+            installed: true,
+            authenticated: true,
+            problem: None,
+        },
+        Ok(_) => GhStatus {
+            installed: true,
+            authenticated: false,
+            problem: Some("Sign in to the GitHub CLI with gh auth login.".into()),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

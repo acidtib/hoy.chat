@@ -54,6 +54,7 @@ export function mockIpcModule(overrides: Record<string, unknown> = {}): void {
     setSubagentModel: mock(async () => {}),
     projectHasFleet: mock(async () => true),
     projectIsGitRepo: mock(async () => false),
+    ghStatus: mock(async () => ({ installed: true, authenticated: true, problem: null })),
     createIssueWorktree: mock(async () => ({ path: "/w", branch: "b", base: "main" })),
     removeIssueWorktree: mock(async () => ({ removed: true, dirty: false })),
     generateTitle: mock(async () => null),

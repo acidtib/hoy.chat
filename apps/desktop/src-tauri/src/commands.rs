@@ -817,6 +817,17 @@ pub async fn remove_issue_worktree(
 }
 
 #[tauri::command]
+pub async fn gh_status() -> crate::worktree::GhStatus {
+    tauri::async_runtime::spawn_blocking(crate::worktree::gh_status)
+        .await
+        .unwrap_or(crate::worktree::GhStatus {
+            installed: false,
+            authenticated: false,
+            problem: Some("Could not check the GitHub CLI.".into()),
+        })
+}
+
+#[tauri::command]
 pub fn project_is_git_repo(project_path: String) -> bool {
     crate::worktree::is_git_repo(&project_path)
 }

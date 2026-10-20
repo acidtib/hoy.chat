@@ -536,6 +536,8 @@ export interface Thread {
   worktree?: { path: string; branch: string; base: string; removed?: boolean } | null;
   // Why archiving could not remove the worktree, shown on the agent's row.
   worktreeIssue?: string | null;
+  // HOY-359: the pull request a delegated run opened.
+  pullRequest?: string | null;
 }
 
 // Mirrors of workspace.rs WsFleetRun / WsFleet / WsQueuedIssue (HOY-350).
@@ -558,6 +560,8 @@ export interface QueuedIssue {
 export interface FleetState {
   queue: QueuedIssue[];
   concurrency: Record<string, number>;
+  // HOY-359: agents push their branch and open a pull request with gh.
+  openPullRequests?: boolean;
 }
 
 // Mirror of workspace.rs Workspace: the persisted projects -> threads tree.

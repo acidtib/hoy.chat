@@ -1,6 +1,6 @@
 // Pure helpers for the Delegate board (HOY-346).
 
-import type { LinearIssue, QueuedIssue, Thread } from "./types";
+import type { LinearIssue, QueuedIssue, Thread, Turn } from "./types";
 
 // Issues not yet handed to an agent in this project, running or queued. An
 // archived delegated thread releases its issue back to the column.
@@ -52,6 +52,24 @@ const ISSUE_ASK: Record<string, string> = {
   Frontend: "Implement the UI work in this issue.",
 };
 
+// HOY-359: how delegated work ends. Committing on the issue branch is what the
+// brief asks for; pushing and a pull request only when the project allows it.
+function finishSteps(
+  id: string,
+  worktree: { branch: string; base: string },
+  openPullRequests: boolean,
+): string[] {
+  const steps = [
+    `If you changed files: run the project's checks, then commit on ${worktree.branch} with a Conventional Commit message that references ${id} (for example \`fix(scope): what changed\` with \`Refs ${id}\` in the body), following the repository's commit conventions if it documents them. This brief is your instruction to commit; never commit on another branch.`,
+  ];
+  steps.push(
+    openPullRequests
+      ? `Then push the branch with \`git push -u origin ${worktree.branch}\` and open a pull request against ${worktree.base} with \`gh pr create\`: the commit's title as its title, and a body saying what changed, how you verified it, and \`Refs ${id}\`. Put the pull request URL in your Linear comment and your final report.`
+      : "Do not push the branch or open a pull request; the user reviews the branch locally.",
+  );
+  return steps;
+}
+
 // The first prompt a delegated thread receives. NUL is stripped because the
 // composer draft format uses it to delimit mention markers.
 // The branch a delegated issue works on: Linear's suggestion, else one built
@@ -73,6 +91,7 @@ export function issuePrompt(
   issue: LinearIssue,
   agent?: string,
   worktree?: { path: string; branch: string; base: string } | null,
+  opts: { openPullRequests?: boolean } = {},
 ): string {
   const lines = [
     `Linear issue ${issue.identifier}: ${issue.title}`,
@@ -90,7 +109,27 @@ export function issuePrompt(
         ]
       : []),
     "",
-    `When you are done, post your report on ${issue.identifier} with linear_comment, then move it with linear_set_state. File anything out of scope as a follow-up with linear_create_issue.`,
+    ...(worktree ? ["", ...finishSteps(issue.identifier, worktree, !!opts.openPullRequests)] : []),
+    "",
+    worktree
+      ? `Then post your report on ${issue.identifier} with linear_comment and move it with linear_set_state: to a review state (In Review) if you committed changes, or Done if the task needed none. File anything out of scope as a follow-up with linear_create_issue.`
+      : `When you are done, post your report on ${issue.identifier} with linear_comment, then move it with linear_set_state. File anything out of scope as a follow-up with linear_create_issue.`,
   );
   return lines.join("\n").replaceAll("\u0000", "");
+}
+
+const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
+
+// HOY-359: the last GitHub pull request URL a run mentioned, in its replies or
+// in tool output such as `gh pr create`.
+export function findPullRequestUrl(turns: Turn[]): string | null {
+  let found: string | null = null;
+  for (const turn of turns) {
+    if (turn.role !== "assistant") continue;
+    for (const block of turn.blocks) {
+      const text = block.kind === "text" ? block.content : (block.tool.output ?? "");
+      for (const m of text.match(PR_URL) ?? []) found = m;
+    }
+  }
+  return found;
 }

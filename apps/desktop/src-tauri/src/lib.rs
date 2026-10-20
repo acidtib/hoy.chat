@@ -203,6 +203,7 @@ pub fn run() {
             commands::create_issue_worktree,
             commands::remove_issue_worktree,
             commands::project_is_git_repo,
+            commands::gh_status,
             commands::write_subagent,
             commands::delete_subagent,
             oauth::oauth_login_start,
