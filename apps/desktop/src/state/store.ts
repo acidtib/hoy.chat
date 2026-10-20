@@ -1706,7 +1706,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   refreshSubagents: async (cwd) => {
     try {
-      set({ subagents: await listSubagents(cwd) });
+      const next = await listSubagents(cwd);
+      // A nullish reply keeps the prior cache, same as a throw.
+      if (!next) return;
+      set({ subagents: next });
       get().pumpFleet();
     } catch {
       // Leave the prior cache. A stale registry beats an empty one.
@@ -4387,8 +4390,11 @@ async function routeFinishedRun(threadId: string): Promise<void> {
     if (step.kind === "agent") {
       const { agent, reason, by } = step;
       patchThreadNow(threadId, { nextStep: { agent, reason, by, round: step.round } });
+      return;
     }
-    return;
+    if (step.kind === "stop") return stopChain(threadId, step);
+    // No Dispatcher runs with Auto off; a dispatch is a hand-off the user must make.
+    return stopChain(threadId, { kind: "stop", reason: step.reason, needsUser: true });
   }
   if (step.kind === "agent") return handOff(threadId, step, signals.report);
   if (step.kind === "stop") return stopChain(threadId, step);

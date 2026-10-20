@@ -89,10 +89,11 @@ const setAuto = (auto: boolean) =>
   }));
 
 const realSubmitPrompt = useSessionStore.getState().submitPrompt;
+const realStopStreaming = useSessionStore.getState().stopStreaming;
 beforeAll(async () => {
   await useSessionStore.getState().initWorkspace();
 });
-afterAll(() => useSessionStore.setState({ submitPrompt: realSubmitPrompt }));
+afterAll(() => useSessionStore.setState({ submitPrompt: realSubmitPrompt, stopStreaming: realStopStreaming }));
 
 beforeEach(() => {
   commentIds = 0;
@@ -206,6 +207,42 @@ test("with Auto off the next step is offered, and accepting it hands off", async
   expect(runsOf("Reviewer")).toHaveLength(1);
   expect(runsOf("Coder")[0].nextStep).toBeNull();
   expect(runsOf("Coder")[0].handedTo).toBe("Reviewer");
+});
+
+test("with Auto off a Reviewer that needs a discussion waits for the user", async () => {
+  setAuto(false);
+  const reviewer = await start("Reviewer");
+  await endRun(reviewer, [text("Verdict: Needs discussion")]);
+  expect(runsOf("Reviewer")[0].chainStop).toEqual({ reason: "Review needs a discussion.", needsUser: true });
+  expect(runsOf("Reviewer")[0].nextStep).toBeNull();
+  expect(linearComment).toHaveBeenCalled();
+  expect(project().fleet!.queue).toHaveLength(0);
+});
+
+test("with Auto off a handoff naming a disabled agent waits for the user", async () => {
+  setAuto(false);
+  useSessionStore.setState((s) => ({
+    subagents: s.subagents.map((d) => (d.name === "Researcher" ? { ...d, enabled: false } : d)),
+  }));
+  const coder = await start("Coder");
+  const reroute = tool("fleet_handoff", '{"handoff":{"agent":"Researcher","reason":"Needs an investigation."}}\nHanded off.');
+  await endRun(coder, [reroute, text("Findings.")]);
+  expect(runsOf("Coder")[0].chainStop).toEqual({
+    reason: "Needs an investigation. Researcher is not enabled, so it waits for you.",
+    needsUser: true,
+  });
+  expect(runsOf("Coder")[0].nextStep).toBeNull();
+  expect(runsOf("Researcher")).toHaveLength(0);
+  expect(linearComment).toHaveBeenCalled();
+});
+
+test("with Auto off a run with no next step waits for the user", async () => {
+  setAuto(false);
+  const coder = await start("Coder");
+  await endRun(coder, [text("Committed.")]);
+  expect(runsOf("Coder")[0].chainStop).toEqual({ reason: "Coder finished without a next step.", needsUser: true });
+  expect(runsOf("Coder")[0].nextStep).toBeNull();
+  expect(linearComment).toHaveBeenCalled();
 });
 
 test("handing off a live run stops it without halting its agent's queue", async () => {
