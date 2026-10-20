@@ -930,15 +930,20 @@ pub async fn action(payload: &Value) -> Result<Value, String> {
         "comment" => {
             let issue = fetch_issue(&auth, required(payload, "issue")?).await?;
             let body = required(payload, "body")?;
+            let mut input = json!({ "issueId": issue.get("id"), "body": body });
+            if let Some(parent) = payload.get("parent").and_then(Value::as_str) {
+                input["parentId"] = json!(parent);
+            }
             let data = graphql(
                 &auth,
-                "mutation Comment($input: CommentCreateInput!) { commentCreate(input: $input) { comment { url } } }",
-                json!({ "input": { "issueId": issue.get("id"), "body": body } }),
+                "mutation Comment($input: CommentCreateInput!) { commentCreate(input: $input) { comment { id url } } }",
+                json!({ "input": input }),
             )
             .await?;
             Ok(json!({
                 "identifier": issue.get("identifier"),
                 "comment": data.pointer("/commentCreate/comment/url"),
+                "id": data.pointer("/commentCreate/comment/id"),
             }))
         }
         "set_state" => {

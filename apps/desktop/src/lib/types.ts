@@ -538,6 +538,41 @@ export interface Thread {
   worktreeIssue?: string | null;
   // HOY-359: the pull request a delegated run opened.
   pullRequest?: string | null;
+  // HOY-379: how this run got the issue from the run before it.
+  handoff?: Handoff | null;
+  // The agent this run handed the issue on to.
+  handedTo?: string | null;
+  // The chain stopped here and the user has to act.
+  chainStop?: ChainStop | null;
+  // With Auto off: the handoff this run suggests, for the user to accept.
+  nextStep?: NextStepSuggestion | null;
+}
+
+// HOY-379. `by` is who chose the next agent.
+export type HandoffBy = "rule" | "agent" | "dispatcher" | "user";
+export interface Handoff {
+  fromThreadId: string;
+  fromAgent: string;
+  reason: string;
+  by: HandoffBy;
+  // The previous run's final report: a plan, review findings.
+  report?: string | null;
+  // Fix first rounds so far on this issue.
+  round: number;
+  // Handoffs so far on this issue.
+  hops: number;
+  // The branch the chain works on, reused by the next run.
+  branch?: string | null;
+}
+export interface ChainStop {
+  reason: string;
+  needsUser: boolean;
+}
+export interface NextStepSuggestion {
+  agent: string;
+  reason: string;
+  by: HandoffBy;
+  round: number;
 }
 
 // Mirrors of workspace.rs WsFleetRun / WsFleet / WsQueuedIssue (HOY-350).
@@ -558,6 +593,7 @@ export interface QueuedIssue {
   queuedAt: number;
   // HOY-353: the Auto decision that queued it, echoed into the first prompt.
   decision?: DispatchDecision | null;
+  handoff?: Handoff | null;
 }
 export interface FleetState {
   queue: QueuedIssue[];
@@ -568,6 +604,10 @@ export interface FleetState {
   auto?: boolean;
   // HOY-353: the Dispatcher's cached verdicts, keyed by Linear issue id.
   decisions?: Record<string, CachedDecision>;
+  // HOY-379: per issue id, the Linear comment a handoff chain replies under.
+  chainComments?: Record<string, string>;
+  // What the Dispatcher's next-step calls cost.
+  dispatchSpend?: number;
 }
 
 // HOY-353: mirrors events.rs DispatchDecision. Errors fail closed to ready=false.

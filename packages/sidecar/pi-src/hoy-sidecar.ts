@@ -44,6 +44,7 @@ import { runOAuthLogin } from "./hoy-oauth";
 import { runGoalEval } from "./hoy-goal-eval";
 import { runTitle } from "./hoy-title";
 import { runDispatch } from "./hoy-dispatch";
+import { createHoyFleetHandoff, FLEET_HANDOFF_TOOL } from "./hoy-fleet-handoff";
 import { runVerifyCommand } from "./hoy-verify-command";
 import { runGoalAudit } from "./hoy-goal-audit";
 import { runListSkills } from "./hoy-list-skills";
@@ -222,6 +223,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
     ...expandToolNames(withAgent),
     ...(codemode ? ["codemode"] : []),
     ...(linearTools ? LINEAR_TOOLS : []),
+    ...(run === "fleet" ? [FLEET_HANDOFF_TOOL] : []),
   ];
 
   const services = await createAgentSessionServices({
@@ -282,6 +284,9 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         // unconditionally is safe: a child subagent never types /init.
         createHoyInit(),
         ...(linearTools ? [createHoyLinear()] : []),
+        ...(run === "fleet"
+          ? [createHoyFleetHandoff(childType!.name, Object.values(registry).filter((t) => t.enabled !== false).map((t) => t.name))]
+          : []),
         ...(delegates ? [createHoyAgents(registry, requireSubagentApproval, spawnable)] : []),
         // HOY-244: cap a budgeted subagent type's turns. Root/unbudgeted threads
         // run uncapped. childType is null for user threads, so this is child-only.

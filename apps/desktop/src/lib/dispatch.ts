@@ -41,6 +41,8 @@ export interface DispatchInput {
   };
   agents: Array<{ name: string; description?: string | null }>;
   history?: Array<{ identifier: string; title: string; agent: string }>;
+  // HOY-379: a run on this issue just ended; asks for the next step.
+  previous?: { agent: string; report: string };
 }
 
 export function dispatchInput(

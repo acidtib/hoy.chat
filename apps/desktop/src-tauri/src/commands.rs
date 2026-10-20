@@ -277,11 +277,18 @@ pub async fn linear_set_issue_state(issue: String, state: String) -> Result<(), 
         .map(|_| ())
 }
 
+// Returns the new comment's id. `parent` makes it a reply.
 #[tauri::command]
-pub async fn linear_comment(issue: String, body: String) -> Result<(), String> {
-    linear::action(&json!({ "action": "comment", "issue": issue, "body": body }))
-        .await
-        .map(|_| ())
+pub async fn linear_comment(
+    issue: String,
+    body: String,
+    parent: Option<String>,
+) -> Result<Option<String>, String> {
+    let out = linear::action(
+        &json!({ "action": "comment", "issue": issue, "body": body, "parent": parent }),
+    )
+    .await?;
+    Ok(out["id"].as_str().map(str::to_string))
 }
 
 #[tauri::command]

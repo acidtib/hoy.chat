@@ -428,8 +428,13 @@ export function linearSetIssueState(issue: string, state: string): Promise<void>
   return invoke<void>("linear_set_issue_state", { issue, state });
 }
 
-export function linearComment(issue: string, body: string): Promise<void> {
-  return invoke<void>("linear_comment", { issue, body });
+// Resolves to the new comment's id. `parent` makes it a reply.
+export function linearComment(
+  issue: string,
+  body: string,
+  parent: string | null = null,
+): Promise<string | null> {
+  return invoke<string | null>("linear_comment", { issue, body, parent });
 }
 
 export function linearTeams(): Promise<LinearTeam[]> {

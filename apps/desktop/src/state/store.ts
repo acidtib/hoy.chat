@@ -61,10 +61,12 @@ import { currentAgentName, haltingThread, moveQueued, openRuns } from "@/lib/fle
 import {
   agentLabel,
   applyDecision,
+  DISPATCH_CONFIDENCE_THRESHOLD,
   dispatchInput,
   nagComment,
   needsDecision,
 } from "@/lib/dispatch";
+import { chainComment, MAX_HOPS, nextStep, runSignals, type NextStep } from "@/lib/handoff";
 import { rewriteSkillCommand } from "@/lib/skill";
 import { modelKey, resolveDefaultModel } from "@/lib/models";
 import { fleetChanges } from "@/lib/fleetPresets";
@@ -133,6 +135,9 @@ import type {
   Turn,
   UsageReport,
   DispatchDecision,
+  Handoff,
+  HandoffBy,
+  LinearIssueRef,
 } from "@/lib/types";
 import {
   getSupportedThinkingLevels,
@@ -591,6 +596,7 @@ interface SessionStore {
     issue: LinearIssue,
     agent: string,
     decision?: DispatchDecision | null,
+    handoff?: Handoff | null,
   ) => string | null;
   // HOY-350: per-agent Fleet queues. A queued issue starts through
   // delegateIssue once its agent has a free slot and is not halted.
@@ -599,6 +605,7 @@ interface SessionStore {
     issue: LinearIssue,
     agent: string,
     decision?: DispatchDecision | null,
+    handoff?: Handoff | null,
   ) => void;
   unqueueIssue: (projectId: string, issueId: string) => void;
   moveQueuedIssue: (projectId: string, issueId: string, delta: -1 | 1) => void;
@@ -607,6 +614,14 @@ interface SessionStore {
   resumeAgent: (projectId: string, agent: string) => void;
   pumpFleet: () => void;
   setFleetAuto: (projectId: string, on: boolean) => void;
+  // HOY-379: the user hands a delegated run's issue to another agent. A live
+  // run is stopped first without halting its agent's queue.
+  handOffThread: (threadId: string, agent: string) => Promise<void>;
+  // Hand off as the finished run suggested (Auto off).
+  acceptNextStep: (threadId: string) => void;
+  // Clear a run's stopped-chain flag or suggested next step.
+  dismissChainNote: (threadId: string) => void;
+  moveQueuedTo: (projectId: string, issueId: string, agent: string) => void;
   // HOY-353: one decision per issue revision, in priority order. Serial per project.
   triageAuto: (projectId: string) => Promise<void>;
   // Records a verdict only; an Auto pass queues it if ready.
@@ -1258,7 +1273,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         p.id === projectId ? { ...p, linear: link } : p,
       ),
     })),
-  delegateIssue: (projectId, issue, agent, decision = null) => {
+  delegateIssue: (projectId, issue, agent, decision = null, handoff = null) => {
     const s = get();
     if (!s.projects.some((p) => p.id === projectId)) return null;
     const def = s.subagents.find((d) => d.name === agent);
@@ -1275,6 +1290,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Nobody watches a delegated thread, so it must not stall on approvals.
       permissionMode: "autonomous",
       fleetRun: { startedAt: Date.now(), estimate: issue.estimate },
+      ...(handoff ? { handoff } : {}),
       linearIssue: {
         id: issue.id,
         identifier: issue.identifier,
@@ -1291,13 +1307,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }));
     // The Fleet is the watch surface; a tab opens only when the user asks for one.
     if (usePrefsStore.getState().autoOpenSpawnedThreads) get().openThread(thread.id, { background: true });
-    void startDelegatedRun(projectId, thread.id, issue, agent, decision);
-    linearSetIssueState(issue.id, "started").catch((e) =>
-      pushNotice(thread.id, `Could not move ${issue.identifier} to In Progress: ${e}`, "warning"),
-    );
+    void startDelegatedRun(projectId, thread.id, issue, agent, decision, handoff);
+    // A review leaves the issue in its review state.
+    if (!(handoff && agent === "Reviewer")) {
+      linearSetIssueState(issue.id, "started").catch((e) =>
+        pushNotice(thread.id, `Could not move ${issue.identifier} to In Progress: ${e}`, "warning"),
+      );
+    }
     return thread.id;
   },
-  enqueueIssue: (projectId, issue, agent, decision = null) => {
+  enqueueIssue: (projectId, issue, agent, decision = null, handoff = null) => {
     set((s) => ({
       projects: s.projects.map((p) => {
         if (p.id !== projectId) return p;
@@ -1309,7 +1328,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             ...fleet,
             queue: [
               ...fleet.queue,
-              { agent, issue, queuedAt: Date.now(), ...(decision ? { decision } : {}) },
+              {
+                agent,
+                issue,
+                queuedAt: Date.now(),
+                ...(decision ? { decision } : {}),
+                ...(handoff ? { handoff } : {}),
+              },
             ],
           },
         };
@@ -1331,6 +1356,22 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           : p,
       ),
     })),
+  moveQueuedTo: (projectId, issueId, agent) => {
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId && p.fleet
+          ? {
+              ...p,
+              fleet: {
+                ...p.fleet,
+                queue: p.fleet.queue.map((q) => (q.issue.id === issueId ? { ...q, agent } : q)),
+              },
+            }
+          : p,
+      ),
+    }));
+    get().pumpFleet();
+  },
   moveQueuedIssue: (projectId, issueId, delta) =>
     set((s) => ({
       projects: s.projects.map((p) =>
@@ -1392,7 +1433,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         for (const item of queue.filter((q) => q.agent === agent)) {
           if (free <= 0) break;
           get().unqueueIssue(p.id, item.issue.id);
-          get().delegateIssue(p.id, item.issue, agent, item.decision ?? null);
+          get().delegateIssue(p.id, item.issue, agent, item.decision ?? null, item.handoff ?? null);
           free--;
         }
       }
@@ -2635,6 +2676,32 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           : p,
       ),
     })),
+  handOffThread: async (threadId, agent) => {
+    const thread = findThread(get().projects, threadId)?.thread;
+    if (!thread?.agent || !thread.linearIssue) return;
+    // Acknowledged first, so the stop does not halt the agent's queue.
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({
+        ...th,
+        fleetRun: th.fleetRun && { ...th.fleetRun, acknowledged: true },
+      })),
+    }));
+    if (get().streaming[threadId]) await get().stopStreaming(threadId);
+    const { report } = runSignals(get().turns[threadId] ?? []);
+    handOff(
+      threadId,
+      { kind: "agent", agent, reason: `Moved to ${agent} by you.`, by: "user", round: thread.handoff?.round ?? 0 },
+      report,
+    );
+  },
+  acceptNextStep: (threadId) => {
+    const thread = findThread(get().projects, threadId)?.thread;
+    const next = thread?.nextStep;
+    if (!next) return;
+    const { report } = runSignals(get().turns[threadId] ?? []);
+    handOff(threadId, { kind: "agent", ...next }, report);
+  },
+  dismissChainNote: (threadId) => patchThreadNow(threadId, { chainStop: null, nextStep: null }),
   setFleetAuto: (projectId, on) => {
     set((s) => ({
       projects: s.projects.map((p) =>
@@ -2650,7 +2717,20 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (!found) return;
     const { thread, project } = found;
     const wt = thread.worktree;
-    if (wt && !wt.removed && project.path) {
+    // A later run in the issue's handoff chain still works in this worktree.
+    const shared =
+      !!wt &&
+      project.threads.some(
+        (o) => o.id !== threadId && !o.archived && o.worktree?.path === wt.path && !o.worktree.removed,
+      );
+    if (wt && !wt.removed && shared) {
+      set((s) => ({
+        projects: patchThread(s.projects, threadId, (th) => ({
+          ...th,
+          worktree: th.worktree && { ...th.worktree, removed: true },
+        })),
+      }));
+    } else if (wt && !wt.removed && project.path) {
       let issue: string | null = null;
       try {
         const out = await removeIssueWorktree(project.path, wt.path, force);
@@ -4077,6 +4157,10 @@ function persistProjects(
           fleetRun: t.fleetRun ?? null,
           worktree: t.worktree ?? null,
           pullRequest: t.pullRequest ?? null,
+          handoff: t.handoff ?? null,
+          handedTo: t.handedTo ?? null,
+          chainStop: t.chainStop ?? null,
+          nextStep: t.nextStep ?? null,
         })),
     })),
   };
@@ -4234,6 +4318,7 @@ async function startDelegatedRun(
   issue: LinearIssue,
   agent: string,
   decision?: DispatchDecision | null,
+  handoff?: Handoff | null,
 ): Promise<void> {
   const store = useSessionStore;
   const project = store.getState().projects.find((p) => p.id === projectId);
@@ -4253,7 +4338,8 @@ async function startDelegatedRun(
   });
   if (isGit) {
     try {
-      worktree = await createIssueWorktree(path, issueBranch(issue));
+      // A handoff reopens the chain's worktree on its branch.
+      worktree = await createIssueWorktree(path, handoff?.branch ?? issueBranch(issue));
     } catch (e) {
       const message = `Could not create a worktree for ${issue.identifier}: ${e}`;
       store.setState((s) => ({
@@ -4270,9 +4356,156 @@ async function startDelegatedRun(
     }));
   }
   const openPullRequests = !!project?.fleet?.openPullRequests;
-  await store.getState().submitPrompt(threadId, issuePrompt(issue, agent, worktree, { openPullRequests, decision }), undefined, undefined, {
+  await store.getState().submitPrompt(threadId, issuePrompt(issue, agent, worktree, { openPullRequests, decision, handoff }), undefined, undefined, {
     autoPlanMode: false,
   });
+}
+
+// HOY-379: hand a cleanly finished run's issue to the next agent. With Auto
+// off nothing chains; a concrete next agent is offered on the run's row.
+async function routeFinishedRun(threadId: string): Promise<void> {
+  const s = useSessionStore.getState();
+  const found = findThread(s.projects, threadId);
+  if (!found) return;
+  const { thread, project } = found;
+  if (!thread.agent || !thread.linearIssue || thread.handedTo) return;
+  const signals = runSignals(s.turns[threadId] ?? []);
+  const enabled = s.subagents.filter((d) => d.enabled).map((d) => d.name);
+  const round = thread.handoff?.round ?? 0;
+  const step = nextStep(thread.agent, thread.fleetRun?.outcome, signals, round, enabled);
+  if (!step) return;
+  if (!project.fleet?.auto) {
+    if (step.kind === "agent") {
+      const { agent, reason, by } = step;
+      patchThreadNow(threadId, { nextStep: { agent, reason, by, round: step.round } });
+    }
+    return;
+  }
+  if (step.kind === "agent") return handOff(threadId, step, signals.report);
+  if (step.kind === "stop") return stopChain(threadId, step);
+
+  const available = s.subagents.filter(
+    (d) => d.enabled && d.name !== thread.agent && !haltingThread(project.threads, d.name),
+  );
+  let decision: DispatchDecision;
+  try {
+    const { decisionModel, disabledModels } = usePrefsStore.getState();
+    const input = {
+      ...dispatchInput(issueFromRef(project.id, thread.linearIssue), available, project.threads),
+      previous: { agent: thread.agent, report: signals.report },
+    };
+    decision = await dispatchDecision(input, decisionModel, disabledModels);
+  } catch (e) {
+    decision = {
+      ready: false,
+      agent: null,
+      confidence: 0,
+      reason: `dispatcher error: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+  addDispatchSpend(project.id, decision.cost ?? 0);
+  const to = available.find((d) => d.name === decision.agent);
+  if (decision.ready && to && decision.confidence >= DISPATCH_CONFIDENCE_THRESHOLD) {
+    const by: HandoffBy = step.by === "agent" ? "agent" : "dispatcher";
+    return handOff(threadId, { kind: "agent", agent: to.name, reason: decision.reason, by, round }, signals.report);
+  }
+  return stopChain(threadId, { kind: "stop", reason: decision.reason, needsUser: true });
+}
+
+function handOff(
+  threadId: string,
+  step: Extract<NextStep, { kind: "agent" }>,
+  report: string,
+): void {
+  const store = useSessionStore.getState();
+  const found = findThread(store.projects, threadId);
+  if (!found?.thread.agent || !found.thread.linearIssue) return;
+  const { thread, project } = found;
+  const handoff: Handoff = {
+    fromThreadId: thread.id,
+    fromAgent: thread.agent!,
+    reason: step.reason,
+    by: step.by,
+    report: report || null,
+    round: step.round,
+    hops: (thread.handoff?.hops ?? 0) + 1,
+    branch: thread.worktree?.branch ?? thread.handoff?.branch ?? null,
+  };
+  if (step.by !== "user" && handoff.hops > MAX_HOPS) {
+    return stopChain(threadId, {
+      kind: "stop",
+      reason: `Handed on ${MAX_HOPS} times without finishing.`,
+      needsUser: true,
+    });
+  }
+  patchThreadNow(threadId, { handedTo: step.agent, nextStep: null, chainStop: null });
+  const issue = issueFromRef(project.id, thread.linearIssue!);
+  store.enqueueIssue(project.id, issue, step.agent, null, handoff);
+  postChainNote(project.id, thread.linearIssue!, chainComment(thread.agent!, step));
+}
+
+function stopChain(threadId: string, step: Extract<NextStep, { kind: "stop" }>): void {
+  const found = findThread(useSessionStore.getState().projects, threadId);
+  if (!found?.thread.linearIssue) return;
+  patchThreadNow(threadId, { chainStop: { reason: step.reason, needsUser: step.needsUser }, nextStep: null });
+  // A lone run that simply finished is not a chain worth a note.
+  if (found.thread.handoff || step.needsUser) {
+    postChainNote(found.project.id, found.thread.linearIssue, chainComment(found.thread.agent ?? "the agent", step));
+  }
+}
+
+function patchThreadNow(threadId: string, patch: Partial<Thread>): void {
+  useSessionStore.setState((s) => ({
+    projects: patchThread(s.projects, threadId, (th) => ({ ...th, ...patch })),
+  }));
+}
+
+// The full issue from the board's cache; a started issue has left it, so the
+// ref stands in and the run reads the rest with linear_issue.
+function issueFromRef(projectId: string, ref: LinearIssueRef): LinearIssue {
+  const cached = useLinearStore.getState().issues[projectId]?.items.find((i) => i.id === ref.id);
+  return (
+    cached ?? {
+      ...ref,
+      description: null,
+      priority: 0,
+      priorityLabel: "",
+      estimate: null,
+      stateName: "",
+      stateType: "started",
+      assignee: null,
+      labels: [],
+    }
+  );
+}
+
+function addDispatchSpend(projectId: string, cost: number): void {
+  if (cost <= 0) return;
+  useSessionStore.setState((s) => ({
+    projects: s.projects.map((p) =>
+      p.id === projectId && p.fleet
+        ? { ...p, fleet: { ...p.fleet, dispatchSpend: (p.fleet.dispatchSpend ?? 0) + cost } }
+        : p,
+    ),
+  }));
+}
+
+// Each chain note replies under the issue's first one.
+function postChainNote(projectId: string, issue: LinearIssueRef, body: string): void {
+  const project = useSessionStore.getState().projects.find((p) => p.id === projectId);
+  const parent = project?.fleet?.chainComments?.[issue.id] ?? null;
+  void linearComment(issue.identifier, body, parent)
+    .then((id) => {
+      if (parent || !id) return;
+      useSessionStore.setState((s) => ({
+        projects: s.projects.map((p) =>
+          p.id === projectId && p.fleet
+            ? { ...p, fleet: { ...p.fleet, chainComments: { ...p.fleet.chainComments, [issue.id]: id } } }
+            : p,
+        ),
+      }));
+    })
+    .catch(() => {});
 }
 
 async function finishFleetRun(threadId: string): Promise<void> {
@@ -4305,6 +4538,7 @@ async function finishFleetRun(threadId: string): Promise<void> {
           : th,
       ),
     }));
+    await routeFinishedRun(threadId).catch(() => {});
     useSessionStore.getState().pumpFleet();
   } finally {
     fleetFinishing.delete(threadId);

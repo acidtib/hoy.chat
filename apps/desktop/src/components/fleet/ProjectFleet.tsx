@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Archive,
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   Bot,
   Check,
@@ -161,7 +162,7 @@ function Board({ project, teamId }: { project: Project; teamId: string | null })
   }, [auto, teamId, cache.items, open.length, subagents.length, project.id, triageAuto]);
 
   const decisions = project.fleet?.decisions;
-  const decisionTotal = decisionCosts(decisions);
+  const decisionTotal = decisionCosts(decisions) + (project.fleet?.dispatchSpend ?? 0);
 
   // History spans every project: an agent's pace is not project specific.
   const allThreads = useMemo(() => projects.flatMap((p) => p.threads), [projects]);
@@ -581,12 +582,23 @@ function AgentRow({
   const live = rest.filter((t) => streaming[t.id]);
   // Archiving could not take the worktree down; the run stays until resolved.
   const stuck = rest.filter((t) => !streaming[t.id] && t.worktreeIssue);
+  // HOY-379: a chain waiting on the user, or a handoff offered with Auto off.
+  const waiting = rest.filter(
+    (t) => !streaming[t.id] && !t.worktreeIssue && (t.chainStop?.needsUser || t.nextStep),
+  );
   // A run that opened a pull request waits on review, so it stays until archived.
-  const inReview = rest.filter((t) => !streaming[t.id] && !t.worktreeIssue && t.pullRequest);
+  const inReview = rest.filter(
+    (t) => !streaming[t.id] && !t.worktreeIssue && !waiting.includes(t) && t.pullRequest,
+  );
   const done = rest.filter((t) => {
     const at = finishedAt(t);
     return (
-      !streaming[t.id] && !t.worktreeIssue && !t.pullRequest && at != null && Date.now() - at < DONE_LINGER_MS
+      !streaming[t.id] &&
+      !t.worktreeIssue &&
+      !waiting.includes(t) &&
+      !t.pullRequest &&
+      at != null &&
+      Date.now() - at < DONE_LINGER_MS
     );
   });
   // Re-render when the oldest finished row expires, so the stack drops it
@@ -618,7 +630,7 @@ function AgentRow({
       ? "No finished runs yet"
       : `From ${history.length} finished run${history.length === 1 ? "" : "s"}`;
   const empty =
-    open.length + queued.length + live.length + stuck.length + inReview.length + done.length === 0 &&
+    open.length + queued.length + live.length + stuck.length + waiting.length + inReview.length + done.length === 0 &&
     !halting;
 
   return (
@@ -792,6 +804,9 @@ function AgentRow({
           {stuck.map((t) => (
             <WorktreeTask key={t.id} thread={t} />
           ))}
+          {waiting.map((t) => (
+            <ChainTask key={t.id} thread={t} />
+          ))}
           {inReview.map((t) => (
             <ThreadTask key={t.id} thread={t} state="finished" />
           ))}
@@ -872,6 +887,7 @@ function ThreadTask({
   const openThread = useSessionStore((s) => s.openThread);
   const stopStreaming = useSessionStore((s) => s.stopStreaming);
   const archiveThread = useSessionStore((s) => s.archiveThread);
+  const handOffThread = useSessionStore((s) => s.handOffThread);
   const issue = thread.linearIssue;
   const live = state === "running" || state === "starting";
   const run = thread.fleetRun;
@@ -915,6 +931,7 @@ function ThreadTask({
           <Bot className="size-3.5 shrink-0 text-agent" />
         )}
         <span className="min-w-0 truncate">{issue ? issue.title : thread.title}</span>
+        <HandoffChip thread={thread} />
       </button>
       {(meta ?? took) && (
         <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
@@ -931,6 +948,16 @@ function ThreadTask({
         >
           <GitPullRequest className="size-3.5" />
         </button>
+      )}
+      {own && issue && thread.agent && !thread.handedTo && state !== "starting" && (
+        <AgentMenu
+          exclude={thread.agent}
+          label={`Hand off ${label}`}
+          title={live ? "Stop this run and hand the issue to another agent" : "Hand the issue to another agent"}
+          heading="Hand off to"
+          onPick={(agent) => void handOffThread(thread.id, agent)}
+          className={cn(!live && "opacity-0 focus-visible:opacity-100 group-hover/task:opacity-100 data-[state=open]:opacity-100")}
+        />
       )}
       {own && (
         <button
@@ -950,6 +977,131 @@ function ThreadTask({
         </button>
       )}
     </TaskShell>
+  );
+}
+
+function useEnabledAgents(exclude?: string | null): SubagentDef[] {
+  const subagents = useSessionStore((s) => s.subagents);
+  return useMemo(
+    () => subagents.filter((d) => d.enabled && d.name !== exclude),
+    [subagents, exclude],
+  );
+}
+
+// HOY-379: where a run's issue came from and went.
+function HandoffChip({ thread }: { thread: Thread }) {
+  const { handoff, handedTo } = thread;
+  if (!handoff && !handedTo) return null;
+  return (
+    <span
+      className="ml-auto shrink-0 whitespace-nowrap text-[11px] text-muted-foreground"
+      title={[handoff && `From ${handoff.fromAgent}: ${handoff.reason}`, handedTo && `Handed to ${handedTo}`]
+        .filter(Boolean)
+        .join("\n")}
+    >
+      {handoff && `from ${handoff.fromAgent}`}
+      {handoff && handedTo && " "}
+      {handedTo && (
+        <>
+          <ArrowRight className="inline size-3 align-[-2px]" /> {handedTo}
+        </>
+      )}
+    </span>
+  );
+}
+
+function AgentMenu({
+  exclude,
+  label,
+  title,
+  heading,
+  onPick,
+  className,
+}: {
+  exclude: string;
+  label: string;
+  title: string;
+  heading: string;
+  onPick: (agent: string) => void;
+  className?: string;
+}) {
+  const agents = useEnabledAgents(exclude);
+  if (agents.length === 0) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          title={title}
+          className={cn(
+            "flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent",
+            className,
+          )}
+        >
+          <ArrowRight className="size-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel>{heading}</DropdownMenuLabel>
+        {agents.map((a) => (
+          <DropdownMenuItem key={a.name} onSelect={() => onPick(a.name)}>
+            <Bot className="size-4 text-agent" />
+            {a.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// HOY-379: a finished run whose chain waits on the user, or (Auto off) the
+// handoff it suggests.
+function ChainTask({ thread }: { thread: Thread }) {
+  const openThread = useSessionStore((s) => s.openThread);
+  const acceptNextStep = useSessionStore((s) => s.acceptNextStep);
+  const dismissChainNote = useSessionStore((s) => s.dismissChainNote);
+  const issue = thread.linearIssue;
+  const next = thread.nextStep;
+  const reason = next?.reason ?? thread.chainStop?.reason ?? "";
+  return (
+    <div className={cn("group/task px-2 py-1.5 text-xs", next ? "bg-brand/5" : "bg-amber-500/10")}>
+      <div className="flex min-w-0 items-center gap-2">
+        {next ? (
+          <ArrowRight className="size-3.5 shrink-0 text-brand" />
+        ) : (
+          <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
+        )}
+        <button
+          type="button"
+          onClick={() => openThread(thread.id)}
+          className="min-w-0 flex-1 cursor-pointer truncate text-left hover:text-foreground"
+          title={reason}
+        >
+          {issue && <span className="mr-2 font-mono text-[11px]">{issue.identifier}</span>}
+          {next ? `Next: ${next.agent}. ${reason}` : `Waiting for you: ${reason}`}
+        </button>
+        {next && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 shrink-0 cursor-pointer px-2 text-xs"
+            onClick={() => acceptNextStep(thread.id)}
+          >
+            Hand off to {next.agent}
+          </Button>
+        )}
+        <button
+          type="button"
+          onClick={() => dismissChainNote(thread.id)}
+          className="flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground"
+          aria-label={`Dismiss the note on ${issue?.identifier ?? thread.title}`}
+          title="Dismiss"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1039,7 +1191,9 @@ function QueuedTask({
   last: boolean;
 }) {
   const moveQueuedIssue = useSessionStore((s) => s.moveQueuedIssue);
+  const moveQueuedTo = useSessionStore((s) => s.moveQueuedTo);
   const unqueueIssue = useSessionStore((s) => s.unqueueIssue);
+  const agents = useEnabledAgents(item.agent);
   const { issue } = item;
   return (
     <TaskShell className="text-muted-foreground">
@@ -1050,6 +1204,11 @@ function QueuedTask({
       <span className="min-w-0 flex-1 truncate" title={issue.title}>
         {issue.title}
       </span>
+      {item.handoff && (
+        <span className="shrink-0 whitespace-nowrap text-[11px]" title={item.handoff.reason}>
+          from {item.handoff.fromAgent}
+        </span>
+      )}
       <span className="shrink-0 font-mono text-[11px]">~{formatMinutes(minutes)}</span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -1080,6 +1239,18 @@ function QueuedTask({
             <ExternalLink className="size-4" />
             Open in Linear
           </DropdownMenuItem>
+          {agents.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Move to</DropdownMenuLabel>
+              {agents.map((a) => (
+                <DropdownMenuItem key={a.name} onSelect={() => moveQueuedTo(projectId, issue.id, a.name)}>
+                  <Bot className="size-4 text-agent" />
+                  {a.name}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => unqueueIssue(projectId, issue.id)}>
             <X className="size-4" />
