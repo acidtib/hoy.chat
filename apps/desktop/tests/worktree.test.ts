@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { LinearIssue, Thread } from "@/lib/types";
 import { mockIpcModule } from "./ipcMock";
 
@@ -57,6 +57,7 @@ describe("dispatching into a worktree (HOY-358)", () => {
     for (const k of ["projectIsGitRepo", "createIssueWorktree", "removeIssueWorktree"]) ipc[k].mockClear();
     useSessionStore.setState({ submitPrompt: realSubmit });
   });
+  afterAll(() => useSessionStore.setState({ submitPrompt: realSubmit }));
 
   test("a git project gets a worktree before the brief, and the brief names it", async () => {
     const submitPrompt = mock(async () => {});

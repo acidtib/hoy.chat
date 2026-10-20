@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mockIpcModule } from "./ipcMock";
 
 const workspace = {
@@ -65,9 +65,12 @@ const setIssues = (items: LinearIssue[]) =>
 
 const decisions = () => useSessionStore.getState().projects[0].fleet!.decisions ?? {};
 
+// Restored so later test files in the same run get the real action.
+const realSubmitPrompt = useSessionStore.getState().submitPrompt;
 beforeAll(async () => {
   await useSessionStore.getState().initWorkspace();
 });
+afterAll(() => useSessionStore.setState({ submitPrompt: realSubmitPrompt }));
 
 beforeEach(() => {
   dispatchDecision.mockClear();
