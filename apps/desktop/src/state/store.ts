@@ -3820,7 +3820,8 @@ function releaseSession(sessionId: string): void {
 const permissionModeApplied = new Set<string>();
 
 // Apply a thread's recorded permission mode to a freshly available session
-// (HOY-186). A default-mode thread needs nothing: the extension starts there.
+// (HOY-186). Manual is the sidecar's spawn default (HOY-387), so it needs no
+// /hoy_mode. Keep this fast path in sync with that default.
 async function applyThreadPermissionMode(
   threadId: string,
   sessionId: string,
