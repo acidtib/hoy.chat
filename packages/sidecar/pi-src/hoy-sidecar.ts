@@ -27,6 +27,7 @@ import { createHoyPermissions, createPermissionState, isPermissionMode, type Per
 import { expandToolNames, loadHoyMcpConfig, readHoyCodemode } from "./hoy-mcp-config";
 import { createHoyAgents } from "./hoy-agents";
 import { createHoyAskQuestion } from "./hoy-ask-question";
+import { createHoySkills } from "./hoy-skills";
 import { createHoyLinear, LINEAR_TOOLS } from "./hoy-linear";
 import { createHoyInit } from "./hoy-init";
 import { createHoyTurnBudget } from "./hoy-turn-budget";
@@ -254,6 +255,10 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       // root-vs-child. A child at or beyond the cap never gets it.
       extensionFactories: [
         createHoyAlibaba(agentDir),
+        // HOY-392: built-in skills, staged to <agentDir>/builtin-skills.
+        // Same-named user/project skills win by load order (verified in
+        // hoy-skills.test.ts), so registration order here is irrelevant.
+        createHoySkills(agentDir),
         createHoyPermissions(permissionState),
         // Pi's built-in MCP (HOY-232 originally shipped our own proxy tool). SDK
         // sessions do not load built-ins, so we add it here. Servers connect at

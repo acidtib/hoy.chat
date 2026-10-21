@@ -100,8 +100,9 @@ export function SkillsPanel() {
     void refresh();
   }, [refresh]);
 
-  const global = list?.skills.filter((s) => s.scope === "user") ?? [];
-  const project = list?.skills.filter((s) => s.scope === "project") ?? [];
+  const builtins = list?.skills.filter((s) => s.builtin) ?? [];
+  const global = list?.skills.filter((s) => !s.builtin && s.scope === "user") ?? [];
+  const project = list?.skills.filter((s) => !s.builtin && s.scope === "project") ?? [];
   const diagnostics = list?.diagnostics ?? [];
 
   return (
@@ -125,6 +126,24 @@ export function SkillsPanel() {
           <SkillList_>
             {diagnostics.map((d, i) => (
               <DiagnosticRow key={i} diag={d} />
+            ))}
+          </SkillList_>
+        </div>
+      )}
+
+      {builtins.length > 0 && (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold">Built-in</h2>
+            <p className="text-xs text-muted-foreground">
+              Shipped with Hoy, available in every project. To customize one,
+              add a same-named SKILL.md under ~/.hoy/skills or .hoy/skills;
+              yours wins and any collision surfaces under Problems.
+            </p>
+          </div>
+          <SkillList_>
+            {builtins.map((s) => (
+              <SkillRow key={s.filePath} skill={s} />
             ))}
           </SkillList_>
         </div>

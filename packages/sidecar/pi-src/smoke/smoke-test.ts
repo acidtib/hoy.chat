@@ -258,9 +258,53 @@ async function oauthStart(): Promise<void> {
   pass("OAuth login flow loads inside the compiled binary");
 }
 
+async function builtinSkills(): Promise<void> {
+  writeMcpConfig(false);
+  const proc = Bun.spawn([binary, "--mode", "rpc"], {
+    cwd,
+    env: sidecarEnv(),
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const send = (message: unknown) => {
+    proc.stdin.write(`${JSON.stringify(message)}\n`);
+    proc.stdin.flush();
+  };
+  const responses = new Map<string, any>();
+  try {
+    send({ id: "state", type: "get_state" });
+    send({ id: "commands", type: "get_commands" });
+    send({ id: "model", type: "set_model", provider: "mock", modelId: "mock" });
+    send({ id: "prompt", type: "prompt", message: "/skill:commit" });
+    for await (const msg of jsonLines(proc.stdout)) {
+      if (msg.type === "response") {
+        responses.set(msg.id, msg);
+        if (!msg.success) throw new Error(`RPC ${msg.command} failed: ${msg.error}`);
+      } else if (msg.type === "extension_ui_request" && msg.method === "select") {
+        if (!String(msg.title).includes("mcp__echo__echo")) throw new Error(`unexpected approval: ${msg.title}`);
+        send({ type: "extension_ui_response", id: msg.id, value: "Allow" });
+      } else if (msg.type === "agent_settled") {
+        break;
+      }
+    }
+  } finally {
+    proc.kill();
+  }
+  const names = (responses.get("commands")?.data?.commands ?? []).map((c: any) => c.name);
+  for (const skill of ["skill:code-review", "skill:commit", "skill:pr", "skill:security-review", "skill:simplify"]) {
+    const count = names.filter((n: string) => n === skill).length;
+    if (count !== 1) throw new Error(`expected one ${skill} command, saw ${count} in ${JSON.stringify(names)}`);
+  }
+  pass("built-in skills listed exactly once in get_commands");
+  if (!responses.get("prompt")?.success) throw new Error("no successful response for /skill:commit");
+  pass("/skill:commit expands and runs without error");
+}
+
 try {
   await withTimeout(rpcTurn(), "RPC turn");
   await withTimeout(codemodeTurn(), "codemode turn");
+  await withTimeout(builtinSkills(), "built-in skills");
   await withTimeout(oauthStart(), "OAuth start");
   console.log(`\nsmoke test passed (${checks.length} checks)`);
 } catch (error) {

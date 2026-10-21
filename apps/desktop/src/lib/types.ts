@@ -780,6 +780,9 @@ export interface SkillInfo {
   filePath: string;
   scope: "user" | "project" | "temporary";
   disableModelInvocation: boolean;
+  // HOY-392: compiled into the sidecar, staged under <agentDir>/builtin-skills.
+  // Read-only in the panel; override with a same-named user/project skill.
+  builtin?: boolean;
 }
 
 // A validation problem from skill discovery (invalid name/description, or a

@@ -303,7 +303,7 @@ wired through the `/tree` navigator; `get_available_thinking_levels` arrived in
 | `export_html` | Export session to static HTML | unused | Cheap win: one call plus a save dialog |
 | `bash` | Run a command outside the agent loop (`!` mode) | unused | Output reaches the LLM on the next prompt |
 | `abort_bash` | Cancel that command | unused | |
-| `get_commands` | List extension/prompt/skill commands | used (HOY-223) | `commands.rs`; feeds the composer "/" autocomplete (cached per thread in the store), which inserts "/name " and lets the existing prompt path dispatch. A Hoy "/compact" built-in is added client-side |
+| `get_commands` | List extension/prompt/skill commands | used (HOY-223) | `commands.rs`; feeds the composer "/" autocomplete (cached per thread in the store), which inserts "/name " and lets the existing prompt path dispatch. A Hoy "/compact" built-in is added client-side. Since HOY-392 the sidecar also reports five compiled-in `skill:` commands (code-review, commit, pr, security-review, simplify), overridable by same-named disk skills |
 | `get_entries` | Read session entries | read surface (HOY-221) | `commands.rs`; typed `getEntries` wrapper; returns `{entries, leafId}`. No UI yet; backs the follow-up `/tree` navigator. Optional `since` for incremental reads |
 | `get_tree` | Read session tree snapshot | read surface (HOY-221) | `commands.rs`; typed `getTree` wrapper; returns `{tree, leafId}`. No UI yet; pairs with `get_entries` for the `/tree` navigator |
 
