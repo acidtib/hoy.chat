@@ -157,6 +157,19 @@ export function runContextPrompt(run: RunContext): string {
   return RUN_CONTEXT[run];
 }
 
+// A typed depth-0 thread is a Fleet run unless Rust marks it interactive
+// (HOY-385): the user can talk to a Fleet agent outside a run. Rust only sets
+// the flag at depth 0; children are subagents.
+export function resolveRunContext(opts: {
+  hasType: boolean;
+  depth: number;
+  interactiveAgent?: boolean;
+}): RunContext {
+  if (!opts.hasType) return "interactive";
+  if (opts.interactiveAgent) return "interactive";
+  return opts.depth === 0 ? "fleet" : "subagent";
+}
+
 // Built from the types this session may spawn so the model sees exactly what it
 // can delegate to. HOY-300: the agent tool is synchronous, it blocks and returns
 // the subagent's result in-band, so the model must be told to wait.

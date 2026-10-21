@@ -321,6 +321,8 @@ export function deleteSubagent(
 // `requireSubagentApproval` (HOY-248) relays the renderer pref of the same name
 // to the sidecar as HOY_REQUIRE_SUBAGENT_APPROVAL. When false (default) the
 // `agent` tool spawns without a consent prompt.
+// `interactiveAgent` (HOY-385) marks a typed depth-0 thread as a user
+// conversation rather than a Fleet run.
 export function createSession(
   cwd: string,
   sessionFile: string | null | undefined,
@@ -329,6 +331,7 @@ export function createSession(
   depth: number,
   requireSubagentApproval: boolean,
   inheritFromSession: string | null | undefined,
+  interactiveAgent: boolean,
 ): Promise<string> {
   return invoke<string>("create_session", {
     cwd,
@@ -338,6 +341,7 @@ export function createSession(
     depth,
     requireSubagentApproval,
     inheritFromSession: inheritFromSession ?? null,
+    interactiveAgent,
   });
 }
 

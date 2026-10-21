@@ -407,6 +407,7 @@ impl PiProcess {
         subagent_type: Option<&str>,
         depth: u32,
         require_subagent_approval: bool,
+        interactive_agent: bool,
         inherit_from_session: Option<&str>,
     ) -> Result<Arc<PiProcess>, String> {
         if agent_dir.as_os_str().is_empty() {
@@ -452,6 +453,12 @@ impl PiProcess {
         command.env(
             "HOY_REQUIRE_SUBAGENT_APPROVAL",
             if require_subagent_approval { "1" } else { "0" },
+        );
+        // HOY-385: a typed depth-0 thread can be a user conversation instead of
+        // a Fleet run. Always set so a respawn restores the distinction.
+        command.env(
+            "HOY_INTERACTIVE_AGENT",
+            if interactive_agent { "1" } else { "0" },
         );
         // HOY-244: when a subagent type sets `inherit_context: true`, the renderer
         // passes the parent's transcript path here. The sidecar forks a fresh child
@@ -1186,6 +1193,9 @@ pub struct SidecarManager {
     // restores HOY_REQUIRE_SUBAGENT_APPROVAL. Without it a respawn will drop
     // the gate a user had turned on. Every session has an entry.
     require_approvals: Mutex<HashMap<SessionId, bool>>,
+    // Per-session interactive-agent flag (HOY-385). Mirrors the other per-session
+    // env flags so a respawn keeps a typed depth-0 thread a user conversation.
+    interactive_agents: Mutex<HashMap<SessionId, bool>>,
     handle_counter: AtomicUsize,
     bin: PathBuf,
     payload: PathBuf,
@@ -1227,6 +1237,7 @@ impl SidecarManager {
             subagent_types: Mutex::new(HashMap::new()),
             depths: Mutex::new(HashMap::new()),
             require_approvals: Mutex::new(HashMap::new()),
+            interactive_agents: Mutex::new(HashMap::new()),
             handle_counter: AtomicUsize::new(1),
             bin,
             payload,
@@ -1265,11 +1276,20 @@ impl SidecarManager {
             .unwrap_or(false)
     }
 
+    fn interactive_agent_of(&self, id: &str) -> bool {
+        self.interactive_agents
+            .lock()
+            .unwrap()
+            .get(id)
+            .copied()
+            .unwrap_or(false)
+    }
+
     // Spawn the boot control session in the manager's default cwd. The first
     // session spawned becomes the active one (used for model enumeration).
     pub fn spawn_session(&self) -> Result<SessionId, String> {
         let cwd = self.cwd.clone();
-        let id = self.spawn_session_in(&cwd, None, None, None, 0, false, None)?;
+        let id = self.spawn_session_in(&cwd, None, None, None, 0, false, false, None)?;
         let mut active = self.active.lock().unwrap();
         if active.is_none() {
             *active = Some(id.clone());
@@ -1289,6 +1309,7 @@ impl SidecarManager {
         subagent_type: Option<&str>,
         depth: u32,
         require_subagent_approval: bool,
+        interactive_agent: bool,
         inherit_from_session: Option<&str>,
     ) -> Result<SessionId, String> {
         if !self.bin.exists() {
@@ -1307,6 +1328,7 @@ impl SidecarManager {
             subagent_type,
             depth,
             require_subagent_approval,
+            interactive_agent,
             inherit_from_session,
         )?;
         let id = format!("s{}", self.handle_counter.fetch_add(1, Ordering::Relaxed));
@@ -1326,6 +1348,10 @@ impl SidecarManager {
             .lock()
             .unwrap()
             .insert(id.clone(), require_subagent_approval);
+        self.interactive_agents
+            .lock()
+            .unwrap()
+            .insert(id.clone(), interactive_agent);
         Ok(id)
     }
 
@@ -1647,6 +1673,7 @@ impl SidecarManager {
         self.subagent_types.lock().unwrap().remove(id);
         self.depths.lock().unwrap().remove(id);
         self.require_approvals.lock().unwrap().remove(id);
+        self.interactive_agents.lock().unwrap().remove(id);
         drop(old);
     }
 
@@ -1690,6 +1717,7 @@ impl SidecarManager {
         let subagent_type = self.subagent_type_of(id);
         let depth = self.depth_of(id);
         let require_subagent_approval = self.require_approval_of(id);
+        let interactive_agent = self.interactive_agent_of(id);
         let cwd = self
             .cwds
             .lock()
@@ -1707,6 +1735,7 @@ impl SidecarManager {
             subagent_type.as_deref(),
             depth,
             require_subagent_approval,
+            interactive_agent,
             // Respawn opens the child's own transcript (which already contains any
             // inherited history from first spawn), so no re-fork (HOY-244).
             None,
@@ -1993,7 +2022,7 @@ mod live_tests {
 
         // 1. Fresh session: prompt and wait for the turn to complete.
         let id = manager
-            .spawn_session_in(&cwd, None, None, None, 0, false, None)
+            .spawn_session_in(&cwd, None, None, None, 0, false, false, None)
             .expect("spawn fresh session");
         let process = manager.get(&id).expect("session present");
         let events: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
@@ -2036,7 +2065,7 @@ mod live_tests {
         // 2. Tear down the first sidecar, then reopen the same file in a new one.
         manager.remove(&id);
         let id2 = manager
-            .spawn_session_in(&cwd, Some(&session_file), None, None, 0, false, None)
+            .spawn_session_in(&cwd, Some(&session_file), None, None, 0, false, false, None)
             .expect("spawn restoring session");
         let restored = manager.get(&id2).expect("restored session present");
         let response = restored

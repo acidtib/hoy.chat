@@ -39,7 +39,7 @@ import {
   spawnableTypes,
   resolveSubagentName,
 } from "./hoy-agents-registry";
-import { buildHoySystemPrompt, type RunContext } from "./hoy-system-prompt";
+import { buildHoySystemPrompt, resolveRunContext } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
 import { runGoalEval } from "./hoy-goal-eval";
 import { runTitle } from "./hoy-title";
@@ -80,9 +80,12 @@ if (!agentDir) {
   process.exit(1);
 }
 
-// Set by Rust (create_session) only for spawned child sessions. Selects the
-// child's built-in type. Absent for user threads.
+// Set by Rust (create_session) for typed threads (Fleet runs, interactive agent
+// threads, and spawned children). Absent for plain user threads.
 const requestedSubagentType = process.env.HOY_SUBAGENT_TYPE;
+
+// HOY-385: a typed depth-0 thread is a user conversation, not a Fleet run.
+const interactiveAgent = process.env.HOY_INTERACTIVE_AGENT === "1";
 
 // Numeric depth from Rust (0 for root/user threads). A thread can spawn iff
 // depth < MAX_SUBAGENT_DEPTH. Mirrors apps/desktop/src/state/limits.ts. Keep
@@ -209,11 +212,12 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   const childType = subagentType ? registry[subagentType] : null;
   const baseTools = childType ? childType.tools : HOY_TOOLS;
   // HOY-367: a role spawns only the types it allows; with none it gets no agent
-  // tool. A typed thread at depth 0 is a Fleet run, deeper is a subagent.
+  // tool. A typed depth-0 thread is a Fleet run unless Rust marked it
+  // interactive (HOY-385), deeper is a subagent.
   const spawnable = canSpawn ? spawnableTypes(registry, childType) : [];
   const delegates = spawnable.length > 0;
   const advertised = spawnable.map((t) => ({ name: t.name, description: t.description }));
-  const run: RunContext = !childType ? "interactive" : subagentDepth === 0 ? "fleet" : "subagent";
+  const run = resolveRunContext({ hasType: !!childType, depth: subagentDepth, interactiveAgent });
   const withAgent = delegates && !baseTools.includes("agent") ? [...baseTools, "agent"] : baseTools;
   // `mcp` is Hoy's capability name (HOY_TOOLS, subagent .md tool lists); Pi
   // exposes MCP as tool_search, resource tools, and mcp__<server>__<tool>.
