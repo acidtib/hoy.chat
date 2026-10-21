@@ -1,6 +1,14 @@
 // Pure helpers for the Delegate board (HOY-346).
 
-import type { DispatchDecision, Handoff, LinearIssue, QueuedIssue, Thread, Turn } from "./types";
+import type {
+  DispatchDecision,
+  Handoff,
+  LinearIssue,
+  LinearIssueRef,
+  QueuedIssue,
+  Thread,
+  Turn,
+} from "./types";
 
 // Issues not yet handed to an agent in this project, running or queued. An
 // archived delegated thread releases its issue back to the column.
@@ -25,14 +33,48 @@ function priorityRank(priority: number): number {
   return priority === 0 ? 5 : priority;
 }
 
+// A typed thread that is a user conversation, not a Fleet run (HOY-385).
+export function isInteractiveAgentThread(t: Thread): boolean {
+  return !!t.agent && !t.fleetRun;
+}
+
 // Everything an agent type is working on in a project, newest first: issues
 // delegated to it and subagents of that type spawned by other threads.
+// Interactive agent threads are normal top-level conversations, not Fleet work.
 export function agentThreads(threads: Thread[], agent: string): Thread[] {
   return threads
     .filter(
-      (t) => !t.archived && (t.agent === agent || t.spawnedBy?.type === agent),
+      (t) =>
+        !t.archived &&
+        !isInteractiveAgentThread(t) &&
+        (t.agent === agent || t.spawnedBy?.type === agent),
     )
     .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+// Composer prefill for a "Talk to {agent}" thread opened from a finished run:
+// the issue and the run's report, with the worktree branch noted.
+export function talkToAgentDraft(
+  agent: string,
+  issue: LinearIssueRef | null,
+  report: string,
+  worktree: { branch: string } | null,
+): string {
+  const lines: string[] = [];
+  if (issue) {
+    lines.push(
+      `Context from the ${agent} run on ${issue.identifier}:`,
+      issue.title,
+      issue.url,
+    );
+  }
+  if (report.trim()) {
+    lines.push("", "Previous report:", report);
+  }
+  if (worktree) {
+    lines.push("", `Working in this run's worktree on branch ${worktree.branch}.`);
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 // What each built-in role does with an issue it is handed (HOY-366). Custom

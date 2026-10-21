@@ -57,7 +57,14 @@ import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { leafChainMessageIds } from "@/lib/treeNode";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
-import { findPullRequestUrl, issueBranch, issuePrompt, unassignedIssues } from "@/lib/delegate";
+import {
+  findPullRequestUrl,
+  isInteractiveAgentThread,
+  issueBranch,
+  issuePrompt,
+  talkToAgentDraft,
+  unassignedIssues,
+} from "@/lib/delegate";
 import { currentAgentName, haltingThread, moveQueued, openRuns } from "@/lib/fleet";
 import {
   agentLabel,
@@ -622,6 +629,13 @@ interface SessionStore {
   acceptNextStep: (threadId: string) => void;
   // HOY-379: push a finished run's branch and open its pull request.
   openRunPullRequest: (threadId: string) => Promise<void>;
+  // HOY-385: start an interactive thread running as an agent, blank or seeded
+  // from a finished run's worktree and report. Returns the thread id.
+  startAgentThread: (
+    projectId: string,
+    agent: string,
+    opts?: { fromRunThreadId?: string },
+  ) => string | null;
   // Clear a run's stopped-chain flag or suggested next step.
   dismissChainNote: (threadId: string) => void;
   moveQueuedTo: (projectId: string, issueId: string, agent: string) => void;
@@ -1317,6 +1331,52 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         pushNotice(thread.id, `Could not move ${issue.identifier} to In Progress: ${e}`, "warning"),
       );
     }
+    return thread.id;
+  },
+  startAgentThread: (projectId, agent, opts) => {
+    const s = get();
+    if (!s.projects.some((p) => p.id === projectId)) return null;
+    const def = s.subagents.find((d) => d.name === agent);
+    const model = def?.model ? resolveModelRef(s, def.model) : null;
+    const thinking = isThinkingLevel(def?.thinking) ? def.thinking : null;
+    const source = opts?.fromRunThreadId
+      ? (findThread(s.projects, opts.fromRunThreadId)?.thread ?? null)
+      : null;
+    const thread: Thread = {
+      id: shortId("t"),
+      title: source ? `Talk to ${agent}` : "New thread",
+      updatedAt: Date.now(),
+      sessionId: null,
+      agent,
+      ...(source?.worktree && !source.worktree.removed
+        ? {
+            worktree: {
+              path: source.worktree.path,
+              branch: source.worktree.branch,
+              base: source.worktree.base,
+            },
+          }
+        : {}),
+      ...(model ? { model } : {}),
+      ...(thinking ? { thinkingLevel: thinking } : {}),
+    };
+    set((st) => ({
+      projects: st.projects.map((p) =>
+        p.id === projectId ? { ...p, threads: [thread, ...p.threads] } : p,
+      ),
+    }));
+    if (source) {
+      get().setDraft(
+        thread.id,
+        talkToAgentDraft(
+          agent,
+          source.linearIssue ?? null,
+          runSignals(get().turns[source.id] ?? []).report,
+          source.worktree ?? null,
+        ),
+      );
+    }
+    get().openThread(thread.id);
     return thread.id;
   },
   enqueueIssue: (projectId, issue, agent, decision = null, handoff = null) => {
@@ -2092,12 +2152,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const stopStreaming = () =>
       set((s) => ({ streaming: { ...s.streaming, [threadId]: false } }));
 
-    // A user thread's first message gets a proper title in the background; the
-    // first-line title stands until it lands, and a rename in between wins.
+    // A non-run thread's first message gets a proper title in the background;
+    // the first-line title stands until it lands, and a rename in between wins.
+    // HOY-385: a blank interactive agent thread has `agent` set but no fleetRun,
+    // so the gate keys on fleetRun rather than the agent type.
     if (
       thread.title === "New thread" &&
       !thread.renamed &&
-      !thread.agent &&
+      !thread.fleetRun &&
       !thread.spawnedBy &&
       text.trim() &&
       usePrefsStore.getState().autoTitles
@@ -2980,6 +3042,7 @@ async function startChildRun(
       childDepth,
       usePrefsStore.getState().requireSubagentApproval,
       inheritFrom,
+      false,
     );
     useSessionStore.setState((s) => ({
       projects: patchThread(s.projects, childId, (t) => ({ ...t, sessionId })),
@@ -3782,17 +3845,19 @@ function acquireSession(
   // computed directly rather than derived from a parent + 1.
   const { projects } = useSessionStore.getState();
   const depth = threadDepth(projects, threadId);
+  const thread = findThread(projects, threadId)?.thread;
   const spawn = createSession(
     cwd,
     sessionFile ?? null,
     // A delegated thread keeps its agent type across spawns (HOY-346).
-    findThread(projects, threadId)?.thread.agent ?? null,
+    thread?.agent ?? null,
     null,
     depth,
     usePrefsStore.getState().requireSubagentApproval,
     // Reopen path: the thread opens its own transcript (sessionFile), so there is
     // no parent to fork from (HOY-244).
     null,
+    thread ? isInteractiveAgentThread(thread) : false,
   ).finally(() => pendingSessions.delete(threadId));
   pendingSessions.set(threadId, spawn);
   return spawn;
@@ -3921,6 +3986,7 @@ async function branchIntoChildThread(
       depth,
       usePrefsStore.getState().requireSubagentApproval,
       null,
+      false,
     );
   } catch (e) {
     pushNotice(threadId, `${copy.fail} failed: ${String(e)}`, "error");

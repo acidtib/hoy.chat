@@ -19,6 +19,7 @@ import {
   HOY_SYSTEM_PROMPT,
   PLAN_MODE_PROMPT,
   PROPOSED_PLAN_FORMAT,
+  resolveRunContext,
 } from "./hoy-system-prompt";
 
 // Pi 1.3.0 edit guidelines (core/tools/edit.js). The prompt must carry these
@@ -149,6 +150,24 @@ describe("plan mode: two-phase design gate (HOY-276 follow-up)", () => {
     expect(PLAN_MODE_PROMPT).toContain("Only skip the gate for a genuinely trivial change");
     // ...and it must stop for the answer before emitting the plan.
     expect(PLAN_MODE_PROMPT).toContain("do NOT emit the proposed_plan block, until the user has answered");
+  });
+});
+
+describe("resolveRunContext", () => {
+  test("untyped threads are interactive", () => {
+    expect(resolveRunContext({ hasType: false, depth: 0 })).toBe("interactive");
+  });
+
+  test("typed depth-0 threads are Fleet runs without the interactive flag", () => {
+    expect(resolveRunContext({ hasType: true, depth: 0 })).toBe("fleet");
+  });
+
+  test("the interactive flag keeps a typed depth-0 thread interactive (HOY-385)", () => {
+    expect(resolveRunContext({ hasType: true, depth: 0, interactiveAgent: true })).toBe("interactive");
+  });
+
+  test("typed children are subagents", () => {
+    expect(resolveRunContext({ hasType: true, depth: 1 })).toBe("subagent");
   });
 });
 

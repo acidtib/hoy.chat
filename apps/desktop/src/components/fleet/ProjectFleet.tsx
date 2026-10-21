@@ -573,6 +573,7 @@ function AgentRow({
   const streaming = useSessionStore((s) => s.streaming);
   const setAgentConcurrency = useSessionStore((s) => s.setAgentConcurrency);
   const resumeAgent = useSessionStore((s) => s.resumeAgent);
+  const startAgentThread = useSessionStore((s) => s.startAgentThread);
   const [over, setOver] = useState(false);
   const { open, queued, halting, concurrency, rate, history } = plan;
   const busy = open.length >= concurrency;
@@ -726,6 +727,15 @@ function AgentRow({
                 ? `${open.length}/${concurrency} running`
                 : "Free"}
         </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 shrink-0 gap-1 px-2 text-xs"
+          onClick={() => startAgentThread(project.id, def.name)}
+        >
+          <Plus className="size-3" />
+          New thread
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -827,7 +837,7 @@ function AgentRow({
             <ChainTask key={t.id} thread={t} />
           ))}
           {ready.map((t) => (
-            <ReadyTask key={t.id} thread={t} status={branches[t.id] ?? null} />
+            <ReadyTask key={t.id} thread={t} status={branches[t.id] ?? null} projectId={project.id} />
           ))}
           {inReview.map((t) => (
             <ThreadTask key={t.id} thread={t} state="finished" />
@@ -1149,10 +1159,19 @@ function useBranchStatuses(threads: Thread[]): Record<string, BranchState> {
 }
 
 // HOY-379: a finished issue's branch with work and no pull request yet.
-function ReadyTask({ thread, status }: { thread: Thread; status: BranchState | null }) {
+function ReadyTask({
+  thread,
+  status,
+  projectId,
+}: {
+  thread: Thread;
+  status: BranchState | null;
+  projectId: string;
+}) {
   const openThread = useSessionStore((s) => s.openThread);
   const archiveThread = useSessionStore((s) => s.archiveThread);
   const openRunPullRequest = useSessionStore((s) => s.openRunPullRequest);
+  const startAgentThread = useSessionStore((s) => s.startAgentThread);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wt = thread.worktree!;
@@ -1193,6 +1212,20 @@ function ReadyTask({ thread, status }: { thread: Thread; status: BranchState | n
           >
             {busy ? <Loader2 className="size-3 animate-spin" /> : <GitPullRequest className="size-3" />}
             Open pull request
+          </Button>
+        )}
+        {thread.agent && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 shrink-0 cursor-pointer gap-1 px-2 text-xs"
+            onClick={() =>
+              startAgentThread(projectId, thread.agent!, { fromRunThreadId: thread.id })
+            }
+            title={`Talk to ${thread.agent} in ${wt.path}`}
+          >
+            <Bot className="size-3 text-agent" />
+            Talk to {thread.agent}
           </Button>
         )}
         <button

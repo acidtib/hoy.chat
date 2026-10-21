@@ -77,17 +77,19 @@ describe("unassignedIssues", () => {
 
 test("agentThreads lists an agent's delegated and spawned work, newest first", () => {
   const a = issue("1", 2);
+  const run = { startedAt: 1 };
   const threads = [
-    thread("old", { agent: "Explore", linearIssue: ref(a), updatedAt: 1 }),
-    thread("new", { agent: "Explore", linearIssue: ref(a), updatedAt: 3 }),
+    thread("old", { agent: "Explore", linearIssue: ref(a), fleetRun: run, updatedAt: 1 }),
+    thread("new", { agent: "Explore", linearIssue: ref(a), fleetRun: run, updatedAt: 3 }),
     thread("spawned", {
       parentThreadId: "p",
       spawnedBy: { type: "Explore", agentId: "a1" },
       updatedAt: 2,
     }),
-    thread("other", { agent: "Plan", linearIssue: ref(a) }),
+    thread("other", { agent: "Plan", linearIssue: ref(a), fleetRun: run }),
     thread("plain"),
-    thread("gone", { agent: "Explore", linearIssue: ref(a), archived: true }),
+    thread("interactive", { agent: "Explore", updatedAt: 4 }),
+    thread("gone", { agent: "Explore", linearIssue: ref(a), fleetRun: run, archived: true }),
   ];
   expect(agentThreads(threads, "Explore").map((t) => t.id)).toEqual([
     "new",

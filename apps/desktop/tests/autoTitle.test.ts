@@ -71,7 +71,7 @@ describe("automatic thread titles", () => {
   });
 
   test("agent threads and the off setting skip the helper", async () => {
-    seed({ agent: "Coder" });
+    seed({ agent: "Coder", fleetRun: { startedAt: 1 } });
     await useSessionStore.getState().submitPrompt("t1", "do the thing");
     usePrefsStore.setState({ autoTitles: false });
     seed({});

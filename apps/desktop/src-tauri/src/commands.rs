@@ -504,6 +504,7 @@ pub async fn create_session(
     permission_mode: Option<String>,
     depth: u32,
     require_subagent_approval: bool,
+    interactive_agent: bool,
     inherit_from_session: Option<String>,
     manager: State<'_, SidecarManager>,
 ) -> Result<String, String> {
@@ -519,6 +520,7 @@ pub async fn create_session(
         subagent_type.as_deref(),
         depth,
         require_subagent_approval,
+        interactive_agent,
         inherit_from_session.as_deref(),
     )
 }
