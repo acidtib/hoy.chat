@@ -10,12 +10,19 @@
 // of get_commands.
 
 import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import { ensureBuiltinSkills, isBuiltinSkillPath } from "./hoy-skills";
 
 export async function runListSkills(
   agentDir: string,
   cwd: string,
 ): Promise<never> {
-  const loader = new DefaultResourceLoader({ cwd, agentDir });
+  // Same staging as the runtime factory (hoy-skills.ts), appended last so the
+  // dump resolves precedence exactly like a live session: disk skills win.
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    additionalSkillPaths: ensureBuiltinSkills(agentDir),
+  });
   await loader.reload();
   const { skills, diagnostics } = loader.getSkills();
   const payload = {
@@ -26,6 +33,8 @@ export async function runListSkills(
       // "user" (global ~/.hoy/skills) | "project" (.hoy/skills) | "temporary".
       scope: s.sourceInfo.scope,
       disableModelInvocation: s.disableModelInvocation,
+      // Compiled into the sidecar (hoy-skills.ts), read-only in the panel.
+      builtin: isBuiltinSkillPath(s.filePath, agentDir),
     })),
     diagnostics: diagnostics.map((d) => ({
       type: d.type,

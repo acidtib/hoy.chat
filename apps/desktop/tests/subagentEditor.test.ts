@@ -32,7 +32,7 @@ describe("validateDraft (HOY-254)", () => {
   });
 
   test("built-in names are reserved (case-insensitive)", () => {
-    for (const n of ["general-purpose", "Explore", "plan", "PLAN"]) {
+    for (const n of ["coder", "Researcher", "reviewer", "WRITER"]) {
       expect(fields(base({ name: n }))).toContain("name");
     }
   });
@@ -79,7 +79,7 @@ describe("validateDraft (HOY-254)", () => {
   test("edit mode still blocks a built-in name (no shadowing)", () => {
     expect(
       Object.keys(
-        validateDraft(base({ name: "explore" }), { takenNames: new Set(), editing: true }),
+        validateDraft(base({ name: "coder" }), { takenNames: new Set(), editing: true }),
       ),
     ).toContain("name");
   });

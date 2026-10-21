@@ -118,8 +118,8 @@ const THINKING_LABELS: Record<ThinkingLevel, string> = {
 
 // Thread permission modes (HOY-186), in selector order. Labels are display
 // only. The wire values are the PermissionMode union.
-const MODE_LABELS: Array<{ value: PermissionMode; label: string }> = [
-  { value: "default", label: "Default" },
+export const MODE_LABELS: Array<{ value: PermissionMode; label: string }> = [
+  { value: "manual", label: "Manual" },
   { value: "acceptEdits", label: "Accept Edits" },
   { value: "plan", label: "Plan Mode" },
   { value: "autonomous", label: "Autonomous" },
@@ -198,7 +198,7 @@ export function Composer({
   currentModel,
   selecting,
   onSelectModel,
-  mode = "default",
+  mode = "manual",
   onSelectMode,
   thinking,
   onSelectThinking,
@@ -224,9 +224,9 @@ export function Composer({
   // The draft, with @ mentions encoded inline as markers (lib/mentions.ts).
   value: string;
   onChange: (value: string) => void;
-  // "enter" is a normal send / steer. "shiftEnter" queues a follow-up mid-turn
-  // (HOY-218). When idle, both start a normal turn.
-  onSubmit?: (intent: "enter" | "shiftEnter") => void;
+  // "enter" is a normal send / steer. "queue" queues a follow-up mid-turn
+  // (HOY-331). When idle, both start a normal turn.
+  onSubmit?: (intent: "enter" | "queue") => void;
   models: ModelInfo[];
   currentModel?: ModelRef | null;
   selecting: boolean;
@@ -237,7 +237,7 @@ export function Composer({
   onSelectThinking: (level: ThinkingLevel) => void;
   // While streaming, the Stop button appears alongside Send (HOY-195/HOY-218)
   // onStop is the abort. The composer stays enabled during a turn so the user
-  // can steer (Enter) or queue a follow-up (Shift+Enter).
+  // can steer (Enter) or queue a follow-up (Ctrl/Cmd+Enter).
   onStop?: () => void;
   streaming?: boolean;
   fill?: boolean;
@@ -867,24 +867,19 @@ export function Composer({
     }
     if (e.key !== "Enter") return;
 
-    // Cmd/Ctrl+Enter always sends, and is the primary send affordance when
-    // Enter-to-send is turned off in preferences.
+    // Ctrl/Cmd+Enter queues a follow-up mid-turn (HOY-331), and sends when
+    // idle. It is also the primary send affordance when Enter-to-send is
+    // turned off in preferences.
     if (e.metaKey || e.ctrlKey) {
       e.preventDefault();
-      if (canSend) onSubmit?.("enter");
+      if (canSend) onSubmit?.(streaming ? "queue" : "enter");
       return;
     }
     if (e.shiftKey) {
-      if (streaming) {
-        // Shift+Enter queues a follow-up mid-turn (HOY-218).
-        e.preventDefault();
-        if (canSend) onSubmit?.("shiftEnter");
-      } else {
-        // A controlled newline (keeps the editor free of stray block wrappers so
-        // serialization stays clean).
-        e.preventDefault();
-        insertTextAtCaret("\n");
-      }
+      // Shift+Enter is always a controlled newline (keeps the editor free of
+      // stray block wrappers so serialization stays clean).
+      e.preventDefault();
+      insertTextAtCaret("\n");
       return;
     }
     // Plain Enter: send, unless the user prefers Enter-inserts-a-newline.
@@ -900,7 +895,7 @@ export function Composer({
     !disabled && (!draftIsEmpty(value) || attachments.length > 0);
   const showPlaceholder = draftIsEmpty(value);
   const placeholderText = streaming
-    ? "Enter to steer  ·  Shift+Enter to queue a follow-up"
+    ? "Enter to steer  ·  Ctrl+Enter to queue a follow-up"
     : disabled
       ? "Streaming response..."
       : sendOnEnter
@@ -1212,7 +1207,7 @@ export function Composer({
         <div className="flex items-center gap-0.5">
           <PillSelect
             value={
-              MODE_LABELS.find((m) => m.value === mode)?.label ?? "Default"
+              MODE_LABELS.find((m) => m.value === mode)?.label ?? "Manual"
             }
             options={MODE_LABELS.map((m) => m.label)}
             onSelect={(label) => {

@@ -12,6 +12,7 @@ import {
   createHoyPermissions,
   createPermissionState,
   decide,
+  isPermissionMode,
   isPlanFilePath,
   type GateDecision,
   type PermissionMode,
@@ -19,18 +20,18 @@ import {
 
 describe("gate policy table", () => {
   const table: Array<[PermissionMode, string, GateDecision]> = [
-    ["default", "read", "allow"],
-    ["default", "grep", "allow"],
-    ["default", "find", "allow"],
-    ["default", "ls", "allow"],
-    ["default", "edit", "ask"],
-    ["default", "write", "ask"],
-    ["default", "bash", "ask"],
-    ["default", "some_custom_tool", "ask"],
-    ["default", "mcp__github__create_issue", "ask"],
-    ["default", "tool_search", "allow"],
-    ["default", "read_mcp_resource", "allow"],
-    ["default", "codemode", "allow"],
+    ["manual", "read", "allow"],
+    ["manual", "grep", "allow"],
+    ["manual", "find", "allow"],
+    ["manual", "ls", "allow"],
+    ["manual", "edit", "ask"],
+    ["manual", "write", "ask"],
+    ["manual", "bash", "ask"],
+    ["manual", "some_custom_tool", "ask"],
+    ["manual", "mcp__github__create_issue", "ask"],
+    ["manual", "tool_search", "allow"],
+    ["manual", "read_mcp_resource", "allow"],
+    ["manual", "codemode", "allow"],
     ["acceptEdits", "edit", "allow"],
     ["acceptEdits", "write", "allow"],
     ["acceptEdits", "bash", "ask"],
@@ -61,8 +62,8 @@ describe("gate policy table", () => {
 });
 
 describe("agent tool gating (HOY-231)", () => {
-  test("allowed in default/acceptEdits (tool does its own consent)", () => {
-    expect(decide("default", "agent")).toBe("allow");
+  test("allowed in manual/acceptEdits (tool does its own consent)", () => {
+    expect(decide("manual", "agent")).toBe("allow");
     expect(decide("acceptEdits", "agent")).toBe("allow");
   });
   test("allowed in plan mode (HOY-213: plan may fan out read-only subagents)", () => {
@@ -73,9 +74,17 @@ describe("agent tool gating (HOY-231)", () => {
   });
 });
 
+describe("permission mode wire values (HOY-386)", () => {
+  test('isPermissionMode accepts manual and rejects the old default', () => {
+    expect(isPermissionMode("manual")).toBe(true);
+    expect(isPermissionMode("default")).toBe(false);
+    expect(isPermissionMode("bogus")).toBe(false);
+  });
+});
+
 describe("shared permission state", () => {
   test("the hoy_mode command updates state shared with other extensions", async () => {
-    const state = createPermissionState("default");
+    const state = createPermissionState("manual");
     let command: any;
     const pi: any = {
       registerCommand: (_name: string, registered: any) => {
@@ -133,7 +142,7 @@ describe("/hoy_mode over RPC", () => {
       // (HOY-261). Set both so the whole run stays in the temp dir.
       PI_CODING_AGENT_DIR: agentDir,
       HOY_CODING_AGENT_DIR: agentDir,
-      HOY_PERMISSION_MODE: "default",
+      HOY_PERMISSION_MODE: "manual",
     },
     stdin: "pipe",
     stdout: "pipe",
@@ -192,16 +201,68 @@ describe("/hoy_mode over RPC", () => {
     expect(notify.message).toBe("permission mode: plan");
   });
 
-  test("prompt /hoy_mode bogus notifies an error and keeps the old mode", async () => {
-    send({ type: "prompt", message: "/hoy_mode bogus", id: "t3" });
+  test("prompt /hoy_mode default notifies an error and keeps the old mode", async () => {
+    send({ type: "prompt", message: "/hoy_mode default", id: "t4" });
     const notify = await waitFor(
       (r) =>
         r.type === "extension_ui_request" &&
         r.method === "notify" &&
         typeof r.message === "string" &&
-        r.message.includes("bogus"),
+        r.message.includes('unknown mode "default"'),
     );
     expect(notify.notifyType).toBe("error");
+  });
+});
+
+// Lenient env boundary (HOY-386): a stale HOY_PERMISSION_MODE=default is
+// absorbed as manual, so the process still reaches RPC-ready with no error.
+describe("stale HOY_PERMISSION_MODE=default is absorbed (HOY-386)", () => {
+  test("the sidecar still reaches RPC-ready", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "hoy-rpc-agent-"));
+    const cwd = mkdtempSync(join(tmpdir(), "hoy-rpc-cwd-"));
+
+    const child = Bun.spawn(["bun", join(import.meta.dir, "hoy-sidecar.ts")], {
+      cwd,
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: agentDir,
+        HOY_CODING_AGENT_DIR: agentDir,
+        HOY_PERMISSION_MODE: "default",
+      },
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const records: any[] = [];
+    let buffer = "";
+    const reader = (async () => {
+      const decoder = new TextDecoder();
+      for await (const chunk of child.stdout) {
+        buffer += decoder.decode(chunk, { stream: true });
+        let nl: number;
+        while ((nl = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, nl).trim();
+          buffer = buffer.slice(nl + 1);
+          if (line) records.push(JSON.parse(line));
+        }
+      }
+    })();
+
+    child.stdin.write(`${JSON.stringify({ type: "get_commands", id: "lenient" })}\n`);
+    const deadline = Date.now() + 15000;
+    let resp: any;
+    while (Date.now() < deadline) {
+      resp = records.find((r) => r.type === "response" && r.id === "lenient");
+      if (resp) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(resp?.success).toBe(true);
+
+    child.kill();
+    await reader.catch(() => {});
+    rmSync(agentDir, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true });
   });
 });
 
@@ -222,7 +283,7 @@ describe("child factory fails closed on unknown subagent type (HOY-234)", () => 
         // See note above: set both dir vars so bun-run + our entry agree (HOY-261).
         PI_CODING_AGENT_DIR: agentDir,
         HOY_CODING_AGENT_DIR: agentDir,
-        HOY_PERMISSION_MODE: "default",
+        HOY_PERMISSION_MODE: "manual",
         HOY_SUBAGENT_TYPE: "definitely-not-a-real-type",
       },
       stdin: "pipe",

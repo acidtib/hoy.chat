@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::linear::LinearIssue;
 use crate::pi_config::agent_dir;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -34,6 +35,150 @@ pub struct WsProject {
     pub path: Option<String>,
     #[serde(default)]
     pub threads: Vec<WsThread>,
+    // HOY-346: the Linear team whose open issues feed the Delegate board.
+    #[serde(default)]
+    pub linear: Option<WsLinearLink>,
+    #[serde(default)]
+    pub fleet: Option<WsFleet>,
+}
+
+// HOY-350: the project's per-agent queues. Array order is queue order; the
+// full issue is kept so a queued item can start after a restart.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsFleet {
+    #[serde(default)]
+    pub queue: Vec<WsQueuedIssue>,
+    #[serde(default)]
+    pub concurrency: std::collections::BTreeMap<String, u32>,
+    // HOY-359: agents push their branch and open a pull request with gh.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub open_pull_requests: bool,
+    // HOY-353: Auto triages unassigned issues through the Dispatcher.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto: bool,
+    // HOY-353: the Dispatcher's cached verdicts, keyed by Linear issue id.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub decisions: std::collections::BTreeMap<String, WsCachedDecision>,
+    // HOY-379: per issue id, the Linear comment a handoff chain replies under.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub chain_comments: std::collections::BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dispatch_spend: Option<f64>,
+}
+
+// `at` is the issue's updatedAt the decision was made for.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsCachedDecision {
+    pub at: Option<String>,
+    pub decision: WsDispatchDecision,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nagged_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queued_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsDispatchDecision {
+    pub ready: bool,
+    pub agent: Option<String>,
+    pub confidence: f64,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsQueuedIssue {
+    pub agent: String,
+    pub issue: LinearIssue,
+    pub queued_at: u64,
+    // HOY-353: the Auto decision that queued it, echoed into the first prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision: Option<WsDispatchDecision>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<WsHandoff>,
+}
+
+// HOY-379: how a run got its issue from the run before it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsHandoff {
+    pub from_thread_id: String,
+    pub from_agent: String,
+    pub reason: String,
+    pub by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<String>,
+    #[serde(default)]
+    pub round: u32,
+    #[serde(default)]
+    pub hops: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsChainStop {
+    pub reason: String,
+    pub needs_user: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsNextStep {
+    pub agent: String,
+    pub reason: String,
+    pub by: String,
+    #[serde(default)]
+    pub round: u32,
+}
+
+// One run of a delegated thread, from dispatch to its first stop (HOY-350).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsFleetRun {
+    pub started_at: u64,
+    #[serde(default)]
+    pub ended_at: Option<u64>,
+    #[serde(default)]
+    pub outcome: Option<String>,
+    #[serde(default)]
+    pub estimate: Option<f64>,
+    #[serde(default)]
+    pub cost: Option<f64>,
+    #[serde(default)]
+    pub acknowledged: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsLinearLink {
+    pub team_id: String,
+    pub team_key: String,
+    pub team_name: String,
+    // HOY-374: the Linear workspace (organization) the team lives in. Absent on
+    // links saved before multi-workspace support; resolved from the team then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_name: Option<String>,
+}
+
+// The Linear issue a delegated thread is working on (HOY-346).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsLinearIssueRef {
+    pub id: String,
+    pub identifier: String,
+    pub title: String,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +198,7 @@ pub struct WsThread {
     // Unsent composer text, restored into the editor on reopen.
     #[serde(default)]
     pub draft: Option<String>,
-    // Permission mode (HOY-186). Absent means default. The renderer re-applies
+    // Permission mode (HOY-186). Absent means manual. The renderer re-applies
     // it to the thread's sidecar after spawn.
     #[serde(default)]
     pub permission_mode: Option<String>,
@@ -78,6 +223,40 @@ pub struct WsThread {
     // is a load-time frontend concern, not a workspace.rs one.
     #[serde(default)]
     pub goal: Option<WsGoal>,
+    // HOY-346: a thread delegated from the board runs as this subagent type,
+    // working on this issue.
+    #[serde(default)]
+    pub agent: Option<String>,
+    #[serde(default)]
+    pub linear_issue: Option<WsLinearIssueRef>,
+    #[serde(default)]
+    pub fleet_run: Option<WsFleetRun>,
+    // HOY-359: the pull request a delegated run opened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_request: Option<String>,
+    // HOY-358: the git worktree a delegated issue runs in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<WsWorktree>,
+    // HOY-379: Fleet handoff chain state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<WsHandoff>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handed_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain_stop: Option<WsChainStop>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_step: Option<WsNextStep>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsWorktree {
+    pub path: String,
+    pub branch: String,
+    pub base: String,
+    // Archiving took the worktree down; the branch stays.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub removed: bool,
 }
 
 // A provider/model identity pair, mirroring the frontend ModelRef. Cached on the
@@ -195,6 +374,54 @@ mod tests {
                 id: "p1".into(),
                 name: "hoy".into(),
                 path: Some("/home/u/code/hoy".into()),
+                linear: Some(WsLinearLink {
+                    workspace_id: None,
+                    workspace_name: None,
+                    team_id: "team-1".into(),
+                    team_key: "HOY".into(),
+                    team_name: "Hoy".into(),
+                }),
+                fleet: Some(WsFleet {
+                    queue: vec![WsQueuedIssue {
+                        agent: "Explore".into(),
+                        issue: LinearIssue {
+                            id: "issue-2".into(),
+                            identifier: "HOY-29".into(),
+                            title: "queued".into(),
+                            description: None,
+                            url: "https://linear.app/hoy/issue/HOY-29".into(),
+                            priority: 2,
+                            priority_label: "High".into(),
+                            estimate: Some(3.0),
+                            state_name: "Todo".into(),
+                            state_type: "unstarted".into(),
+                            assignee: None,
+                            labels: vec!["Bug".into()],
+                            branch_name: None,
+                            updated_at: None,
+                        },
+                        queued_at: 1_717_000_000_500,
+                        decision: None,
+                        handoff: Some(WsHandoff {
+                            from_thread_id: "t1".into(),
+                            from_agent: "Coder".into(),
+                            reason: "Committed and moved to In Review.".into(),
+                            by: "rule".into(),
+                            report: None,
+                            round: 1,
+                            hops: 2,
+                            branch: Some("hoy/hoy-28-ticket".into()),
+                        }),
+                    }],
+                    concurrency: [("Explore".to_string(), 2)].into_iter().collect(),
+                    open_pull_requests: true,
+                    auto: true,
+                    decisions: Default::default(),
+                    chain_comments: [("issue-2".to_string(), "c1".to_string())]
+                        .into_iter()
+                        .collect(),
+                    dispatch_spend: Some(0.002),
+                }),
                 threads: vec![WsThread {
                     id: "t1".into(),
                     title: "ticket HOY-28".into(),
@@ -227,9 +454,81 @@ mod tests {
                         verify_cwd: None,
                         evaluator_kind: Some("auditor".into()),
                     }),
+                    agent: Some("Explore".into()),
+                    linear_issue: Some(WsLinearIssueRef {
+                        id: "issue-1".into(),
+                        identifier: "HOY-28".into(),
+                        title: "ticket".into(),
+                        url: "https://linear.app/hoy/issue/HOY-28".into(),
+                    }),
+                    fleet_run: Some(WsFleetRun {
+                        started_at: 1_717_000_000_000,
+                        ended_at: Some(1_717_000_600_000),
+                        outcome: Some("done".into()),
+                        estimate: Some(2.0),
+                        cost: Some(0.42),
+                        acknowledged: false,
+                    }),
+                    pull_request: None,
+                    worktree: Some(WsWorktree {
+                        path: "/w/hoy-28".into(),
+                        branch: "hoy/hoy-28-ticket".into(),
+                        base: "main".into(),
+                        removed: false,
+                    }),
+                    handoff: None,
+                    handed_to: Some("Reviewer".into()),
+                    chain_stop: Some(WsChainStop {
+                        reason: "Two review rounds did not settle it.".into(),
+                        needs_user: true,
+                    }),
+                    next_step: None,
                 }],
             }],
         }
+    }
+
+    #[test]
+    fn linear_fields_round_trip_camel_case() {
+        let json = serde_json::to_string(&sample()).unwrap();
+        assert!(json.contains(
+            "\"linear\":{\"teamId\":\"team-1\",\"teamKey\":\"HOY\",\"teamName\":\"Hoy\"}"
+        ));
+        assert!(json.contains("\"agent\":\"Explore\""));
+        assert!(json.contains("\"linearIssue\":{\"id\":\"issue-1\",\"identifier\":\"HOY-28\""));
+        let back: Workspace = serde_json::from_str(&json).unwrap();
+        let t = &back.projects[0].threads[0];
+        assert_eq!(t.linear_issue.as_ref().unwrap().identifier, "HOY-28");
+        assert_eq!(back.projects[0].linear.as_ref().unwrap().team_key, "HOY");
+    }
+
+    #[test]
+    fn handoff_fields_round_trip_camel_case() {
+        let json = serde_json::to_string(&sample()).unwrap();
+        assert!(json.contains("\"fromThreadId\":\"t1\""));
+        assert!(json.contains("\"chainComments\":{\"issue-2\":\"c1\"}"));
+        assert!(json.contains("\"handedTo\":\"Reviewer\""));
+        assert!(json.contains("\"needsUser\":true"));
+        let back: Workspace = serde_json::from_str(&json).unwrap();
+        let q = &back.projects[0].fleet.as_ref().unwrap().queue[0];
+        assert_eq!(q.handoff.as_ref().unwrap().round, 1);
+    }
+
+    #[test]
+    fn fleet_queue_and_runs_round_trip_camel_case() {
+        let json = serde_json::to_string(&sample()).unwrap();
+        assert!(json.contains("\"queuedAt\":1717000000500"));
+        assert!(json.contains("\"concurrency\":{\"Explore\":2}"));
+        assert!(
+            json.contains("\"fleetRun\":{\"startedAt\":1717000000000,\"endedAt\":1717000600000")
+        );
+        let back: Workspace = serde_json::from_str(&json).unwrap();
+        let fleet = back.projects[0].fleet.as_ref().unwrap();
+        assert_eq!(fleet.queue[0].issue.identifier, "HOY-29");
+        assert_eq!(fleet.queue[0].issue.labels, vec!["Bug".to_string()]);
+        let run = back.projects[0].threads[0].fleet_run.as_ref().unwrap();
+        assert_eq!(run.outcome.as_deref(), Some("done"));
+        assert_eq!(run.cost, Some(0.42));
     }
 
     #[test]
@@ -332,6 +631,8 @@ mod tests {
             name: "jiji".into(),
             path: None,
             threads: vec![],
+            linear: None,
+            fleet: None,
         });
         save_at(&path, &next).unwrap();
         let loaded = load_at(&path).unwrap();
@@ -374,6 +675,8 @@ mod tests {
                 id: "p1".into(),
                 name: "P".into(),
                 path: None,
+                linear: None,
+                fleet: None,
                 threads: vec![WsThread {
                     id: "t2".into(),
                     title: "child".into(),
@@ -390,6 +693,15 @@ mod tests {
                     }),
                     model: None,
                     goal: None,
+                    agent: None,
+                    linear_issue: None,
+                    fleet_run: None,
+                    pull_request: None,
+                    worktree: None,
+                    handoff: None,
+                    handed_to: None,
+                    chain_stop: None,
+                    next_step: None,
                 }],
             }],
             active_project_id: None,

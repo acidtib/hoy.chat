@@ -2,11 +2,15 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ChevronDown,
+  Loader2,
+  MessageSquare,
   MoreHorizontal,
   Pencil,
   Plus,
   Search,
+  SquareKanban,
   Trash2,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,14 +40,15 @@ import { cn, formatRelativeTime } from "@/lib/utils";
 import { threadIconColorClass } from "@/lib/threadColor";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
 import { pickDirectory } from "@/lib/ipc";
-import { useSessionStore, useThreadHasRunningSubagents } from "@/state/store";
+import {
+  type ProjectView,
+  useSessionStore,
+  useThreadHasRunningSubagents,
+  useDefaultModel,
+} from "@/state/store";
 import { isSubagentThread } from "@/state/delivery";
 import { usePrefsStore } from "@/state/prefs";
 import type { Project, Thread } from "@/lib/types";
-
-// Cap on how many top-level threads a project group shows before collapsing the
-// rest behind an "N more" row that opens the full Thread History (HOY-257).
-const SIDEBAR_THREAD_CAP = 6;
 
 export function Sidebar() {
   const projects = useSessionStore((s) => s.projects);
@@ -108,7 +113,7 @@ export function Sidebar() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search threads..."
+                placeholder="Search all threads..."
                 className="h-8 w-full rounded-md border border-transparent bg-transparent pl-8 pr-2 text-sm text-sidebar-foreground placeholder:text-muted-foreground focus:border-border focus:bg-background/40 focus:outline-none"
               />
             </div>
@@ -247,10 +252,15 @@ function ProjectGroup({
   // Removing a project is destructive (drops the project and all its threads
   // from the workspace). Gate it behind a confirm (HOY-225).
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const openThreadHistory = useSessionStore((s) => s.openThreadHistory);
+  const openProject = useSessionStore((s) => s.openProject);
+  const showingProject = useSessionStore(
+    (s) => s.bodyView === "project" && s.activeProjectId === project.id,
+  );
+  const projectView = useSessionStore((s) => s.projectView);
+  const streaming = useSessionStore((s) => s.streaming);
 
-  // Top-level threads, most-recent first. Children stay in project.threads for
-  // the fleet-marker computation below. They never render as rows (HOY-250).
+  // Top-level threads, most-recent first. Subagent children never render as
+  // rows (HOY-250); they ride along so the fleet marker still computes.
   const topThreads = useMemo(
     () =>
       project.threads
@@ -258,33 +268,60 @@ function ProjectGroup({
         .sort((a, b) => b.updatedAt - a.updatedAt),
     [project.threads],
   );
-  // Show the 6 most recent, but never hide the thread the user is looking at
-  // (active or open). While searching the list is already the match set, so
-  // show all matches rather than re-capping them (HOY-257).
-  const shownThreads = searching
-    ? topThreads
-    : topThreads.filter(
-        (t, i) =>
-          i < SIDEBAR_THREAD_CAP ||
-          t.id === activeThreadId ||
-          openIds.has(t.id),
-      );
-  const hiddenCount = topThreads.length - shownThreads.length;
+  const working = project.threads.filter((t) => streaming[t.id]);
+
+  const navRow = (view: ProjectView, label: string, Icon: LucideIcon, count?: number) => (
+    <button
+      type="button"
+      onClick={() => openProject(project.id, view)}
+      className={cn(
+        "flex h-7 w-full cursor-pointer items-center gap-2 rounded-md pl-7 pr-2 text-left text-sm transition-colors",
+        showingProject && projectView === view
+          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+          : "text-sidebar-foreground hover:bg-sidebar-accent/50",
+      )}
+    >
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="flex-1 truncate">{label}</span>
+      {count !== undefined && count > 0 && (
+        <span className="text-[11px] tabular-nums text-muted-foreground">{count}</span>
+      )}
+    </button>
+  );
 
   return (
     <li>
-      <div className="group/project flex h-7 items-center gap-1 rounded-md px-1.5 text-sidebar-foreground">
+      <div
+        className={cn(
+          "group/project flex h-7 items-center gap-1 rounded-md px-1.5 text-sidebar-foreground",
+          showingProject && "text-foreground",
+        )}
+      >
         <button
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
+          className="flex size-4 shrink-0 cursor-pointer items-center justify-center"
           onClick={() => setCollapsed((c) => !c)}
+          aria-label={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
         >
           <ChevronDown
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              "size-3.5 text-muted-foreground transition-transform",
               expanded ? "" : "-rotate-90",
             )}
           />
+        </button>
+        <button
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+          onClick={() => {
+            openProject(project.id, "fleet");
+            setCollapsed(false);
+          }}
+        >
           <span className="truncate text-sm font-medium">{project.name}</span>
+          {project.linear && (
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+              {project.linear.teamKey}
+            </span>
+          )}
         </button>
 
         <div className="flex items-center opacity-0 transition-opacity group-hover/project:opacity-100 focus-within:opacity-100">
@@ -353,34 +390,72 @@ function ProjectGroup({
 
       {expanded && (
         <div className="mt-0.5 flex flex-col gap-0.5 pb-1">
-          {topThreads.length === 0 ? (
-            <p className="px-2.5 py-1 pl-7 text-xs text-muted-foreground">
-              No threads yet
-            </p>
+          {searching ? (
+            topThreads.map((thread) => (
+              <ThreadRow
+                key={thread.id}
+                thread={thread}
+                active={thread.id === activeThreadId}
+                open={openIds.has(thread.id)}
+                onSelect={() => onSelectThread(thread.id)}
+              />
+            ))
           ) : (
             <>
-              {shownThreads.map((thread) => (
-                <ThreadRow
-                  key={thread.id}
-                  thread={thread}
-                  active={thread.id === activeThreadId}
-                  open={openIds.has(thread.id)}
-                  onSelect={() => onSelectThread(thread.id)}
-                />
-              ))}
-              {hiddenCount > 0 && (
-                <button
-                  onClick={() => openThreadHistory(project.id)}
-                  className="cursor-pointer rounded-md py-1 pl-7 pr-2 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  {hiddenCount} more…
-                </button>
+              {navRow("fleet", "Fleet", SquareKanban)}
+              {navRow("threads", "Threads", MessageSquare, topThreads.length)}
+              {working.length > 0 && (
+                <>
+                  <p className="pb-0.5 pl-7 pt-2 text-[11px] font-medium text-muted-foreground">
+                    Working
+                  </p>
+                  {working.map((t) => (
+                    <WorkingRow
+                      key={t.id}
+                      thread={t}
+                      active={t.id === activeThreadId}
+                      onSelect={() => onSelectThread(t.id)}
+                    />
+                  ))}
+                </>
               )}
             </>
           )}
         </div>
       )}
     </li>
+  );
+}
+
+// A thread that is mid-turn, shown under its project while it works.
+function WorkingRow({
+  thread,
+  active,
+  onSelect,
+}: {
+  thread: Thread;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const label = thread.agent ?? thread.spawnedBy?.type ?? null;
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      title={thread.title}
+      className={cn(
+        "flex h-7 w-full cursor-pointer items-center gap-2 rounded-md pl-7 pr-2 text-left text-sm transition-colors",
+        active
+          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+          : "text-sidebar-foreground hover:bg-sidebar-accent/50",
+      )}
+    >
+      <Loader2 className="size-3.5 shrink-0 animate-spin text-brand" />
+      {label && <span className="shrink-0 text-xs text-agent">{label}</span>}
+      <span className="min-w-0 flex-1 truncate">
+        {thread.linearIssue?.identifier ?? thread.title}
+      </span>
+    </button>
   );
 }
 
@@ -399,7 +474,7 @@ function ThreadRow({
   const hasRunningSubagents = useThreadHasRunningSubagents(thread.id);
   const renameThread = useSessionStore((s) => s.renameThread);
   const requestTeardown = useSessionStore((s) => s.requestTeardown);
-  const defaultModel = useSessionStore((s) => s.defaultModel);
+  const defaultModel = useDefaultModel();
   const [editing, setEditing] = useState(false);
 
   // A thread with neither a persisted transcript nor a live sidecar has not been

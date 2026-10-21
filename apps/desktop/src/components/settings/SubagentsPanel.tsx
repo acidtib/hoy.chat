@@ -11,13 +11,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { deleteSubagent, listSubagents, writeSubagent } from "@/lib/ipc";
+import { visibleModels } from "@/lib/models";
 import type { SubagentDef, SubagentScope, SubagentWrite } from "@/lib/types";
 import { useSessionStore } from "@/state/store";
-import { PanelHeader, StatusDot } from "./panels";
+import { usePrefsStore } from "@/state/prefs";
+import { PanelHeader } from "./panels";
 import {
   emptyDraft,
   EXAMPLE_STARTER_PROMPT,
@@ -29,7 +30,7 @@ import {
 type WriteScope = Exclude<SubagentScope, "builtin">;
 
 // A `<name>-copy` slug seed for the Duplicate action: lowercase the source name
-// (built-ins like "Explore" have capitals) and strip anything not slug-safe.
+// (built-ins like "Coder" have capitals) and strip anything not slug-safe.
 function slugCopy(name: string): string {
   const base = name
     .toLowerCase()
@@ -48,8 +49,7 @@ function draftFromDef(def: SubagentDef): SubagentDraft {
     thinking: def.thinking ?? "",
     inheritContext: def.inheritContext ?? false,
     maxTurns: def.maxTurns != null ? String(def.maxTurns) : "",
-    // A built-in with no static body (general-purpose) seeds the example starter
-    // rather than a blank prompt.
+    // A type with no body seeds the example starter rather than a blank prompt.
     body: def.body ?? EXAMPLE_STARTER_PROMPT,
   };
 }
@@ -84,23 +84,18 @@ interface EditorState {
 
 function AgentRow({
   def,
-  onToggle,
   onEdit,
   onDuplicate,
   onDelete,
-  busy,
 }: {
   def: SubagentDef;
-  onToggle?: (next: boolean) => void;
   onEdit?: () => void;
   onDuplicate: () => void;
   onDelete?: () => void;
-  busy?: boolean;
 }) {
   const isBuiltin = def.scope === "builtin";
   return (
     <div className="flex items-start gap-3 px-3 py-2">
-      <StatusDot on={def.enabled} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-foreground">{def.name}</span>
@@ -138,11 +133,7 @@ function AgentRow({
           </Button>
         )}
       </div>
-      {isBuiltin ? (
-        <span className="self-center text-xs text-muted-foreground">built-in</span>
-      ) : (
-        <Switch checked={def.enabled} disabled={busy} onCheckedChange={(v) => onToggle?.(v)} aria-label={`Enable ${def.name}`} />
-      )}
+
     </div>
   );
 }
@@ -150,9 +141,10 @@ function AgentRow({
 export function SubagentsPanel() {
   const activeProjectId = useSessionStore((s) => s.activeProjectId);
   const projects = useSessionStore((s) => s.projects);
-  const setSubagentEnabled = useSessionStore((s) => s.setSubagentEnabled);
   const models = useSessionStore((s) => s.models);
-  const modelOptions = useMemo(() => models.map((m) => m.id), [models]);
+  const disabledModels = usePrefsStore((p) => p.disabledModels);
+  const pickable = useMemo(() => visibleModels(models, disabledModels), [models, disabledModels]);
+  const modelOptions = useMemo(() => pickable.map((m) => m.id), [pickable]);
   const projectPath = useMemo(() => projects.find((p) => p.id === activeProjectId)?.path ?? null, [projects, activeProjectId]);
 
   // Serve the store cache (warmed by a prior open) immediately so reopening the
@@ -182,17 +174,6 @@ export function SubagentsPanel() {
     }
   }, [projectPath]);
   useEffect(() => { void refresh(); }, [refresh]);
-
-  const toggle = (def: SubagentDef, next: boolean) => {
-    setBusy(true);
-    void (async () => {
-      try {
-        await setSubagentEnabled(def.scope, def.name, next, projectPath);
-        await refresh();
-      } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-      finally { setBusy(false); }
-    })();
-  };
 
   const byScope = (scope: SubagentScope) => (shown ?? []).filter((d) => d.scope === scope);
 
@@ -266,7 +247,7 @@ export function SubagentsPanel() {
 
   return (
     <div className="space-y-6">
-      <PanelHeader title="Subagents" description="Specialized agent types the model can spawn. Author them here or as .hoy/agents/*.md. Built-ins are always available." />
+      <PanelHeader title="Agents" description="The agent library: the built-in agents and the ones you define here or as .hoy/agents/*.md. Which agents are on, and the model each runs, is set per project in the project's Agents tab." />
       {error && <div className="border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>}
       {shown === null && !error && <p className="text-xs text-muted-foreground">Loading agents...</p>}
       {shown !== null && (["builtin", "global", "project"] as SubagentScope[]).map((scope) => {
@@ -290,8 +271,6 @@ export function SubagentsPanel() {
                   <AgentRow
                     key={d.name}
                     def={d}
-                    busy={busy}
-                    onToggle={(v) => toggle(d, v)}
                     onEdit={() => openEdit(d)}
                     onDuplicate={() => openDuplicate(d)}
                     onDelete={() => setConfirmDelete(d)}

@@ -138,12 +138,13 @@ function emit(result: GoalEvaluation): never {
 // still lists as "available" but returns empty output, which will fail the goal
 // open ("not met") every turn and never let it complete. The session's provider
 // shares the thread's working credentials, so its cheap model is the safe default.
-function pickModel(
+export function pickModel(
   registry: ModelRegistry,
   available: ReturnType<ModelRegistry["getAvailable"]>,
   sessionModel: { provider: string; modelId: string } | null,
+  pinnedEnv = "HOY_GOAL_EVAL_MODEL",
 ): ReturnType<ModelRegistry["find"]> | undefined {
-  const pinned = process.env.HOY_GOAL_EVAL_MODEL?.trim();
+  const pinned = process.env[pinnedEnv]?.trim();
   if (pinned) {
     const slash = pinned.indexOf("/");
     if (slash > 0) {

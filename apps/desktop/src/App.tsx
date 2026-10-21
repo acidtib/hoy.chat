@@ -8,24 +8,32 @@ import {
 } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { ThreadHistory } from "@/components/ThreadHistory";
-import { FleetBoard } from "@/components/fleet/FleetBoard";
+import { ProjectHome } from "@/components/project/ProjectHome";
 import { HomePage } from "@/components/HomePage";
 import { OnboardingPage } from "@/components/onboarding/OnboardingPage";
 import { UsageView } from "@/components/UsageView";
 import { ThreadView } from "@/components/ThreadView";
+import { ThreadTabs } from "@/components/ThreadTabs";
 import { ContextBar } from "@/components/ContextBar";
 import { ForkPicker } from "@/components/tree/ForkPicker";
 import { TreeNavigator } from "@/components/tree/TreeNavigator";
 import { ConfirmCloseDialog } from "@/components/ConfirmCloseDialog";
 import { TitleBar, WindowControls, WindowResizeHandles } from "@/components/TitleBar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
+import { FleetPicker } from "@/components/project/FleetPicker";
 import { ThemeController } from "@/components/ThemeController";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { activeSessionId, getState, setKeepAwake } from "@/lib/ipc";
 import { refreshProviderData } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { useGlobalDrag } from "@/lib/useGlobalDrag";
-import { useSessionStore, findThread } from "@/state/store";
+import {
+  useSessionStore,
+  findThread,
+  groupTabs,
+  tabKeyOf,
+  type Panel,
+} from "@/state/store";
 import { usePrefsStore } from "@/state/prefs";
 import { isSubagentThread, childThreadIdsOf } from "@/state/delivery";
 import type { PiState } from "@/lib/types";
@@ -51,10 +59,10 @@ function App() {
   );
   const setPref = usePrefsStore((s) => s.setPref);
   const onboardingCompleted = usePrefsStore((s) => s.onboardingCompleted);
-
-  // Full screen: the one panel rendered while set, at full body width via CSS.
-  // Stored widths are untouched, so exiting restores the exact layout.
-  const expandedPanel = panels.find((p) => p.id === expandedThreadId) ?? null;
+  // Every tab stays mounted (keeping scroll and component state); only the
+  // active one is visible.
+  const tabs = groupTabs(panels);
+  const activeTabKey = tabKeyOf(panels, activeThreadId) ?? tabs.at(-1)?.key ?? null;
 
   // Restore the persisted projects -> threads tree on boot (then autosave kicks in).
   useEffect(() => {
@@ -101,7 +109,7 @@ function App() {
     const strip = stripRef.current;
     const el = footerSlicesRef.current;
     if (strip && el) el.scrollLeft = strip.scrollLeft;
-  }, [panels]);
+  }, [panels, activeTabKey]);
 
   const [debug, setDebug] = useState<PiState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +194,53 @@ function App() {
     );
   };
 
+  // `fill` takes the remaining width instead of the stored one, `accent` draws
+  // the focus line (a lone tab is marked by its tab instead), and `handle` is
+  // the panel's index in `panels` for the divider on its right edge.
+  function renderPanel(
+    panel: Panel,
+    opts: {
+      fill?: boolean;
+      hidden?: boolean;
+      accent: boolean;
+      handle: number | null;
+    },
+  ) {
+    const isActive = panel.id === activeThreadId;
+    return (
+      <Fragment key={panel.id}>
+        <div
+          style={opts.fill ? undefined : { width: panel.width }}
+          onPointerDownCapture={() => focusPanel(panel.id)}
+          className={cn(
+            "flex min-h-0 flex-col border-t-2",
+            opts.fill ? "flex-1" : "shrink-0 border-r border-r-border",
+            opts.hidden && "hidden",
+            !opts.accent
+              ? "border-t-transparent"
+              : panelIsAgent(panel.id)
+                ? isActive
+                  ? "border-t-agent/80"
+                  : "border-t-agent/40"
+                : isActive
+                  ? "border-t-brand/70"
+                  : "border-t-transparent",
+          )}
+        >
+          <ThreadView
+            threadId={panel.id}
+            onClose={() => requestPanelClose(panel.id)}
+            onDebug={handleDebug}
+            busy={busy}
+            debug={debug}
+            error={error}
+          />
+        </div>
+        {opts.handle !== null && <PanelResizeHandle index={opts.handle} />}
+      </Fragment>
+    );
+  }
+
   const showOnboarding =
     providerBootstrapped && !(providerConfigured && onboardingCompleted);
 
@@ -196,6 +251,7 @@ function App() {
     <TooltipProvider delayDuration={200}>
       <ThemeController />
       <SettingsModal />
+      <FleetPicker />
       <ConfirmCloseDialog />
       <WindowResizeHandles />
       <div className="flex h-screen flex-col bg-background text-foreground">
@@ -207,7 +263,18 @@ function App() {
 keeps the top-left corner, Zed-style). Panels render below it.*/}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {showChrome ? (
-              <TitleBar />
+              <>
+                <TitleBar
+                  tabs={
+                    (bodyView === "project" ||
+                      (bodyView === "panels" && activeTabKey)) && (
+                      <ThreadTabs
+                        activeKey={bodyView === "project" ? null : activeTabKey}
+                      />
+                    )
+                  }
+                />
+              </>
             ) : (
               <header
                 data-tauri-drag-region
@@ -237,79 +304,53 @@ keeps the top-left corner, Zed-style). Panels render below it.*/}
                 <OnboardingPage />
               ) : bodyView === "usage" ? (
                 <UsageView />
-              ) : bodyView === "fleet" ? (
-                <FleetBoard />
+              ) : bodyView === "project" && projects.length > 0 ? (
+                <ProjectHome />
               ) : panels.length === 0 ? (
                 <HomePage />
               ) : (
-                <div
-                  ref={stripRef}
-                  onScroll={(e) => {
-                    const el = footerSlicesRef.current;
-                    if (el) el.scrollLeft = e.currentTarget.scrollLeft;
-                  }}
-                  className="flex min-h-0 flex-1 overflow-x-auto"
-                >
-                  {expandedPanel ? (
+                tabs.map((tab) => {
+                  const active = tab.key === activeTabKey;
+                  const expanded = tab.panels.find(
+                    (p) => p.id === expandedThreadId,
+                  );
+                  return (
                     <div
-                      onPointerDownCapture={() => focusPanel(expandedPanel.id)}
+                      key={tab.key}
+                      ref={active ? stripRef : undefined}
+                      onScroll={
+                        active
+                          ? (e) => {
+                              const el = footerSlicesRef.current;
+                              if (el) el.scrollLeft = e.currentTarget.scrollLeft;
+                            }
+                          : undefined
+                      }
+                      aria-hidden={!active}
                       className={cn(
-                        "flex min-h-0 flex-1 flex-col border-t-2",
-                        panelIsAgent(expandedPanel.id)
-                          ? expandedPanel.id === activeThreadId
-                            ? "border-t-agent/80"
-                            : "border-t-agent/40"
-                          : expandedPanel.id === activeThreadId
-                            ? "border-t-brand/70"
-                            : "border-t-transparent",
+                        "absolute inset-0 flex min-h-0 overflow-x-auto",
+                        !active && "pointer-events-none invisible",
                       )}
                     >
-                      <ThreadView
-                        threadId={expandedPanel.id}
-                        onClose={() => requestPanelClose(expandedPanel.id)}
-                        onDebug={handleDebug}
-                        busy={busy}
-                        debug={debug}
-                        error={error}
-                      />
+                      {tab.panels.map((panel, i) =>
+                        renderPanel(panel, {
+                          // A lone panel or the full screen one fills the tab;
+                          // the other panels stay mounted but hidden.
+                          fill: tab.panels.length === 1 || panel === expanded,
+                          hidden: !!expanded && panel !== expanded,
+                          accent: tab.panels.length > 1,
+                          handle:
+                            !expanded && i < tab.panels.length - 1
+                              ? panels.indexOf(panel)
+                              : null,
+                        }),
+                      )}
+                      {!expanded && tab.panels.length > 1 && (
+                        <div className="min-h-0 flex-1 bg-background" />
+                      )}
                     </div>
-                  ) : (
-                    <>
-                      {panels.map((panel, i) => (
-                        <Fragment key={panel.id}>
-                          <div
-                            style={{ width: panel.width }}
-                            onPointerDownCapture={() => focusPanel(panel.id)}
-                            className={cn(
-                              "flex min-h-0 shrink-0 flex-col border-r border-t-2 border-r-border",
-                              panelIsAgent(panel.id)
-                                ? panel.id === activeThreadId
-                                  ? "border-t-agent/80"
-                                  : "border-t-agent/40"
-                                : panel.id === activeThreadId
-                                  ? "border-t-brand/70"
-                                  : "border-t-transparent",
-                            )}
-                          >
-                            <ThreadView
-                              threadId={panel.id}
-                              onClose={() => requestPanelClose(panel.id)}
-                              onDebug={handleDebug}
-                              busy={busy}
-                              debug={debug}
-                              error={error}
-                            />
-                          </div>
-                          {i < panels.length - 1 && (
-                            <PanelResizeHandle index={i} />
-                          )}
-                        </Fragment>
-                      ))}
-                      {/* Unused workspace beside the panels: new panels dock here. */}
-                      <div className="min-h-0 flex-1 bg-background" />
-                    </>
-                  )}
-                </div>
+                  );
+                })
               )}
             </div>
             {rightDock === "tree" && <TreeNavigator />}

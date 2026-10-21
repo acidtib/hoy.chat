@@ -37,6 +37,10 @@ Repo is a Bun-workspaces monorepo (HOY-227): `hoy.chat` at the root, the desktop
 - **Run dev with `bun run tauri:dev`.** `withGlobalTauri` is `false` in the base `tauri.conf.json` (it is pure attack surface in release). The dev MCP bridge's `execute_js` returns results via `window.__TAURI__` inside the webview, so `tauri:dev` merges `apps/desktop/src-tauri/tauri.dev.conf.json` to turn it on for dev only (it also forces `GDK_BACKEND=x11` for WebKitGTK stability on Wayland). Plain `tauri dev` and release builds keep it off, and with it off every driver `execute_js` times out (the bridge can't emit its result) while backend calls still work. Do not flip the base flag back to `true`; use `bun run tauri:dev`.
 - **Dev runs in the `hoyd` namespace so Hoy can work on Hoy (HOY-206).** Debug builds default the agent dir to `~/.hoyd` (`pi_config.rs`, `cfg!(debug_assertions)` picks `BRANDED_DIR`), and `tauri.dev.conf.json` overrides the identifier to `chat.hoy.desktop.dev` (separate window-state and webview storage) with productName `Hoyd Desktop`. A dev instance never touches production data in `~/.hoy`. The dev namespace starts empty; copy `~/.hoy/auth.json` into `~/.hoyd/` to reuse keys. Caveat: plain `tauri dev` gets the debug agent dir but the prod identifier, one more reason `bun run tauri:dev` is the only dev entry.
 
+- **Live-verify through the DOM, not module imports.** In the dev webview, `import('/src/state/store.ts')` from `execute_js` can return a fresh module instance after HMR, not the app's store; writes to it change nothing on screen. Drive the UI (click, type) and read the DOM instead. Editing `src-tauri/` while `tauri:dev` runs rebuilds and restarts the app, dropping the bridge until it is back.
+- **The dev app runs a copy of the sidecar.** Tauri's `externalBin` copies `packages/sidecar/hoy-pi-<triple>` to `src-tauri/target/debug/hoy-pi` only when the Rust side rebuilds, so a `sidecar:build` made after that keeps running old code. Swap the copy in by rename (`cp <new> hoy-pi.new && mv -f hoy-pi.new hoy-pi`; a plain `cp` fails with "Text file busy" while sessions run), or touch a Rust file.
+- `components/ThreadView.tsx` contains a literal NUL (the `ASK_OTHER` sentinel), so plain `grep` treats it as binary and prints nothing. Use `grep -a`.
+
 ## Working process
 - **The MVP milestones (M0-M4) are done.** Post-MVP work flows through Linear tickets: assign, In Progress, design note, implement, test, live-verify via the tauri MCP bridge, open a PR (see "Commits and pull requests"), squash-merge it, Done with evidence.
 - **Rebuild the sidecar binary (`bun run sidecar:build`) whenever `packages/sidecar/pi-src` changes**, before any live verification, then open a **new session/thread** to pick it up: a running session keeps the sidecar it already spawned, so prompt/gate edits only reach freshly-spawned sessions. A stale binary, or a still-running old session, silently runs old prompt and gate code (HOY-200).
@@ -46,7 +50,10 @@ Repo is a Bun-workspaces monorepo (HOY-227): `hoy.chat` at the root, the desktop
 - Rust: keep sidecar/process logic in `sidecar.rs` + `reader.rs`; `#[tauri::command]` fns in `commands.rs`; Pi config and credential file handling isolated in `pi_config.rs`. Prefer `Result` returns and surface errors to the frontend as structured events, not panics.
 - TS: typed wrappers around `invoke()` live in `lib/ipc.ts`; never call `invoke` with stringly-typed args scattered through components. Shared types in `lib/types.ts` mirror the Rust event/command shapes.
 - TS test files under `apps/desktop/tests/` may show editor `@/...` "cannot find module" / implicit-`any` diagnostics; these are false positives (tsconfig `include` is `src`-only). `bun test` and `bun run check:ts` are authoritative; don't chase them.
-- UI: match the reference layout (sidebar of sessions / top bar with model + settings / streaming transcript / composer). Render the session list even when there's one session.
+- UI: sidebar of projects and threads, thread tabs in the title bar, streaming transcript, composer with the model picker. Render the session list even when there's one session.
+- Agents: the built-in roster is `BUILTIN_SUBAGENTS` in `packages/sidecar/pi-src/hoy-agents-registry.ts`. Adding, renaming or retiring a built-in also updates `BUILTIN_NAMES` (`src-tauri/src/subagents_config.rs`), `BUILTIN_SUBAGENT_NAMES` (`components/settings/SubagentEditor.tsx`), and the retired-name map in `lib/fleet.ts` (mirrors `RETIRED_SUBAGENTS`).
+- Prompts are layered in `hoy-system-prompt.ts` (`buildHoySystemPrompt({ tools, run, agentTypes })`): base (lists only the session's tools), run context, then the role body appended by `effectiveChildPrompt`. Run context comes from type + depth: no type = interactive, type at depth 0 = Fleet run, deeper = subagent. A role spawns only its `spawns` list.
+- Renaming a persisted renderer pref: bump `version` and extend `migratePrefs` in `state/prefs.ts`, or users silently lose the setting.
 
 ## Design context
 - Each frontend workspace carries its own `PRODUCT.md` (strategy: register, users, brand, principles, a11y) and `DESIGN.md` (visual system: tokens, type, components, layout), maintained via the impeccable skill. Read them before any UI work; keep them in sync when the visual system changes.
@@ -107,7 +114,7 @@ PRs are squash merged, so the PR title becomes the commit on `main`, and Release
 - No tool attribution anywhere: no "Generated with" lines, agent or session links, or co-author trailers in commits, pull requests, issues, or comments.
 
 ## Out of scope for MVP (note as TODOs, don't build)
-Themes, keyboard shortcuts, session rename/delete polish, Windows code signing, the multi-session orchestration dashboard. The architecture must not *block* these, but they are not MVP work.
+Themes, keyboard shortcuts, session rename/delete polish, Windows code signing. The architecture must not *block* these, but they are not MVP work. (The orchestration dashboard is now the v2 Fleet, in progress.)
 
 ## Definition of done (MVP)
 Launch → enter API key (written to Pi's `auth.json`, mode 0600, never shown to the renderer) → real models populate and one is selectable → type a message and watch it stream token-by-token → see tool calls render → past session appears in the sidebar after restart.

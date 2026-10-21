@@ -39,14 +39,45 @@ import {
   setModel,
   setPermissionMode as ipcSetPermissionMode,
   setSubagentEnabled as ipcSetSubagentEnabled,
+  setSubagentsEnabled as ipcSetSubagentsEnabled,
+  setSubagentModel as ipcSetSubagentModel,
+  createIssueWorktree,
+  removeIssueWorktree,
+  projectIsGitRepo,
+  generateTitle,
+  projectHasFleet,
   setThinkingLevel,
+  linearSetIssueState,
+  linearComment,
+  openPullRequest,
   verifyGoalCommand,
+  dispatchDecision,
 } from "@/lib/ipc";
 import { applyEvent, markToolPending, messagesToTurns } from "@/lib/turns";
 import { leafChainMessageIds } from "@/lib/treeNode";
 import { fileToImageAttachment } from "@/lib/images";
 import { draftContexts, draftToMessage } from "@/lib/mentions";
+import {
+  findPullRequestUrl,
+  isInteractiveAgentThread,
+  issueBranch,
+  issuePrompt,
+  talkToAgentDraft,
+  unassignedIssues,
+} from "@/lib/delegate";
+import { currentAgentName, haltingThread, moveQueued, openRuns } from "@/lib/fleet";
+import {
+  agentLabel,
+  applyDecision,
+  DISPATCH_CONFIDENCE_THRESHOLD,
+  dispatchInput,
+  nagComment,
+  needsDecision,
+} from "@/lib/dispatch";
+import { chainComment, MAX_HOPS, nextStep, runSignals, type NextStep } from "@/lib/handoff";
 import { rewriteSkillCommand } from "@/lib/skill";
+import { modelKey, resolveDefaultModel } from "@/lib/models";
+import { fleetChanges } from "@/lib/fleetPresets";
 import {
   detectPlanIntent,
   extractProposedPlan,
@@ -56,6 +87,7 @@ import {
 } from "@/lib/plan";
 import { formatElapsed, shortId } from "@/lib/utils";
 import { usePrefsStore } from "@/state/prefs";
+import { useLinearStore } from "@/state/linear";
 import {
   childThreadIdsOf,
   extractResultText,
@@ -86,6 +118,9 @@ import type {
   GoalVerifyResult,
   ImageAttachment,
   ImageContent,
+  FleetOutcome,
+  LinearIssue,
+  LinearLink,
   McpScope,
   ModelInfo,
   ModelRef,
@@ -107,12 +142,20 @@ import type {
   Thread,
   Turn,
   UsageReport,
+  DispatchDecision,
+  Handoff,
+  HandoffBy,
+  LinearIssueRef,
 } from "@/lib/types";
 import {
   getSupportedThinkingLevels,
   isThinkingLevel,
 } from "@/lib/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+
+export type BodyView = "panels" | "usage" | "project";
+// HOY-346: the sub-views of a project's home (bodyView "project").
+export type ProjectView = "fleet" | "threads" | "agents";
 
 export const SIDEBAR_MIN_WIDTH = 220;
 export const SIDEBAR_MAX_WIDTH = 480;
@@ -123,11 +166,36 @@ const SIDEBAR_DEFAULT_WIDTH = 256;
 // borrows width from the others, never below this minimum.
 export const PANEL_MIN_WIDTH = 460;
 
-interface Panel {
+export interface Panel {
   // Thread id the panel is showing. Panels are keyed by thread, so a thread is
   // open in at most one panel.
   id: string;
   width: number;
+  // Panels sharing a tabId split one tab, kept contiguous in `panels`. Unset
+  // means a tab of its own.
+  tabId?: string;
+}
+
+export function panelTabKey(p: Panel): string {
+  return p.tabId ?? p.id;
+}
+
+// Panels grouped into tabs, in tab order.
+export function groupTabs(panels: Panel[]): { key: string; panels: Panel[] }[] {
+  const tabs: { key: string; panels: Panel[] }[] = [];
+  for (const p of panels) {
+    const key = panelTabKey(p);
+    const tab = tabs.find((t) => t.key === key);
+    if (tab) tab.panels.push(p);
+    else tabs.push({ key, panels: [p] });
+  }
+  return tabs;
+}
+
+// The tab key holding `threadId`, or null when it has no panel.
+export function tabKeyOf(panels: Panel[], threadId: string | null): string | null {
+  const p = threadId ? panels.find((x) => x.id === threadId) : undefined;
+  return p ? panelTabKey(p) : null;
 }
 
 function initialBodyWidth(): number {
@@ -179,6 +247,33 @@ function fitPanels(panels: Panel[], bodyWidth: number): Panel[] {
   if (used > bodyWidth) return shrinkPanels(panels, used - bodyWidth);
   if (used < bodyWidth) return growPanels(panels, bodyWidth - used);
   return panels;
+}
+
+// fitPanels per tab, so each tab fills the body on its own.
+function refitPanels(panels: Panel[], bodyWidth: number): Panel[] {
+  return groupTabs(panels).flatMap((t) => fitPanels(t.panels, bodyWidth));
+}
+
+// After removing panels, the thread to focus instead of `closedId`: a panel
+// left in the same tab, else the nearest survivor in strip order.
+function neighborAfterClose(
+  before: Panel[],
+  closedId: string,
+  survivors: Panel[],
+): string | null {
+  const index = before.findIndex((p) => p.id === closedId);
+  const closed = before[index];
+  if (closed) {
+    const key = panelTabKey(closed);
+    const sameTab = survivors.filter((p) => panelTabKey(p) === key);
+    if (sameTab.length > 0) return sameTab[0].id;
+  }
+  const remaining = new Set(survivors.map((p) => p.id));
+  for (let i = index + 1; i < before.length; i++)
+    if (remaining.has(before[i].id)) return before[i].id;
+  for (let i = index - 1; i >= 0; i--)
+    if (remaining.has(before[i].id)) return before[i].id;
+  return null;
 }
 
 // Width for a panel added to `panels`, plus the (possibly shrunk) existing
@@ -327,7 +422,9 @@ interface SessionStore {
   // null = all threads. Cleared whenever the sidebar view is toggled directly.
   historyProjectId: string | null;
   sidebarWidth: number;
-  bodyView: "panels" | "fleet" | "usage";
+  bodyView: BodyView;
+  // Which sub-view the active project's home shows.
+  projectView: ProjectView;
   // Global settings modal, openable from any entry point (home cog, thread menu).
   settingsOpen: boolean;
   activeSessionId: string | null;
@@ -442,7 +539,12 @@ interface SessionStore {
     threadId: string;
   } | null;
 
-  openThread: (id: string) => void;
+  // `background` adds the tab without switching to it, `split` opens the
+  // thread beside the active one in its tab.
+  openThread: (
+    id: string,
+    opts?: { background?: boolean; split?: boolean },
+  ) => void;
   focusPanel: (id: string) => void;
   setActiveProject: (id: string | null) => void;
   requestTeardown: (
@@ -475,11 +577,81 @@ interface SessionStore {
   setSidebarView: (view: "projects" | "history") => void;
   // Open the history view scoped to a project (null = unscoped). HOY-257.
   openThreadHistory: (projectId: string | null) => void;
-  setBodyView: (view: "panels" | "fleet" | "usage") => void;
-  setSettingsOpen: (open: boolean) => void;
+  setBodyView: (view: BodyView) => void;
+  // Make the project active and show its home on `view` (default: fleet).
+  openProject: (projectId: string, view?: ProjectView) => void;
+  // `category` (a settings CategoryId) opens the modal on that panel.
+  setSettingsOpen: (open: boolean, category?: string) => void;
+  settingsCategory: string | null;
   setSidebarWidth: (width: number) => void;
   addProject: (path: string) => void;
-  addThread: (projectId: string) => string;
+  // HOY-368: the project whose fleet the picker is asking about, if any.
+  fleetPickerProjectId: string | null;
+  // What the picker starts with; null means the default core fleet.
+  fleetPickerInitial: string[] | null;
+  setFleetPicker: (projectId: string | null, initial?: string[] | null) => void;
+  saveFleet: (projectId: string, agents: string[]) => Promise<void>;
+  // A project's own agent overrides (its .hoy/settings.json).
+  setProjectAgentEnabled: (projectId: string, name: string, enabled: boolean) => Promise<void>;
+  setProjectAgentModel: (projectId: string, name: string, model: string | null) => Promise<void>;
+  addThread: (projectId: string, opts?: { split?: boolean }) => string;
+  // HOY-346: link a project to a Linear team (null unlinks).
+  setProjectLinear: (projectId: string, link: LinearLink | null) => void;
+  // Hand a Linear issue to an agent: a new thread in the project, running as
+  // that subagent type and prompted with the issue. Returns the thread id.
+  delegateIssue: (
+    projectId: string,
+    issue: LinearIssue,
+    agent: string,
+    decision?: DispatchDecision | null,
+    handoff?: Handoff | null,
+  ) => string | null;
+  // HOY-350: per-agent Fleet queues. A queued issue starts through
+  // delegateIssue once its agent has a free slot and is not halted.
+  enqueueIssue: (
+    projectId: string,
+    issue: LinearIssue,
+    agent: string,
+    decision?: DispatchDecision | null,
+    handoff?: Handoff | null,
+  ) => void;
+  unqueueIssue: (projectId: string, issueId: string) => void;
+  moveQueuedIssue: (projectId: string, issueId: string, delta: -1 | 1) => void;
+  setAgentConcurrency: (projectId: string, agent: string, n: number) => void;
+  // Acknowledge the run halting an agent's queue, so the queue moves again.
+  resumeAgent: (projectId: string, agent: string) => void;
+  pumpFleet: () => void;
+  setFleetAuto: (projectId: string, on: boolean) => void;
+  // HOY-379: the user hands a delegated run's issue to another agent. A live
+  // run is stopped first without halting its agent's queue.
+  handOffThread: (threadId: string, agent: string) => Promise<void>;
+  // Hand off as the finished run suggested (Auto off).
+  acceptNextStep: (threadId: string) => void;
+  // HOY-379: push a finished run's branch and open its pull request.
+  openRunPullRequest: (threadId: string) => Promise<void>;
+  // HOY-385: start an interactive thread running as an agent, blank or seeded
+  // from a finished run's worktree and report. Returns the thread id.
+  startAgentThread: (
+    projectId: string,
+    agent: string,
+    opts?: { fromRunThreadId?: string },
+  ) => string | null;
+  // Clear a run's stopped-chain flag or suggested next step.
+  dismissChainNote: (threadId: string) => void;
+  moveQueuedTo: (projectId: string, issueId: string, agent: string) => void;
+  // HOY-353: one decision per issue revision, in priority order. Serial per project.
+  triageAuto: (projectId: string) => Promise<void>;
+  // Records a verdict only; an Auto pass queues it if ready.
+  decideIssue: (projectId: string, issue: LinearIssue) => Promise<void>;
+  // HOY-358: projects known not to be git repositories. Their Fleet runs share
+  // the project folder, so they start one at a time.
+  nonGitProjects: Record<string, true>;
+  // Archive a delegated thread, removing its worktree first. A worktree with
+  // uncommitted changes, or one that fails to remove, keeps the thread on its
+  // agent's row with the reason, unless `force`.
+  archiveDelegated: (threadId: string, force?: boolean) => Promise<void>;
+  // HOY-359: agents in this project push their branch and open a pull request.
+  setOpenPullRequests: (projectId: string, on: boolean) => void;
   // Create a child thread for a spawned subagent (HOY-231) and drive it
   // through create_session + the shared streaming helper, same as a
   // user-submitted thread.
@@ -495,16 +667,6 @@ interface SessionStore {
   // Pull the subagent registry into the store (HOY-234). No-op cache miss on
   // failure (leaves the prior cache), mirroring refreshSlashCommands.
   refreshSubagents: (cwd: string) => Promise<void>;
-  // Toggle a subagent type on/off in a scope. Writes through set_subagent_enabled
-  // (Rust respawns idle sidecars to reload it), so the model/permission-mode
-  // reconcile guards must clear like the other config-writing actions above.
-  setSubagentEnabled: (
-    scope: SubagentDef["scope"],
-    name: string,
-    enabled: boolean,
-    projectPath?: string | null,
-  ) => Promise<void>;
-
   // Credential changes go through the store (HOY-196): the backend respawns
   // idle sidecars under their existing sessionIds, so the per-session
   // reconcile guards must be cleared for the next prompt to re-apply each
@@ -688,8 +850,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   sidebarView: "projects",
   historyProjectId: null,
   settingsOpen: false,
+  settingsCategory: null,
   sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   bodyView: "panels",
+  projectView: "fleet",
   activeSessionId: null,
   models: [],
   subagents: [],
@@ -697,6 +861,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   providerAuth: [],
   defaultModel: null,
   modelSelecting: {},
+  fleetPickerProjectId: null,
+  fleetPickerInitial: null,
+  nonGitProjects: {},
   turns: {},
   streaming: {},
   stats: {},
@@ -728,8 +895,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   // Open the thread in a panel, or focus it if it is already open. A
   // persisted thread (has a sessionFile, no live sidecar, nothing loaded) is
   // hydrated from disk in the background.
-  openThread: (id) => {
+  openThread: (id, opts) => {
     set((s) => {
+      const isOpen = s.panels.some((p) => p.id === id);
+      if (opts?.background && s.activeThreadId) {
+        if (isOpen) return s;
+        return {
+          panels: [...s.panels, { id, width: s.bodyWidth, tabId: shortId("tab") }],
+        };
+      }
       // Opening a different thread while full screen exits it: the user asked
       // to see something else.
       const expandedThreadId =
@@ -742,15 +916,49 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // default target).
       const activeProjectId =
         findThread(s.projects, id)?.project.id ?? s.activeProjectId;
-      if (s.panels.some((p) => p.id === id))
-        return { activeThreadId: id, activeProjectId, expandedThreadId, focusRequest };
-      const { panels, width } = placeNewPanel(s.panels, s.bodyWidth);
+      // A foreground open is a request to see the thread; a background open
+      // (delegating from the Fleet) leaves the current view alone.
+      const bodyView = opts?.background ? s.bodyView : "panels";
+      if (isOpen)
+        return {
+          activeThreadId: id,
+          activeProjectId,
+          expandedThreadId,
+          focusRequest,
+          bodyView,
+        };
+      const anchor = s.panels.find((p) => p.id === s.activeThreadId);
+      if (!opts?.split || !anchor) {
+        return {
+          panels: [...s.panels, { id, width: s.bodyWidth, tabId: shortId("tab") }],
+          activeThreadId: id,
+          activeProjectId,
+          expandedThreadId,
+          focusRequest,
+          bodyView,
+        };
+      }
+      // Insert after the tab's last panel so the tab stays contiguous.
+      const key = panelTabKey(anchor);
+      const tabPanels = s.panels.filter((p) => panelTabKey(p) === key);
+      const placed = placeNewPanel(tabPanels, s.bodyWidth);
+      const widths = new Map(placed.panels.map((p) => [p.id, p.width]));
+      const resized = s.panels.map((p) =>
+        widths.has(p.id) ? { ...p, width: widths.get(p.id)!, tabId: key } : p,
+      );
+      const last = resized.map(panelTabKey).lastIndexOf(key);
       return {
-        panels: [...panels, { id, width }],
+        panels: [
+          ...resized.slice(0, last + 1),
+          { id, width: placed.width, tabId: key },
+          ...resized.slice(last + 1),
+        ],
         activeThreadId: id,
         activeProjectId,
-        expandedThreadId,
+        // Splitting out of a full screen panel exits it.
+        expandedThreadId: null,
         focusRequest,
+        bodyView,
       };
     });
     void get().hydrateThread(id);
@@ -767,10 +975,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setActiveProject: (id) => set({ activeProjectId: id }),
 
   requestTeardown: (action, threadId) => {
-    // The confirm dialog only guards a live stream. When the user has turned that
-    // guard off, or nothing is streaming, tear down immediately.
-    const confirmStreaming = usePrefsStore.getState().confirmCloseStreaming;
-    if (!get().streaming[threadId] || !confirmStreaming) {
+    // Archiving or deleting a thread that is still streaming stops it, so that
+    // asks first. Closing a tab never reaches here for a live thread.
+    if (!get().streaming[threadId]) {
       runTeardown(get(), action, threadId);
       return;
     }
@@ -820,15 +1027,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // instead of leaving a gap. Fit, not grow: when the strip was
       // overflowing, handing the closed panel's width to the survivors will
       // stack it (close all but one and that panel keeps the combined width).
-      const panels = fitPanels(
+      const panels = refitPanels(
         s.panels.filter((p) => p.id !== id),
         s.bodyWidth,
       );
 
       let activeThreadId = s.activeThreadId;
       if (activeThreadId === id) {
-        const neighbor = panels[index] ?? panels[index - 1] ?? null;
-        activeThreadId = neighbor?.id ?? null;
+        activeThreadId = neighborAfterClose(s.panels, id, panels);
       }
       // Reset all per-thread live state so a reopen starts clean: a turn killed
       // mid-stream must not leave streaming/error flags stuck on the thread.
@@ -862,6 +1068,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return {
         panels,
         activeThreadId,
+        ...homeAfterLastPanel(s, panels),
         turns,
         stats,
         streaming,
@@ -889,16 +1096,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   requestPanelClose: (threadId) => {
-    // Closing a subagent's panel must never stop its work: dismiss the view and
-    // leave the sidecar running (reopenable from Fleet). Only a root thread's
-    // panel is torn down on close, keeping the existing kill-on-close + streaming
-    // confirm (HOY-301).
+    // Closing a tab never stops work (HOY-372): a subagent or a thread that is
+    // still streaming is dismissed and keeps running, reopenable from the
+    // sidebar or the Fleet. Only an idle root thread's sidecar is shut down.
     const thread = findThread(get().projects, threadId)?.thread;
-    if (thread && isSubagentThread(thread)) {
+    if (thread && (isSubagentThread(thread) || get().streaming[threadId])) {
       get().dismissPanel(threadId);
       return;
     }
-    get().requestTeardown("close", threadId);
+    get().closePanel(threadId);
   },
 
   dismissPanel: (id) =>
@@ -908,18 +1114,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Remove from the strip and re-fit survivors, exactly like closePanel, but
       // keep the sidecar, the channel, and every per-thread slice (turns, streaming,
       // sessionId,...) so the thread keeps running and reopens with state intact.
-      const panels = fitPanels(
+      const panels = refitPanels(
         s.panels.filter((p) => p.id !== id),
         s.bodyWidth,
       );
       let activeThreadId = s.activeThreadId;
       if (activeThreadId === id) {
-        const neighbor = panels[index] ?? panels[index - 1] ?? null;
-        activeThreadId = neighbor?.id ?? null;
+        activeThreadId = neighborAfterClose(s.panels, id, panels);
       }
       return {
         panels,
         activeThreadId,
+        ...homeAfterLastPanel(s, panels),
         expandedThreadId: s.expandedThreadId === id ? null : s.expandedThreadId,
         focusRequest: s.focusRequest?.threadId === id ? null : s.focusRequest,
       };
@@ -983,7 +1189,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       if (s.panels.length === 0) return { bodyWidth: width };
       // Keep the panels filling the body: shrink them when it narrows, grow them
       // back into the reclaimed space when it widens.
-      return { bodyWidth: width, panels: fitPanels(s.panels, width) };
+      return { bodyWidth: width, panels: refitPanels(s.panels, width) };
     }),
 
   // Drag the divider on panel `index`'s right edge. Growing borrows from the
@@ -996,6 +1202,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const cur = panels[index];
       const next = panels[index + 1];
       if (!cur || !next) return s;
+      if (panelTabKey(cur) !== panelTabKey(next)) return s;
       const d = Math.max(deltaPx, PANEL_MIN_WIDTH - cur.width);
       cur.width += d;
       if (d < 0) {
@@ -1015,7 +1222,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   openThreadHistory: (projectId) =>
     set({ sidebarView: "history", historyProjectId: projectId }),
   setBodyView: (view) => set({ bodyView: view }),
-  setSettingsOpen: (open) => set({ settingsOpen: open }),
+  openProject: (projectId, view = "fleet") =>
+    set({ activeProjectId: projectId, bodyView: "project", projectView: view }),
+  setSettingsOpen: (open, category) =>
+    set((s) => ({
+      settingsOpen: open,
+      settingsCategory: open ? (category ?? null) : s.settingsCategory,
+    })),
   setSidebarWidth: (width) =>
     set({
       sidebarWidth: Math.min(
@@ -1030,6 +1243,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // the existing project's most recent thread. openThread runs after set,
     // mirroring addThread.
     let openId: string | null = null;
+    let newProjectId: string | null = null;
     set((s) => {
       const existing = s.projects.find((p) => p.path === path);
       if (existing) {
@@ -1043,13 +1257,321 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         sessionId: null,
       };
       openId = thread.id;
+      newProjectId = shortId("p");
       return {
-        projects: [...s.projects, { id: shortId("p"), name, path, threads: [thread] }],
+        projects: [...s.projects, { id: newProjectId, name, path, threads: [thread] }],
       };
     });
     if (openId) get().openThread(openId);
+    // A repo that already carries a fleet (committed by a teammate) skips the picker.
+    if (newProjectId) {
+      const id = newProjectId;
+      void projectHasFleet(path)
+        .then((has) => {
+          if (!has) set({ fleetPickerProjectId: id });
+        })
+        .catch(() => {});
+    }
   },
-  addThread: (projectId) => {
+  setFleetPicker: (fleetPickerProjectId, initial = null) =>
+    set({ fleetPickerProjectId, fleetPickerInitial: initial }),
+  saveFleet: async (projectId, agents) => {
+    const project = get().projects.find((p) => p.id === projectId);
+    if (!project?.path) return;
+    await ipcSetSubagentsEnabled("project", fleetChanges(agents), project.path);
+    modelApplied.clear();
+    permissionModeApplied.clear();
+    set({ fleetPickerProjectId: null });
+    await get().refreshSubagents(project.path);
+  },
+  setProjectLinear: (projectId, link) =>
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId ? { ...p, linear: link } : p,
+      ),
+    })),
+  delegateIssue: (projectId, issue, agent, decision = null, handoff = null) => {
+    const s = get();
+    if (!s.projects.some((p) => p.id === projectId)) return null;
+    const def = s.subagents.find((d) => d.name === agent);
+    const model = def?.model ? resolveModelRef(s, def.model) : null;
+    const thinking = isThinkingLevel(def?.thinking) ? def.thinking : null;
+    const thread: Thread = {
+      id: shortId("t"),
+      title: `${issue.identifier} ${issue.title}`,
+      updatedAt: Date.now(),
+      sessionId: null,
+      // A titled thread, so a failed first prompt never discards it as untouched.
+      renamed: true,
+      agent,
+      // Nobody watches a delegated thread, so it must not stall on approvals.
+      permissionMode: "autonomous",
+      fleetRun: { startedAt: Date.now(), estimate: issue.estimate },
+      ...(handoff ? { handoff } : {}),
+      linearIssue: {
+        id: issue.id,
+        identifier: issue.identifier,
+        title: issue.title,
+        url: issue.url,
+      },
+      ...(model ? { model } : {}),
+      ...(thinking ? { thinkingLevel: thinking } : {}),
+    };
+    set((st) => ({
+      projects: st.projects.map((p) =>
+        p.id === projectId ? { ...p, threads: [thread, ...p.threads] } : p,
+      ),
+    }));
+    // The Fleet is the watch surface; a tab opens only when the user asks for one.
+    if (usePrefsStore.getState().autoOpenSpawnedThreads) get().openThread(thread.id, { background: true });
+    void startDelegatedRun(projectId, thread.id, issue, agent, decision, handoff);
+    // A review leaves the issue in its review state.
+    if (!(handoff && agent === "Reviewer")) {
+      linearSetIssueState(issue.id, "started").catch((e) =>
+        pushNotice(thread.id, `Could not move ${issue.identifier} to In Progress: ${e}`, "warning"),
+      );
+    }
+    return thread.id;
+  },
+  startAgentThread: (projectId, agent, opts) => {
+    const s = get();
+    if (!s.projects.some((p) => p.id === projectId)) return null;
+    const def = s.subagents.find((d) => d.name === agent);
+    const model = def?.model ? resolveModelRef(s, def.model) : null;
+    const thinking = isThinkingLevel(def?.thinking) ? def.thinking : null;
+    const source = opts?.fromRunThreadId
+      ? (findThread(s.projects, opts.fromRunThreadId)?.thread ?? null)
+      : null;
+    const thread: Thread = {
+      id: shortId("t"),
+      title: source ? `Talk to ${agent}` : "New thread",
+      updatedAt: Date.now(),
+      sessionId: null,
+      agent,
+      ...(source?.worktree && !source.worktree.removed
+        ? {
+            worktree: {
+              path: source.worktree.path,
+              branch: source.worktree.branch,
+              base: source.worktree.base,
+            },
+          }
+        : {}),
+      ...(model ? { model } : {}),
+      ...(thinking ? { thinkingLevel: thinking } : {}),
+    };
+    set((st) => ({
+      projects: st.projects.map((p) =>
+        p.id === projectId ? { ...p, threads: [thread, ...p.threads] } : p,
+      ),
+    }));
+    if (source) {
+      get().setDraft(
+        thread.id,
+        talkToAgentDraft(
+          agent,
+          source.linearIssue ?? null,
+          runSignals(get().turns[source.id] ?? []).report,
+          source.worktree ?? null,
+        ),
+      );
+    }
+    get().openThread(thread.id);
+    return thread.id;
+  },
+  enqueueIssue: (projectId, issue, agent, decision = null, handoff = null) => {
+    set((s) => ({
+      projects: s.projects.map((p) => {
+        if (p.id !== projectId) return p;
+        const fleet = p.fleet ?? { queue: [], concurrency: {} };
+        if (fleet.queue.some((q) => q.issue.id === issue.id)) return p;
+        return {
+          ...p,
+          fleet: {
+            ...fleet,
+            queue: [
+              ...fleet.queue,
+              {
+                agent,
+                issue,
+                queuedAt: Date.now(),
+                ...(decision ? { decision } : {}),
+                ...(handoff ? { handoff } : {}),
+              },
+            ],
+          },
+        };
+      }),
+    }));
+    get().pumpFleet();
+  },
+  unqueueIssue: (projectId, issueId) =>
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId && p.fleet
+          ? {
+              ...p,
+              fleet: {
+                ...p.fleet,
+                queue: p.fleet.queue.filter((q) => q.issue.id !== issueId),
+              },
+            }
+          : p,
+      ),
+    })),
+  moveQueuedTo: (projectId, issueId, agent) => {
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId && p.fleet
+          ? {
+              ...p,
+              fleet: {
+                ...p.fleet,
+                queue: p.fleet.queue.map((q) => (q.issue.id === issueId ? { ...q, agent } : q)),
+              },
+            }
+          : p,
+      ),
+    }));
+    get().pumpFleet();
+  },
+  moveQueuedIssue: (projectId, issueId, delta) =>
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId && p.fleet
+          ? {
+              ...p,
+              fleet: { ...p.fleet, queue: moveQueued(p.fleet.queue, issueId, delta) },
+            }
+          : p,
+      ),
+    })),
+  setAgentConcurrency: (projectId, agent, n) => {
+    set((s) => ({
+      projects: s.projects.map((p) => {
+        if (p.id !== projectId) return p;
+        const fleet = p.fleet ?? { queue: [], concurrency: {} };
+        return {
+          ...p,
+          fleet: {
+            ...fleet,
+            concurrency: { ...fleet.concurrency, [agent]: Math.max(1, Math.floor(n)) },
+          },
+        };
+      }),
+    }));
+    get().pumpFleet();
+  },
+  resumeAgent: (projectId, agent) => {
+    const project = get().projects.find((p) => p.id === projectId);
+    const halting = project && haltingThread(project.threads, agent);
+    if (!halting) return;
+    set((s) => ({
+      projects: patchThread(s.projects, halting.id, (th) => ({
+        ...th,
+        fleetRun: th.fleetRun && { ...th.fleetRun, acknowledged: true },
+      })),
+    }));
+    get().pumpFleet();
+  },
+  pumpFleet: () => {
+    // A thread takes its model and thinking from the agent's def, so nothing
+    // starts until the registry is loaded.
+    const s = get();
+    if (!hydrated || s.subagents.length === 0) return;
+    for (const p of s.projects) {
+      const queue = p.fleet?.queue ?? [];
+      for (const agent of new Set(queue.map((q) => q.agent))) {
+        const def = s.subagents.find((d) => d.name === agent);
+        if (!def?.enabled) continue;
+        const project = get().projects.find((x) => x.id === p.id)!;
+        if (haltingThread(project.threads, agent)) continue;
+        const cap = Math.max(1, project.fleet?.concurrency[agent] ?? 1);
+        let free = cap - openRuns(project.threads, agent).length;
+        // Without git there are no worktrees: every run shares the folder.
+        if (get().nonGitProjects[p.id]) {
+          const running = project.threads.filter((t) => !t.archived && t.fleetRun && t.fleetRun.endedAt == null).length;
+          free = Math.min(free, 1 - running);
+        }
+        for (const item of queue.filter((q) => q.agent === agent)) {
+          if (free <= 0) break;
+          get().unqueueIssue(p.id, item.issue.id);
+          get().delegateIssue(p.id, item.issue, agent, item.decision ?? null, item.handoff ?? null);
+          free--;
+        }
+      }
+    }
+  },
+  triageAuto: async (projectId) => {
+    // Queueing changes the open list, which re-fires the Board's effect mid-pass.
+    if (triaging.has(projectId)) return;
+    triaging.add(projectId);
+    try {
+      // Re-read the store each step: a queue action changes what is unassigned.
+      // nagTried keeps a failed note from retrying until the next pass.
+      const nagTried = new Set<string>();
+      for (;;) {
+        const s = get();
+        const project = s.projects.find((p) => p.id === projectId);
+        if (!project?.fleet?.auto || !project.linear) return;
+        if (s.subagents.length === 0) return; // registry not loaded yet
+        const available = availableAgents(s.subagents, project.threads);
+        const issues = useLinearStore.getState().issues[projectId]?.items ?? [];
+        const decisions = project.fleet.decisions ?? {};
+        const open = unassignedIssues(issues, project.threads, project.fleet.queue ?? []);
+        const pending = open.filter((i) => {
+          if (nagTried.has(i.id)) return false;
+          if (needsDecision(i, decisions)) return true;
+          const c = decisions[i.id]!;
+          const kind = applyDecision(c.decision, available).kind;
+          if (kind === "queue") return c.queuedAt !== (i.updatedAt ?? null);
+          return kind === "comment" && c.naggedAt !== (i.updatedAt ?? null);
+        });
+        const issue = pending[0];
+        if (!issue) return;
+
+        const at = issue.updatedAt ?? null;
+        const cached = decisions[issue.id];
+        const fresh = cached && cached.at === at;
+        const decision = fresh
+          ? cached.decision
+          : (labelDecision(issue, available) ??
+            (await askDispatcher(issue, available, project.threads)));
+        const action = applyDecision(decision, available);
+        // queuedAt: queued once per revision, so unqueueing it sticks.
+        if (!fresh || action.kind === "queue") {
+          recordFleetDecision(projectId, issue, decision, {
+            naggedAt: fresh ? cached.naggedAt : null,
+            queuedAt: action.kind === "queue" ? at : null,
+          });
+        }
+        if (action.kind === "queue") {
+          get().enqueueIssue(projectId, issue, action.agent, decision);
+        } else if (action.kind === "comment") {
+          nagTried.add(issue.id);
+          void linearComment(issue.identifier, nagComment(issue, decision))
+            .then(() => markNaggedDecision(projectId, issue.id, at))
+            .catch(() => {});
+        }
+      }
+    } finally {
+      triaging.delete(projectId);
+    }
+  },
+  decideIssue: async (projectId, issue) => {
+    const s = get();
+    const project = s.projects.find((p) => p.id === projectId);
+    if (!project) return;
+    const available = availableAgents(s.subagents, project.threads);
+    const decision =
+      labelDecision(issue, available) ??
+      (available.length === 0
+        ? { ready: true, agent: null, confidence: 0, reason: "No enabled agents to route to." }
+        : await askDispatcher(issue, available, project.threads));
+    // naggedAt: a verdict the user asked for never posts the not-ready note.
+    recordFleetDecision(projectId, issue, decision, { naggedAt: issue.updatedAt ?? null });
+  },
+  addThread: (projectId, opts) => {
     const thread: Thread = {
       id: shortId("t"),
       title: "New thread",
@@ -1061,7 +1583,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         p.id === projectId ? { ...p, threads: [thread, ...p.threads] } : p,
       ),
     }));
-    get().openThread(thread.id);
+    get().openThread(thread.id, opts);
     return thread.id;
   },
   spawnChildThread: async (parentThreadId, payload) => {
@@ -1130,7 +1652,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // openThread's findThread resolves. Fleet (HOY-235) is the alternative
     // watch surface, so this is gated behind the autoOpenSpawnedThreads pref
     // (HOY-246), off by default to avoid a panel-per-subagent storm at scale.
-    if (usePrefsStore.getState().autoOpenSpawnedThreads) get().openThread(childId);
+    if (usePrefsStore.getState().autoOpenSpawnedThreads)
+      get().openThread(childId, { background: true });
     // Concurrency gate (HOY-245): an initial run takes a slot only if one is
     // free. Otherwise the child waits FIFO. A slot releases on the run's first
     // done. Foreground and resume runs bypass this entirely (they never reach
@@ -1181,7 +1704,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set((s) => {
       const ids = new Set(removed?.threads.map((t) => t.id) ?? []);
       // Re-fit the survivors to the body, like closePanel.
-      const panels = fitPanels(
+      const panels = refitPanels(
         s.panels.filter((p) => !ids.has(p.id)),
         s.bodyWidth,
       );
@@ -1243,15 +1766,28 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   refreshSubagents: async (cwd) => {
     try {
-      set({ subagents: await listSubagents(cwd) });
+      const next = await listSubagents(cwd);
+      // A nullish reply keeps the prior cache, same as a throw.
+      if (!next) return;
+      set({ subagents: next });
+      get().pumpFleet();
     } catch {
       // Leave the prior cache. A stale registry beats an empty one.
     }
   },
-  setSubagentEnabled: async (scope, name, enabled, projectPath) => {
-    await ipcSetSubagentEnabled(scope, name, enabled, projectPath ?? null);
+  setProjectAgentEnabled: async (projectId, name, enabled) => {
+    const path = get().projects.find((p) => p.id === projectId)?.path;
+    if (!path) return;
+    await ipcSetSubagentEnabled("project", name, enabled, path);
     modelApplied.clear();
     permissionModeApplied.clear();
+    await get().refreshSubagents(path);
+  },
+  setProjectAgentModel: async (projectId, name, model) => {
+    const path = get().projects.find((p) => p.id === projectId)?.path;
+    if (!path) return;
+    await ipcSetSubagentModel("project", name, model, path);
+    await get().refreshSubagents(path);
   },
 
   setActiveSessionId: (id) => set({ activeSessionId: id }),
@@ -1372,7 +1908,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setPermissionMode: async (threadId, mode) => {
     const thread = findThread(get().projects, threadId)?.thread;
     if (!thread) return;
-    const previous = thread.permissionMode ?? "default";
+    const previous = thread.permissionMode ?? "manual";
     if (previous === mode) return;
     // Optimistic: the selector reflects the pick immediately. A live-session
     // failure reverts it. No session: the pick is applied on spawn.
@@ -1578,7 +2114,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // fires from a non-plan mode so it never fights a user already in plan mode.
     if (
       opts?.autoPlanMode !== false &&
-      (thread.permissionMode ?? "default") !== "plan" &&
+      (thread.permissionMode ?? "manual") !== "plan" &&
       detectPlanIntent(text)
     ) {
       await get().setPermissionMode(threadId, "plan");
@@ -1616,6 +2152,32 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const stopStreaming = () =>
       set((s) => ({ streaming: { ...s.streaming, [threadId]: false } }));
 
+    // A non-run thread's first message gets a proper title in the background;
+    // the first-line title stands until it lands, and a rename in between wins.
+    // HOY-385: a blank interactive agent thread has `agent` set but no fleetRun,
+    // so the gate keys on fleetRun rather than the agent type.
+    if (
+      thread.title === "New thread" &&
+      !thread.renamed &&
+      !thread.fleetRun &&
+      !thread.spawnedBy &&
+      text.trim() &&
+      usePrefsStore.getState().autoTitles
+    ) {
+      const placeholder = truncateTitle(text);
+      const prefs = usePrefsStore.getState();
+      void generateTitle(text, thread.model ?? appDefaultModel(get()), prefs.disabledModels)
+        .then((title) => {
+          if (!title) return;
+          set((s) => ({
+            projects: patchThread(s.projects, threadId, (th) =>
+              th.renamed || th.title !== placeholder ? th : { ...th, title },
+            ),
+          }));
+        })
+        .catch(() => {});
+    }
+
     try {
       let sessionId = thread.sessionId ?? null;
       if (!sessionId) {
@@ -1623,7 +2185,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         // sidecar was killed on panel close). Else start a fresh session.
         // acquireSession dedups with a concurrent hydrateThread so the two never
         // spawn two sidecars for the same thread.
-        sessionId = await acquireSession(threadId, project.path ?? "", thread.sessionFile);
+        sessionId = await acquireSession(threadId, threadCwd(get().projects, threadId), thread.sessionFile);
         get().setThreadSessionIdInternal(threadId, sessionId);
         // Populate the composer "/" autocomplete now the session exists (HOY-223).
         void get().refreshSlashCommands(threadId);
@@ -2016,12 +2578,42 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const drafts: Record<string, string> = {};
       const projects = (ws.projects ?? []).map((p) => ({
         ...p,
+        ...(p.fleet
+          ? {
+              fleet: {
+                ...p.fleet,
+                queue: p.fleet.queue.map((q) => ({ ...q, agent: currentAgentName(q.agent) })),
+                concurrency: Object.fromEntries(
+                  Object.entries(p.fleet.concurrency).map(([a, n]) => [currentAgentName(a), n]),
+                ),
+              },
+            }
+          : {}),
         threads: p.threads.map((t) => {
           // Drafts live in the drafts slice, not on the in-memory thread.
           const { draft, goal, ...rest } = t;
           if (draft) drafts[rest.id] = draft;
           const restoredGoal = restoreGoal(goal);
-          const withGoal = restoredGoal ? { ...rest, goal: restoredGoal } : rest;
+          let withGoal = restoredGoal ? { ...rest, goal: restoredGoal } : rest;
+          if (withGoal.agent) withGoal = { ...withGoal, agent: currentAgentName(withGoal.agent) };
+          if (withGoal.spawnedBy) {
+            withGoal = {
+              ...withGoal,
+              spawnedBy: { ...withGoal.spawnedBy, type: currentAgentName(withGoal.spawnedBy.type) },
+            };
+          }
+          // A run still open on disk died with the app's sidecars.
+          if (withGoal.fleetRun && withGoal.fleetRun.endedAt == null) {
+            withGoal = {
+              ...withGoal,
+              fleetRun: { ...withGoal.fleetRun, endedAt: Date.now(), outcome: "interrupted" },
+            };
+          }
+          // Backfill (HOY-386): workspaces saved before the rename carry
+          // permission_mode "default", which the Rust allowlist now rejects.
+          if ((withGoal.permissionMode as string | null | undefined) === "default") {
+            withGoal = { ...withGoal, permissionMode: "manual" };
+          }
           return !withGoal.renamed && !withGoal.sessionFile && withGoal.title !== "New thread"
             ? { ...withGoal, renamed: true }
             : withGoal;
@@ -2031,12 +2623,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const activeProjectId = projects.some((p) => p.id === ws.activeProjectId)
         ? (ws.activeProjectId ?? null)
         : null;
-      set({ projects, drafts, activeProjectId });
+      // The project is the main entry: boot into the last project's home.
+      set({
+        projects,
+        drafts,
+        activeProjectId,
+        ...(activeProjectId ? { bodyView: "project" as const, projectView: "fleet" as const } : {}),
+      });
     } catch {
       // Corrupt/unreadable workspace: start empty rather than block the app.
     } finally {
       hydrated = true;
     }
+    get().pumpFleet();
   },
 
   // Restore a reopened thread's transcript. HOY-287: paint the transcript from
@@ -2047,7 +2646,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   hydrateThread: async (threadId) => {
     const found = findThread(get().projects, threadId);
     if (!found) return;
-    const { thread, project } = found;
+    const { thread } = found;
     if (!thread.sessionFile || thread.sessionId) return;
     if ((get().turns[threadId]?.length ?? 0) > 0) return;
 
@@ -2080,7 +2679,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     try {
       const sessionId = await acquireSession(
         threadId,
-        project.path ?? "",
+        threadCwd(get().projects, threadId),
         thread.sessionFile,
       );
       get().setThreadSessionIdInternal(threadId, sessionId);
@@ -2142,7 +2741,100 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }));
   },
 
+  setOpenPullRequests: (projectId, on) =>
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId
+          ? { ...p, fleet: { queue: [], concurrency: {}, ...p.fleet, openPullRequests: on } }
+          : p,
+      ),
+    })),
+  handOffThread: async (threadId, agent) => {
+    const thread = findThread(get().projects, threadId)?.thread;
+    if (!thread?.agent || !thread.linearIssue) return;
+    // Acknowledged first, so the stop does not halt the agent's queue.
+    set((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({
+        ...th,
+        fleetRun: th.fleetRun && { ...th.fleetRun, acknowledged: true },
+      })),
+    }));
+    if (get().streaming[threadId]) await get().stopStreaming(threadId);
+    const { report } = runSignals(get().turns[threadId] ?? []);
+    handOff(
+      threadId,
+      { kind: "agent", agent, reason: `Moved to ${agent} by you.`, by: "user", round: thread.handoff?.round ?? 0 },
+      report,
+    );
+  },
+  acceptNextStep: (threadId) => {
+    const thread = findThread(get().projects, threadId)?.thread;
+    const next = thread?.nextStep;
+    if (!next) return;
+    const { report } = runSignals(get().turns[threadId] ?? []);
+    handOff(threadId, { kind: "agent", ...next }, report);
+  },
+  openRunPullRequest: async (threadId) => {
+    const wt = findThread(get().projects, threadId)?.thread.worktree;
+    if (!wt || wt.removed) return;
+    const url = await openPullRequest(wt.path, wt.branch, wt.base);
+    patchThreadNow(threadId, { pullRequest: url });
+  },
+  dismissChainNote: (threadId) => patchThreadNow(threadId, { chainStop: null, nextStep: null }),
+  setFleetAuto: (projectId, on) => {
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId
+          ? { ...p, fleet: { queue: [], concurrency: {}, ...p.fleet, auto: on } }
+          : p,
+      ),
+    }));
+    if (on) void get().triageAuto(projectId);
+  },
+  archiveDelegated: async (threadId, force = false) => {
+    const found = findThread(get().projects, threadId);
+    if (!found) return;
+    const { thread, project } = found;
+    const wt = thread.worktree;
+    // A later run in the issue's handoff chain still works in this worktree.
+    const shared =
+      !!wt &&
+      project.threads.some(
+        (o) => o.id !== threadId && !o.archived && o.worktree?.path === wt.path && !o.worktree.removed,
+      );
+    if (wt && !wt.removed && shared) {
+      set((s) => ({
+        projects: patchThread(s.projects, threadId, (th) => ({
+          ...th,
+          worktree: th.worktree && { ...th.worktree, removed: true },
+        })),
+      }));
+    } else if (wt && !wt.removed && project.path) {
+      let issue: string | null = null;
+      try {
+        const out = await removeIssueWorktree(project.path, wt.path, force);
+        if (!out.removed) issue = "The worktree has uncommitted changes.";
+      } catch (e) {
+        issue = `Could not remove the worktree: ${e}`;
+      }
+      set((s) => ({
+        projects: patchThread(s.projects, threadId, (th) => ({
+          ...th,
+          worktreeIssue: issue,
+          worktree: th.worktree && !issue ? { ...th.worktree, removed: true } : th.worktree,
+        })),
+      }));
+      if (issue) return;
+    }
+    get().archiveThread(threadId);
+  },
   archiveThread: (threadId) => {
+    // A delegated thread removes its worktree first (HOY-358).
+    const own = findThread(get().projects, threadId)?.thread;
+    if (own?.worktree && !own.worktree.removed) {
+      void get().archiveDelegated(threadId);
+      return;
+    }
     // Cascade first so a child is never left rootless when its parent is
     // filtered out of the tree. ArchiveThread on each child reuses the same
     // untouched-delete + closePanel teardown. HOY-238.
@@ -2168,6 +2860,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // start. The cascade above visits each descendant, so each is purged.
     purgeFromLimiter(threadId);
     get().pumpAgentQueue();
+    get().pumpFleet();
   },
 
   unarchiveThread: (threadId) =>
@@ -2208,6 +2901,24 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 // Reactive "does this thread have a live fleet" for the model glyph's fleet color
 // (HOY-302). Selector returns a boolean, so a row only re-renders when its fleet
 // flips between running and idle, not on every streaming token.
+// Panels in `threadId`'s tab.
+export function useTabPanelCount(threadId: string | null): number {
+  return useSessionStore((s) => {
+    const key = tabKeyOf(s.panels, threadId);
+    return key ? s.panels.filter((p) => panelTabKey(p) === key).length : 0;
+  });
+}
+
+function appDefaultModel(s: SessionStore): ModelRef | null {
+  return resolveDefaultModel(usePrefsStore.getState().preferredModel, s.models, s.defaultModel);
+}
+
+// The model an unstarted thread will run on.
+export function useDefaultModel(): ModelRef | null {
+  const preferred = usePrefsStore((p) => p.preferredModel);
+  return useSessionStore((s) => resolveDefaultModel(preferred, s.models, s.defaultModel));
+}
+
 export function useThreadHasRunningSubagents(threadId: string): boolean {
   return useSessionStore((s) =>
     threadHasRunningSubagents(
@@ -2295,7 +3006,7 @@ async function startChildRun(
     releaseAgentSlot(childId);
     return;
   }
-  const { project, thread: child } = found;
+  const { thread: child } = found;
   const parent = child.parentThreadId
     ? findThread(useSessionStore.getState().projects, child.parentThreadId)?.thread
     : undefined;
@@ -2313,7 +3024,7 @@ async function startChildRun(
     streaming: { ...s.streaming, [childId]: true },
   }));
   try {
-    const cwd = project.path ?? "";
+    const cwd = threadCwd(useSessionStore.getState().projects, childId);
     // HOY-244: if the child's type opts into inherit_context, fork it from the
     // parent's transcript. Only when the parent has an established session file
     // a child spawned before the parent has one has no meaningful context to
@@ -2331,6 +3042,7 @@ async function startChildRun(
       childDepth,
       usePrefsStore.getState().requireSubagentApproval,
       inheritFrom,
+      false,
     );
     useSessionStore.setState((s) => ({
       projects: patchThread(s.projects, childId, (t) => ({ ...t, sessionId })),
@@ -3131,17 +3843,21 @@ function acquireSession(
   // threadId already carries the thread's own parentThreadId chain (this
   // reopens an existing thread's sidecar, root or subagent), so its depth is
   // computed directly rather than derived from a parent + 1.
-  const depth = threadDepth(useSessionStore.getState().projects, threadId);
+  const { projects } = useSessionStore.getState();
+  const depth = threadDepth(projects, threadId);
+  const thread = findThread(projects, threadId)?.thread;
   const spawn = createSession(
     cwd,
     sessionFile ?? null,
-    null,
+    // A delegated thread keeps its agent type across spawns (HOY-346).
+    thread?.agent ?? null,
     null,
     depth,
     usePrefsStore.getState().requireSubagentApproval,
     // Reopen path: the thread opens its own transcript (sessionFile), so there is
     // no parent to fork from (HOY-244).
     null,
+    thread ? isInteractiveAgentThread(thread) : false,
   ).finally(() => pendingSessions.delete(threadId));
   pendingSessions.set(threadId, spawn);
   return spawn;
@@ -3169,7 +3885,8 @@ function releaseSession(sessionId: string): void {
 const permissionModeApplied = new Set<string>();
 
 // Apply a thread's recorded permission mode to a freshly available session
-// (HOY-186). A default-mode thread needs nothing: the extension starts there.
+// (HOY-186). Manual is the sidecar's spawn default (HOY-387), so it needs no
+// /hoy_mode. Keep this fast path in sync with that default.
 async function applyThreadPermissionMode(
   threadId: string,
   sessionId: string,
@@ -3178,8 +3895,8 @@ async function applyThreadPermissionMode(
   permissionModeApplied.add(sessionId);
   const mode =
     findThread(useSessionStore.getState().projects, threadId)?.thread
-      .permissionMode ?? "default";
-  if (mode === "default") return;
+      .permissionMode ?? "manual";
+  if (mode === "manual") return;
   try {
     await ipcSetPermissionMode(sessionId, mode);
   } catch (e) {
@@ -3255,7 +3972,7 @@ async function branchIntoChildThread(
     return;
   }
 
-  const cwd = project.path ?? "";
+  const cwd = threadCwd(store.getState().projects, threadId);
   const depth = threadDepth(store.getState().projects, threadId);
   // Open a fresh sidecar on the SOURCE file, then fork/clone it: pi writes a new
   // branch file and rebinds THIS sidecar to it, leaving the source untouched.
@@ -3269,6 +3986,7 @@ async function branchIntoChildThread(
       depth,
       usePrefsStore.getState().requireSubagentApproval,
       null,
+      false,
     );
   } catch (e) {
     pushNotice(threadId, `${copy.fail} failed: ${String(e)}`, "error");
@@ -3337,13 +4055,16 @@ async function branchIntoChildThread(
 
 // Resolve a subagent def's fuzzy `model` string (a free-text name in the
 // registry file, not a validated ModelRef) against the loaded model list
-// (HOY-234). Exact id match first, else a case-insensitive substring match on
+// (HOY-234). An exact "provider/id" (the Agents panel's pick, HOY-368) first,
+// then an exact id, else a case-insensitive substring match on
 // id or name. Null when nothing matches, so the caller falls back to the
 // parent thread's model rather than spawning on a bogus pick.
 function resolveModelRef(
   state: SessionStore,
   fuzzy: string,
 ): ModelRef | null {
+  const keyed = state.models.find((m) => modelKey(m) === fuzzy);
+  if (keyed) return { provider: keyed.provider, id: keyed.id };
   const exact = state.models.find((m) => m.id === fuzzy);
   if (exact) return { provider: exact.provider, id: exact.id };
   const needle = fuzzy.toLowerCase();
@@ -3371,8 +4092,12 @@ async function applyThreadModel(
     }));
 
   try {
+    // A fresh thread with no pick starts on the app default. A restored one
+    // adopts its session's model below.
+    const thread = findThread(store.getState().projects, threadId)?.thread;
     const pick =
-      findThread(store.getState().projects, threadId)?.thread.model ?? null;
+      thread?.model ??
+      (thread && !thread.sessionFile ? appDefaultModel(store.getState()) : null);
     const piState = await getState(sessionId);
     const truth: ModelRef | null = piState.model
       ? { provider: piState.model.provider, id: piState.model.id }
@@ -3484,6 +4209,8 @@ function persistProjects(
       id: p.id,
       name: p.name,
       path: p.path ?? null,
+      linear: p.linear ?? null,
+      fleet: p.fleet ?? null,
       // Untouched threads never reach disk: they vanish on restart even if
       // their panel was left open, and legacy empty rows in an existing
       // workspace.json drop off on the next save.
@@ -3509,6 +4236,15 @@ function persistProjects(
           // "paused" on the way back in, so a running loop never auto-resumes
           //  from reopening the app.
           goal: t.goal,
+          agent: t.agent ?? null,
+          linearIssue: t.linearIssue ?? null,
+          fleetRun: t.fleetRun ?? null,
+          worktree: t.worktree ?? null,
+          pullRequest: t.pullRequest ?? null,
+          handoff: t.handoff ?? null,
+          handedTo: t.handedTo ?? null,
+          chainStop: t.chainStop ?? null,
+          nextStep: t.nextStep ?? null,
         })),
     })),
   };
@@ -3541,6 +4277,361 @@ useSessionStore.subscribe((state, prev) => {
   }, 300);
 });
 
+// HOY-350: close a delegated thread's Fleet run when it first stops streaming,
+// or fails before it ever streams, then let its agent's queue move.
+const fleetStreamed = new Set<string>();
+const fleetFinishing = new Set<string>();
+
+// HOY-353: projects with an Auto triage pass currently running.
+const triaging = new Set<string>();
+
+// Halted agents are not offered: their queue would not move.
+function availableAgents(subagents: SubagentDef[], threads: Thread[]): SubagentDef[] {
+  return subagents.filter((d) => d.enabled && !haltingThread(threads, d.name));
+}
+
+// The agent:<Name> label's verdict, or null when the issue has no such label.
+function labelDecision(issue: LinearIssue, available: SubagentDef[]): DispatchDecision | null {
+  const label = agentLabel(issue.labels);
+  if (!label) return null;
+  const def = available.find((d) => d.name.toLowerCase() === label.toLowerCase());
+  // ready with no agent holds it: the author has nothing to add, so no note.
+  return def
+    ? { ready: true, agent: def.name, confidence: 1, reason: `Label agent:${def.name} overrides the Dispatcher.` }
+    : { ready: true, agent: null, confidence: 0, reason: `Label agent:${label} names an agent that is disabled, halted, or unknown.` };
+}
+
+async function askDispatcher(
+  issue: LinearIssue,
+  available: SubagentDef[],
+  threads: Thread[],
+): Promise<DispatchDecision> {
+  try {
+    const { decisionModel, disabledModels } = usePrefsStore.getState();
+    return await dispatchDecision(dispatchInput(issue, available, threads), decisionModel, disabledModels);
+  } catch (e) {
+    return {
+      ready: false,
+      agent: null,
+      confidence: 0,
+      reason: `dispatcher error: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+}
+
+// Pruned to issues still in the backlog so finished work does not accumulate.
+function recordFleetDecision(
+  projectId: string,
+  issue: LinearIssue,
+  decision: DispatchDecision,
+  opts: { naggedAt?: string | null; queuedAt?: string | null } = {},
+) {
+  const items = useLinearStore.getState().issues[projectId]?.items ?? [];
+  const keep = new Set(items.map((i) => i.id));
+  useSessionStore.setState((st) => ({
+    projects: st.projects.map((p) => {
+      if (p.id !== projectId) return p;
+      const fleet = p.fleet ?? { queue: [], concurrency: {} };
+      const decisions = Object.fromEntries(
+        Object.entries(fleet.decisions ?? {}).filter(([id]) => keep.has(id)),
+      );
+      decisions[issue.id] = {
+        at: issue.updatedAt ?? null,
+        decision,
+        naggedAt: opts.naggedAt ?? null,
+        ...(opts.queuedAt ? { queuedAt: opts.queuedAt } : {}),
+      };
+      return { ...p, fleet: { ...fleet, decisions } };
+    }),
+  }));
+}
+
+// HOY-353: mark a cached not-ready decision as commented for its revision.
+function markNaggedDecision(projectId: string, issueId: string, at: string | null) {
+  useSessionStore.setState((st) => ({
+    projects: st.projects.map((p) => {
+      const entry = p.id === projectId ? p.fleet?.decisions?.[issueId] : undefined;
+      if (!entry) return p;
+      return {
+        ...p,
+        fleet: {
+          ...p.fleet!,
+          decisions: { ...p.fleet!.decisions, [issueId]: { ...entry, naggedAt: at } },
+        },
+      };
+    }),
+  }));
+}
+useSessionStore.subscribe((state, prev) => {
+  if (state.streaming === prev.streaming && state.threadErrors === prev.threadErrors)
+    return;
+  for (const p of state.projects) {
+    for (const t of p.threads) {
+      if (!t.fleetRun || t.fleetRun.endedAt != null) continue;
+      if (state.streaming[t.id]) {
+        fleetStreamed.add(t.id);
+      } else if (fleetStreamed.has(t.id) || state.threadErrors[t.id]) {
+        fleetStreamed.delete(t.id);
+        void finishFleetRun(t.id);
+      }
+    }
+  }
+});
+
+// HOY-358: where a thread's session runs. A delegated thread runs in its issue
+// worktree and its subagents inherit it; everything else uses the project.
+export function threadCwd(projects: Project[], threadId: string): string {
+  let id: string | undefined = threadId;
+  for (let hops = 0; id && hops < 16; hops++) {
+    const found = findThread(projects, id);
+    if (!found) return "";
+    const wt = found.thread.worktree;
+    if (wt && !wt.removed) return wt.path;
+    id = found.thread.parentThreadId ?? undefined;
+    if (!id) return found.project.path ?? "";
+  }
+  return "";
+}
+
+// Create the issue's worktree (when the project is a git repository), then send
+// the brief. A worktree that cannot be created ends the run instead of letting
+// it fall back onto the shared checkout.
+async function startDelegatedRun(
+  projectId: string,
+  threadId: string,
+  issue: LinearIssue,
+  agent: string,
+  decision?: DispatchDecision | null,
+  handoff?: Handoff | null,
+): Promise<void> {
+  const store = useSessionStore;
+  const project = store.getState().projects.find((p) => p.id === projectId);
+  const path = project?.path ?? "";
+  let worktree: Thread["worktree"] = null;
+  let isGit = false;
+  try {
+    isGit = path ? await projectIsGitRepo(path) : false;
+  } catch {
+    isGit = false;
+  }
+  store.setState((s) => {
+    const nonGitProjects = { ...s.nonGitProjects };
+    if (isGit) delete nonGitProjects[projectId];
+    else nonGitProjects[projectId] = true;
+    return { nonGitProjects };
+  });
+  if (isGit) {
+    try {
+      // A handoff reopens the chain's worktree on its branch.
+      worktree = await createIssueWorktree(path, handoff?.branch ?? issueBranch(issue));
+    } catch (e) {
+      const message = `Could not create a worktree for ${issue.identifier}: ${e}`;
+      store.setState((s) => ({
+        threadErrors: { ...s.threadErrors, [threadId]: message },
+        projects: patchThread(s.projects, threadId, (th) => ({
+          ...th,
+          fleetRun: th.fleetRun ? { ...th.fleetRun, endedAt: Date.now(), outcome: "error" } : th.fleetRun,
+        })),
+      }));
+      return;
+    }
+    store.setState((s) => ({
+      projects: patchThread(s.projects, threadId, (th) => ({ ...th, worktree })),
+    }));
+  }
+  const openPullRequests = !!project?.fleet?.openPullRequests;
+  await store.getState().submitPrompt(threadId, issuePrompt(issue, agent, worktree, { openPullRequests, decision, handoff }), undefined, undefined, {
+    autoPlanMode: false,
+  });
+}
+
+// HOY-379: hand a cleanly finished run's issue to the next agent. With Auto
+// off nothing chains; a concrete next agent is offered on the run's row.
+async function routeFinishedRun(threadId: string): Promise<void> {
+  const s = useSessionStore.getState();
+  const found = findThread(s.projects, threadId);
+  if (!found) return;
+  const { thread, project } = found;
+  if (!thread.agent || !thread.linearIssue || thread.handedTo) return;
+  const signals = runSignals(s.turns[threadId] ?? []);
+  const enabled = s.subagents.filter((d) => d.enabled).map((d) => d.name);
+  const round = thread.handoff?.round ?? 0;
+  const step = nextStep(thread.agent, thread.fleetRun?.outcome, signals, round, enabled);
+  if (!step) return;
+  if (!project.fleet?.auto) {
+    if (step.kind === "agent") {
+      const { agent, reason, by } = step;
+      patchThreadNow(threadId, { nextStep: { agent, reason, by, round: step.round } });
+      return;
+    }
+    if (step.kind === "stop") return stopChain(threadId, step);
+    // No Dispatcher runs with Auto off; a dispatch is a hand-off the user must make.
+    return stopChain(threadId, { kind: "stop", reason: step.reason, needsUser: true });
+  }
+  if (step.kind === "agent") return handOff(threadId, step, signals.report);
+  if (step.kind === "stop") return stopChain(threadId, step);
+
+  const available = s.subagents.filter(
+    (d) => d.enabled && d.name !== thread.agent && !haltingThread(project.threads, d.name),
+  );
+  let decision: DispatchDecision;
+  try {
+    const { decisionModel, disabledModels } = usePrefsStore.getState();
+    const input = {
+      ...dispatchInput(issueFromRef(project.id, thread.linearIssue), available, project.threads),
+      previous: { agent: thread.agent, report: signals.report },
+    };
+    decision = await dispatchDecision(input, decisionModel, disabledModels);
+  } catch (e) {
+    decision = {
+      ready: false,
+      agent: null,
+      confidence: 0,
+      reason: `dispatcher error: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+  addDispatchSpend(project.id, decision.cost ?? 0);
+  const to = available.find((d) => d.name === decision.agent);
+  if (decision.ready && to && decision.confidence >= DISPATCH_CONFIDENCE_THRESHOLD) {
+    const by: HandoffBy = step.by === "agent" ? "agent" : "dispatcher";
+    return handOff(threadId, { kind: "agent", agent: to.name, reason: decision.reason, by, round }, signals.report);
+  }
+  return stopChain(threadId, { kind: "stop", reason: decision.reason, needsUser: true });
+}
+
+function handOff(
+  threadId: string,
+  step: Extract<NextStep, { kind: "agent" }>,
+  report: string,
+): void {
+  const store = useSessionStore.getState();
+  const found = findThread(store.projects, threadId);
+  if (!found?.thread.agent || !found.thread.linearIssue) return;
+  const { thread, project } = found;
+  const handoff: Handoff = {
+    fromThreadId: thread.id,
+    fromAgent: thread.agent!,
+    reason: step.reason,
+    by: step.by,
+    report: report || null,
+    round: step.round,
+    hops: (thread.handoff?.hops ?? 0) + 1,
+    branch: thread.worktree?.branch ?? thread.handoff?.branch ?? null,
+  };
+  if (step.by !== "user" && handoff.hops > MAX_HOPS) {
+    return stopChain(threadId, {
+      kind: "stop",
+      reason: `Handed on ${MAX_HOPS} times without finishing.`,
+      needsUser: true,
+    });
+  }
+  patchThreadNow(threadId, { handedTo: step.agent, nextStep: null, chainStop: null });
+  const issue = issueFromRef(project.id, thread.linearIssue!);
+  store.enqueueIssue(project.id, issue, step.agent, null, handoff);
+  postChainNote(project.id, thread.linearIssue!, chainComment(thread.agent!, step));
+}
+
+function stopChain(threadId: string, step: Extract<NextStep, { kind: "stop" }>): void {
+  const found = findThread(useSessionStore.getState().projects, threadId);
+  if (!found?.thread.linearIssue) return;
+  patchThreadNow(threadId, { chainStop: { reason: step.reason, needsUser: step.needsUser }, nextStep: null });
+  // A lone run that simply finished is not a chain worth a note.
+  if (found.thread.handoff || step.needsUser) {
+    postChainNote(found.project.id, found.thread.linearIssue, chainComment(found.thread.agent ?? "the agent", step));
+  }
+}
+
+function patchThreadNow(threadId: string, patch: Partial<Thread>): void {
+  useSessionStore.setState((s) => ({
+    projects: patchThread(s.projects, threadId, (th) => ({ ...th, ...patch })),
+  }));
+}
+
+// The full issue from the board's cache; a started issue has left it, so the
+// ref stands in and the run reads the rest with linear_issue.
+function issueFromRef(projectId: string, ref: LinearIssueRef): LinearIssue {
+  const cached = useLinearStore.getState().issues[projectId]?.items.find((i) => i.id === ref.id);
+  return (
+    cached ?? {
+      ...ref,
+      description: null,
+      priority: 0,
+      priorityLabel: "",
+      estimate: null,
+      stateName: "",
+      stateType: "started",
+      assignee: null,
+      labels: [],
+    }
+  );
+}
+
+function addDispatchSpend(projectId: string, cost: number): void {
+  if (cost <= 0) return;
+  useSessionStore.setState((s) => ({
+    projects: s.projects.map((p) =>
+      p.id === projectId && p.fleet
+        ? { ...p, fleet: { ...p.fleet, dispatchSpend: (p.fleet.dispatchSpend ?? 0) + cost } }
+        : p,
+    ),
+  }));
+}
+
+// Each chain note replies under the issue's first one.
+function postChainNote(projectId: string, issue: LinearIssueRef, body: string): void {
+  const project = useSessionStore.getState().projects.find((p) => p.id === projectId);
+  const parent = project?.fleet?.chainComments?.[issue.id] ?? null;
+  void linearComment(issue.identifier, body, parent)
+    .then((id) => {
+      if (parent || !id) return;
+      useSessionStore.setState((s) => ({
+        projects: s.projects.map((p) =>
+          p.id === projectId && p.fleet
+            ? { ...p, fleet: { ...p.fleet, chainComments: { ...p.fleet.chainComments, [issue.id]: id } } }
+            : p,
+        ),
+      }));
+    })
+    .catch(() => {});
+}
+
+async function finishFleetRun(threadId: string): Promise<void> {
+  if (fleetFinishing.has(threadId)) return;
+  fleetFinishing.add(threadId);
+  try {
+    const endedAt = Date.now();
+    const store = useSessionStore.getState();
+    const last = [...(store.turns[threadId] ?? [])]
+      .reverse()
+      .find((t) => t.role === "assistant");
+    // An abort also carries an error message, and a killed sidecar reports
+    // its abort only as an error, so both count as stopped.
+    const outcome: FleetOutcome = last?.aborted || /aborted/i.test(last?.error ?? "")
+      ? "stopped"
+      : store.threadErrors[threadId] || last?.error
+        ? "error"
+        : "done";
+    await store.refreshStats(threadId).catch(() => {});
+    const cost = useSessionStore.getState().stats[threadId]?.cost ?? null;
+    const pullRequest = findPullRequestUrl(useSessionStore.getState().turns[threadId] ?? []);
+    useSessionStore.setState((s) => ({
+      projects: patchThread(s.projects, threadId, (th) =>
+        th.fleetRun && th.fleetRun.endedAt == null
+          ? {
+              ...th,
+              fleetRun: { ...th.fleetRun, endedAt, outcome, cost },
+              ...(pullRequest ? { pullRequest } : {}),
+            }
+          : th,
+      ),
+    }));
+    await routeFinishedRun(threadId).catch(() => {});
+    useSessionStore.getState().pumpFleet();
+  } finally {
+    fleetFinishing.delete(threadId);
+  }
+}
+
 // A thread the user never invested in: no prompt ever sent (no transcript on
 // disk or in memory), never renamed, and no unsent draft. Untouched threads
 // are never persisted and are discarded when their panel closes or they are
@@ -3568,6 +4659,20 @@ function runTeardown(
   if (action === "close") s.closePanel(threadId);
   else if (action === "archive") s.archiveThread(threadId);
   else s.deleteThread(threadId);
+}
+
+// Closing the last panel lands on the active project's home (the pinned tab)
+// instead of the new-thread page.
+function homeAfterLastPanel(
+  s: SessionStore,
+  panels: SessionStore["panels"],
+): Partial<SessionStore> {
+  return panels.length === 0 &&
+    s.bodyView === "panels" &&
+    s.activeProjectId &&
+    s.projects.some((p) => p.id === s.activeProjectId)
+    ? { bodyView: "project" }
+    : {};
 }
 
 // Locate a thread and its owning project by id. Threads live nested under

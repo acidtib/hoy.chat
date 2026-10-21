@@ -3,6 +3,7 @@ import {
   FEATURED,
   SUBSCRIPTION_PROVIDERS,
   PROVIDER_META,
+  authStatus,
   initialsFor,
   metaFor,
   partitionProviders,
@@ -154,5 +155,40 @@ describe("initialsFor", () => {
     expect(initialsFor("DeepSeek")).toBe("DE");
     expect(initialsFor("xAI")).toBe("XA");
     expect(initialsFor("Radius")).toBe("RA");
+  });
+});
+
+describe("authStatus", () => {
+  const auth = (overrides: Partial<ProviderAuth>): ProviderAuth => ({
+    provider: "anthropic",
+    configured: true,
+    kind: "api_key",
+    source: "authFile",
+    removable: true,
+    ...overrides,
+  });
+
+  test("oauth signed in is active", () => {
+    expect(authStatus(auth({ kind: "oauth" }))).toEqual({
+      label: "Signed In",
+      active: true,
+    });
+  });
+
+  test("api key on disk is passive", () => {
+    expect(authStatus(auth())).toEqual({ label: "Key saved", active: false });
+  });
+
+  test("environment source is passive", () => {
+    expect(authStatus(auth({ source: "environment" }))).toEqual({
+      label: "Env var",
+      active: false,
+    });
+  });
+
+  test("environment source wins over oauth kind", () => {
+    expect(
+      authStatus(auth({ kind: "oauth", source: "environment" })),
+    ).toEqual({ label: "Env var", active: false });
   });
 });

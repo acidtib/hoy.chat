@@ -28,7 +28,7 @@ import {
   type FlatNode,
 } from "@/lib/treeNode";
 import type { SessionTreeNode } from "@/lib/types";
-import { findThread, useSessionStore } from "@/state/store";
+import { findThread, useSessionStore, useTabPanelCount } from "@/state/store";
 
 // HOY-280: the `/tree` session-tree navigator. Lives in the ThreadView's right
 // dock (a reusable sidebar host. See HOY-278 spike). Renders pi's pre-nested
@@ -58,6 +58,7 @@ export function TreeNavigator() {
   );
   const closeRightDock = useSessionStore((s) => s.closeRightDock);
   const toggleFullScreen = useSessionStore((s) => s.toggleFullScreen);
+  const lonePanel = useTabPanelCount(threadId) === 1;
   const refreshSessionTree = useSessionStore((s) => s.refreshSessionTree);
   const branchFromEntry = useSessionStore((s) => s.branchFromEntry);
 
@@ -219,7 +220,7 @@ export function TreeNavigator() {
                   size="icon-sm"
                   className="text-muted-foreground"
                   onClick={() => threadId && toggleFullScreen(threadId)}
-                  disabled={!threadId}
+                  disabled={!threadId || lonePanel}
                   aria-label="Expand thread"
                 >
                   <Maximize2 className="size-3.5" />

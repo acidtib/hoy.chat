@@ -13,6 +13,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { MAX_CONCURRENT_AGENTS } from "./limits";
+import type { ModelRef } from "@/lib/types";
 
 export type AppTheme = "light" | "dark" | "system";
 
@@ -23,21 +24,21 @@ export interface AppPrefs {
   // this only records that the local UI flow has been completed.
   onboardingCompleted: boolean;
   // Composer: Enter sends. When false, Enter inserts a newline and Cmd/Ctrl+Enter
-  // sends. (Shift+Enter mid-turn still queues a follow-up regardless.)
+  // sends. (Ctrl/Cmd+Enter mid-turn still queues a follow-up regardless.)
   sendOnEnter: boolean;
-  // Reasoning blocks in the transcript start expanded instead of collapsed.
-  expandReasoning: boolean;
-  // Tool-use blocks in the transcript start expanded instead of collapsed.
-  // Off by default (HOY-251): a tool renders as a compact header row and the
-  // user clicks to reveal its body. Approval-pending and errored tools stay
-  // open regardless, so a diff to approve or a failure is never hidden.
-  expandToolDetails: boolean;
-  // Confirm before closing a panel whose response is still streaming.
-  confirmCloseStreaming: boolean;
+  // Reasoning shows in full in the timeline. When off it collapses to a live
+  // preview of its last lines that the user can click open.
+  showReasoning: boolean;
+  // Edit, write and patch tool parts start expanded. When off they collapse to
+  // a preview of the diff's last lines.
+  expandEditTools: boolean;
+  // Shell tool parts start expanded. When off they collapse to a preview of the
+  // output's last lines. Approval-pending and errored tools stay open regardless.
+  expandShellTools: boolean;
   // Starting directory for the "Open project" picker. Empty = OS default.
   defaultProjectDir: string;
-  // Open a panel for each subagent a thread spawns. Off by default. Fleet
-  // is the intended way to watch spawned agents instead.
+  // Open a tab when an agent starts work: a Fleet task or a spawned subagent.
+  // Off by default; the Fleet is where agent work is watched (HOY-372).
   autoOpenSpawnedThreads: boolean;
   // Prompt for consent before a thread spawns each subagent type. Off by
   // default (HOY-248): spawns proceed without a gate and the user watches or
@@ -60,10 +61,19 @@ export interface AppPrefs {
   // unreachable with no session open), applied to every session on spawn via
   // set_auto_compaction and pushed to the active session when toggled.
   autoCompaction: boolean;
+  // Name new threads from their first message with a cheap model (HOY-370).
+  // Off keeps the first line of the message as the title.
+  autoTitles: boolean;
   // Sidebar collapsed state. Defaults to false (open) so the sidebar
   // naturally appears when chrome first renders. Persisted so the user's
   // manual collapse survives restarts.
   sidebarCollapsed: boolean;
+  // The model new threads start on. Null falls back to Pi's last pick.
+  preferredModel: ModelRef | null;
+  // Models hidden from the pickers, as modelKey() strings. New models start on.
+  disabledModels: string[];
+  // HOY-353: the Fleet Dispatcher's model. Null picks the cheapest enabled one.
+  decisionModel: ModelRef | null;
 }
 
 interface PrefsStore extends AppPrefs {
@@ -82,9 +92,9 @@ export const PREFS_DEFAULTS: AppPrefs = {
   theme: "system",
   onboardingCompleted: false,
   sendOnEnter: true,
-  expandReasoning: false,
-  expandToolDetails: false,
-  confirmCloseStreaming: true,
+  showReasoning: false,
+  expandEditTools: false,
+  expandShellTools: true,
   defaultProjectDir: "",
   autoOpenSpawnedThreads: false,
   requireSubagentApproval: false,
@@ -92,7 +102,23 @@ export const PREFS_DEFAULTS: AppPrefs = {
   keepAwakeWhileStreaming: true,
   autoCompaction: true,
   sidebarCollapsed: false,
+  autoTitles: true,
+  preferredModel: null,
+  disabledModels: [],
+  decisionModel: null,
 };
+
+// v1 split expandReasoning / expandToolDetails into the timeline part prefs.
+export function migratePrefs(persisted: unknown, version: number): Partial<AppPrefs> {
+  const p = { ...(persisted as Record<string, unknown>) };
+  if (version < 1) {
+    if (typeof p.expandReasoning === "boolean") p.showReasoning = p.expandReasoning;
+    if (typeof p.expandToolDetails === "boolean") p.expandEditTools = p.expandToolDetails;
+    delete p.expandReasoning;
+    delete p.expandToolDetails;
+  }
+  return p as Partial<AppPrefs>;
+}
 
 export const usePrefsStore = create<PrefsStore>()(
   persist(
@@ -103,6 +129,8 @@ export const usePrefsStore = create<PrefsStore>()(
     }),
     {
       name: "hoy.prefs",
+      version: 1,
+      migrate: (persisted, version) => migratePrefs(persisted, version) as PrefsStore,
       // Falls back to an in-memory no-op when localStorage is absent (test/SSR),
       // so persistence works in the webview without warning noise elsewhere.
       storage: createJSONStorage(() =>
@@ -115,9 +143,9 @@ export const usePrefsStore = create<PrefsStore>()(
         theme: s.theme,
         onboardingCompleted: s.onboardingCompleted,
         sendOnEnter: s.sendOnEnter,
-        expandReasoning: s.expandReasoning,
-        expandToolDetails: s.expandToolDetails,
-        confirmCloseStreaming: s.confirmCloseStreaming,
+        showReasoning: s.showReasoning,
+        expandEditTools: s.expandEditTools,
+        expandShellTools: s.expandShellTools,
         defaultProjectDir: s.defaultProjectDir,
         autoOpenSpawnedThreads: s.autoOpenSpawnedThreads,
         requireSubagentApproval: s.requireSubagentApproval,
@@ -125,6 +153,10 @@ export const usePrefsStore = create<PrefsStore>()(
         keepAwakeWhileStreaming: s.keepAwakeWhileStreaming,
         autoCompaction: s.autoCompaction,
         sidebarCollapsed: s.sidebarCollapsed,
+        autoTitles: s.autoTitles,
+        preferredModel: s.preferredModel,
+        disabledModels: s.disabledModels,
+        decisionModel: s.decisionModel,
       }),
     },
   ),

@@ -9,6 +9,8 @@ use crate::alibaba_config::{self, AlibabaEndpointSettings};
 use crate::events::{
     AgentEvent, CompactionResult, ImageContent, ModelInfo, PiState, SessionStats, SlashCommand,
 };
+use crate::linear::{self, LinearIssue, LinearStatus, LinearTeam};
+use crate::linear_oauth;
 use crate::mcp_config::{self, McpScope, McpServerList};
 use crate::pi_config::{self, ProviderAuth, ProviderInfo};
 use crate::session_transcript;
@@ -224,6 +226,85 @@ pub fn supported_providers() -> Vec<ProviderInfo> {
 }
 
 #[tauri::command]
+pub async fn linear_status() -> Result<LinearStatus, String> {
+    linear::status().await
+}
+
+// Connecting or disconnecting changes which sessions get the Linear agent
+// tools (HOY_LINEAR at spawn), so idle sessions respawn.
+#[tauri::command]
+pub async fn linear_connect(
+    api_key: String,
+    manager: State<'_, SidecarManager>,
+) -> Result<LinearStatus, String> {
+    let status = linear::connect(&api_key).await?;
+    respawn_idle_sessions(&manager).await;
+    Ok(status)
+}
+
+// Opens the browser for Linear's consent page and resolves once the loopback
+// callback lands and the tokens are stored.
+#[tauri::command]
+pub async fn linear_oauth_connect(
+    app: tauri::AppHandle,
+    manager: State<'_, SidecarManager>,
+) -> Result<LinearStatus, String> {
+    let status = linear::connect_oauth(&app).await?;
+    respawn_idle_sessions(&manager).await;
+    Ok(status)
+}
+
+#[tauri::command]
+pub fn linear_oauth_cancel() {
+    linear_oauth::cancel();
+}
+
+#[tauri::command]
+pub async fn linear_disconnect(
+    workspace_id: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    linear::disconnect(workspace_id.as_deref()).await?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
+}
+
+// `state` is a workflow state name or type ("started", "done", "In Review").
+#[tauri::command]
+pub async fn linear_set_issue_state(issue: String, state: String) -> Result<(), String> {
+    linear::action(&json!({ "action": "set_state", "issue": issue, "state": state }))
+        .await
+        .map(|_| ())
+}
+
+// Returns the new comment's id. `parent` makes it a reply.
+#[tauri::command]
+pub async fn linear_comment(
+    issue: String,
+    body: String,
+    parent: Option<String>,
+) -> Result<Option<String>, String> {
+    let out = linear::action(
+        &json!({ "action": "comment", "issue": issue, "body": body, "parent": parent }),
+    )
+    .await?;
+    Ok(out["id"].as_str().map(str::to_string))
+}
+
+#[tauri::command]
+pub async fn linear_teams() -> Result<Vec<LinearTeam>, String> {
+    linear::teams().await
+}
+
+#[tauri::command]
+pub async fn linear_issues(
+    team_id: String,
+    workspace_id: Option<String>,
+) -> Result<Vec<LinearIssue>, String> {
+    linear::issues(&team_id, workspace_id.as_deref()).await
+}
+
+#[tauri::command]
 pub fn list_alibaba_endpoints() -> Result<Vec<AlibabaEndpointSettings>, String> {
     alibaba_config::list()
 }
@@ -337,6 +418,35 @@ pub async fn set_subagent_enabled(
     Ok(())
 }
 
+// HOY-368: save a project's fleet (several agents on or off) in one write.
+#[tauri::command]
+pub async fn set_subagents_enabled(
+    scope: SubagentScope,
+    changes: Vec<(String, bool)>,
+    project_path: Option<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<(), String> {
+    subagents_config::set_many_enabled(scope, project_path.as_deref(), &changes)?;
+    respawn_idle_sessions(&manager).await;
+    Ok(())
+}
+
+// HOY-368: pick the model an agent runs on ("provider/id"), or clear it.
+#[tauri::command]
+pub async fn set_subagent_model(
+    scope: SubagentScope,
+    name: String,
+    model: Option<String>,
+    project_path: Option<String>,
+) -> Result<(), String> {
+    subagents_config::set_model(scope, project_path.as_deref(), &name, model.as_deref())
+}
+
+#[tauri::command]
+pub fn project_has_fleet(project_path: String) -> bool {
+    subagents_config::project_has_fleet(&project_path)
+}
+
 // HOY-254 (Slice 1): author a custom subagent type. Rust serializes `def` into a
 // .md in the scope's agents dir (the single writer. The sidecar registry stays the
 // only reader). `overwrite=false` creates (rejecting an unsafe/duplicate name or
@@ -394,6 +504,7 @@ pub async fn create_session(
     permission_mode: Option<String>,
     depth: u32,
     require_subagent_approval: bool,
+    interactive_agent: bool,
     inherit_from_session: Option<String>,
     manager: State<'_, SidecarManager>,
 ) -> Result<String, String> {
@@ -409,6 +520,7 @@ pub async fn create_session(
         subagent_type.as_deref(),
         depth,
         require_subagent_approval,
+        interactive_agent,
         inherit_from_session.as_deref(),
     )
 }
@@ -696,6 +808,104 @@ pub async fn evaluate_goal(
     manager.evaluate_goal(&session_file, &condition, evaluator_model.as_ref())
 }
 
+// HOY-358: a worktree and branch for a delegated issue.
+#[tauri::command]
+pub async fn create_issue_worktree(
+    project_path: String,
+    branch: String,
+) -> Result<crate::worktree::WorktreeInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::worktree::create(&project_path, &branch))
+        .await
+        .map_err(|e| format!("create_issue_worktree: {e}"))?
+}
+
+#[tauri::command]
+pub async fn remove_issue_worktree(
+    project_path: String,
+    path: String,
+    force: bool,
+) -> Result<crate::worktree::RemoveOutcome, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::worktree::remove(&project_path, &path, force)
+    })
+    .await
+    .map_err(|e| format!("remove_issue_worktree: {e}"))?
+}
+
+#[tauri::command]
+pub async fn branch_status(
+    path: String,
+    base: String,
+) -> Result<crate::worktree::BranchStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::worktree::branch_status(&path, &base))
+        .await
+        .map_err(|e| format!("branch_status: {e}"))?
+}
+
+#[tauri::command]
+pub async fn open_pull_request(
+    path: String,
+    branch: String,
+    base: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::worktree::open_pull_request(&path, &branch, &base)
+    })
+    .await
+    .map_err(|e| format!("open_pull_request: {e}"))?
+}
+
+#[tauri::command]
+pub async fn gh_status() -> crate::worktree::GhStatus {
+    tauri::async_runtime::spawn_blocking(crate::worktree::gh_status)
+        .await
+        .unwrap_or(crate::worktree::GhStatus {
+            installed: false,
+            authenticated: false,
+            problem: Some("Could not check the GitHub CLI.".into()),
+        })
+}
+
+#[tauri::command]
+pub fn project_is_git_repo(project_path: String) -> bool {
+    crate::worktree::is_git_repo(&project_path)
+}
+
+// HOY-370: name a thread from its first message on a cheap model. None when
+// the helper could not produce a title; the thread keeps its first-line title.
+#[tauri::command]
+pub async fn generate_title(
+    text: String,
+    model: Option<crate::events::ModelRef>,
+    disabled: Vec<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<Option<String>, String> {
+    let mut command = manager.title_command(&text, model.as_ref(), &disabled)?;
+    let out = tauri::async_runtime::spawn_blocking(move || command.output())
+        .await
+        .map_err(|e| format!("generate_title: {e}"))?
+        .map_err(|e| format!("spawn sidecar for generate_title: {e}"))?;
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .map_err(|e| format!("parse generate_title output: {e}"))?;
+    Ok(parsed["title"].as_str().map(str::to_string))
+}
+
+// HOY-353: the sidecar fails closed and exits 0, so an Err is a spawn failure.
+#[tauri::command]
+pub async fn dispatch_decision(
+    input: String,
+    model: Option<crate::events::ModelRef>,
+    disabled: Vec<String>,
+    manager: State<'_, SidecarManager>,
+) -> Result<crate::events::DispatchDecision, String> {
+    let mut command = manager.dispatch_command(&input, model.as_ref(), &disabled)?;
+    let out = tauri::async_runtime::spawn_blocking(move || command.output())
+        .await
+        .map_err(|e| format!("dispatch_decision: {e}"))?
+        .map_err(|e| format!("spawn sidecar for dispatch_decision: {e}"))?;
+    serde_json::from_slice(&out.stdout).map_err(|e| format!("parse dispatch_decision output: {e}"))
+}
+
 // Goal Mode v2 (HOY-298): run a goal's deterministic verify command via a
 // one-shot sidecar and return {code, stdout, stderr, killed}. Task A plumbing
 // only. Task B calls this from the loop after the transcript evaluator says met,
@@ -767,6 +977,17 @@ pub fn respond_permission(
     process.respond_ui(&request_id, value, confirmed, cancelled.unwrap_or(false))
 }
 
+// The set_permission_mode allowlist (HOY-186/HOY-386). The wire value is the
+// sidecar's PermissionMode union: `manual` only, the old `default` is rejected.
+const PERMISSION_MODES: [&str; 4] = ["manual", "acceptEdits", "plan", "autonomous"];
+
+fn validate_permission_mode(mode: &str) -> Result<(), String> {
+    if !PERMISSION_MODES.contains(&mode) {
+        return Err(format!("unknown permission mode: {mode}"));
+    }
+    Ok(())
+}
+
 // Switch a thread's permission mode (HOY-186). The /hoy_mode extension command
 // executes immediately even mid-stream. The manager mirror keeps the mode
 // across respawns via HOY_PERMISSION_MODE.
@@ -776,10 +997,7 @@ pub async fn set_permission_mode(
     mode: String,
     manager: State<'_, SidecarManager>,
 ) -> Result<(), String> {
-    const MODES: [&str; 4] = ["default", "acceptEdits", "plan", "autonomous"];
-    if !MODES.contains(&mode.as_str()) {
-        return Err(format!("unknown permission mode: {mode}"));
-    }
+    validate_permission_mode(&mode)?;
     let process = manager.get(&session_id)?;
     let response = process
         .request(json!({ "type": "prompt", "message": format!("/hoy_mode {mode}") }))
@@ -925,6 +1143,20 @@ mod tests {
     fn build_prompt_body_with_streaming_behavior() {
         let body = build_prompt_body("more", None, Some("steer".into()));
         assert_eq!(body["streamingBehavior"], "steer");
+    }
+
+    // set_permission_mode allowlist (HOY-386): `manual` is accepted, the old
+    // `default` and anything else are rejected with the layer-owned text.
+    #[test]
+    fn permission_mode_allowlist_accepts_manual_rejects_default() {
+        for mode in ["manual", "acceptEdits", "plan", "autonomous"] {
+            assert!(validate_permission_mode(mode).is_ok(), "{mode}");
+        }
+        assert_eq!(
+            validate_permission_mode("default"),
+            Err("unknown permission mode: default".into())
+        );
+        assert!(validate_permission_mode("bogus").is_err());
     }
 
     // get_entries / get_tree return the whole response `data` object (both

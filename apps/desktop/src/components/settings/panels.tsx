@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -10,7 +9,6 @@ import {
   Boxes,
   Brain,
   Download,
-  Layers,
   Mic,
   Monitor,
   Network,
@@ -21,26 +19,18 @@ import {
 } from "lucide-react";
 import { arch, platform, version } from "@tauri-apps/plugin-os";
 import { getVersion } from "@tauri-apps/api/app";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { pickDirectory } from "@/lib/ipc";
-import type { ModelInfo, ModelRef } from "@/lib/types";
 import type { CategoryId } from "./categories";
 import { ProvidersPanel } from "./ProvidersPanel";
+import { ModelsPanel } from "./ModelsPanel";
 import { ThemeSelector } from "./ThemeSelector";
 import { McpPanel } from "./McpPanel";
+import { IntegrationsPanel } from "./IntegrationsPanel";
 import { SubagentsPanel } from "./SubagentsPanel";
 import { SkillsPanel } from "./SkillsPanel";
 import { useSessionStore } from "@/state/store";
@@ -208,159 +198,12 @@ function Placeholder({
   );
 }
 
-function groupByProvider(models: ModelInfo[]): [string, ModelInfo[]][] {
-  const map = new Map<string, ModelInfo[]>();
-  for (const m of models) {
-    const arr = map.get(m.provider) ?? [];
-    arr.push(m);
-    map.set(m.provider, arr);
-  }
-  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-}
-
-const MODEL_VALUE_SEP = ":::";
-
-// The auxiliary-model assignments Pi's SDK supports but its RPC does not expose
-// kept as a planned list until a command backs them.
-const AUX_TASKS = [
-  "Vision (image analysis)",
-  "Web extract (page summarization)",
-  "Compression (context compaction)",
-  "Skills hub (skill search)",
-  "Title generation (session titles)",
-];
-
-// Model selection is per-session in Pi (set_model), and Pi remembers the last
-// pick as the default for new sessions. So the panel drives the ACTIVE session's
-// model (which then becomes the default). With no live session it shows the
-// current default read-only. This mirrors the session-gated AutoCompaction row.
-function ModelPanel() {
-  const activeThreadId = useSessionStore((s) => s.activeThreadId);
-  const models = useSessionStore((s) => s.models);
-  const defaultModel = useSessionStore((s) => s.defaultModel);
-  const selectModel = useSessionStore((s) => s.selectModel);
-  const selecting = useSessionStore((s) =>
-    activeThreadId ? (s.modelSelecting[activeThreadId] ?? false) : false,
-  );
-  const active = useSessionStore((s) => {
-    if (!activeThreadId) return null;
-    for (const p of s.projects) {
-      const t = p.threads.find((th) => th.id === activeThreadId);
-      if (t) return t;
-    }
-    return null;
-  });
-
-  const hasSession = Boolean(active?.sessionId);
-  const current = active?.model ?? defaultModel ?? null;
-  const grouped = useMemo(() => groupByProvider(models), [models]);
-
-  const nameOf = (ref: ModelRef | null) => {
-    if (!ref) return "Not set";
-    const m = models.find((x) => x.provider === ref.provider && x.id === ref.id);
-    return m?.name ?? ref.id;
-  };
-
-  const value = current
-    ? `${current.provider}${MODEL_VALUE_SEP}${current.id}`
-    : "";
-
-  return (
-    <div className="space-y-8">
-      <PanelHeader
-        title="Model"
-        description="The model Hoy uses for conversations."
-      />
-
-      <Section>
-        {hasSession && models.length > 0 ? (
-          <Field
-            label="Default model"
-            hint="Sets the model for the active conversation and becomes the default for new threads. Switch models any time from the composer's model menu."
-          >
-            <Select
-              value={value}
-              disabled={selecting}
-              onValueChange={(v) => {
-                const [provider, id] = v.split(MODEL_VALUE_SEP);
-                if (activeThreadId && provider && id) {
-                  void selectModel(activeThreadId, provider, id);
-                }
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Choose a model" />
-              </SelectTrigger>
-              <SelectContent className="scrollbar-thin max-h-[50vh]">
-                {grouped.map(([provider, list]) => (
-                  <SelectGroup key={provider}>
-                    <SelectLabel>{provider}</SelectLabel>
-                    {list.map((m) => (
-                      <SelectItem
-                        key={`${m.provider}:${m.id}`}
-                        value={`${m.provider}${MODEL_VALUE_SEP}${m.id}`}
-                      >
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        ) : (
-          <div className="space-y-2">
-            <Label>Default model</Label>
-            <div className="flex items-center justify-between gap-3 border border-border bg-muted/20 px-3 py-2.5">
-              <span className="truncate text-sm">{nameOf(current)}</span>
-              {current && (
-                <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                  {current.provider}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {models.length === 0
-                ? "Connect a provider in the Providers section, then open a thread to choose a model."
-                : "Open a thread to change the model. Hoy remembers your last pick as the default for new threads."}
-            </p>
-          </div>
-        )}
-      </Section>
-
-      <div className="space-y-3">
-        <div>
-          <h2 className="text-sm font-semibold">Auxiliary models</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Helper tasks run on the main model today. Per-task model overrides
-            are planned for a future release.
-          </p>
-        </div>
-        <div className="border border-border">
-          <p className="bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
-            Planned
-          </p>
-          <ul className="divide-y divide-border">
-            {AUX_TASKS.map((t) => (
-              <li
-                key={t}
-                className="flex items-center gap-3 px-3 py-2.5 text-sm text-muted-foreground"
-              >
-                <Layers className="size-4 shrink-0 text-muted-foreground/50" />
-                {t}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ChatPanel() {
   const sendOnEnter = usePrefsStore((s) => s.sendOnEnter);
-  const expandReasoning = usePrefsStore((s) => s.expandReasoning);
-  const expandToolDetails = usePrefsStore((s) => s.expandToolDetails);
+  const autoTitles = usePrefsStore((s) => s.autoTitles);
+  const showReasoning = usePrefsStore((s) => s.showReasoning);
+  const expandEditTools = usePrefsStore((s) => s.expandEditTools);
+  const expandShellTools = usePrefsStore((s) => s.expandShellTools);
   const setPref = usePrefsStore((s) => s.setPref);
 
   return (
@@ -378,17 +221,31 @@ function ChatPanel() {
         />
         <Separator />
         <ToggleRow
-          label="Expand reasoning"
-          description="Show model thinking blocks expanded instead of collapsed."
-          checked={expandReasoning}
-          onChange={(v) => setPref("expandReasoning", v)}
+          label="Name threads automatically"
+          description="Title new threads from their first message using a small, fast model"
+          checked={autoTitles}
+          onChange={(v) => setPref("autoTitles", v)}
         />
         <Separator />
         <ToggleRow
-          label="Expand tool details"
-          description="Show tool-use blocks expanded instead of collapsed. When off, each tool is a compact row you click to reveal; tools awaiting approval or showing an error stay open."
-          checked={expandToolDetails}
-          onChange={(v) => setPref("expandToolDetails", v)}
+          label="Show reasoning"
+          description="Display model reasoning in the timeline"
+          checked={showReasoning}
+          onChange={(v) => setPref("showReasoning", v)}
+        />
+        <Separator />
+        <ToggleRow
+          label="Expand edit tool parts"
+          description="Show edit, write, and patch tool parts expanded by default in the timeline"
+          checked={expandEditTools}
+          onChange={(v) => setPref("expandEditTools", v)}
+        />
+        <Separator />
+        <ToggleRow
+          label="Expand shell tool parts"
+          description="Show shell tool parts expanded by default in the timeline"
+          checked={expandShellTools}
+          onChange={(v) => setPref("expandShellTools", v)}
         />
       </Section>
     </div>
@@ -397,7 +254,6 @@ function ChatPanel() {
 
 function WorkspacePanel() {
   const defaultProjectDir = usePrefsStore((s) => s.defaultProjectDir);
-  const confirmCloseStreaming = usePrefsStore((s) => s.confirmCloseStreaming);
   const autoOpenSpawnedThreads = usePrefsStore((s) => s.autoOpenSpawnedThreads);
   const requireSubagentApproval = usePrefsStore((s) => s.requireSubagentApproval);
   const maxConcurrentAgents = usePrefsStore((s) => s.maxConcurrentAgents);
@@ -413,7 +269,7 @@ function WorkspacePanel() {
     <div className="space-y-8">
       <PanelHeader
         title="Workspace"
-        description="Defaults for opening projects and closing panels."
+        description="Defaults for opening projects and how agent work runs."
       />
       <Section>
         <Field
@@ -434,29 +290,22 @@ function WorkspacePanel() {
         </Field>
         <Separator className="my-4" />
         <ToggleRow
-          label="Confirm before closing a streaming panel"
-          description="Ask before closing a thread whose response is still streaming."
-          checked={confirmCloseStreaming}
-          onChange={(v) => setPref("confirmCloseStreaming", v)}
-        />
-        <Separator />
-        <ToggleRow
-          label="Auto-open spawned subagent threads"
-          description="Open a panel for each subagent a thread spawns. Off by default; watch spawned agents in Fleet instead (the footer's Fleet button)."
+          label="Open agent work in tabs"
+          description="Open a tab when an agent starts a Fleet task or a thread spawns a subagent. Off by default; watch agent work in each project's Fleet instead. Closing a tab never stops the work."
           checked={autoOpenSpawnedThreads}
           onChange={(v) => setPref("autoOpenSpawnedThreads", v)}
         />
         <Separator />
         <ToggleRow
           label="Require approval before spawning subagents"
-          description="Ask before a thread spawns each subagent type. Off by default; spawns proceed without a prompt and you watch or intervene in Fleet. Applies to sessions started after the change."
+          description="Ask before a thread spawns each subagent type. Off by default; spawns proceed without a prompt and you watch or intervene in the project's Fleet. Applies to sessions started after the change."
           checked={requireSubagentApproval}
           onChange={(v) => setPref("requireSubagentApproval", v)}
         />
         <Separator />
         <Field
-          label="Max concurrent subagents"
-          hint="How many spawned subagents stream at once; the rest queue and start as slots free. Minimum 1."
+          label="Max helper subagents at once"
+          hint="How many subagents spawned by threads and Fleet agents can run at the same time, across all projects; the rest wait for a free slot. Each Fleet agent's own runs-at-once is set on the Fleet board. Minimum 1."
         >
           <Input
             type="number"
@@ -742,7 +591,7 @@ function AppearancePanel() {
 export function SettingsPanel({ id }: { id: CategoryId }) {
   switch (id) {
     case "model":
-      return <ModelPanel />;
+      return <ModelsPanel />;
     case "chat":
       return <ChatPanel />;
     case "appearance":
@@ -814,6 +663,8 @@ export function SettingsPanel({ id }: { id: CategoryId }) {
       );
     case "mcp":
       return <McpPanel />;
+    case "integrations":
+      return <IntegrationsPanel />;
     case "subagents":
       return <SubagentsPanel />;
     case "skills":

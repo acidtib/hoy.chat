@@ -36,13 +36,14 @@ export const SUBAGENT_TOOLS = [
   "edit",
   "write",
   "mcp",
+  "web",
 ] as const;
 
 // A sensible default allowlist for a fresh agent: the full working set minus mcp
 // (which most custom agents will not need). The user edits from here. Exported so
 // the panel can write this explicit set when the user selects no tools, an empty
 // tools list in a.md is read as FULL access (incl mcp), the opposite of intent.
-export const DEFAULT_TOOLS: string[] = ["read", "grep", "find", "ls", "bash", "edit", "write"];
+export const DEFAULT_TOOLS: string[] = ["read", "grep", "find", "ls", "bash", "edit", "write", "web"];
 
 // The largest value the Rust `max_turns: Option<u32>` field can hold. A larger
 // number fails serde deserialization at the write command, so reject it in the form.
@@ -50,10 +51,21 @@ const MAX_TURNS_CEILING = 4294967295;
 
 // Built-in names a custom file must never take: precedence is builtin < global <
 // project, so a same-named file will silently shadow the built-in. Lower-cased.
-export const BUILTIN_SUBAGENT_NAMES = ["general-purpose", "explore", "plan"];
+export const BUILTIN_SUBAGENT_NAMES = [
+  "researcher",
+  "architect",
+  "coder",
+  "tester",
+  "reviewer",
+  "writer",
+  "project manager",
+  "security reviewer",
+  "devops",
+  "frontend",
+];
 
-// The form is never a blank box: a fresh agent (and duplicating general-purpose,
-// which has no static body) seeds this annotated example. UI-only scaffold. It is
+// The form is never a blank box: a fresh agent (and duplicating a type with no
+// body) seeds this annotated example. UI-only scaffold. It is
 // written verbatim into the.md on save like any other body, never a schema field.
 export const EXAMPLE_STARTER_PROMPT = `You are a specialized subagent spawned to handle one focused task.
 

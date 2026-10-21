@@ -27,13 +27,25 @@ import { createHoyPermissions, createPermissionState, isPermissionMode, type Per
 import { expandToolNames, loadHoyMcpConfig, readHoyCodemode } from "./hoy-mcp-config";
 import { createHoyAgents } from "./hoy-agents";
 import { createHoyAskQuestion } from "./hoy-ask-question";
+import { createHoySkills } from "./hoy-skills";
+import { createHoyLinear, LINEAR_TOOLS } from "./hoy-linear";
 import { createHoyInit } from "./hoy-init";
 import { createHoyTurnBudget } from "./hoy-turn-budget";
 import { createHoyAlibaba } from "./hoy-alibaba";
-import { loadSubagentRegistry, enabledTypes, effectiveChildPrompt } from "./hoy-agents-registry";
-import { buildHoySystemPrompt } from "./hoy-system-prompt";
+import { createHoyWeb } from "./hoy-web";
+import { inheritTrust, mainCheckout } from "./hoy-worktree";
+import {
+  loadSubagentRegistry,
+  effectiveChildPrompt,
+  spawnableTypes,
+  resolveSubagentName,
+} from "./hoy-agents-registry";
+import { buildHoySystemPrompt, resolveRunContext } from "./hoy-system-prompt";
 import { runOAuthLogin } from "./hoy-oauth";
 import { runGoalEval } from "./hoy-goal-eval";
+import { runTitle } from "./hoy-title";
+import { runDispatch } from "./hoy-dispatch";
+import { createHoyFleetHandoff, FLEET_HANDOFF_TOOL } from "./hoy-fleet-handoff";
 import { runVerifyCommand } from "./hoy-verify-command";
 import { runGoalAudit } from "./hoy-goal-audit";
 import { runListSkills } from "./hoy-list-skills";
@@ -51,12 +63,12 @@ import { runListSkills } from "./hoy-list-skills";
 // credential hit the same lazy loader, not just the explicit login flow.
 registerBunOAuthFlows();
 
-// Permission gate (HOY-186): initial mode from Rust, default mode otherwise.
+// Permission gate (HOY-186): initial mode from Rust, manual mode otherwise.
 // The session registers the full built-in tool set so plan mode can explore
 // with grep/find/ls while bash is blocked. The prompt's tools list matches.
-const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "agent", "ask_question"];
-const envMode = process.env.HOY_PERMISSION_MODE ?? "default";
-const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "default";
+const HOY_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "mcp", "web", "agent", "ask_question"];
+const envMode = process.env.HOY_PERMISSION_MODE ?? "manual";
+const initialMode: PermissionMode = isPermissionMode(envMode) ? envMode : "manual";
 const permissionState = createPermissionState(initialMode);
 
 // Hoy's agent dir, set by Rust (pi_config::agent_dir, default ~/.hoy).
@@ -69,9 +81,12 @@ if (!agentDir) {
   process.exit(1);
 }
 
-// Set by Rust (create_session) only for spawned child sessions. Selects the
-// child's built-in type. Absent for user threads.
-const subagentType = process.env.HOY_SUBAGENT_TYPE;
+// Set by Rust (create_session) for typed threads (Fleet runs, interactive agent
+// threads, and spawned children). Absent for plain user threads.
+const requestedSubagentType = process.env.HOY_SUBAGENT_TYPE;
+
+// HOY-385: a typed depth-0 thread is a user conversation, not a Fleet run.
+const interactiveAgent = process.env.HOY_INTERACTIVE_AGENT === "1";
 
 // Numeric depth from Rust (0 for root/user threads). A thread can spawn iff
 // depth < MAX_SUBAGENT_DEPTH. Mirrors apps/desktop/src/state/limits.ts. Keep
@@ -85,6 +100,11 @@ const canSpawn = subagentDepth < MAX_SUBAGENT_DEPTH;
 // Rust relays the renderer pref as HOY_REQUIRE_SUBAGENT_APPROVAL=1. Default off:
 // spawns proceed without a prompt and the user watches/intervenes via FleetView.
 const requireSubagentApproval = process.env.HOY_REQUIRE_SUBAGENT_APPROVAL === "1";
+
+// HOY-346: Rust sets HOY_LINEAR=1 while Linear is connected. Top-level threads
+// (user threads and issues delegated from the Fleet) get the Linear tools on top
+// of their type's tool list; spawned children do not.
+const linearTools = process.env.HOY_LINEAR === "1" && subagentDepth === 0;
 
 // OAuth login runs as its own short-lived invocation of this binary (Rust sets
 // HOY_OAUTH_LOGIN=<providerId>). It speaks a different, one-shot JSONL protocol
@@ -106,8 +126,7 @@ if (process.env.HOY_LIST_SUBAGENTS) {
     tools: t.tools,
     promptMode: t.promptMode,
     // The system prompt body (HOY-254), so an edit form can pre-fill it. Present
-    // for global/project types and for built-ins with a static body (Explore,
-    // Plan). Null for general-purpose, which inherits the base prompt (no body).
+    // for global/project types and for the built-ins.
     body: t.body ?? null,
     model: t.model ?? null,
     thinking: t.thinking ?? null,
@@ -132,6 +151,16 @@ if (process.env.HOY_LIST_SKILLS) {
 // env, captures the {met, reason} JSON on stdout, and exits us. Runs before the
 // runtime is built so it never touches runRpcMode. Fail-open lives inside
 // runGoalEval, which always writes JSON and exits.
+// HOY-370: one-shot thread title (hoy-title.ts). Writes {title} JSON and exits.
+if (process.env.HOY_TITLE) {
+  await runTitle(agentDir, process.cwd());
+}
+
+// HOY-353: one-shot Auto mode decision (hoy-dispatch.ts). Writes a Decision and exits.
+if (process.env.HOY_DISPATCH) {
+  await runDispatch(agentDir, process.cwd());
+}
+
 if (process.env.HOY_GOAL_EVAL) {
   await runGoalEval(agentDir, process.cwd());
   // runGoalEval writes JSON to stdout and exits. This line is never reached.
@@ -164,7 +193,10 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
   sessionManager,
   sessionStartEvent,
 }) => {
-  const registry = loadSubagentRegistry(agentDir, cwd);
+  // A worktree reads Hoy's project config from its main checkout (HOY-358).
+  const projectRoot = mainCheckout(cwd);
+  const registry = loadSubagentRegistry(agentDir, projectRoot);
+  const subagentType = requestedSubagentType && resolveSubagentName(registry, requestedSubagentType);
 
   // Depth cap is absolute: if this child was spawned for a type that is no
   // longer in the freshly-loaded registry (its.hoy/agents/*.md was deleted or
@@ -180,13 +212,24 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
 
   const childType = subagentType ? registry[subagentType] : null;
   const baseTools = childType ? childType.tools : HOY_TOOLS;
-  const withAgent = canSpawn && !baseTools.includes("agent") ? [...baseTools, "agent"] : baseTools;
+  // HOY-367: a role spawns only the types it allows; with none it gets no agent
+  // tool. A typed depth-0 thread is a Fleet run unless Rust marked it
+  // interactive (HOY-385), deeper is a subagent.
+  const spawnable = canSpawn ? spawnableTypes(registry, childType) : [];
+  const delegates = spawnable.length > 0;
+  const advertised = spawnable.map((t) => ({ name: t.name, description: t.description }));
+  const run = resolveRunContext({ hasType: !!childType, depth: subagentDepth, interactiveAgent });
+  const withAgent = delegates && !baseTools.includes("agent") ? [...baseTools, "agent"] : baseTools;
   // `mcp` is Hoy's capability name (HOY_TOOLS, subagent .md tool lists); Pi
   // exposes MCP as tool_search, resource tools, and mcp__<server>__<tool>.
   const mcpEnabled = withAgent.includes("mcp");
   const codemode = mcpEnabled && readHoyCodemode(agentDir);
-  const tools = [...expandToolNames(withAgent), ...(codemode ? ["codemode"] : [])];
-  const advertised = enabledTypes(registry).map((t) => ({ name: t.name, description: t.description }));
+  const tools = [
+    ...expandToolNames(withAgent),
+    ...(codemode ? ["codemode"] : []),
+    ...(linearTools ? LINEAR_TOOLS : []),
+    ...(run === "fleet" ? [FLEET_HANDOFF_TOOL] : []),
+  ];
 
   const services = await createAgentSessionServices({
     cwd,
@@ -197,7 +240,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         // Spawn guidance (agent tool + advertised types) is on iff this thread
         // can spawn, so a spawning-capable child sees it too. A non-spawning
         // child gets guidance off. EffectiveChildPrompt still applies its body.
-        const base = buildHoySystemPrompt(canSpawn, advertised);
+        const base = buildHoySystemPrompt({ tools, run, agentTypes: advertised });
         return childType ? effectiveChildPrompt(childType, base) : base;
       },
       // Disk discovery of <agentDir>/{extensions,skills,prompts,themes} needs no
@@ -212,6 +255,10 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
       // root-vs-child. A child at or beyond the cap never gets it.
       extensionFactories: [
         createHoyAlibaba(agentDir),
+        // HOY-392: built-in skills, staged to <agentDir>/builtin-skills.
+        // Same-named user/project skills win by load order (verified in
+        // hoy-skills.test.ts), so registration order here is irrelevant.
+        createHoySkills(agentDir),
         createHoyPermissions(permissionState),
         // Pi's built-in MCP (HOY-232 originally shipped our own proxy tool). SDK
         // sessions do not load built-ins, so we add it here. Servers connect at
@@ -227,7 +274,7 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
           loadConfig: (ctx) =>
             loadHoyMcpConfig({
               agentDir,
-              cwd: ctx.cwd,
+              cwd: mainCheckout(ctx.cwd),
               projectTrusted: ctx.isProjectTrusted(),
               enabled: mcpEnabled,
               codemode,
@@ -240,11 +287,16 @@ const factory: CreateAgentSessionRuntimeFactory = async ({
         // child. Registering it unconditionally is harmless: a
         // child never has it in `tools`, so it cannot call it.
         createHoyAskQuestion(),
+        ...(withAgent.includes("web") ? [createHoyWeb()] : []),
         // HOY-265: /init generates or refreshes AGENTS.md. A user-invoked
         // command (surfaced via get_commands, HOY-223), so installing it
         // unconditionally is safe: a child subagent never types /init.
         createHoyInit(),
-        ...(canSpawn ? [createHoyAgents(registry, requireSubagentApproval)] : []),
+        ...(linearTools ? [createHoyLinear()] : []),
+        ...(run === "fleet"
+          ? [createHoyFleetHandoff(childType!.name, Object.values(registry).filter((t) => t.enabled !== false).map((t) => t.name))]
+          : []),
+        ...(delegates ? [createHoyAgents(registry, requireSubagentApproval, spawnable)] : []),
         // HOY-244: cap a budgeted subagent type's turns. Root/unbudgeted threads
         // run uncapped. childType is null for user threads, so this is child-only.
         ...(childType?.maxTurns ? [createHoyTurnBudget(childType.maxTurns)] : []),
@@ -287,6 +339,9 @@ try {
   console.error(`hoy-sidecar: could not open/fork session, starting fresh: ${e}`);
   sessionManager = SessionManager.create(process.cwd());
 }
+
+// Before the runtime resolves trust for this folder.
+inheritTrust(agentDir, process.cwd(), mainCheckout(process.cwd()));
 
 const runtime = await createAgentSessionRuntime(factory, {
   cwd: process.cwd(),

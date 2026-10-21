@@ -12,6 +12,9 @@ import type {
   GoalEvaluation,
   GoalVerifyResult,
   ImageContent,
+  LinearIssue,
+  LinearStatus,
+  LinearTeam,
   McpScope,
   McpServerList,
   ModelInfo,
@@ -37,7 +40,9 @@ import type {
   ThinkingLevel,
   UsageReport,
   Workspace,
+  DispatchDecision,
 } from "./types";
+import type { DispatchInput } from "./dispatch";
 
 // Native directory picker for adding a project. Returns the chosen absolute path,
 // or null if the user cancels.
@@ -184,6 +189,76 @@ export function listSkills(cwd: string): Promise<SkillList> {
   return invoke<SkillList>("list_skills", { cwd });
 }
 
+// HOY-368: a project's fleet as one write: [name, enabled] pairs.
+export function setSubagentsEnabled(
+  scope: SubagentScope,
+  changes: Array<[string, boolean]>,
+  projectPath?: string | null,
+): Promise<void> {
+  return invoke<void>("set_subagents_enabled", { scope, changes, projectPath: projectPath ?? null });
+}
+
+// The model an agent runs on, as "provider/id"; null clears the override.
+export function setSubagentModel(
+  scope: SubagentScope,
+  name: string,
+  model: string | null,
+  projectPath?: string | null,
+): Promise<void> {
+  return invoke<void>("set_subagent_model", { scope, name, model, projectPath: projectPath ?? null });
+}
+
+// HOY-358: one git worktree per delegated issue.
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  base: string;
+}
+
+export function createIssueWorktree(projectPath: string, branch: string): Promise<WorktreeInfo> {
+  return invoke<WorktreeInfo>("create_issue_worktree", { projectPath, branch });
+}
+
+export function removeIssueWorktree(
+  projectPath: string,
+  path: string,
+  force: boolean,
+): Promise<{ removed: boolean; dirty: boolean }> {
+  return invoke("remove_issue_worktree", { projectPath, path, force });
+}
+
+// HOY-379: commits a finished run left on its branch, and uncommitted changes.
+export function branchStatus(
+  path: string,
+  base: string,
+): Promise<{ ahead: number; dirty: boolean }> {
+  return invoke("branch_status", { path, base });
+}
+
+// Push the branch and open a pull request filled from its commits; resolves to its URL.
+export function openPullRequest(path: string, branch: string, base: string): Promise<string> {
+  return invoke<string>("open_pull_request", { path, branch, base });
+}
+
+// HOY-359: whether agents can open pull requests.
+export interface GhStatus {
+  installed: boolean;
+  authenticated: boolean;
+  problem: string | null;
+}
+
+export function ghStatus(): Promise<GhStatus> {
+  return invoke<GhStatus>("gh_status");
+}
+
+export function projectIsGitRepo(projectPath: string): Promise<boolean> {
+  return invoke<boolean>("project_is_git_repo", { projectPath });
+}
+
+export function projectHasFleet(projectPath: string): Promise<boolean> {
+  return invoke<boolean>("project_has_fleet", { projectPath });
+}
+
 export function setSubagentEnabled(
   scope: SubagentScope,
   name: string,
@@ -202,7 +277,7 @@ export function setSubagentEnabled(
 // scope's agents dir (global agent dir or <project>/.hoy/agents), the single
 // writer. The sidecar registry stays the only reader, then respawns idle sidecars
 // so live sessions reload the registry. Rejects a name that is unsafe, duplicate
-// in-scope, or shadows a built-in (general-purpose/Explore/Plan). `scope` is
+// in-scope, or shadows a built-in (Researcher, Writer, Coder, Reviewer, Project Manager). `scope` is
 // "global" or "project". Project scope needs `projectPath`. Editing an existing
 // type passes overwrite=true so the existing.md is replaced in a single atomic
 // write (no delete-then-write window). A new type passes overwrite=false (create-
@@ -246,6 +321,8 @@ export function deleteSubagent(
 // `requireSubagentApproval` (HOY-248) relays the renderer pref of the same name
 // to the sidecar as HOY_REQUIRE_SUBAGENT_APPROVAL. When false (default) the
 // `agent` tool spawns without a consent prompt.
+// `interactiveAgent` (HOY-385) marks a typed depth-0 thread as a user
+// conversation rather than a Fleet run.
 export function createSession(
   cwd: string,
   sessionFile: string | null | undefined,
@@ -254,6 +331,7 @@ export function createSession(
   depth: number,
   requireSubagentApproval: boolean,
   inheritFromSession: string | null | undefined,
+  interactiveAgent: boolean,
 ): Promise<string> {
   return invoke<string>("create_session", {
     cwd,
@@ -263,6 +341,7 @@ export function createSession(
     depth,
     requireSubagentApproval,
     inheritFromSession: inheritFromSession ?? null,
+    interactiveAgent,
   });
 }
 
@@ -336,6 +415,51 @@ export function deleteSessionFile(sessionFile: string): Promise<void> {
 // owner thread only holds the wake lock while a turn streams AND this is on.
 export function setKeepAwake(enabled: boolean): Promise<void> {
   return invoke<void>("set_keep_awake", { enabled });
+}
+
+export function linearStatus(): Promise<LinearStatus> {
+  return invoke<LinearStatus>("linear_status");
+}
+
+// Validates the key against Linear before Rust stores it.
+export function linearConnect(apiKey: string): Promise<LinearStatus> {
+  return invoke<LinearStatus>("linear_connect", { apiKey });
+}
+
+// Opens the browser on Linear's consent page; resolves once Rust has the tokens.
+export function linearOAuthConnect(): Promise<LinearStatus> {
+  return invoke<LinearStatus>("linear_oauth_connect");
+}
+
+export function linearOAuthCancel(): Promise<void> {
+  return invoke<void>("linear_oauth_cancel");
+}
+
+// One workspace, or every one when `workspaceId` is omitted.
+export function linearDisconnect(workspaceId?: string): Promise<void> {
+  return invoke<void>("linear_disconnect", { workspaceId: workspaceId ?? null });
+}
+
+// `state` is a workflow state name or type ("started", "done", "In Review").
+export function linearSetIssueState(issue: string, state: string): Promise<void> {
+  return invoke<void>("linear_set_issue_state", { issue, state });
+}
+
+// Resolves to the new comment's id. `parent` makes it a reply.
+export function linearComment(
+  issue: string,
+  body: string,
+  parent: string | null = null,
+): Promise<string | null> {
+  return invoke<string | null>("linear_comment", { issue, body, parent });
+}
+
+export function linearTeams(): Promise<LinearTeam[]> {
+  return invoke<LinearTeam[]>("linear_teams");
+}
+
+export function linearIssues(teamId: string, workspaceId?: string | null): Promise<LinearIssue[]> {
+  return invoke<LinearIssue[]>("linear_issues", { teamId, workspaceId: workspaceId ?? null });
 }
 
 export function loadWorkspace(): Promise<Workspace> {
@@ -413,6 +537,29 @@ export function getUsageStats(): Promise<UsageReport> {
 // the sidecar pick a cheap available one. Always resolves to { met, reason }:
 // the evaluator fails open to met:false on any error, so Task 5's loop keeps
 // working on uncertainty rather than falsely stopping.
+// HOY-370: a short thread title from its first message, or null.
+// `disabled`: modelKey()s the helper must never run on.
+export function generateTitle(
+  text: string,
+  model: ModelRef | null,
+  disabled: string[],
+): Promise<string | null> {
+  return invoke<string | null>("generate_title", { text, model, disabled });
+}
+
+// HOY-353: a null `model` runs on the cheapest enabled model.
+export function dispatchDecision(
+  input: DispatchInput,
+  model: ModelRef | null,
+  disabled: string[],
+): Promise<DispatchDecision> {
+  return invoke<DispatchDecision>("dispatch_decision", {
+    input: JSON.stringify(input),
+    model,
+    disabled,
+  });
+}
+
 export function evaluateGoal(
   sessionId: string,
   condition: string,

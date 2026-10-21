@@ -8,10 +8,8 @@
 // and reports whether the condition holds.
 //
 // READ-ONLY GUARANTEE: unlike the tool-less evaluator (tools: []), the auditor
-// runs a genuine agentic tool loop, but only over the Explore toolset
-// (read, grep, find, ls). We resolve that toolset from the subagent registry's
-// built-in "Explore" type and then defensively strip any mutate tool (bash,
-// edit, write, agent) in case a project override widened it. The SDK's
+// runs a genuine agentic tool loop, but only over a fixed read-only toolset
+// (read, grep, find, ls), independent of the subagent registry. The SDK's
 // `tools` option is a name allowlist applied to the base tool registry
 // (createAllToolDefinitions builds all seven. The allowlist activates only the
 // listed names), so a non-empty read-only allowlist yields a real file-reading
@@ -43,7 +41,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadSubagentRegistry } from "./hoy-agents-registry";
 
 export interface GoalAudit {
   met: boolean;
@@ -69,15 +66,7 @@ const MAX_AUDIT_MAX_TURNS = 50;
 // inexpensive auditor when the caller did not pin HOY_GOAL_AUDIT_MODEL.
 const CHEAP_MODEL_RE = /(haiku|mini|flash|small|lite|nano)/i;
 
-// Tools that mutate state, reach external systems, or spawn further agents. The
-// auditor must never hold any of these. We strip them from the resolved toolset
-// defensively. "mcp" is included so a project Explore override that added an MCP
-// tool cannot survive into the read-only auditor even if such a tool were ever
-// registered in this one-shot.
-const MUTATE_TOOLS = new Set(["bash", "edit", "write", "agent", "mcp"]);
-// If the registry cannot be read (or yields nothing usable), fall back to the
-// canonical Explore read-only set so the auditor still runs read-only.
-const FALLBACK_READONLY_TOOLS = ["read", "grep", "find", "ls"];
+const READONLY_TOOLS = ["read", "grep", "find", "ls"];
 
 const AUDITOR_SYSTEM_PROMPT = [
   "You are a strict READ-ONLY goal-completion auditor.",
@@ -105,24 +94,6 @@ function resolveMaxTurns(): number {
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n)) return DEFAULT_AUDIT_MAX_TURNS;
   return Math.min(MAX_AUDIT_MAX_TURNS, Math.max(MIN_AUDIT_MAX_TURNS, n));
-}
-
-// Resolve the read-only toolset from the subagent registry's built-in Explore
-// type, then strip any mutate/spawn tool defensively. This is the read-only
-// guarantee: whatever the registry says, the auditor never holds bash/edit/write/
-// agent. Missing/empty -> the canonical Explore set.
-function resolveReadOnlyTools(agentDir: string, cwd: string): string[] {
-  let declared: unknown = undefined;
-  try {
-    const reg = loadSubagentRegistry(agentDir, cwd);
-    declared = reg["Explore"]?.tools;
-  } catch {
-    // fall through to the fallback set
-  }
-  const list = Array.isArray(declared)
-    ? declared.filter((t): t is string => typeof t === "string" && !MUTATE_TOOLS.has(t))
-    : [];
-  return list.length > 0 ? list : [...FALLBACK_READONLY_TOOLS];
 }
 
 // Parse the model's reply into a GoalAudit. Tries a whole-string JSON parse
@@ -257,7 +228,7 @@ export async function runGoalAudit(agentDir: string, cwd: string): Promise<never
   failsafeTimer.unref?.();
 
   try {
-    const tools = resolveReadOnlyTools(agentDir, cwd);
+    const tools = [...READONLY_TOOLS];
     // Logged to stderr (never stdout) so the controller can confirm the auditor
     // is read-only without corrupting the JSON result.
     console.error(`hoy-goal-audit: tools=${tools.join(",")}`);

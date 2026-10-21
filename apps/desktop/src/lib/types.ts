@@ -103,7 +103,7 @@ export interface PermissionRequest {
 
 // The four thread permission modes (HOY-186). Wire values. The composer maps
 // them to display labels.
-export type PermissionMode = "default" | "acceptEdits" | "plan" | "autonomous";
+export type PermissionMode = "manual" | "acceptEdits" | "plan" | "autonomous";
 
 // Mirror of events.rs SessionStats. Powers the bottom context bar. contextUsage
 // (and its tokens/percent) is null/absent right after compaction until the next
@@ -506,7 +506,7 @@ export interface Thread {
   // the thread's provider glyph on load without spawning (HOY-267), reconciled
   // against get_state when the thread is opened.
   model?: ModelRef | null;
-  // Permission mode (HOY-186). Persisted with the thread. Absent means default.
+  // Permission mode (HOY-186). Persisted with the thread. Absent means manual.
   // Applied to the live sidecar via /hoy_mode, re-applied after spawn/restore.
   permissionMode?: PermissionMode | null;
   // Set on a spawned child thread (HOY-231). Null/absent on user threads. Kept
@@ -525,6 +525,109 @@ export interface Thread {
   // renders before a sidecar spawns. LoadWorkspace resets counters and demotes
   // "active" to "paused" on restore (see store.ts initWorkspace).
   goal?: ThreadGoal;
+  // HOY-346: a thread delegated from the board runs as this subagent type,
+  // working on this Linear issue.
+  agent?: string | null;
+  linearIssue?: LinearIssueRef | null;
+  // HOY-350: the Fleet run that started this thread. Open until endedAt is set.
+  fleetRun?: FleetRun | null;
+  // HOY-358: the git worktree a delegated issue runs in. `removed` once
+  // archiving took it down (the branch stays).
+  worktree?: { path: string; branch: string; base: string; removed?: boolean } | null;
+  // Why archiving could not remove the worktree, shown on the agent's row.
+  worktreeIssue?: string | null;
+  // HOY-359: the pull request a delegated run opened.
+  pullRequest?: string | null;
+  // HOY-379: how this run got the issue from the run before it.
+  handoff?: Handoff | null;
+  // The agent this run handed the issue on to.
+  handedTo?: string | null;
+  // The chain stopped here and the user has to act.
+  chainStop?: ChainStop | null;
+  // With Auto off: the handoff this run suggests, for the user to accept.
+  nextStep?: NextStepSuggestion | null;
+}
+
+// HOY-379. `by` is who chose the next agent.
+export type HandoffBy = "rule" | "agent" | "dispatcher" | "user";
+export interface Handoff {
+  fromThreadId: string;
+  fromAgent: string;
+  reason: string;
+  by: HandoffBy;
+  // The previous run's final report: a plan, review findings.
+  report?: string | null;
+  // Fix first rounds so far on this issue.
+  round: number;
+  // Handoffs so far on this issue.
+  hops: number;
+  // The branch the chain works on, reused by the next run.
+  branch?: string | null;
+}
+export interface ChainStop {
+  reason: string;
+  needsUser: boolean;
+}
+export interface NextStepSuggestion {
+  agent: string;
+  reason: string;
+  by: HandoffBy;
+  round: number;
+}
+
+// Mirrors of workspace.rs WsFleetRun / WsFleet / WsQueuedIssue (HOY-350).
+export type FleetOutcome = "done" | "error" | "stopped" | "interrupted";
+export interface FleetRun {
+  startedAt: number;
+  endedAt?: number | null;
+  outcome?: FleetOutcome | null;
+  // The issue's Linear estimate in points when the run started.
+  estimate?: number | null;
+  cost?: number | null;
+  // Set by Resume: a failed run stops halting its agent's queue.
+  acknowledged?: boolean;
+}
+export interface QueuedIssue {
+  agent: string;
+  issue: LinearIssue;
+  queuedAt: number;
+  // HOY-353: the Auto decision that queued it, echoed into the first prompt.
+  decision?: DispatchDecision | null;
+  handoff?: Handoff | null;
+}
+export interface FleetState {
+  queue: QueuedIssue[];
+  concurrency: Record<string, number>;
+  // HOY-359: agents push their branch and open a pull request with gh.
+  openPullRequests?: boolean;
+  // HOY-353: Auto triages unassigned issues through the Dispatcher.
+  auto?: boolean;
+  // HOY-353: the Dispatcher's cached verdicts, keyed by Linear issue id.
+  decisions?: Record<string, CachedDecision>;
+  // HOY-379: per issue id, the Linear comment a handoff chain replies under.
+  chainComments?: Record<string, string>;
+  // What the Dispatcher's next-step calls cost.
+  dispatchSpend?: number;
+}
+
+// HOY-353: mirrors events.rs DispatchDecision. Errors fail closed to ready=false.
+export interface DispatchDecision {
+  ready: boolean;
+  agent: string | null;
+  confidence: number;
+  reason: string;
+  missing?: string;
+  cost?: number;
+}
+
+// `at` is the issue's updatedAt the decision was made for.
+export interface CachedDecision {
+  at: string | null;
+  decision: DispatchDecision;
+  // The revision the not-ready comment was posted for.
+  naggedAt?: string | null;
+  // The revision Auto queued it for.
+  queuedAt?: string | null;
 }
 
 // Mirror of workspace.rs Workspace: the persisted projects -> threads tree.
@@ -541,6 +644,75 @@ export interface Project {
   // directory picker.
   path?: string | null;
   threads: Thread[];
+  // HOY-346: the Linear team whose open issues feed the Delegate board.
+  linear?: LinearLink | null;
+  fleet?: FleetState | null;
+}
+
+// Mirrors of linear.rs / workspace.rs (HOY-346). The API key never crosses IPC.
+export interface LinearStatus {
+  connected: boolean;
+  method: "oauth" | "apiKey" | null;
+  viewerName: string | null;
+  organization: string | null;
+  // Set when a stored credential was rejected or Linear was unreachable.
+  error: string | null;
+  // This build carries a Linear OAuth client id.
+  oauthAvailable: boolean;
+  // Every connected workspace (HOY-374); the fields above describe the first.
+  workspaces: LinearWorkspace[];
+}
+
+export interface LinearWorkspace {
+  id: string;
+  name: string;
+  method: "oauth" | "apiKey" | null;
+  viewerName: string | null;
+  error: string | null;
+}
+
+export interface LinearTeam {
+  id: string;
+  key: string;
+  name: string;
+  workspaceId?: string | null;
+  workspaceName?: string | null;
+}
+
+export interface LinearLink {
+  teamId: string;
+  teamKey: string;
+  teamName: string;
+  // HOY-374: absent on links saved before multi-workspace support.
+  workspaceId?: string | null;
+  workspaceName?: string | null;
+}
+
+export interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  description: string | null;
+  url: string;
+  // 0 none, 1 urgent, 2 high, 3 medium, 4 low.
+  priority: number;
+  priorityLabel: string;
+  estimate: number | null;
+  stateName: string;
+  stateType: string;
+  assignee: string | null;
+  labels: string[];
+  // Linear's suggested git branch name.
+  branchName?: string | null;
+  // HOY-353: the revision key for Dispatcher decisions.
+  updatedAt?: string | null;
+}
+
+export interface LinearIssueRef {
+  id: string;
+  identifier: string;
+  title: string;
+  url: string;
 }
 
 // Mirror of pi_config::ProviderInfo. The provider picker list.
@@ -608,6 +780,9 @@ export interface SkillInfo {
   filePath: string;
   scope: "user" | "project" | "temporary";
   disableModelInvocation: boolean;
+  // HOY-392: compiled into the sidecar, staged under <agentDir>/builtin-skills.
+  // Read-only in the panel; override with a same-named user/project skill.
+  builtin?: boolean;
 }
 
 // A validation problem from skill discovery (invalid name/description, or a
@@ -648,8 +823,7 @@ export interface SubagentDef {
   // HOY-244: per-type turn budget. The run is aborted once it is spent.
   maxTurns?: number | null;
   // HOY-254: the system prompt body, emitted by the list one-shot so an edit
-  // form can pre-fill it. Present for global/project types and built-ins with a
-  // static body (Explore, Plan). Null for general-purpose (no body, inherits base).
+  // form can pre-fill it. Null for a type with no body (inherits the base prompt).
   body?: string | null;
 }
 

@@ -2,6 +2,8 @@ mod alibaba_config;
 mod commands;
 mod events;
 mod keep_awake;
+mod linear;
+mod linear_oauth;
 mod mcp_config;
 mod oauth;
 mod pi_config;
@@ -11,6 +13,7 @@ mod sidecar;
 mod subagents_config;
 mod usage_stats;
 mod workspace;
+mod worktree;
 
 use sidecar::SidecarManager;
 
@@ -178,6 +181,15 @@ pub fn run() {
             commands::list_alibaba_endpoints,
             commands::save_alibaba_endpoints,
             commands::reset_alibaba_endpoints,
+            commands::linear_status,
+            commands::linear_connect,
+            commands::linear_oauth_connect,
+            commands::linear_oauth_cancel,
+            commands::linear_disconnect,
+            commands::linear_set_issue_state,
+            commands::linear_comment,
+            commands::linear_teams,
+            commands::linear_issues,
             commands::list_mcp_servers,
             commands::save_mcp_server,
             commands::remove_mcp_server,
@@ -185,6 +197,17 @@ pub fn run() {
             commands::list_subagents,
             commands::list_skills,
             commands::set_subagent_enabled,
+            commands::set_subagents_enabled,
+            commands::set_subagent_model,
+            commands::project_has_fleet,
+            commands::generate_title,
+            commands::dispatch_decision,
+            commands::create_issue_worktree,
+            commands::remove_issue_worktree,
+            commands::branch_status,
+            commands::open_pull_request,
+            commands::project_is_git_repo,
+            commands::gh_status,
             commands::write_subagent,
             commands::delete_subagent,
             oauth::oauth_login_start,

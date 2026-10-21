@@ -102,7 +102,7 @@ describe("submitPrompt steering (HOY-218)", () => {
     expect(turnCount()).toBe(before);
   });
 
-  test("streaming + Shift+Enter: enqueues a followUp", async () => {
+  test("streaming + queue intent: enqueues a followUp", async () => {
     seed();
     await useSessionStore.getState().submitPrompt("t1", "hello");
     await useSessionStore

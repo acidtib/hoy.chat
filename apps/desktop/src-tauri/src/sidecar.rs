@@ -33,6 +33,11 @@ type EventSink = Arc<Mutex<Option<Channel<AgentEvent>>>>;
 // (HOY-300).
 const SPAWN_SYNC_PREFIX: &str = "@hoy/spawn-subagent-sync:";
 
+// Byte-identical to LINEAR_PREFIX in hoy-linear.ts. An `input` request with this
+// title prefix is a Linear agent action Rust answers itself with the stored
+// credential, so the token never reaches the sidecar or the renderer (HOY-346).
+const LINEAR_PREFIX: &str = "@hoy/linear:";
+
 // Outcome of awaiting a correlated response, before it is mapped to the public
 // String error in request()/request_with_dialog_grace().
 enum RequestError {
@@ -333,6 +338,11 @@ fn apply_sanitized_env(command: &mut Command, agent_dir: &Path, cwd: &Path) {
     //  an allowlisted passthrough) so Hoy never sends that branding
     // regardless of the host env or a stale settings.json.
     command.env("PI_TELEMETRY", "0");
+    // Gives the session the Linear agent tools (HOY-346); the credential itself
+    // stays in Rust.
+    if crate::linear::is_connected() {
+        command.env("HOY_LINEAR", "1");
+    }
 }
 
 /// Pi hardcodes `.pi/mcp.json` in its MCP notices (1.3.0, extensions/mcp) even
@@ -397,6 +407,7 @@ impl PiProcess {
         subagent_type: Option<&str>,
         depth: u32,
         require_subagent_approval: bool,
+        interactive_agent: bool,
         inherit_from_session: Option<&str>,
     ) -> Result<Arc<PiProcess>, String> {
         if agent_dir.as_os_str().is_empty() {
@@ -442,6 +453,12 @@ impl PiProcess {
         command.env(
             "HOY_REQUIRE_SUBAGENT_APPROVAL",
             if require_subagent_approval { "1" } else { "0" },
+        );
+        // HOY-385: a typed depth-0 thread can be a user conversation instead of
+        // a Fleet run. Always set so a respawn restores the distinction.
+        command.env(
+            "HOY_INTERACTIVE_AGENT",
+            if interactive_agent { "1" } else { "0" },
         );
         // HOY-244: when a subagent type sets `inherit_context: true`, the renderer
         // passes the parent's transcript path here. The sidecar forks a fresh child
@@ -733,6 +750,21 @@ fn route_message(
                     let _ = channel.send(event);
                 }
             }
+            ExtUiOutcome::Linear(payload) => {
+                let id = id.to_string();
+                let stdin = stdin.clone();
+                tauri::async_runtime::spawn(async move {
+                    let value = crate::linear::answer(&payload).await;
+                    let response =
+                        json!({ "type": "extension_ui_response", "id": id, "value": value });
+                    if let Ok(text) = serde_json::to_string(&response) {
+                        let mut stdin = stdin.lock().unwrap();
+                        let _ = stdin
+                            .write_all(format!("{text}\n").as_bytes())
+                            .and_then(|_| stdin.flush());
+                    }
+                });
+            }
             ExtUiOutcome::Ignore => {}
         }
         return;
@@ -802,6 +834,8 @@ enum ExtUiOutcome {
     Dialog(AgentEvent),
     // notify/setStatus/setWidget/setTitle/set_editor_text: no response.
     Notify(AgentEvent),
+    // A Linear agent action (HOY-346), answered by Rust, not the renderer.
+    Linear(String),
     // Unknown/unsupported method.
     Ignore,
 }
@@ -868,6 +902,9 @@ fn classify_extension_ui(id: &str, method: &str, value: &Value) -> ExtUiOutcome 
         // subagent spawn, not a real text prompt.
         "input" => {
             let raw = str_field("title").unwrap_or_default();
+            if let Some(payload) = raw.strip_prefix(LINEAR_PREFIX) {
+                return ExtUiOutcome::Linear(payload.to_string());
+            }
             match raw
                 .strip_prefix(SPAWN_SYNC_PREFIX)
                 .and_then(|j| serde_json::from_str::<Value>(j).ok())
@@ -1156,6 +1193,9 @@ pub struct SidecarManager {
     // restores HOY_REQUIRE_SUBAGENT_APPROVAL. Without it a respawn will drop
     // the gate a user had turned on. Every session has an entry.
     require_approvals: Mutex<HashMap<SessionId, bool>>,
+    // Per-session interactive-agent flag (HOY-385). Mirrors the other per-session
+    // env flags so a respawn keeps a typed depth-0 thread a user conversation.
+    interactive_agents: Mutex<HashMap<SessionId, bool>>,
     handle_counter: AtomicUsize,
     bin: PathBuf,
     payload: PathBuf,
@@ -1197,6 +1237,7 @@ impl SidecarManager {
             subagent_types: Mutex::new(HashMap::new()),
             depths: Mutex::new(HashMap::new()),
             require_approvals: Mutex::new(HashMap::new()),
+            interactive_agents: Mutex::new(HashMap::new()),
             handle_counter: AtomicUsize::new(1),
             bin,
             payload,
@@ -1235,11 +1276,20 @@ impl SidecarManager {
             .unwrap_or(false)
     }
 
+    fn interactive_agent_of(&self, id: &str) -> bool {
+        self.interactive_agents
+            .lock()
+            .unwrap()
+            .get(id)
+            .copied()
+            .unwrap_or(false)
+    }
+
     // Spawn the boot control session in the manager's default cwd. The first
     // session spawned becomes the active one (used for model enumeration).
     pub fn spawn_session(&self) -> Result<SessionId, String> {
         let cwd = self.cwd.clone();
-        let id = self.spawn_session_in(&cwd, None, None, None, 0, false, None)?;
+        let id = self.spawn_session_in(&cwd, None, None, None, 0, false, false, None)?;
         let mut active = self.active.lock().unwrap();
         if active.is_none() {
             *active = Some(id.clone());
@@ -1259,6 +1309,7 @@ impl SidecarManager {
         subagent_type: Option<&str>,
         depth: u32,
         require_subagent_approval: bool,
+        interactive_agent: bool,
         inherit_from_session: Option<&str>,
     ) -> Result<SessionId, String> {
         if !self.bin.exists() {
@@ -1277,6 +1328,7 @@ impl SidecarManager {
             subagent_type,
             depth,
             require_subagent_approval,
+            interactive_agent,
             inherit_from_session,
         )?;
         let id = format!("s{}", self.handle_counter.fetch_add(1, Ordering::Relaxed));
@@ -1296,6 +1348,10 @@ impl SidecarManager {
             .lock()
             .unwrap()
             .insert(id.clone(), require_subagent_approval);
+        self.interactive_agents
+            .lock()
+            .unwrap()
+            .insert(id.clone(), interactive_agent);
         Ok(id)
     }
 
@@ -1391,6 +1447,69 @@ impl SidecarManager {
     // (else the sidecar picks a cheap available one). Fail-open lives in the
     // sidecar, which writes {met:false, reason:"evaluator error: ..."} and exits 0
     // on any failure, so a clean parse here still means "keep working".
+    // HOY-370: the one-shot Title helper (HOY_TITLE). Returns the command ready
+    // to run so the caller can run it off the async runtime.
+    pub fn title_command(
+        &self,
+        text: &str,
+        model: Option<&ModelRef>,
+        disabled: &[String],
+    ) -> Result<std::process::Command, String> {
+        if !self.bin.exists() {
+            return Err(format!(
+                "sidecar binary not found at {}. Run sidecar/build.sh.",
+                self.bin.display()
+            ));
+        }
+        let mut command = std::process::Command::new(&self.bin);
+        apply_sanitized_env(&mut command, &self.agent_dir, &self.cwd);
+        command
+            .env("PI_PACKAGE_DIR", &self.payload)
+            .env("HOY_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_TITLE", "1")
+            .env("HOY_TITLE_TEXT", text)
+            .env("HOY_DISABLED_MODELS", disabled.join("\n"))
+            .current_dir(&self.cwd);
+        if let Some(model) = model {
+            command.env(
+                "HOY_TITLE_MODEL",
+                format!("{}/{}", model.provider, model.id),
+            );
+        }
+        Ok(command)
+    }
+
+    // HOY-353: the one-shot Dispatcher. Run it off the async runtime.
+    pub fn dispatch_command(
+        &self,
+        input: &str,
+        model: Option<&ModelRef>,
+        disabled: &[String],
+    ) -> Result<std::process::Command, String> {
+        if !self.bin.exists() {
+            return Err(format!(
+                "sidecar binary not found at {}. Run sidecar/build.sh.",
+                self.bin.display()
+            ));
+        }
+        let mut command = std::process::Command::new(&self.bin);
+        apply_sanitized_env(&mut command, &self.agent_dir, &self.cwd);
+        command
+            .env("PI_PACKAGE_DIR", &self.payload)
+            .env("HOY_CODING_AGENT_DIR", &self.agent_dir)
+            .env("HOY_DISPATCH", "1")
+            .env("HOY_DISPATCH_INPUT", input)
+            .env("HOY_DISABLED_MODELS", disabled.join("\n"))
+            .current_dir(&self.cwd);
+        if let Some(model) = model {
+            command.env(
+                "HOY_DISPATCH_MODEL",
+                format!("{}/{}", model.provider, model.id),
+            );
+        }
+        Ok(command)
+    }
+
     pub fn evaluate_goal(
         &self,
         session_file: &str,
@@ -1554,6 +1673,7 @@ impl SidecarManager {
         self.subagent_types.lock().unwrap().remove(id);
         self.depths.lock().unwrap().remove(id);
         self.require_approvals.lock().unwrap().remove(id);
+        self.interactive_agents.lock().unwrap().remove(id);
         drop(old);
     }
 
@@ -1597,6 +1717,7 @@ impl SidecarManager {
         let subagent_type = self.subagent_type_of(id);
         let depth = self.depth_of(id);
         let require_subagent_approval = self.require_approval_of(id);
+        let interactive_agent = self.interactive_agent_of(id);
         let cwd = self
             .cwds
             .lock()
@@ -1614,6 +1735,7 @@ impl SidecarManager {
             subagent_type.as_deref(),
             depth,
             require_subagent_approval,
+            interactive_agent,
             // Respawn opens the child's own transcript (which already contains any
             // inherited history from first spawn), so no re-fork (HOY-244).
             None,
@@ -1900,7 +2022,7 @@ mod live_tests {
 
         // 1. Fresh session: prompt and wait for the turn to complete.
         let id = manager
-            .spawn_session_in(&cwd, None, None, None, 0, false, None)
+            .spawn_session_in(&cwd, None, None, None, 0, false, false, None)
             .expect("spawn fresh session");
         let process = manager.get(&id).expect("session present");
         let events: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
@@ -1943,7 +2065,7 @@ mod live_tests {
         // 2. Tear down the first sidecar, then reopen the same file in a new one.
         manager.remove(&id);
         let id2 = manager
-            .spawn_session_in(&cwd, Some(&session_file), None, None, 0, false, None)
+            .spawn_session_in(&cwd, Some(&session_file), None, None, 0, false, false, None)
             .expect("spawn restoring session");
         let restored = manager.get(&id2).expect("restored session present");
         let response = restored
@@ -2236,6 +2358,21 @@ mod live_tests {
             classify_extension_ui("r", "somethingNew", &json!({ "method": "somethingNew" })),
             ExtUiOutcome::Ignore
         ));
+    }
+
+    #[test]
+    fn linear_prefix_input_is_answered_by_rust_not_shown_as_a_dialog() {
+        let payload = r#"{"action":"get","issue":"HOY-1"}"#;
+        let value = serde_json::json!({
+            "type": "extension_ui_request",
+            "id": "l1",
+            "method": "input",
+            "title": format!("{LINEAR_PREFIX}{payload}"),
+        });
+        match classify_extension_ui("l1", "input", &value) {
+            ExtUiOutcome::Linear(p) => assert_eq!(p, payload),
+            _ => panic!("expected a Linear action"),
+        }
     }
 
     #[test]

@@ -15,6 +15,7 @@
 // shape checks below reject the entries Pi's loader would have rejected.
 
 import type { LoadedMcpConfig, McpExposure, McpServerConfig, McpServerEntry } from "@earendil-works/pi-coding-agent";
+import { WEB_TOOLS } from "./hoy-web";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -211,5 +212,5 @@ export const MCP_TOOL_NAMES = [
 ];
 
 export function expandToolNames(tools: string[]): string[] {
-  return tools.flatMap((name) => (name === "mcp" ? MCP_TOOL_NAMES : [name]));
+  return tools.flatMap((name) => (name === "mcp" ? MCP_TOOL_NAMES : name === "web" ? WEB_TOOLS : [name]));
 }

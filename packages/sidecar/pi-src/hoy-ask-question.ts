@@ -1,7 +1,7 @@
 // HOY-253: the `ask_question` tool. Lets the agent put a structured,
 // multiple-choice questionnaire to the user instead of guessing or asking a
 // fragile free-text question. Primary use is the plan-mode architect nailing
-// intent before finalizing a plan. Equally useful in default mode when a request
+// intent before finalizing a plan. Equally useful in manual mode when a request
 // is underspecified.
 //
 // It rides the existing extension-UI path (HOY-186) with zero Rust changes. The
@@ -76,7 +76,7 @@ const askParams = Type.Object({
   }),
 });
 
-const GUIDELINES = [
+export const ASK_QUESTION_GUIDELINES = [
   "Use ask_question when a request is underspecified and you cannot proceed without a concrete decision the user must make.",
   "Group all of your clarifying questions into a single ask_question call (up to 4); do not ask them one at a time.",
   "Do not use it for confirmations you could reasonably assume, or for questions you can answer yourself by reading the code.",
@@ -207,7 +207,7 @@ export function createHoyAskQuestion() {
       description:
         "Ask the user one to four structured multiple-choice questions when a request is underspecified. Renders a questionnaire the user answers; returns their selected option values. Prefer this over guessing or asking a free-text question when you need a concrete decision to proceed.",
       promptSnippet: "ask_question (put a structured multiple-choice question to the user)",
-      promptGuidelines: GUIDELINES,
+      promptGuidelines: ASK_QUESTION_GUIDELINES,
       parameters: askParams,
       execute: async (_id, params, _signal, _onUpdate, ctx) => run(params, ctx),
     });
