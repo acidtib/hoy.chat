@@ -975,6 +975,17 @@ pub fn respond_permission(
     process.respond_ui(&request_id, value, confirmed, cancelled.unwrap_or(false))
 }
 
+// The set_permission_mode allowlist (HOY-186/HOY-386). The wire value is the
+// sidecar's PermissionMode union: `manual` only, the old `default` is rejected.
+const PERMISSION_MODES: [&str; 4] = ["manual", "acceptEdits", "plan", "autonomous"];
+
+fn validate_permission_mode(mode: &str) -> Result<(), String> {
+    if !PERMISSION_MODES.contains(&mode) {
+        return Err(format!("unknown permission mode: {mode}"));
+    }
+    Ok(())
+}
+
 // Switch a thread's permission mode (HOY-186). The /hoy_mode extension command
 // executes immediately even mid-stream. The manager mirror keeps the mode
 // across respawns via HOY_PERMISSION_MODE.
@@ -984,10 +995,7 @@ pub async fn set_permission_mode(
     mode: String,
     manager: State<'_, SidecarManager>,
 ) -> Result<(), String> {
-    const MODES: [&str; 4] = ["default", "acceptEdits", "plan", "autonomous"];
-    if !MODES.contains(&mode.as_str()) {
-        return Err(format!("unknown permission mode: {mode}"));
-    }
+    validate_permission_mode(&mode)?;
     let process = manager.get(&session_id)?;
     let response = process
         .request(json!({ "type": "prompt", "message": format!("/hoy_mode {mode}") }))
@@ -1133,6 +1141,20 @@ mod tests {
     fn build_prompt_body_with_streaming_behavior() {
         let body = build_prompt_body("more", None, Some("steer".into()));
         assert_eq!(body["streamingBehavior"], "steer");
+    }
+
+    // set_permission_mode allowlist (HOY-386): `manual` is accepted, the old
+    // `default` and anything else are rejected with the layer-owned text.
+    #[test]
+    fn permission_mode_allowlist_accepts_manual_rejects_default() {
+        for mode in ["manual", "acceptEdits", "plan", "autonomous"] {
+            assert!(validate_permission_mode(mode).is_ok(), "{mode}");
+        }
+        assert_eq!(
+            validate_permission_mode("default"),
+            Err("unknown permission mode: default".into())
+        );
+        assert!(validate_permission_mode("bogus").is_err());
     }
 
     // get_entries / get_tree return the whole response `data` object (both

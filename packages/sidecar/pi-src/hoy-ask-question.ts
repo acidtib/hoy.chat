@@ -1,7 +1,7 @@
 // HOY-253: the `ask_question` tool. Lets the agent put a structured,
 // multiple-choice questionnaire to the user instead of guessing or asking a
 // fragile free-text question. Primary use is the plan-mode architect nailing
-// intent before finalizing a plan. Equally useful in default mode when a request
+// intent before finalizing a plan. Equally useful in manual mode when a request
 // is underspecified.
 //
 // It rides the existing extension-UI path (HOY-186) with zero Rust changes. The

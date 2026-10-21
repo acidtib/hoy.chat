@@ -92,7 +92,7 @@ describe("webFetch", () => {
 });
 
 test("the web tools never gate, in any mode", () => {
-  for (const mode of ["default", "acceptEdits", "plan", "autonomous"] as const) {
+  for (const mode of ["manual", "acceptEdits", "plan", "autonomous"] as const) {
     expect(decide(mode, "web_fetch")).toBe("allow");
     expect(decide(mode, "web_search")).toBe("allow");
   }

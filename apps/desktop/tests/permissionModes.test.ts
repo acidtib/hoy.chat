@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { PermissionRequest, Thread } from "@/lib/types";
 
 import { mockIpcModule } from "./ipcMock";
+import { MODE_LABELS } from "@/components/Composer";
 
 // Named mocks these tests assert against. The shared helper fills in the rest
 // of the ipc surface the store needs at import time.
@@ -106,7 +107,7 @@ describe("setPermissionMode", () => {
 });
 
 describe("auto-switch to Plan Mode (HOY-291)", () => {
-  test("a plan request flips a default-mode thread into plan before the turn and notifies", async () => {
+  test("a plan request flips a manual-mode thread into plan before the turn and notifies", async () => {
     seed({ sessionId: "sess_live" });
     setPermissionMode.mockResolvedValue();
 
@@ -125,7 +126,7 @@ describe("auto-switch to Plan Mode (HOY-291)", () => {
     await useSessionStore.getState().submitPrompt("t1", "fix the failing test");
 
     expect(setPermissionMode).not.toHaveBeenCalled();
-    expect(thread().permissionMode ?? "default").toBe("default");
+    expect(thread().permissionMode ?? "manual").toBe("manual");
   });
 
   test("a plan request while already in plan mode does not re-apply the mode", async () => {
@@ -149,7 +150,14 @@ describe("auto-switch to Plan Mode (HOY-291)", () => {
       });
 
     expect(setPermissionMode).not.toHaveBeenCalled();
-    expect(thread().permissionMode ?? "default").toBe("default");
+    expect(thread().permissionMode ?? "manual").toBe("manual");
+  });
+});
+
+describe("composer labels (HOY-386)", () => {
+  test("the manual wire value reads Manual and the old default is gone", () => {
+    expect(MODE_LABELS.find((m) => m.value === "manual")?.label).toBe("Manual");
+    expect(MODE_LABELS.some((m) => (m.value as string) === "default")).toBe(false);
   });
 });
 
