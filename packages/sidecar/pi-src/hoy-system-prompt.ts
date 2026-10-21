@@ -18,13 +18,14 @@
 // The core "Available tools" list is the built-in set that every session
 // registers, passed as the tools allowlist in hoy-sidecar.ts (HOY-186). The
 // agent tool is not in that list; it is advertised via its own block, appended
-// only when the session can spawn. MCP servers are described by Pi's own
-// mcp_servers section (built-in MCP extension), not here.
+// only when the session can spawn. MCP server contents stay in Pi's own
+// mcp_servers section (built-in MCP extension); a pointer block below names
+// both Pi-appended sections so the model checks them without being asked.
 // The agent block (HOY-234 Phase 3) is built dynamically from the enabled
 // types in the loaded subagent registry (hoy-agents-registry.ts), not a
 // static list, so newly registered or disabled types are reflected without
-// editing this file. Pi appends skills and cwd after a custom prompt, so they
-// are not restated here.
+// editing this file. Pi appends skills and cwd after a custom prompt; skill
+// contents are not restated here, only the pointer block names the section.
 
 import { ASK_QUESTION_GUIDELINES } from "./hoy-ask-question";
 import { LINEAR_GUIDELINES } from "./hoy-linear";
@@ -192,8 +193,39 @@ export interface HoyPromptOptions {
   agentTypes?: Array<{ name: string; description?: string }>;
 }
 
+// Pi appends the skills and mcp_servers sections after a custom prompt. Name
+// them here so the model checks them proactively instead of waiting for the
+// user to mention one. Each line follows the session's real tool set, like
+// the tools list above.
+function discoveryPrompt(toolNames?: string[]): string | null {
+  const tools = toolNames ? new Set(toolNames) : null;
+  const hasReader = !tools || tools.has("read") || tools.has("bash");
+  const hasMcp =
+    !tools ||
+    tools.has("mcp") ||
+    tools.has("tool_search") ||
+    tools.has("codemode") ||
+    [...tools].some((t) => t.startsWith("mcp__"));
+  const lines: string[] = [];
+  if (hasReader) {
+    lines.push(
+      "- Skills: the prompt includes an <available_skills> list naming each skill, what it is for, and where its file lives. When a task matches a skill, open its file first and follow it. Do not wait for the user to name the skill.",
+    );
+  }
+  if (hasMcp) {
+    lines.push(
+      "- MCP: when any MCP servers are configured, the prompt includes an <mcp_servers> section naming each server, how it is reached (tool_search or codemode), and a one-line summary. When a task could use a server, load its tools with tool_search (direct servers expose mcp__<server>__<tool> tools, codemode servers run through codemode scripts) before concluding nothing is available. Do not wait for the user to name the server or tool.",
+    );
+  }
+  if (lines.length === 0) return null;
+  return `Skills and MCP:\n${lines.join("\n")}`;
+}
+
 export function buildHoySystemPrompt(opts: HoyPromptOptions = {}): string {
-  const parts = [buildBasePrompt(opts.tools), runContextPrompt(opts.run ?? "interactive")];
+  const parts = [buildBasePrompt(opts.tools)];
+  const discovery = discoveryPrompt(opts.tools);
+  if (discovery) parts.push(discovery);
+  parts.push(runContextPrompt(opts.run ?? "interactive"));
   if (opts.agentTypes?.length) parts.push(agentToolsPrompt(opts.agentTypes));
   return parts.join("\n\n");
 }

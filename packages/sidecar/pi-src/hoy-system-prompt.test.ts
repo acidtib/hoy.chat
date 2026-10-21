@@ -223,6 +223,27 @@ describe("buildHoySystemPrompt", () => {
     expect(buildHoySystemPrompt({ agentTypes: [] })).not.toContain("MCP tools:");
   });
 
+  test("points at Pi-appended skills and MCP sections so the model checks them unprompted", () => {
+    const prompt = buildHoySystemPrompt();
+    expect(prompt).toContain("Skills and MCP:");
+    expect(prompt).toContain("<available_skills>");
+    expect(prompt).toContain("<mcp_servers>");
+    expect(prompt).toContain("tool_search");
+    expect(prompt).toContain("when any MCP servers are configured");
+    expect(prompt).toContain("Do not wait for the user to name the server or tool.");
+    expect(prompt).toContain("Do not wait for the user to name the skill.");
+  });
+
+  test("omits the MCP line when the session has no MCP tools", () => {
+    const prompt = buildHoySystemPrompt({ tools: ["read", "bash", "edit", "write"] });
+    expect(prompt).toContain("<available_skills>");
+    expect(prompt).not.toContain("<mcp_servers>");
+  });
+
+  test("omits the discovery block when the session has neither a reader nor MCP", () => {
+    expect(buildHoySystemPrompt({ tools: [] })).not.toContain("Skills and MCP:");
+  });
+
   test("the no-em-dash rule covers text posted outside the app", () => {
     expect(buildHoySystemPrompt()).toContain("comments you post to Linear or GitHub");
   });
